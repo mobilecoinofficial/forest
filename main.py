@@ -71,10 +71,6 @@ class Session:
             self.user_manager = user_manager
         else:
             self.user_manager = UserManager()
-        if routing_manager:
-            self.routing_manager = routing_manager
-        else:
-            self.routing_manager = RoutingManager()
         if payments_manager:
             self.payments_manager = payments_manager
         else:
@@ -177,7 +173,7 @@ class Session:
         async for message in self.message_iter():
             open("/dev/stdout", "w").write(f"{message}\n")
             if message.source:
-                maybe_routable = await self.routing_manager.get_id(
+                maybe_routable = await RoutingManager().get_id(
                     message.source.strip("+")
                 )
             else:
@@ -260,7 +256,7 @@ class Session:
 
         async with aiohttp.ClientSession() as session:
             self.dialout_ws = await session.ws_connect("http://127.0.0.1:8079/ws")
-            self.loop.create_task(
+            asyncio.create_task(
                 spool_lines_to_cb(self.proc.stdout, self.dialout_ws.send_str)
             )
             await self.dialout_ws.send_str(
@@ -322,8 +318,8 @@ async def get_handler(request):
             account,
             "",
         )
-        app.loop.create_task(new_session.launch_and_connect())
-        app.loop.create_task(new_session.handle_messages())
+        asyncio.create_task(new_session.launch_and_connect())
+        asyncio.create_task(new_session.handle_messages())
         status = "launched"
     else:
         status = str(session)
