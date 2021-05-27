@@ -13,6 +13,8 @@ asyncpg = "*"
 [dev-packages]
 isort = "*"
 black = "*"
+aioconsole = "*"
+requests = "*"
 
 [requires]
 python_version = "3.8"
