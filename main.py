@@ -1,25 +1,18 @@
+import typing as T
+# we're using py3.9, only Optional is needed
+from typing import Optional, List, Dict 
 import asyncio
-import ctypes
 import json
 import os
-import queue
-import sys
-import threading
-import time
-import typing as T
-
-import aiohttp
-import aioprocessing
-from aiohttp import web
-
-import logging
 import subprocess
-import time
 import urllib.parse
-
 import random
 
-from forest_tables import *
+from aiohttp import web
+import aiohttp
+import aioprocessing
+
+from forest_tables import RoutingManager, PaymentsManager, UserManager
 
 HOSTNAME = open("/etc/hostname").read().strip()  #  FLY_ALLOC_ID
 
@@ -93,7 +86,7 @@ class Session:
         file_contents = open(self.filepath, "r").read()
         return await self.user_manager.set_user(self.user, file_contents)
 
-    async def send_sms(self, source, destination, message_text):
+    async def send_sms(self, source, destination, message_text) -> dict:
         payload = {
             "source": source,
             "destination": destination,
@@ -160,7 +153,9 @@ class Session:
         )
         # check for payments every 10s for 1hr
         for _ in range(360):
-            payment_done = await self.payments_manager.get_payment(nmob_price * 1000)
+            payment_done = await self.payments_manager.get_payment(
+                nmob_price * 1000
+            )
             if payment_done:
                 payment_done = payment_done[0]
                 await self.send_message(
@@ -175,8 +170,7 @@ class Session:
                     "transaction_log_id"
                 )
                 return True
-            else:
-                await asyncio.sleep(10)
+            await asyncio.sleep(10)
 
     async def handle_messages(self):
         async for message in self.message_iter():
@@ -247,8 +241,7 @@ class Session:
         for _ in range(5):
             if os.path.exists(self.filepath):
                 break
-            else:
-                await asyncio.sleep(1)
+            await asyncio.sleep(1)
         COMMAND = f"/app/signal-cli --config /app --username=+{self.user} --output=json stdio".split()
 
         self.proc = await asyncio.subprocess.create_subprocess_exec(
@@ -264,7 +257,9 @@ class Session:
         # public JsonNode details;
 
         async with aiohttp.ClientSession() as session:
-            self.dialout_ws = await session.ws_connect("http://127.0.0.1:8079/ws")
+            self.dialout_ws = await session.ws_connect(
+                "http://127.0.0.1:8079/ws"
+            )
             asycnio.create_task(
                 spool_lines_to_cb(self.proc.stdout, self.dialout_ws.send_str)
             )
