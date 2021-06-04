@@ -115,9 +115,9 @@ class Session:
             msg = "\n".join((f"{key}:\t{value}" for key, value in msg.items()))
         json_command = json.dumps(
             {
-                "commandName": "sendMessage",
-                "recipient": str(recipient),
-                "content": msg,
+                "command": "send",
+                "recipient": [str(recipient)],
+                "message": msg,
             }
         )
         self.proc.stdin.write(json_command.encode() + b"\n")
@@ -269,6 +269,7 @@ class Session:
                 spool_lines_to_cb(self.proc.stdout, self.dialout_ws.send_str)
             )
             await self.dialout_ws.send_str(
+                # this is weird, idk what this is supposed to do
                 json.dumps(
                     {
                         "commandName": "getVersion",
@@ -290,14 +291,13 @@ class Session:
                         msg_contents = msg.data.decode()
                     except:
                         msg_contents = ""
-                        pass
                 elif msg.type == aiohttp.WSMsgType.ERROR:
                     break
                 msg_loaded = json.loads(msg_contents)
                 open("/dev/stdout", "w").write(f"{msg_loaded}\n")
 
                 await self.message_queue.put(Message(msg_loaded))
-                if msg_loaded.get("commandName") == "sendMessage":
+                if msg_loaded.get("command") in ("send", "updateGroup"):
                     self.proc.stdin.write(msg_loaded.encode() + b"\n")
             print("done with ws")
         await self.proc.wait()

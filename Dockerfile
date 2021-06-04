@@ -4,9 +4,9 @@ SHELL ["/usr/bin/bash", "-c"]
 WORKDIR /app
 RUN microdnf install -y git zlib-devel && rm -rf /var/cache/yum
 RUN gu install native-image
-RUN git clone https://github.com/i-infra/signal-cli
+RUN git clone https://github.com/forestcontact/signal-cli
 WORKDIR /app/signal-cli
-RUN git fetch -a && git checkout 8132f72d85ae8693e0ac8388268223e42b73023b 
+RUN git fetch -a && git checkout stdio-generalized # shrug
 RUN ./gradlew build && ./gradlew installDist
 RUN md5sum ./build/libs/* 
 RUN ./gradlew assembleNativeImage
