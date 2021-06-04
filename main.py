@@ -43,7 +43,9 @@ class Message:
             command, *self.tokens = self.text.split(" ")
             self.command = command[1:]  # remove /
             self.arg1 = self.tokens[0] if self.tokens else None
-            self.text = " ".join(self.tokens[1:]) if len(self.tokens) > 1 else None
+            self.text = (
+                " ".join(self.tokens[1:]) if len(self.tokens) > 1 else None
+            )
 
     def __repr__(self) -> str:
         return f"<{self.envelope}>"
@@ -79,7 +81,9 @@ class Session:
     async def get_file(self):
         from_pgh = await self.user_manager.get_user(self.user)
         open(self.filepath, "w").write(from_pgh[0].get("account"))
-        update_claim = await self.user_manager.mark_user_claimed(self.user, HOSTNAME)
+        update_claim = await self.user_manager.mark_user_claimed(
+            self.user, HOSTNAME
+        )
         return update_claim
 
     async def mark_freed(self):
@@ -97,7 +101,8 @@ class Session:
         }
         open("/dev/stdout", "w").write(f"{payload}\n")
         response = await self.client_session.post(
-            "https://api.teleapi.net/sms/send?token=" + os.environ.get("TELI_KEY"),
+            "https://api.teleapi.net/sms/send?token="
+            + os.environ.get("TELI_KEY"),
             data=payload,
         )
         response_json = await response.json()
@@ -109,7 +114,11 @@ class Session:
         if isinstance(msg, dict):
             msg = "\n".join((f"{key}:\t{value}" for key, value in msg.items()))
         json_command = json.dumps(
-            {"commandName": "sendMessage", "recipient": str(recipient), "content": msg}
+            {
+                "commandName": "sendMessage",
+                "recipient": str(recipient),
+                "content": msg,
+            }
         )
         self.proc.stdin.write(json_command.encode() + b"\n")
 
