@@ -1,17 +1,15 @@
-import pghelp
 import os
+from pghelp import PGExpressions, PGInterface, Loop
+
 
 if os.path.exists("secrets") and not os.getenv("USER_DATABASE"):
     os.environ.update(
-        {
-            x[0]: x[1]
-            for x in (line.split("=", 1) for line in open("secrets").read().split())
-        }
+        cast(tuple[str, str], line.strip().split("="))
+        for line in open("secrets")
     )
+USER_DATABASE = os.environ["USER_DATABASE"]
 
-USER_DATABASE = os.getenv("USER_DATABASE")
-
-UserPGExpressions = pghelp.PGExpressions(
+UserPGExpressions = PGExpressions(
     table="prod_users",
     create_table="CREATE TABLE IF NOT EXISTS {self.table} \
             (id TEXT PRIMARY KEY, \
@@ -45,7 +43,7 @@ UserPGExpressions = pghelp.PGExpressions(
 
 ROUTING_DATABASE = os.getenv("USER_DATABASE")
 
-RoutingPGExpressions = pghelp.PGExpressions(
+RoutingPGExpressions = PGExpressions(
     table="routing",
     create_table="CREATE TABLE IF NOT EXISTS {self.table} (id TEXT PRIMARY KEY, destination CHARACTER VARYING(16), expiration_ms BIGINT);",
     get_destination="SELECT destination FROM {self.table} WHERE id=$1 AND (expiration_ms > extract(epoch from now()) * 1000 OR expiration_ms is NULL);",
@@ -56,7 +54,7 @@ RoutingPGExpressions = pghelp.PGExpressions(
     sweep_expired_destinations="DELETE FROM {self.table} WHERE expiration_ms IS NOT NULL AND expiration_ms < (extract(epoch from now()) * 1000);",
 )
 
-PaymentsPGExpressions = pghelp.PGExpressions(
+PaymentsPGExpressions = PGExpressions(
     table="payments",
     create_table="CREATE TABLE IF NOT EXISTS {self.table} (transaction_log_id CHARACTER VARYING(16) PRIMARY KEY, \
             account_id CHARACTER VARYING(16), \
@@ -70,26 +68,35 @@ PaymentsPGExpressions = pghelp.PGExpressions(
 )
 
 
-class RoutingManager(pghelp.PGInterface):
+class RoutingManager(PGInterface):
     def __init__(
-        self, queries=RoutingPGExpressions, database=USER_DATABASE, loop=None
+        self,
+        queries: PGExpressions = RoutingPGExpressions,
+        database: str = USER_DATABASE,
+        loop: Loop = None,
     ) -> None:
         super().__init__(queries, database, loop)
 
 
-class UserManager(pghelp.PGInterface):
+class UserManager(PGInterface):
     """Abstraction for operations on the `user` table."""
 
     def __init__(
-        self, queries=UserPGExpressions, database=USER_DATABASE, loop=None
+        self,
+        queries: PGExpressions = UserPGExpressions,
+        database: str = USER_DATABASE,
+        loop: Loop = None,
     ) -> None:
         super().__init__(queries, database, loop)
 
 
-class PaymentsManager(pghelp.PGInterface):
+class PaymentsManager(PGInterface):
     """Abstraction for operations on the `user` table."""
 
     def __init__(
-        self, queries=PaymentsPGExpressions, database=USER_DATABASE, loop=None
+        self,
+        queries: PGExpressions = PaymentsPGExpressions,
+        database: str = USER_DATABASE,
+        loop: Loop = None,
     ) -> None:
         super().__init__(queries, database, loop)

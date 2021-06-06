@@ -1,0 +1,13 @@
+[MESSAGES CONTROL]
+
+disable=
+    attribute-defined-outside-init,
+    duplicate-code,
+    invalid-name,
+    missing-docstring,
+    protected-access,
+    too-few-public-methods,
+	logging-fstring-interpolation
+    # handled by black
+    format
+
