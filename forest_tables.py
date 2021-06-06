@@ -1,11 +1,17 @@
 import os
+from typing import cast
 from pghelp import PGExpressions, PGInterface, Loop
 
 
 if os.path.exists("secrets") and not os.getenv("USER_DATABASE"):
     os.environ.update(
-        cast(tuple[str, str], line.strip().split("="))
-        for line in open("secrets")
+        {
+            key: value
+            for key, value in [
+                print(line) or line.strip().split("=", 1)
+                for line in open("secrets").read().split()
+            ]
+        }
     )
 USER_DATABASE = os.environ["USER_DATABASE"]
 
