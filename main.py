@@ -25,6 +25,8 @@ HOSTNAME = open("/etc/hostname").read().strip()  #  FLY_ALLOC_ID
 
 
 class Message:
+    """Represents a Message received from signal-cli, optionally containing a command with arguments."""
+
     def __init__(self, blob: dict) -> None:
         self.envelope = envelope = blob.get("envelope", {})
         # {'envelope': {'source': '+15133278483', 'sourceDevice': 2, 'timestamp': 1621402445257, 'receiptMessage': {'when': 1621402445257, 'isDelivery': True, 'isRead': False, 'timestamps': [1621402444517]}}}
@@ -50,52 +52,48 @@ class Message:
 
 
 class Session:
+    """Represents a Signal-CLI session, with stdin/stdout content mirrored to a websocket at `dialout_address`.
+    Creates database connections for managing users and payments."""
+
     def __init__(
         self,
         user,
         dialout_address,
-        user_manager=None,
-        routing_manager=None,
-        payments_manager=None,
     ):
         self.user = user
-        self.dialout_address = dialout_address
         self.loop = asyncio.get_event_loop()
         self.proc = None
-        self.dialout_ws = None
         self.filepath = "/app/data/+" + user
-        self.message_queue = asyncio.Queue()
+        self.piso_message_queue = asyncio.Queue()
+        self.sipo_message_queue = asyncio.Queue()
         self.client_session = aiohttp.ClientSession()
         self.scratch = {"payments": {}}
-        if user_manager:
-            self.user_manager = user_manager
-        else:
-            self.user_manager = UserManager()
-        if payments_manager:
-            self.payments_manager = payments_manager
-        else:
-            self.payments_manager = PaymentsManager()
+        self.user_manager = UserManager()
+        self.payments_manager = PaymentsManager()
 
     async def get_file(self):
+        """Fetches user datastore from postgresql and marks as claimed."""
         from_pgh = await self.user_manager.get_user(self.user)
         open(self.filepath, "w").write(from_pgh[0].get("account"))
         update_claim = await self.user_manager.mark_user_claimed(self.user, HOSTNAME)
         return update_claim
 
     async def mark_freed(self):
+        """Marks user as freed in PG database."""
         return await self.user_manager.mark_user_freed(self.user)
 
     async def put_file(self):
+        """Puts user datastore in postgresql."""
         file_contents = open(self.filepath, "r").read()
         return await self.user_manager.set_user(self.user, file_contents)
 
     async def send_sms(self, source, destination, message_text):
+        """Sends SMS via teliapi.net call from specified source, to specified destination, with specified message text - and returns the response."""
         payload = {
             "source": source,
             "destination": destination,
             "message": message_text,
         }
-        open("/dev/stdout", "w").write(f"{payload}\n")
         response = await self.client_session.post(
             "https://api.teleapi.net/sms/send?token=" + os.environ.get("TELI_KEY"),
             data=payload,
@@ -104,6 +102,7 @@ class Session:
         return response_json
 
     async def send_message(self, recipient, msg):
+        """Builds sendMessage command with specified recipient and msg, writes to signal-cli."""
         if isinstance(msg, list):
             return [await self.send_message(recipient, m) for m in msg]
         if isinstance(msg, dict):
@@ -111,12 +110,18 @@ class Session:
         json_command = json.dumps(
             {"commandName": "sendMessage", "recipient": str(recipient), "content": msg}
         )
-        self.proc.stdin.write(json_command.encode() + b"\n")
+        await self.sipo_message_queue.put(json_command)
 
-    async def message_iter(self):
+    async def piso_message_iter(self):
         """Provides an asynchronous iterator over messages on the queue."""
         while True:
-            message = await self.message_queue.get()
+            message = await self.piso_message_queue.get()
+            yield message
+
+    async def sipo_message_iter(self):
+        """Provides an asynchronous iterator over messages on the queue."""
+        while True:
+            message = await self.sipo_message_queue.get()
             yield message
 
     async def register(self, message):
@@ -170,7 +175,7 @@ class Session:
                 await asyncio.sleep(10)
 
     async def handle_messages(self):
-        async for message in self.message_iter():
+        async for message in self.piso_message_iter():
             open("/dev/stdout", "w").write(f"{message}\n")
             if message.source:
                 maybe_routable = await RoutingManager().get_id(
@@ -254,48 +259,20 @@ class Session:
         # public String content;
         # public JsonNode details;
 
-        async with aiohttp.ClientSession() as session:
-            self.dialout_ws = await session.ws_connect("http://127.0.0.1:8079/ws")
-            asyncio.create_task(
-                spool_lines_to_cb(self.proc.stdout, self.dialout_ws.send_str)
-            )
-            await self.dialout_ws.send_str(
-                json.dumps(
-                    {
-                        "commandName": "getVersion",
-                        "recipient": None,
-                        "content": "v0.1.0",
-                        "details": {
-                            "client": "oasismsg",
-                            "region": os.environ.get("FLY_REGION", "None"),
-                        },
-                    }
-                )
-            )
-            async for msg in self.dialout_ws:
-                # still figuring out ws message types
-                if msg.type == aiohttp.WSMsgType.TEXT:
-                    msg_contents = msg.data
-                elif msg.type == aiohttp.WSMsgType.BINARY:
-                    try:
-                        msg_contents = msg.data.decode()
-                    except:
-                        msg_contents = ""
-                        pass
-                elif msg.type == aiohttp.WSMsgType.ERROR:
-                    break
-                msg_loaded = json.loads(msg_contents)
-                open("/dev/stdout", "w").write(f"{msg_loaded}\n")
+        asyncio.create_task(
+            spool_lines_to_cb(self.proc.stdout, self.piso_message_queue.put)
+        )
 
-                await self.message_queue.put(Message(msg_loaded))
-                if msg_loaded.get("commandName") == "sendMessage":
-                    self.proc.stdin.write(msg_loaded.encode() + b"\n")
-            print("done with ws")
+        async for msg in self.sipo_message_iter():
+            msg_loaded = json.loads(msg)
+            open("/dev/stdout", "w").write(f"sig-in py-out: {msg_loaded}\n")
+            if msg_loaded.get("commandName") == "sendMessage":
+                self.proc.stdin.write(msg.encode() + b"\n")
         await self.proc.wait()
 
 
 async def spool_lines_to_cb(
-    stream: asyncio.StreamReader, callback: T.Callable[[bytes], None]
+    stream: asyncio.StreamReader, callback: T.Callable[[str], None]
 ):
 
     while True:
@@ -348,9 +325,7 @@ async def inbound_handler(request):
     destination = msg_obj.get("destination")
     ## lookup sms recipient to signal recipient
     recipient = {}.get(destination, "+15133278483")
-    maybe_dest = await request.app["routing_manager_connection"].get_destination(
-        destination
-    )
+    maybe_dest = await RoutingManager().get_destination(destination)
     if maybe_dest:
         recipient = maybe_dest[0].get("destination")
     msg_obj["maybe_dest"] = str(maybe_dest)
@@ -359,13 +334,12 @@ async def inbound_handler(request):
         # send hashmap as signal message with newlines and tabs and stuff
         await session.send_message(recipient, msg_obj)
         return web.Response(text="TY!")
-
-    return web.Response(status=504, text="Sorry, no live workers.")
     # TODO: return non-200 if no delivery receipt / ok crypto state, let teli do our retry
     # no live worker sessions
-    return await request.app["client_session"].post(
+    await request.app["client_session"].post(
         "https://counter.pythia.workers.dev/post", data=msg_data
     )
+    return web.Response(status=504, text="Sorry, no live workers.")
 
 
 # ["->", "fsync", "/+14703226669", "(1, 2)", "/app/signal-cli", ["/app/signal-cli", "--config", "/app", "--username=+14703226669", "--output=json", "stdio", ""], 0, 0, 523]
@@ -393,20 +367,11 @@ async def start_queue_monitor(app):
 async def on_shutdown(app):
     session = app.get("session")
     if session:
+        await session.put_file()
         session.proc.kill()
         await session.proc.wait()
         await session.put_file()
         await session.mark_freed()
-        await session.dialout_ws.close(
-            code=aiohttp.WSCloseCode.GOING_AWAY, message="Server shutdown"
-        )
-
-
-async def start_websocat(app):
-    cmd = "/app/websocat --text -E ws-listen:127.0.0.1:8079 broadcast:mirror: --restrict-uri=/ws".split()
-    app["websocat_proxy"] = asyncio.create_task(
-        asyncio.subprocess.create_subprocess_exec(*cmd)
-    )
 
 
 async def start_memfs(app):
@@ -424,6 +389,10 @@ async def start_memfs(app):
         )
         proc.wait()
         (stdout, stderr) = proc.communicate()
+        if stderr:
+            raise Exception(
+                f"Could not load fuse module! You may need to recompile.\n    {stderr}"
+            )
 
     def memfs_proc(path="data"):
         pid = os.getpid()
@@ -440,17 +409,10 @@ async def start_memfs(app):
     await launch()
 
 
-async def start_sessions(app):
-    app["user_manager_connection"] = UserManager()
-    app["routing_manager_connection"] = RoutingManager()
-    app["payments_manager_connection"] = PaymentsManager()
-
-
 app = web.Application()
 
 app.on_shutdown.append(on_shutdown)
 app.on_startup.append(start_memfs)
-app.on_startup.append(start_websocat)
 app.on_startup.append(start_queue_monitor)
 app.on_startup.append(start_sessions)
 
