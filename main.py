@@ -1,6 +1,5 @@
 import typing as T
-# we're using py3.9, only Optional is needed
-from typing import Optional, List, Dict
+from typing import Optional
 import asyncio
 import json
 import os
@@ -29,9 +28,9 @@ class Message:
         self.ts = round(envelope.get("timestamp", 0) / 1000)
         msg = envelope.get("dataMessage", {})
         self.full_text = self.text = msg.get("message", "")
-        self.reactions: Dict[str, str] = {}
+        self.reactions: dict[str, str] = {}
         self.command: Optional[str] = None
-        self.tokens: Optional[List[str]] = None
+        self.tokens: Optional[list[str]] = None
         # if self.source in wisp.user_callbacks:
         #    self.tokens = self.text.split(" ")
         if self.text and self.text.startswith("/"):
