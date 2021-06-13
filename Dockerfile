@@ -11,16 +11,17 @@ RUN ./gradlew build && ./gradlew installDist
 RUN md5sum ./build/libs/* 
 RUN ./gradlew assembleNativeImage
 
-FROM ubuntu:focal as libbuilder
+FROM ubuntu:hirsute as libbuilder
 WORKDIR /app
+RUN ln --symbolic --force --no-dereference /usr/share/zoneinfo/EST && echo "EST" > /etc/timezone
 RUN apt update
-RUN apt install -yy python3.9 python3.9-venv libfuse2
-RUN python3.9 -m venv /app/venv && pip3 install pipenv
+RUN DEBIAN_FRONTEND="noninteractive" apt install -yy python3.9 python3.9-venv libfuse2 pipenv
+RUN python3.9 -m venv /app/venv
 COPY Pipfile.lock Pipfile /app/
 RUN VIRTUAL_ENV=/app/venv pipenv install 
 RUN VIRTUAL_ENV=/app/venv pipenv run pip uninstall dataclasses -y
 
-FROM ubuntu:focal
+FROM ubuntu:hirsute
 WORKDIR /app
 RUN mkdir -p /app/data
 RUN apt update
@@ -40,4 +41,4 @@ COPY --from=sigbuilder /app/signal-cli/build/native-image/signal-cli /app
 COPY --from=sigbuilder /lib64/libz.so.1 /lib64
 COPY --from=libbuilder /app/venv/lib/python3.9/site-packages /app/
 COPY ./forest_tables.py ./fuse.py  ./mem.py  ./pghelp.py ./main.py /app/
-ENTRYPOINT ["/usr/bin/python3", "/app/main.py"]
+ENTRYPOINT ["/usr/bin/python3.9", "/app/main.py"]
