@@ -9,12 +9,13 @@ aioprocessing = "*"
 pyqrcode = "*"
 pynacl = "*"
 asyncpg = "*"
+bidict = "*"
 
-[dev-packages]
-isort = "*"
-black = "*"
-aioconsole = "*"
-requests = "*"
+#[dev-packages]
+#isort = "*"
+#black = "*"
+#aioconsole = "*"
+#requests = "*"
 
 [requires]
 python_version = "3.9"

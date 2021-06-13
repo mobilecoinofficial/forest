@@ -7,6 +7,7 @@ import subprocess
 import urllib.parse
 import random
 
+from bidict import bidict
 from aiohttp import web
 import aiohttp
 import aioprocessing
@@ -31,8 +32,7 @@ class Message:
         self.reactions: dict[str, str] = {}
         self.command: Optional[str] = None
         self.tokens: Optional[list[str]] = None
-        # if self.source in wisp.user_callbacks:
-        #    self.tokens = self.text.split(" ")
+        self.group: Optional[str] = envelope.get("groupInfo", {}).get("groupId")
         if self.text and self.text.startswith("/"):
             command, *self.tokens = self.text.split(" ")
             self.command = command[1:]  # remove /
@@ -45,9 +45,13 @@ class Message:
         return f"<{self.envelope}>"
 
 
+global groupid_to_external_number
+groupid_to_external_number: bidict[str, str] = bidict()
+
+
 class Session:
     """Represents a Signal-CLI session, with stdin/stdout content mirrored to a websocket at `dialout_address`.
-    Creates database connections for managing users and payments."""
+    Creates database connections for managing signal keys and payments."""
 
     def __init__(
         self,
@@ -58,12 +62,14 @@ class Session:
         self.loop = asyncio.get_event_loop()
         self.proc = None
         self.filepath = "/app/data/+" + user
-        self.piso_message_queue = asyncio.Queue()
-        self.sipo_message_queue = asyncio.Queue()
+        self.signalcli_output_queue = asyncio.Queue()
+        self.signalcli_input_queue = asyncio.Queue()
         self.client_session = aiohttp.ClientSession()
         self.scratch = {"payments": {}}
         self.user_manager = UserManager()
         self.payments_manager = PaymentsManager()
+        self.external_number_to_groupid = {}
+        self.groupid_to_external_number = {}
 
     async def get_file(self):
         """Fetches user datastore from postgresql and marks as claimed."""
@@ -111,18 +117,19 @@ class Session:
                 "message": msg,
             }
         )
-        await self.sipo_message_queue.put(json_command)
+        await self.signalcli_input_queue.put(json_command)
 
-    async def piso_message_iter(self):
+    async def signalcli_output_iter(self):
         """Provides an asynchronous iterator over messages on the queue."""
         while True:
-            message = await self.piso_message_queue.get()
+            message = await self.signalcli_output_queue.get()
+            reveal_type(message)
             yield message
 
-    async def sipo_message_iter(self):
-        """Provides an asynchronous iterator over messages on the queue."""
+    async def signalcli_input_iter(self):
+        """Provides an asynchronous iterator over pending signal-cli commands"""
         while True:
-            message = await self.sipo_message_queue.get()
+            message = await self.signalcli_input_queue.get()
             yield message
 
     async def register(self, message):
@@ -177,7 +184,7 @@ class Session:
             await asyncio.sleep(10)
 
     async def handle_messages(self):
-        async for message in self.piso_message_iter():
+        async for message in self.signalcli_output_iter():
             open("/dev/stdout", "w").write(f"{message}\n")
             if message.source:
                 maybe_routable = await RoutingManager().get_id(
@@ -199,6 +206,23 @@ class Session:
                 # TODO: store message.source and sms_uuid in a queue, enable https://apidocs.teleapi.net/api/sms/delivery-notifications
                 #    such that delivery notifs get redirected as responses to send command
                 await self.send_message(message.source, response)
+            elif numbers and message.command == "mkgroup":
+                external_number_to_groupid[message.arg1] = "pending"
+                await self.signalcli_input_queue.put(
+                    json.dumps(
+                        {
+                            "command": "updateGroup",
+                            "member": [message.source],
+                            "name": f"SMS with {message.arg1}",
+                        }
+                    )
+                )
+            elif message.group in self.groupid_to_external_number:
+                await self.send_sms(
+                    source=numbers[0],
+                    destination=self.groupid_to_external_number[message.group],
+                    message_text=message.text,
+                )
             elif message.command == "help":
                 await self.send_message(
                     message.source,
@@ -255,16 +279,11 @@ class Session:
         )
         print(f"started signal-cli @ {self.user} with PID {self.proc.pid}")
 
-        # public String commandName;
-        # public String recipient;
-        # public String content;
-        # public JsonNode details;
-
         asyncio.create_task(
-            spool_lines_to_cb(self.proc.stdout, self.piso_message_queue.put)
+            spool_lines_to_cb(self.proc.stdout, self.signalcli_output_queue.put)
         )
 
-        async for msg in self.sipo_message_iter():
+        async for msg in self.signalcli_input_iter():
             msg_loaded = json.loads(msg)
             open("/dev/stdout", "w").write(f"sig-in py-out: {msg_loaded}\n")
             if msg_loaded.get("command") in ("send", "updateGroup"):
@@ -272,15 +291,27 @@ class Session:
         await self.proc.wait()
 
 
-async def spool_lines_to_cb(
-    stream: asyncio.StreamReader, callback: T.Callable[[str], None]
+async def listen_to_signalcli(
+    stream: asyncio.StreamReader, queue: AioQueue[Message]
 ):
-
     while True:
         line = await stream.readline()
         if not line:
             break
-        await callback(line.decode())
+        blob = json.loads(line)
+        if set(blob.keys()) == {"group"}:
+            global groupid_to_external_number
+            group = blob.get("group")
+            if group and "pending" in groupid_to_external_number.inverse:
+                external_number = groupid_to_external_number.inverse["pending"]
+                groupid_to_external_number[external_number] = group
+                print(f"associated {external_number} with {group}")
+            else:
+                print(
+                    "didn't find any pending numbers to associate with group {group}"
+                )
+            continue
+        await queue.put(Message(blob))
 
 
 async def noGet(request):
@@ -332,6 +363,14 @@ async def inbound_handler(request):
     msg_obj["maybe_dest"] = str(maybe_dest)
     session = request.app.get("session")
     if session:
+        group = external_number_to_groupid.get(msg_obj["source"])
+        if group:
+            cmd = {
+                "command": "send",
+                "message": msg_obj["message"],
+                "group": group,
+            }
+            await session.signalcli_input_queue.put(json.dumps(cmd))
         # send hashmap as signal message with newlines and tabs and stuff
         await session.send_message(recipient, msg_obj)
         return web.Response(text="TY!")
@@ -415,7 +454,6 @@ app = web.Application()
 app.on_shutdown.append(on_shutdown)
 app.on_startup.append(start_memfs)
 app.on_startup.append(start_queue_monitor)
-app.on_startup.append(start_sessions)
 
 app.add_routes(
     [
