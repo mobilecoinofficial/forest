@@ -1,9 +1,9 @@
-import typing as T
-from typing import Optional
+from typing import Optional, AsyncIterator, Any, Union
+from asyncio import Queue
 import asyncio
 import json
 import os
-import subprocess
+from subprocess import Popen, PIPE
 import urllib.parse
 import random
 
@@ -11,10 +11,13 @@ from bidict import bidict
 from aiohttp import web
 import aiohttp
 import aioprocessing
-
+import phonenumbers as pn
 from forest_tables import RoutingManager, PaymentsManager, UserManager
 
+# pylint: disable=line-too-long,too-many-instance-attributes, import-outside-toplevel, fixme, redefined-outer-name
+
 HOSTNAME = open("/etc/hostname").read().strip()  #  FLY_ALLOC_ID
+admin = "+16176088864"  # (sylvie; ilia is +15133278483)
 
 
 class Message:
@@ -45,33 +48,33 @@ class Message:
         return f"<{self.envelope}>"
 
 
-global groupid_to_external_number
 groupid_to_external_number: bidict[str, str] = bidict()
 
 
 class Session:
-    """Represents a Signal-CLI session, with stdin/stdout content mirrored to a websocket at `dialout_address`.
-    Creates database connections for managing signal keys and payments."""
+    """
+    Represents a Signal-CLI session
+    # with stdin/stdout content mirrored to a websocket at `dialout_address`.
+    Creates database connections for managing signal keys and payments.
+    """
 
     def __init__(
         self,
-        user,
-        dialout_address,
-    ):
+        user: str,  # this is a phone number
+        #   dialout_address,
+    ) -> None:
         self.user = user
         self.loop = asyncio.get_event_loop()
-        self.proc = None
+        self.proc: Optional[asyncio.subprocess.Process] = None
         self.filepath = "/app/data/+" + user
-        self.signalcli_output_queue = asyncio.Queue()
-        self.signalcli_input_queue = asyncio.Queue()
+        self.signalcli_output_queue: Queue[Message] = Queue()
+        self.signalcli_input_queue: Queue[str] = Queue()
         self.client_session = aiohttp.ClientSession()
-        self.scratch = {"payments": {}}
+        self.scratch: dict[str, dict[str, Any]] = {"payments": {}}
         self.user_manager = UserManager()
         self.payments_manager = PaymentsManager()
-        self.external_number_to_groupid = {}
-        self.groupid_to_external_number = {}
 
-    async def get_file(self):
+    async def get_file(self) -> Any:
         """Fetches user datastore from postgresql and marks as claimed."""
         from_pgh = await self.user_manager.get_user(self.user)
         open(self.filepath, "w").write(from_pgh[0].get("account"))
@@ -80,34 +83,40 @@ class Session:
         )
         return update_claim
 
-    async def mark_freed(self):
+    async def mark_freed(self) -> Any:
         """Marks user as freed in PG database."""
         return await self.user_manager.mark_user_freed(self.user)
 
-    async def put_file(self):
+    async def put_file(self) -> Any:
         """Puts user datastore in postgresql."""
         file_contents = open(self.filepath, "r").read()
         return await self.user_manager.set_user(self.user, file_contents)
 
-    async def send_sms(self, source, destination, message_text) -> dict:
-        """Sends SMS via teliapi.net call from specified source, to specified destination, with specified message text - and returns the response."""
+    async def send_sms(
+        self, source: str, destination: str, message_text: str
+    ) -> dict[str, str]:
+        """
+        Send SMS via teliapi.net call and returns the response
+        """
         payload = {
             "source": source,
             "destination": destination,
             "message": message_text,
         }
         response = await self.client_session.post(
-            "https://api.teleapi.net/sms/send?token="
-            + os.environ.get("TELI_KEY"),
+            "https://api.teleapi.net/sms/send?token=" + os.environ["TELI_KEY"],
             data=payload,
         )
         response_json = await response.json()
         return response_json
 
-    async def send_message(self, recipient, msg):
+    async def send_message(
+        self, recipient: str, msg: Union[str, list, dict]
+    ) -> None:
         """Builds sendMessage command with specified recipient and msg, writes to signal-cli."""
         if isinstance(msg, list):
-            return [await self.send_message(recipient, m) for m in msg]
+            for m in msg:
+                await self.send_message(recipient, m)
         if isinstance(msg, dict):
             msg = "\n".join((f"{key}:\t{value}" for key, value in msg.items()))
         json_command = json.dumps(
@@ -119,20 +128,19 @@ class Session:
         )
         await self.signalcli_input_queue.put(json_command)
 
-    async def signalcli_output_iter(self):
+    async def signalcli_output_iter(self) -> AsyncIterator[Message]:
         """Provides an asynchronous iterator over messages on the queue."""
         while True:
             message = await self.signalcli_output_queue.get()
-            reveal_type(message)
             yield message
 
-    async def signalcli_input_iter(self):
+    async def signalcli_input_iter(self) -> AsyncIterator[str]:
         """Provides an asynchronous iterator over pending signal-cli commands"""
         while True:
-            message = await self.signalcli_input_queue.get()
-            yield message
+            command = await self.signalcli_input_queue.get()
+            yield command
 
-    async def register(self, message):
+    async def register(self, message: Message) -> bool:
         new_user = message.source
         usdt_price = 15.00
         # invpico = 100000000000 # doesn't work in mixin
@@ -143,7 +151,7 @@ class Session:
             )
             resp_json = await last_val.json()
             mob_rate = float(resp_json.get("data")[0].get("close"))
-        except:
+        except aiohttp.ClientError:
             # big.one goes down sometimes, if it does... make up a price
             mob_rate = 14
         # perturb each price slightly
@@ -182,8 +190,23 @@ class Session:
                 )
                 return True
             await asyncio.sleep(10)
+        return False
 
-    async def handle_messages(self):
+    async def check_target_number(self, msg: Message) -> Optional[str]:
+        try:
+            parsed = pn.parse(msg.arg1, None)
+            assert pn.is_valid_number(parsed)
+            number = pn.format_number(parsed, pn.PhoneNumberFormat.E164)
+            return number
+        except (pn.phonenumberutil.NumberParseException, AssertionError):
+            await self.send_message(
+                msg.source,
+                f"{msg.arg1} doesn't look a valid number or user. "
+                "did you include the country code?",
+            )
+            return None
+
+    async def handle_messages(self) -> None:
         async for message in self.signalcli_output_iter():
             open("/dev/stdout", "w").write(f"{message}\n")
             if message.source:
@@ -193,34 +216,41 @@ class Session:
             else:
                 maybe_routable = None
             if maybe_routable:
-                numbers = [registered.get("id") for registered in maybe_routable]
+                numbers: Optional[list[str]] = [
+                    registered.get("id") for registered in maybe_routable
+                ]
             else:
                 numbers = None
             if numbers and message.command == "send":
-                response = await self.send_sms(
-                    source=numbers[0],
-                    destination=message.arg1,
-                    message_text=message.text,
-                )
-                sms_uuid = response.get("data")
-                # TODO: store message.source and sms_uuid in a queue, enable https://apidocs.teleapi.net/api/sms/delivery-notifications
-                #    such that delivery notifs get redirected as responses to send command
-                await self.send_message(message.source, response)
-            elif numbers and message.command == "mkgroup":
-                external_number_to_groupid[message.arg1] = "pending"
-                await self.signalcli_input_queue.put(
-                    json.dumps(
-                        {
-                            "command": "updateGroup",
-                            "member": [message.source],
-                            "name": f"SMS with {message.arg1}",
-                        }
+                dest = await self.check_target_number(message)
+                if dest:
+                    response = await self.send_sms(
+                        source=numbers[0],
+                        destination=dest,
+                        message_text=message.text,
                     )
-                )
-            elif message.group in self.groupid_to_external_number:
+                    # sms_uuid = response.get("data")
+                    # TODO: store message.source and sms_uuid in a queue, enable https://apidocs.teleapi.net/api/sms/delivery-notifications
+                    #    such that delivery notifs get redirected as responses to send command
+                    await self.send_message(message.source, response)
+            elif numbers and message.command in ("mkgroup", "query"):
+                target_number = await self.check_target_number(message)
+                if target_number:
+                    groupid_to_external_number["pending"] = target_number
+                    cmd = {
+                        "command": "updateGroup",
+                        "member": [message.source],
+                        "name": f"SMS with {message.arg1}",
+                    }
+                    await self.signalcli_input_queue.put(json.dumps(cmd))
+            elif (
+                numbers
+                and message.group
+                and message.group in groupid_to_external_number
+            ):
                 await self.send_sms(
                     source=numbers[0],
-                    destination=self.groupid_to_external_number[message.group],
+                    destination=groupid_to_external_number[message.group],
                     message_text=message.text,
                 )
             elif message.command == "help":
@@ -256,7 +286,7 @@ class Session:
                 else:
                     await self.send_message(
                         message.source,
-                        f'We don\'t see any Forest Contact numbers for your account! If you would like to register a new number, try "/register" and following the instructions.',
+                        'We don\'t see any Forest Contact numbers for your account! If you would like to register a new number, try "/register" and following the instructions.',
                     )
             elif message.command or message.text:
                 await self.send_message(
@@ -264,23 +294,22 @@ class Session:
                     f"Sorry! Command {message.command} not recognized! Try /help. \n{message}",
                 )
 
-    async def launch_and_connect(self):
+    async def launch_and_connect(self) -> None:
         await self.get_file()
         for _ in range(5):
             if os.path.exists(self.filepath):
                 break
             await asyncio.sleep(1)
         COMMAND = f"/app/signal-cli --config /app --username=+{self.user} --output=json stdio".split()
-
         self.proc = await asyncio.subprocess.create_subprocess_exec(
             *COMMAND,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
         )
         print(f"started signal-cli @ {self.user} with PID {self.proc.pid}")
-
+        assert self.proc.stdout and self.proc.stdin
         asyncio.create_task(
-            spool_lines_to_cb(self.proc.stdout, self.signalcli_output_queue.put)
+            listen_to_signalcli(self.proc.stdout, self.signalcli_output_queue)
         )
 
         async for msg in self.signalcli_input_iter():
@@ -292,15 +321,14 @@ class Session:
 
 
 async def listen_to_signalcli(
-    stream: asyncio.StreamReader, queue: AioQueue[Message]
-):
+    stream: asyncio.StreamReader, queue: Queue[Message]
+) -> None:
     while True:
         line = await stream.readline()
         if not line:
             break
         blob = json.loads(line)
         if set(blob.keys()) == {"group"}:
-            global groupid_to_external_number
             group = blob.get("group")
             if group and "pending" in groupid_to_external_number.inverse:
                 external_number = groupid_to_external_number.inverse["pending"]
@@ -314,18 +342,18 @@ async def listen_to_signalcli(
         await queue.put(Message(blob))
 
 
-async def noGet(request):
+async def noGet(request: web.Request) -> web.Response:
     raise web.HTTPFound(location="https://signal.org/")
 
 
-async def get_handler(request):
-    account = request.match_info.get("phonenumber")
+async def get_handler(request: web.Request) -> web.Response:
+    account = request.match_info["phonenumber"]
     session = request.app.get("session")
     status = ""
     if not session:
         request.app["session"] = new_session = Session(
             account,
-            "",
+            #            "",
         )
         asyncio.create_task(new_session.launch_and_connect())
         asyncio.create_task(new_session.handle_messages())
@@ -335,8 +363,8 @@ async def get_handler(request):
     return web.json_response({"status": status})
 
 
-async def send_message_handler(request):
-    account = request.match_info.get("phonenumber")
+async def send_message_handler(request: web.Request) -> Any:
+    # account = request.match_info.get("phonenumber")
     session = request.app.get("session")
     msg_data = await request.text()
     msg_obj = {x: y[0] for x, y in urllib.parse.parse_qs(msg_data).items()}
@@ -346,7 +374,7 @@ async def send_message_handler(request):
     return web.json_response({"status": "sent"})
 
 
-async def inbound_handler(request):
+async def inbound_handler(request: web.Request) -> web.Response:
     msg_data = await request.text()
     # parse query-string encoded sms/mms into object
     msg_obj = {x: y[0] for x, y in urllib.parse.parse_qs(msg_data).items()}
@@ -356,14 +384,12 @@ async def inbound_handler(request):
         msg_obj["message"] = msg_data
     destination = msg_obj.get("destination")
     ## lookup sms recipient to signal recipient
-    recipient = {}.get(destination, "+15133278483")
     maybe_dest = await RoutingManager().get_destination(destination)
-    if maybe_dest:
-        recipient = maybe_dest[0].get("destination")
+    recipient = maybe_dest[0].get("destination") if maybe_dest else admin
     msg_obj["maybe_dest"] = str(maybe_dest)
     session = request.app.get("session")
     if session:
-        group = external_number_to_groupid.get(msg_obj["source"])
+        group = groupid_to_external_number.inverse.get(msg_obj["source"])
         if group:
             cmd = {
                 "command": "send",
@@ -371,8 +397,9 @@ async def inbound_handler(request):
                 "group": group,
             }
             await session.signalcli_input_queue.put(json.dumps(cmd))
-        # send hashmap as signal message with newlines and tabs and stuff
-        await session.send_message(recipient, msg_obj)
+        else:
+            # send hashmap as signal message with newlines and tabs and stuff
+            await session.send_message(recipient, msg_obj)
         return web.Response(text="TY!")
     # TODO: return non-200 if no delivery receipt / ok crypto state, let teli do our retry
     # no live worker sessions
@@ -384,8 +411,8 @@ async def inbound_handler(request):
 
 # ["->", "fsync", "/+14703226669", "(1, 2)", "/app/signal-cli", ["/app/signal-cli", "--config", "/app", "--username=+14703226669", "--output=json", "stdio", ""], 0, 0, 523]
 # ["<-", "fsync", "0"]
-async def start_queue_monitor(app):
-    async def background_sync_handler():
+async def start_queue_monitor(app: web.Application) -> None:
+    async def background_sync_handler() -> None:
         queue = app["mem_queue"]
         while True:
             queue_item = await queue.coro_get()
@@ -395,7 +422,7 @@ async def start_queue_monitor(app):
                 and queue_item[5][0] == "/app/signal-cli"
             ):
                 # /+14703226669
-                file_to_sync = queue_item[2]
+                # file_to_sync = queue_item[2]
                 # 14703226669
                 maybe_session = app.get("session")
                 if maybe_session:
@@ -404,7 +431,7 @@ async def start_queue_monitor(app):
     app["mem_task"] = asyncio.create_task(background_sync_handler())
 
 
-async def on_shutdown(app):
+async def on_shutdown(app: web.Application) -> None:
     session = app.get("session")
     if session:
         await session.put_file()
@@ -414,34 +441,33 @@ async def on_shutdown(app):
         await session.mark_freed()
 
 
-async def start_memfs(app):
+async def start_memfs(app: web.Application) -> None:
 
     import fuse
     import mem
 
-    app["mem_queue"] = aioprocessing.AioQueue()
-    mem_queue = app["mem_queue"]
+    app["mem_queue"] = mem_queue = aioprocessing.AioQueue()
     if not os.path.exists("/dev/fuse"):
-        proc = subprocess.Popen(
+        proc = Popen(
             ["/usr/sbin/insmod", "/app/fuse.ko"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stdout=PIPE,
+            stderr=PIPE,
         )
         proc.wait()
-        (stdout, stderr) = proc.communicate()
+        (stdout, stderr) = proc.communicate()  # pylint: disable=unused-variable
         if stderr:
             raise Exception(
-                f"Could not load fuse module! You may need to recompile.\n    {stderr}"
+                f"Could not load fuse module! You may need to recompile.\t\n{stderr.decode()}"
             )
 
-    def memfs_proc(path="data"):
+    def memfs_proc(path: str = "data") -> fuse.FUSE:
         pid = os.getpid()
         open("/dev/stdout", "w").write(
             f"Starting memfs with PID: {pid} on dir: {path}\n"
         )
-        return fuse.FUSE(mem.Memory(logqueue=mem_queue), "data")
+        return fuse.FUSE(mem.Memory(logqueue=mem_queue), "data")  # type: ignore
 
-    async def launch():
+    async def launch() -> None:
         memfs = aioprocessing.AioProcess(target=memfs_proc)
         memfs.start()
         app["memfs"] = memfs
