@@ -1,5 +1,4 @@
 import os
-from typing import cast
 from pghelp import PGExpressions, PGInterface, Loop
 
 
