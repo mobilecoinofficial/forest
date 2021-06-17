@@ -14,7 +14,7 @@ from aiohttp import web
 import aiohttp
 import aioprocessing
 import phonenumbers as pn
-from forest_tables import RoutingManager, GroupRoutingManager, PaymentsManager, UserManager
+from forest_tables import RoutingManager, PaymentsManager, UserManager
 
 # pylint: disable=line-too-long,too-many-instance-attributes, import-outside-toplevel, fixme, redefined-outer-name
 
@@ -58,18 +58,7 @@ class Message:
         return f"<{self.envelope}>"
 
 
-
-
-# class CommandHandler:
-#     def __init__(self, session: Session) -> None:
-#         self.session = session
-
-#     def do_printerfact(self, msg: Message) -> str:
-#         async with self.session.client_session.get(
-#             "https://colbyolson.com/printers"
-#         ) as resp:
-#             fact = await resp.text()
-#         return fact
+groupid_to_external_number: bidict[str, str] = bidict()
 
 
 class Session:
@@ -251,7 +240,7 @@ class Session:
 
     async def handle_messages(self) -> None:
         async for message in self.signalcli_output_iter():
-            # open("/dev/stdout", "w").write(f"{message}\n")
+            #open("/dev/stdout", "w").write(f"{message}\n")
             if message.source:
                 maybe_routable = await RoutingManager().get_id(
                     message.source.strip("+")
@@ -279,13 +268,21 @@ class Session:
             elif numbers and message.command in ("mkgroup", "query"):
                 # target_number = await self.check_target_number(message)
                 # if target_number:
+                if (
+                    "pending" in groupid_to_external_number
+                    and groupid_to_external_number["pending"] == message.arg1
+                ):
+                    await self.send_message(
+                        message.source, "looks like we've already made a group"
+                    )
+                    continue
+                groupid_to_external_number["pending"] = message.arg1
                 cmd = {
                     "command": "updateGroup",
                     "member": [message.source],
                     "name": f"SMS with {message.arg1}",
                 }
                 await self.signalcli_input_queue.put(json.dumps(cmd))
-                await self.send_message(message.source, "invited you to a group")
             elif (
                 numbers
                 and message.group
@@ -419,10 +416,8 @@ async def listen_to_signalcli(
         if "error" in blob:
             trueprint(blob["error"])
             continue
-        if "group" in blob::
+        if set(blob.keys()) == {"group"}:
             group = blob.get("group")
-            external_number = blob.get("name").lstrip("SMS with ")
-            await 
             if group and "pending" in groupid_to_external_number:
                 external_number = groupid_to_external_number["pending"]
                 groupid_to_external_number[group] = external_number
