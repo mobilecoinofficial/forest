@@ -20,8 +20,9 @@ HOSTNAME = open("/etc/hostname").read().strip()  #  FLY_ALLOC_ID
 admin = "+***REMOVED***"  # (sylvie; ilia is +15133278483)
 
 
-def trueprint(thing: Any):
-    open("/dev/stdout", "w").write(f"{thing}\n")
+def trueprint(*args, **kwargs) -> None:
+    print(*args, **kwargs, file=open("/dev/stdout", "w"))
+
 
 
 class Message:
@@ -37,7 +38,11 @@ class Message:
         # self.reactions: dict[str, str] = {}
         self.receipt = envelope.get("receiptMessage")
         self.group: Optional[str] = envelope.get("groupInfo", {}).get("groupId")
+        if self.group:
+            trueprint("saw group: ",  self.group)
         self.quoted_text = envelope.get("quote", {}).get("text")
+        if self.quoted_text:
+            trueprint("saw quote: ", quoted_text)
         self.command: Optional[str] = None
         self.tokens: Optional[list[str]] = None
         if self.text and self.text.startswith("/"):
@@ -345,8 +350,7 @@ class Session:
         async for msg in self.signalcli_input_iter():
             msg_loaded = json.loads(msg)
             open("/dev/stdout", "w").write(f"sig-in py-out: {msg_loaded}\n")
-            if msg_loaded.get("command") in ("send", "updateGroup"):
-                self.proc.stdin.write(msg.encode() + b"\n")
+            self.proc.stdin.write(msg.encode() + b"\n")
         await self.proc.wait()
 
 
@@ -409,9 +413,10 @@ async def start_session(app: web.Application) -> None:
     )
     profile = {
         "command": "updateProfile",
-        "name": "Forest Contact",
-        "about": "🌲",
+        "name": "forestbot",
+        "about": "support: https://signal.group/#CjQKINbHvfKoeUx_pPjipkXVspTj5HiTiUjoNQeNgmGvCmDnEhCTYgZZ0puiT-hUG0hUUwlS",
     }
+    new_session.signalcli_input_queue.put(json.dumps(profile))
     asyncio.create_task(new_session.launch_and_connect())
     asyncio.create_task(new_session.handle_messages())
 
