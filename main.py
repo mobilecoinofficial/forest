@@ -36,6 +36,7 @@ class Message:
         self.command: Optional[str] = None
         self.tokens: Optional[list[str]] = None
         self.group: Optional[str] = envelope.get("groupInfo", {}).get("groupId")
+        self.quoted_text = envelope.get("quote", {}).get("text")
         if self.text and self.text.startswith("/"):
             command, *self.tokens = self.text.split(" ")
             self.command = command[1:]  # remove /
@@ -46,7 +47,6 @@ class Message:
 
     def __repr__(self) -> str:
         return f"<{self.envelope}>"
-
 
 groupid_to_external_number: bidict[str, str] = bidict()
 
@@ -65,7 +65,7 @@ class Session:
     ) -> None:
         self.user = user
         self.loop = asyncio.get_event_loop()
-        self.proc: Optional[asyncio.subprocess.Process] = None
+        self.proc: Optional[asyncio.Process] = None
         self.filepath = "/app/data/+" + user
         self.signalcli_output_queue: Queue[Message] = Queue()
         self.signalcli_input_queue: Queue[str] = Queue()
@@ -113,7 +113,7 @@ class Session:
     async def send_message(
         self, recipient: str, msg: Union[str, list, dict]
     ) -> None:
-        """Builds sendMessage command with specified recipient and msg, writes to signal-cli."""
+        """Builds send command with specified recipient and msg, writes to signal-cli."""
         if isinstance(msg, list):
             for m in msg:
                 await self.send_message(recipient, m)
@@ -253,6 +253,15 @@ class Session:
                     destination=groupid_to_external_number[message.group],
                     message_text=message.text,
                 )
+            elif numbers and message.quoted_text and "source" in message.quoted_text:
+                destination = (
+                    message.quoted_text.split("\n")[0].lstrip("source:").strip()
+                )
+                await self.send_sms(
+                    source=numbers[0],
+                    destination=destination,
+                    message_text=message.text,
+                )
             elif message.command == "help":
                 await self.send_message(
                     message.source,
@@ -263,6 +272,18 @@ class Session:
             elif message.command == "status":
                 # paid but not registered
                 if self.scratch["payments"].get(message.source) and not numbers:
+                    # avaiable_numbers = [
+                    #     blob["number"]
+                    #     for blob in teli(user / dids / list)["data"]
+                    #     if not (await self.routing_manager.connection.execute(f"select id from routing where id=$1", blob["number"])
+                    # ]
+                    # if avaiable_numbers:
+                    #     self.routing_manager.put_destination(available_numbers[0], message.source)
+                    #
+                    #  send_message("what area code?")
+                    #  number = search_numbers(nxx=msg.arg1)[0]
+                    #  order(number) # later, y/n prompt
+                    #  routing_manager.put_destination(number, msg.source)
                     await self.send_message(
                         message.source,
                         [
@@ -301,7 +322,7 @@ class Session:
                 break
             await asyncio.sleep(1)
         COMMAND = f"/app/signal-cli --config /app --username=+{self.user} --output=json stdio".split()
-        self.proc = await asyncio.subprocess.create_subprocess_exec(
+        self.proc = await asyncio.create_subprocess_exec(
             *COMMAND,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
@@ -327,7 +348,11 @@ async def listen_to_signalcli(
         line = await stream.readline()
         if not line:
             break
-        blob = json.loads(line)
+        try:
+            blob = json.loads(line)
+        except JSONDecodeError:
+            print(line)
+            continue
         if set(blob.keys()) == {"group"}:
             group = blob.get("group")
             if group and "pending" in groupid_to_external_number.inverse:
@@ -362,6 +387,13 @@ async def get_handler(request: web.Request) -> web.Response:
         status = str(session)
     return web.json_response({"status": status})
 
+async def start_session(app: web.Application) -> None:
+    app["session"] = new_session = Session(
+        "12406171615"
+        #            "",
+    )
+    asyncio.create_task(new_session.launch_and_connect())
+    asyncio.create_task(new_session.handle_messages())
 
 async def send_message_handler(request: web.Request) -> Any:
     # account = request.match_info.get("phonenumber")
@@ -480,7 +512,7 @@ app = web.Application()
 app.on_shutdown.append(on_shutdown)
 app.on_startup.append(start_memfs)
 app.on_startup.append(start_queue_monitor)
-
+app.on_startup.append(start_session)
 app.add_routes(
     [
         web.get("/", noGet),
