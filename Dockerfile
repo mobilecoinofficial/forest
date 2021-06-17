@@ -25,7 +25,7 @@ FROM ubuntu:hirsute
 WORKDIR /app
 RUN mkdir -p /app/data
 RUN apt update
-RUN apt install -y python3.9 wget libfuse2 kmod
+RUN apt install -y python3.9 wget libfuse2 kmod #npm
 RUN apt-get clean autoclean && apt-get autoremove --yes && rm -rf /var/lib/{apt,dpkg,cache,log}/
 
 # v5.12.2 for fly.io
