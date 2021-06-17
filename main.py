@@ -20,23 +20,26 @@ HOSTNAME = open("/etc/hostname").read().strip()  #  FLY_ALLOC_ID
 admin = "+16176088864"  # (sylvie; ilia is +15133278483)
 
 
+def trueprint(thing: Any):
+    open("/dev/stdout", "w").write(f"{thing}\n")
+
+
 class Message:
     """Represents a Message received from signal-cli, optionally containing a command with arguments."""
 
     def __init__(self, blob: dict) -> None:
         self.envelope = envelope = blob.get("envelope", {})
         # {'envelope': {'source': '+15133278483', 'sourceDevice': 2, 'timestamp': 1621402445257, 'receiptMessage': {'when': 1621402445257, 'isDelivery': True, 'isRead': False, 'timestamps': [1621402444517]}}}
-        self.error = envelope.get("error")
-        self.receipt = envelope.get("receiptMessage")
         self.source: str = envelope.get("source")
         self.ts = round(envelope.get("timestamp", 0) / 1000)
         msg = envelope.get("dataMessage", {})
         self.full_text = self.text = msg.get("message", "")
-        self.reactions: dict[str, str] = {}
-        self.command: Optional[str] = None
-        self.tokens: Optional[list[str]] = None
+        # self.reactions: dict[str, str] = {}
+        self.receipt = envelope.get("receiptMessage")
         self.group: Optional[str] = envelope.get("groupInfo", {}).get("groupId")
         self.quoted_text = envelope.get("quote", {}).get("text")
+        self.command: Optional[str] = None
+        self.tokens: Optional[list[str]] = None
         if self.text and self.text.startswith("/"):
             command, *self.tokens = self.text.split(" ")
             self.command = command[1:]  # remove /
@@ -47,6 +50,7 @@ class Message:
 
     def __repr__(self) -> str:
         return f"<{self.envelope}>"
+
 
 groupid_to_external_number: bidict[str, str] = bidict()
 
@@ -193,8 +197,9 @@ class Session:
         return False
 
     async def check_target_number(self, msg: Message) -> Optional[str]:
+        trueprint(msg.arg1)
         try:
-            parsed = pn.parse(msg.arg1, None)
+            parsed = pn.parse(msg.arg1, "US")
             assert pn.is_valid_number(parsed)
             number = pn.format_number(parsed, pn.PhoneNumberFormat.E164)
             return number
@@ -223,10 +228,10 @@ class Session:
                 numbers = None
             if numbers and message.command == "send":
                 dest = await self.check_target_number(message)
-                if dest:
+                if True:  # dest:
                     response = await self.send_sms(
                         source=numbers[0],
-                        destination=dest,
+                        destination=message.arg1,  # dest,
                         message_text=message.text,
                     )
                     # sms_uuid = response.get("data")
@@ -234,15 +239,15 @@ class Session:
                     #    such that delivery notifs get redirected as responses to send command
                     await self.send_message(message.source, response)
             elif numbers and message.command in ("mkgroup", "query"):
-                target_number = await self.check_target_number(message)
-                if target_number:
-                    groupid_to_external_number["pending"] = target_number
-                    cmd = {
-                        "command": "updateGroup",
-                        "member": [message.source],
-                        "name": f"SMS with {message.arg1}",
-                    }
-                    await self.signalcli_input_queue.put(json.dumps(cmd))
+                # target_number = await self.check_target_number(message)
+                # if target_number:
+                groupid_to_external_number["pending"] = message.arg1
+                cmd = {
+                    "command": "updateGroup",
+                    "member": [message.source],
+                    "name": f"SMS with {message.arg1}",
+                }
+                await self.signalcli_input_queue.put(json.dumps(cmd))
             elif (
                 numbers
                 and message.group
@@ -253,7 +258,11 @@ class Session:
                     destination=groupid_to_external_number[message.group],
                     message_text=message.text,
                 )
-            elif numbers and message.quoted_text and "source" in message.quoted_text:
+            elif (
+                numbers
+                and message.quoted_text
+                and "source" in message.quoted_text
+            ):
                 destination = (
                     message.quoted_text.split("\n")[0].lstrip("source:").strip()
                 )
@@ -350,17 +359,22 @@ async def listen_to_signalcli(
             break
         try:
             blob = json.loads(line)
-        except JSONDecodeError:
-            print(line)
+        except json.JSONDecodeError:
+            trueprint(line)
+            continue
+        if not isinstance(blob, dict):  # e.g. a timestamp
+            continue
+        if "error" in blob:
+            trueprint(blob)
             continue
         if set(blob.keys()) == {"group"}:
             group = blob.get("group")
             if group and "pending" in groupid_to_external_number.inverse:
                 external_number = groupid_to_external_number.inverse["pending"]
                 groupid_to_external_number[external_number] = group
-                print(f"associated {external_number} with {group}")
+                trueprint(f"associated {external_number} with {group}")
             else:
-                print(
+                trueprint(
                     "didn't find any pending numbers to associate with group {group}"
                 )
             continue
@@ -387,13 +401,20 @@ async def get_handler(request: web.Request) -> web.Response:
         status = str(session)
     return web.json_response({"status": status})
 
+
 async def start_session(app: web.Application) -> None:
     app["session"] = new_session = Session(
         "12406171615"
         #            "",
     )
+    profile = {
+        "command": "updateProfile",
+        "name": "Forest Contact",
+        "about": "🌲",
+    }
     asyncio.create_task(new_session.launch_and_connect())
     asyncio.create_task(new_session.handle_messages())
+
 
 async def send_message_handler(request: web.Request) -> Any:
     # account = request.match_info.get("phonenumber")
