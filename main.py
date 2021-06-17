@@ -6,7 +6,9 @@ import os
 from subprocess import Popen, PIPE
 import urllib.parse
 import random
-
+from tarfile import TarFile
+from io import BytesIO
+from base64 import urlsafe_b64encode, urlsafe_b64decode
 from bidict import bidict
 from aiohttp import web
 import aiohttp
@@ -20,9 +22,8 @@ HOSTNAME = open("/etc/hostname").read().strip()  #  FLY_ALLOC_ID
 admin = "+16176088864"  # (sylvie; ilia is +15133278483)
 
 
-def trueprint(*args, **kwargs) -> None:
+def trueprint(*args: Any, **kwargs: Any) -> None:
     print(*args, **kwargs, file=open("/dev/stdout", "w"))
-
 
 
 class Message:
@@ -37,12 +38,12 @@ class Message:
         self.full_text = self.text = msg.get("message", "")
         # self.reactions: dict[str, str] = {}
         self.receipt = envelope.get("receiptMessage")
-        self.group: Optional[str] = envelope.get("groupInfo", {}).get("groupId")
+        self.group: Optional[str] = msg.get("groupInfo", {}).get("groupId")
         if self.group:
-            trueprint("saw group: ",  self.group)
-        self.quoted_text = envelope.get("quote", {}).get("text")
+            trueprint("saw group: ", self.group)
+        self.quoted_text = msg.get("quote", {}).get("text")
         if self.quoted_text:
-            trueprint("saw quote: ", quoted_text)
+            trueprint("saw quote: ", self.quoted_text)
         self.command: Optional[str] = None
         self.tokens: Optional[list[str]] = None
         if self.text and self.text.startswith("/"):
@@ -85,8 +86,20 @@ class Session:
 
     async def get_file(self) -> Any:
         """Fetches user datastore from postgresql and marks as claimed."""
-        from_pgh = await self.user_manager.get_user(self.user)
-        open(self.filepath, "w").write(from_pgh[0].get("account"))
+        datastore = (await self.user_manager.get_user(self.user))[0].get(
+            "account"
+        )
+        loaded_data = json.loads(datastore)
+        if "username" in loaded_data:
+            open(self.filepath, "w").write(datastore)
+        elif "tarball" in loaded_data:
+            tarball = TarFile(
+                fileobj=BytesIO(
+                    urlsafe_b64decode(loaded_data["tarball"].encode())
+                )
+            )
+            trueprint(tarball.getmembers())
+            tarball.extractall()
         update_claim = await self.user_manager.mark_user_claimed(
             self.user, HOSTNAME
         )
@@ -98,8 +111,16 @@ class Session:
 
     async def put_file(self) -> Any:
         """Puts user datastore in postgresql."""
-        file_contents = open(self.filepath, "r").read()
-        return await self.user_manager.set_user(self.user, file_contents)
+        buffer = BytesIO()
+        tar = TarFile(fileobj=buffer, mode="w")
+        tar.add("data")
+        tar.close()
+        buffer.seek(0)
+        data = json.dumps({"tarball": urlsafe_b64encode(buffer.read()).decode()})
+        await self.user_manager.set_user(self.user, data)
+        trueprint(f"saved {len(data)} bytes of tarballed datastore to supabase")
+        # file_contents = open(self.filepath, "r").read()
+        # return await self.user_manager.set_user(self.user, file_contents)
 
     async def send_sms(
         self, source: str, destination: str, message_text: str
@@ -218,7 +239,7 @@ class Session:
 
     async def handle_messages(self) -> None:
         async for message in self.signalcli_output_iter():
-            open("/dev/stdout", "w").write(f"{message}\n")
+            #open("/dev/stdout", "w").write(f"{message}\n")
             if message.source:
                 maybe_routable = await RoutingManager().get_id(
                     message.source.strip("+")
@@ -246,6 +267,14 @@ class Session:
             elif numbers and message.command in ("mkgroup", "query"):
                 # target_number = await self.check_target_number(message)
                 # if target_number:
+                if (
+                    "pending" in groupid_to_external_number
+                    and groupid_to_external_number["pending"] == message.arg1
+                ):
+                    await self.send_message(
+                        message.source, "looks like we've already made a group"
+                    )
+                    continue
                 groupid_to_external_number["pending"] = message.arg1
                 cmd = {
                     "command": "updateGroup",
@@ -271,11 +300,14 @@ class Session:
                 destination = (
                     message.quoted_text.split("\n")[0].lstrip("source:").strip()
                 )
-                await self.send_sms(
+                trueprint("destination from quote: ", destination)
+                response = await self.send_sms(
                     source=numbers[0],
                     destination=destination,
                     message_text=message.text,
                 )
+                trueprint("sent")
+                await self.send_message(message.source, response)
             elif message.command == "help":
                 await self.send_message(
                     message.source,
@@ -323,10 +355,20 @@ class Session:
                         message.source,
                         'We don\'t see any Forest Contact numbers for your account! If you would like to register a new number, try "/register" and following the instructions.',
                     )
-            elif message.command or message.text:
+            elif message.command == "printerfact":
+                async with self.client_session.get(
+                    "https://colbyolson.com/printers"
+                ) as resp:
+                    fact = await resp.text()
+                await self.send_message(message.source, fact.strip())
+            elif message.command:
                 await self.send_message(
                     message.source,
                     f"Sorry! Command {message.command} not recognized! Try /help. \n{message}",
+                )
+            elif message.text:
+                await self.send_message(
+                    message.source, "That didn't look like a command"
                 )
 
     async def launch_and_connect(self) -> None:
@@ -359,23 +401,23 @@ async def listen_to_signalcli(
 ) -> None:
     while True:
         line = await stream.readline()
+        trueprint(line)
         if not line:
             break
         try:
             blob = json.loads(line)
         except json.JSONDecodeError:
-            trueprint(line)
             continue
         if not isinstance(blob, dict):  # e.g. a timestamp
             continue
         if "error" in blob:
-            trueprint(blob)
+            trueprint(blob["error"])
             continue
         if set(blob.keys()) == {"group"}:
             group = blob.get("group")
-            if group and "pending" in groupid_to_external_number.inverse:
-                external_number = groupid_to_external_number.inverse["pending"]
-                groupid_to_external_number[external_number] = group
+            if group and "pending" in groupid_to_external_number:
+                external_number = groupid_to_external_number["pending"]
+                groupid_to_external_number[group] = external_number
                 trueprint(f"associated {external_number} with {group}")
             else:
                 trueprint(
@@ -409,14 +451,15 @@ async def get_handler(request: web.Request) -> web.Response:
 async def start_session(app: web.Application) -> None:
     app["session"] = new_session = Session(
         "12406171615"
+        # "12406171615"
         #            "",
     )
     profile = {
         "command": "updateProfile",
         "name": "forestbot",
-        "about": "support: https://signal.group/#CjQKINbHvfKoeUx_pPjipkXVspTj5HiTiUjoNQeNgmGvCmDnEhCTYgZZ0puiT-hUG0hUUwlS",
+        # "about": "support: https://signal.group/#CjQKINbHvfKoeUx_pPjipkXVspTj5HiTiUjoNQeNgmGvCmDnEhCTYgZZ0puiT-hUG0hUUwlS",
     }
-    new_session.signalcli_input_queue.put(json.dumps(profile))
+    await new_session.signalcli_input_queue.put(json.dumps(profile))
     asyncio.create_task(new_session.launch_and_connect())
     asyncio.create_task(new_session.handle_messages())
 
@@ -486,7 +529,7 @@ async def start_queue_monitor(app: web.Application) -> None:
                 if maybe_session:
                     await maybe_session.put_file()
 
-    app["mem_task"] = asyncio.create_task(background_sync_handler())
+    #app["mem_task"] = asyncio.create_task(background_sync_handler())
 
 
 async def on_shutdown(app: web.Application) -> None:

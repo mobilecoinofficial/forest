@@ -57,7 +57,7 @@ def buy_number() -> str:
     print(resp.text)
     print(resp)
     open("numbers", "w").write(", ".join(numbers + [new_number]))
-
+    return new_number
 
 # https://apidocs.teleapi.net/api/my-phone-numbers/set-call-forwarding
 #
