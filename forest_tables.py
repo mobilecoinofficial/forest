@@ -15,6 +15,8 @@ if os.path.exists("secrets") and not os.getenv("USER_DATABASE"):
     )
 USER_DATABASE = os.environ["USER_DATABASE"]
 
+
+
 UserPGExpressions = PGExpressions(
     table="prod_users",
     create_table="CREATE TABLE IF NOT EXISTS {self.table} \
@@ -60,6 +62,17 @@ RoutingPGExpressions = PGExpressions(
     sweep_expired_destinations="DELETE FROM {self.table} WHERE expiration_ms IS NOT NULL AND expiration_ms < (extract(epoch from now()) * 1000);",
 )
 
+GroupRoutingPGExpressions = PGExpressions(
+    table="routing",
+    create_table="CREATE TABLE IF NOT EXISTS {self.table} \
+        (id TEXT PRIMARY KEY, external_phone_number CHARACTER VARYING(16), \
+        signal_destination CHARACTER VARYING(16), \
+        group_id CHARACTER VARYING(16));",
+    get_group_id="SELECT group_id FROM {self.table} WHERE external_phone_number=$1;",
+    get_external_number="SELECT external_phone_number FROM {self.table} WHERE group_id=$1",
+    put_new_group="INSERT INTO {self.table} (external_phone_number, group_id) VALUES($1, $2) ON CONFLICT DO NOTHING"
+)
+
 PaymentsPGExpressions = PGExpressions(
     table="payments",
     create_table="CREATE TABLE IF NOT EXISTS {self.table} (transaction_log_id CHARACTER VARYING(16) PRIMARY KEY, \
@@ -73,11 +86,20 @@ PaymentsPGExpressions = PGExpressions(
                                     VALUES($1, $2, $3, $4, extract(epoch from now()) * 1000, (extract(epoch from now())+3600) * 1000) ON CONFLICT DO NOTHING",
 )
 
-
 class RoutingManager(PGInterface):
     def __init__(
         self,
         queries: PGExpressions = RoutingPGExpressions,
+        database: str = USER_DATABASE,
+        loop: Loop = None,
+    ) -> None:
+        super().__init__(queries, database, loop)
+
+
+class GroupRoutingManager(PGInterface):
+    def __init__(
+        self,
+        queries: PGExpressions = GroupRoutingPGExpressions,
         database: str = USER_DATABASE,
         loop: Loop = None,
     ) -> None:
@@ -106,3 +128,4 @@ class PaymentsManager(PGInterface):
         loop: Loop = None,
     ) -> None:
         super().__init__(queries, database, loop)
+

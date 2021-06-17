@@ -84,6 +84,7 @@ class Session:
         self.user_manager = UserManager()
         self.payments_manager = PaymentsManager()
 
+
     async def get_file(self) -> Any:
         """Fetches user datastore from postgresql and marks as claimed."""
         datastore = (await self.user_manager.get_user(self.user))[0].get(
@@ -111,16 +112,16 @@ class Session:
 
     async def put_file(self) -> Any:
         """Puts user datastore in postgresql."""
-        buffer = BytesIO()
-        tar = TarFile(fileobj=buffer, mode="w")
-        tar.add("data")
-        tar.close()
-        buffer.seek(0)
-        data = json.dumps({"tarball": urlsafe_b64encode(buffer.read()).decode()})
-        await self.user_manager.set_user(self.user, data)
-        trueprint(f"saved {len(data)} bytes of tarballed datastore to supabase")
-        # file_contents = open(self.filepath, "r").read()
-        # return await self.user_manager.set_user(self.user, file_contents)
+        # buffer = BytesIO()
+        # tar = TarFile(fileobj=buffer, mode="w")
+        # tar.add("data")
+        # tar.close()
+        # buffer.seek(0)
+        # data = json.dumps({"tarball": urlsafe_b64encode(buffer.read()).decode()})
+        # await self.user_manager.set_user(self.user, data)
+        # trueprint(f"saved {len(data)} bytes of tarballed datastore to supabase")
+        file_contents = open(self.filepath, "r").read()
+        return await self.user_manager.set_user(self.user, file_contents)
 
     async def send_sms(
         self, source: str, destination: str, message_text: str
@@ -315,6 +316,8 @@ class Session:
                 )
             elif message.command == "register":
                 asyncio.create_task(self.register(message))
+            # elif message.command = "pay":
+            #     self.scratch["payments"][message.source] = True
             elif message.command == "status":
                 # paid but not registered
                 if self.scratch["payments"].get(message.source) and not numbers:
@@ -529,7 +532,7 @@ async def start_queue_monitor(app: web.Application) -> None:
                 if maybe_session:
                     await maybe_session.put_file()
 
-    #app["mem_task"] = asyncio.create_task(background_sync_handler())
+    # app["mem_task"] = asyncio.create_task(background_sync_handler())
 
 
 async def on_shutdown(app: web.Application) -> None:
