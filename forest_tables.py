@@ -3,11 +3,12 @@ from pghelp import PGExpressions, PGInterface, Loop
 
 
 if os.path.exists("secrets") and not os.getenv("USER_DATABASE"):
+    print("environ'ing secrets")
     os.environ.update(
         {
             key: value
             for key, value in [
-                print(line) or line.strip().split("=", 1)
+                line.strip().split("=", 1)
                 for line in open("secrets").read().split()
             ]
         }
@@ -31,7 +32,7 @@ UserPGExpressions = PGExpressions(
     get_free_user="SELECT (id, account) FROM {self.table} \
             WHERE active_node_name IS NULL \
             AND last_claim_ms = 0 \
-            ORDER BY RANDOM() LIMIT 1;",
+            LIMIT 1;",
     mark_user_update="UPDATE {self.table} SET \
         last_update_ms = (extract(epoch from now()) * 1000) \
         WHERE id=$1;",
