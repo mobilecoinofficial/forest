@@ -9,7 +9,7 @@ aioprocessing = "*"
 pyqrcode = "*"
 pynacl = "*"
 asyncpg = "*"
-bidict = "*"
+#bidict = "*"
 phonenumbers = "*"
 
 #[dev-packages]
