@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Optional
 from subprocess import Popen, PIPE
 from tarfile import TarFile
 from io import BytesIO
@@ -11,9 +11,15 @@ import mem
 from pghelp import PGExpressions, PGInterface
 
 
+# set this up to ceck if we're on fly/in a container more thoroughly
+local = "wyrt" in open("/etc/hostname").read()
+
+
 if os.path.exists("dev_secrets") and not os.getenv("DATABASE_URL"):
     print("environ'ing secrets")
-    secrets = dict(line.strip().split("=", 1) for line in open("dev_secrets"))
+    secrets: dict[str, str] = dict(
+        line.strip().split("=", 1) for line in open("dev_secrets")
+    )
     os.environ.update(secrets)
 
 # from base64 import urlsafe_b64encode, urlsafe_b64decode
@@ -33,7 +39,7 @@ AccountPGExpressions = PGExpressions(
         WHERE id=$1;",
     mark_account_freed="UPDATE {self.table} SET last_claim_ms = 0, \
         active_node_name = NULL WHERE id=$1;",
-    get_free_account="SELECT (id, account) FROM {self.table} \
+    get_free_account="SELECT (id, datastore) FROM {self.table} \
             WHERE active_node_name IS NULL \
             AND last_claim_ms = 0 \
             LIMIT 1;",
@@ -54,9 +60,10 @@ AccountPGExpressions = PGExpressions(
 
 def get_account_interface() -> PGInterface:
     return PGInterface(
-            query_strings=AccountPGExpressions,
-            database=os.environ["DATABASE_URL"],
-        )
+        query_strings=AccountPGExpressions,
+        database=os.environ["DATABASE_URL"],
+    )
+
 
 def trueprint(*args: Any, **kwargs: Any) -> None:
     print(*args, **kwargs, file=open("/dev/stdout", "w"))
@@ -68,11 +75,10 @@ class SignalDatastore:
     """
 
     def __init__(self, number: str):
-        # can make number optional and use get_free_account
-        self.number = number
-        self.filepath = "/app/+" + number  # this is just the main one
         self.account_interface = get_account_interface()
-        #await self.account_interface.create_table()
+        self.number = number
+        self.filepath = "/app/data/+" + number  # this is just the main one
+        # await self.account_interface.create_table()
 
     async def download(self) -> None:
         """Fetch our account datastore from postgresql and mark it claimed"""
@@ -85,11 +91,10 @@ class SignalDatastore:
             raise Exception(f"{self.number} is in use by {active_claim}")
         buffer = BytesIO(record[0].get("datastore"))
         tarball = TarFile(fileobj=buffer)
-        assert "data/+{self.number}" in [
-            member.name for member in tarball.getmembers()
-        ]
-        trueprint(tarball.getmembers())
-        tarball.extractall(path="/app")
+        fnames = [member.name for member in tarball.getmembers()]
+        trueprint(fnames)
+        trueprint("correct file exists: ", "data/+{self.number}" in fnames)
+        tarball.extractall("/app")
         await self.account_interface.mark_account_claimed(
             self.number, open("/etc/hostname").read().strip()  #  FLY_ALLOC_ID
         )
@@ -98,17 +103,28 @@ class SignalDatastore:
     #     """Marks account as freed in PG database."""
     #     return await self.account_interface.mark_account_freed(self.number)
 
-    async def upload(self) -> Any:
+    async def upload(self, create: bool = False) -> Any:
         """Puts account datastore in postgresql."""
         buffer = BytesIO()
         tarball = TarFile(fileobj=buffer, mode="w")
-        #os.chdir("/app")
-        tarball.add("data")
+        # os.chdir("/app")
+        try:
+            tarball.add(f"data/+{self.number}")
+            tarball.add(f"data/+{self.number}.d")
+        except FileNotFoundError:
+            tarball.add("data")
+        print(tarball.getmembers())
         tarball.close()
         buffer.seek(0)
         data = buffer.read()
         kb = round(len(data) / 1024)
-        await self.account_interface.upload(self.number, data)
+        if create:
+            result = await self.account_interface.create_account(
+                self.number, data
+            )
+        else:
+            result = await self.account_interface.upload(self.number, data)
+        trueprint(result)
         trueprint(f"saved {kb} kb of tarballed datastore to supabase")
 
 
@@ -120,6 +136,11 @@ async def start_memfs(app: web.Application) -> None:
     and store them in mem_queue
     """
     app["mem_queue"] = mem_queue = aioprocessing.AioQueue()
+    if local:
+        Popen("sudo mkdir /app".split())
+        Popen("sudo chmod 777 /app".split())
+        Popen("ln -s ( readlink -f ./signal-cli ) /app/signal-cli".split())
+        return
     if not os.path.exists("/dev/fuse"):
         proc = Popen(
             ["/usr/sbin/insmod", "/app/fuse.ko"],
@@ -140,7 +161,7 @@ async def start_memfs(app: web.Application) -> None:
         )
         return fuse.FUSE(
             operations=mem.Memory(logqueue=mem_queue), mountpoint="/app/data"
-        )  
+        )
 
     async def launch() -> None:
         memfs = aioprocessing.AioProcess(target=memfs_proc)

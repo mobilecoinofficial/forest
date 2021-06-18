@@ -5,6 +5,7 @@ import aioprocessing
 import aiohttp
 from aiohttp import web
 import sys
+import shutil
 import re
 import json
 import urllib
@@ -87,8 +88,29 @@ async def start_app():
     await site.start()
 
 
-tunnel = None
-
+async def set_pingback(target) -> asyncio.subprocess.Process:
+    did_lookup = await (
+        await client_session.get(
+            f"https://apiv1.teleapi.net/user/dids/get?token={TELI_KEY}&number={target}"
+        )
+    ).json()
+    print(did_lookup)
+    did_id = did_lookup.get("data").get("id")
+    # if retcode==127: exec("sudo npm install -g localtunnel")
+    tunnel = await asyncio.subprocess.create_subprocess_exec(
+        *("lt -p 8080".split()),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    verif_url = (await tunnel.stdout.readline()).decode().strip(
+        "your url is: "
+    ).strip() + "/inbound"
+    print(verif_url)
+    set_req = await client_session.get(
+        f"https://apiv1.teleapi.net/user/dids/smsurl/set?token={TELI_KEY}&did_id={did_id}&url={verif_url}"
+    )
+    print(await set_req.text())
+    return tunnel
 
 async def local_main():
     #    await main.start_sessions(globals())
@@ -96,29 +118,6 @@ async def local_main():
     account_interface = get_account_interface()
     await start_app()
 
-    async def set_pingback(target):
-        did_lookup = await (
-            await client_session.get(
-                f"https://apiv1.teleapi.net/user/dids/get?token={TELI_KEY}&number={target}"
-            )
-        ).json()
-        print(did_lookup)
-        did_id = did_lookup.get("data").get("id")
-        # if retcode==127: exec("sudo npm install -g localtunnel")
-        global tunnel
-        tunnel = await asyncio.subprocess.create_subprocess_exec(
-            *("lt -p 8080".split()),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        verif_url = (await tunnel.stdout.readline()).decode().strip(
-            "your url is: "
-        ).strip() + "/inbound"
-        print(verif_url)
-        set_req = await client_session.get(
-            f"https://apiv1.teleapi.net/user/dids/smsurl/set?token={TELI_KEY}&did_id={did_id}&url={verif_url}"
-        )
-        print(await set_req.text())
 
 
     # this all needs to be adjusted for the tarball
@@ -150,7 +149,6 @@ async def local_main():
         except (Exception, AssertionError):
             pass
         # should check if it's already registered before buying a captcha...
-        await set_pingback(target)
         # await asyncio.sleep(1000)
         print("getting a captcha...")
         try:
@@ -164,8 +162,14 @@ async def local_main():
         rc_resp = (
             (await resp.json()).get("solution", {}).get("gRecaptchaResponse")
         )
+        if not rc_resp:
+            return
         print("captcha solution: " + rc_resp)
-        if rc_resp:
+        shutils.rmtree("/tmp/signal-register")
+        os.mkdir("/tmp/signal-register")
+        os.chdir("/tmp/signal-register")
+        tunnel = await set_pingback(target)
+        try:
             cmd = f"./signal-cli --verbose --config . -u +1{target} register --captcha {rc_resp}".split()
             register = await asyncio.subprocess.create_subprocess_exec(
                 *cmd,
@@ -200,13 +204,11 @@ async def local_main():
             (so, se) = await verify.communicate()
             print(so, "\n", se)
             await datastore.upload()
+        finally:
+            print("terminating tunnel")
+            tunnel.terminate()
     # await asyncio.sleep(1000)
 
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(local_main())
-    finally:
-        if tunnel:
-            tunnel.terminate()
-            print("killed tunnel")
+    asyncio.run(local_main())

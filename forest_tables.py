@@ -10,7 +10,7 @@ if os.path.exists("dev_secrets") and not os.getenv("DATABASE_URL"):
 USER_DATABASE = os.environ["DATABASE_URL"]
 
 
-ROUTING_DATABASE = os.getenv("DATABASE_URL")
+ROUTING_DATABASE = os.environ["DATABASE_URL"]
 
 RoutingPGExpressions = PGExpressions(
     table="routing",
