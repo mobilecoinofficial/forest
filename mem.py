@@ -60,7 +60,7 @@ class Memory(LoggingMixIn, Operations):
     def __unicode__(self):
         return str(self)
 
-    def __init__(self, livelock=None, logqueue=None):
+    def __init__(self, livelock=None, logqueue=None) -> None:
         self.filesystem = {}
         self.fd = 0
         now = time.time()
@@ -81,7 +81,7 @@ class Memory(LoggingMixIn, Operations):
             ),
         )
 
-    def init(self, path):
+    def init(self, path) -> None:
         if self.livelock is not None:
             self.livelock.release()
 

@@ -3,19 +3,14 @@ from asyncio import Queue
 import asyncio
 import json
 import os
-from subprocess import Popen, PIPE
 import urllib.parse
 import random
-from tarfile import TarFile
-from io import BytesIO
-from base64 import urlsafe_b64encode, urlsafe_b64decode
 from bidict import bidict
 from aiohttp import web
 import aiohttp
-import aioprocessing
 import phonenumbers as pn
-from forest_tables import RoutingManager, PaymentsManager, UserManager
-
+import datastore
+from forest_tables import RoutingManager, PaymentsManager
 # pylint: disable=line-too-long,too-many-instance-attributes, import-outside-toplevel, fixme, redefined-outer-name
 
 HOSTNAME = open("/etc/hostname").read().strip()  #  FLY_ALLOC_ID
@@ -64,64 +59,19 @@ groupid_to_external_number: bidict[str, str] = bidict()
 class Session:
     """
     Represents a Signal-CLI session
-    # with stdin/stdout content mirrored to a websocket at `dialout_address`.
     Creates database connections for managing signal keys and payments.
     """
 
-    def __init__(
-        self,
-        user: str,  # this is a phone number
-        #   dialout_address,
-    ) -> None:
-        self.user = user
-        self.loop = asyncio.get_event_loop()
+    def __init__(self, bot_number: str) -> None:
+        self.bot_number = bot_number
+        self.datastore = datastore.SignalDatastore(bot_number)
         self.proc: Optional[asyncio.Process] = None
-        self.filepath = "/app/data/+" + user
         self.signalcli_output_queue: Queue[Message] = Queue()
         self.signalcli_input_queue: Queue[str] = Queue()
         self.client_session = aiohttp.ClientSession()
         self.scratch: dict[str, dict[str, Any]] = {"payments": {}}
-        self.user_manager = UserManager()
         self.payments_manager = PaymentsManager()
-
-
-    async def get_file(self) -> Any:
-        """Fetches user datastore from postgresql and marks as claimed."""
-        datastore = (await self.user_manager.get_user(self.user))[0].get(
-            "account"
-        )
-        loaded_data = json.loads(datastore)
-        if "username" in loaded_data:
-            open(self.filepath, "w").write(datastore)
-        elif "tarball" in loaded_data:
-            tarball = TarFile(
-                fileobj=BytesIO(
-                    urlsafe_b64decode(loaded_data["tarball"].encode())
-                )
-            )
-            trueprint(tarball.getmembers())
-            tarball.extractall()
-        update_claim = await self.user_manager.mark_user_claimed(
-            self.user, HOSTNAME
-        )
-        return update_claim
-
-    async def mark_freed(self) -> Any:
-        """Marks user as freed in PG database."""
-        return await self.user_manager.mark_user_freed(self.user)
-
-    async def put_file(self) -> Any:
-        """Puts user datastore in postgresql."""
-        # buffer = BytesIO()
-        # tar = TarFile(fileobj=buffer, mode="w")
-        # tar.add("data")
-        # tar.close()
-        # buffer.seek(0)
-        # data = json.dumps({"tarball": urlsafe_b64encode(buffer.read()).decode()})
-        # await self.user_manager.set_user(self.user, data)
-        # trueprint(f"saved {len(data)} bytes of tarballed datastore to supabase")
-        file_contents = open(self.filepath, "r").read()
-        return await self.user_manager.set_user(self.user, file_contents)
+        self.routing_manager = RoutingManager()
 
     async def send_sms(
         self, source: str, destination: str, message_text: str
@@ -240,9 +190,9 @@ class Session:
 
     async def handle_messages(self) -> None:
         async for message in self.signalcli_output_iter():
-            #open("/dev/stdout", "w").write(f"{message}\n")
+            # open("/dev/stdout", "w").write(f"{message}\n")
             if message.source:
-                maybe_routable = await RoutingManager().get_id(
+                maybe_routable = self.routing_manager.get_id(
                     message.source.strip("+")
                 )
             else:
@@ -254,17 +204,17 @@ class Session:
             else:
                 numbers = None
             if numbers and message.command == "send":
-                dest = await self.check_target_number(message)
-                if True:  # dest:
-                    response = await self.send_sms(
-                        source=numbers[0],
-                        destination=message.arg1,  # dest,
-                        message_text=message.text,
-                    )
-                    # sms_uuid = response.get("data")
-                    # TODO: store message.source and sms_uuid in a queue, enable https://apidocs.teleapi.net/api/sms/delivery-notifications
-                    #    such that delivery notifs get redirected as responses to send command
-                    await self.send_message(message.source, response)
+                #dest = await self.check_target_number(message)
+                #if dest:
+                response = await self.send_sms(
+                    source=numbers[0],
+                    destination=message.arg1,  # dest,
+                    message_text=message.text,
+                )
+                # sms_uuid = response.get("data")
+                # TODO: store message.source and sms_uuid in a queue, enable https://apidocs.teleapi.net/api/sms/delivery-notifications
+                #    such that delivery notifs get redirected as responses to send command
+                await self.send_message(message.source, response)
             elif numbers and message.command in ("mkgroup", "query"):
                 # target_number = await self.check_target_number(message)
                 # if target_number:
@@ -375,18 +325,18 @@ class Session:
                 )
 
     async def launch_and_connect(self) -> None:
-        await self.get_file()
+        await self.datastore.download()
         for _ in range(5):
-            if os.path.exists(self.filepath):
+            if os.path.exists(self.datastore.filepath):
                 break
             await asyncio.sleep(1)
-        COMMAND = f"/app/signal-cli --config /app --username=+{self.user} --output=json stdio".split()
+        COMMAND = f"/app/signal-cli --config /app --username=+{self.bot_number} --output=json stdio".split()
         self.proc = await asyncio.create_subprocess_exec(
             *COMMAND,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
         )
-        print(f"started signal-cli @ {self.user} with PID {self.proc.pid}")
+        print(f"started signal-cli @ {self.bot_number} with PID {self.proc.pid}")
         assert self.proc.stdout and self.proc.stdin
         asyncio.create_task(
             listen_to_signalcli(self.proc.stdout, self.signalcli_output_queue)
@@ -394,9 +344,20 @@ class Session:
 
         async for msg in self.signalcli_input_iter():
             msg_loaded = json.loads(msg)
-            open("/dev/stdout", "w").write(f"sig-in py-out: {msg_loaded}\n")
+            open("/dev/stdout", "w").write(f"input to signal: {msg_loaded}\n")
             self.proc.stdin.write(msg.encode() + b"\n")
         await self.proc.wait()
+
+async def start_session(app: web.Application) -> None:
+    app["session"] = new_session = Session(os.environ["BOT_NUMBER"])
+    asyncio.create_task(new_session.launch_and_connect())
+    asyncio.create_task(new_session.handle_messages())
+    profile = {
+        "command": "updateProfile",
+        "name": "forestbot",
+        # "about": "support: https://signal.group/#CjQKINbHvfKoeUx_pPjipkXVspTj5HiTiUjoNQeNgmGvCmDnEhCTYgZZ0puiT-hUG0hUUwlS",
+    }
+    await new_session.signalcli_input_queue.put(json.dumps(profile))
 
 
 async def listen_to_signalcli(
@@ -433,38 +394,6 @@ async def listen_to_signalcli(
 async def noGet(request: web.Request) -> web.Response:
     raise web.HTTPFound(location="https://signal.org/")
 
-
-async def get_handler(request: web.Request) -> web.Response:
-    account = request.match_info["phonenumber"]
-    session = request.app.get("session")
-    status = ""
-    if not session:
-        request.app["session"] = new_session = Session(
-            account,
-            #            "",
-        )
-        asyncio.create_task(new_session.launch_and_connect())
-        asyncio.create_task(new_session.handle_messages())
-        status = "launched"
-    else:
-        status = str(session)
-    return web.json_response({"status": status})
-
-
-async def start_session(app: web.Application) -> None:
-    app["session"] = new_session = Session(
-        "12406171615"
-        # "12406171615"
-        #            "",
-    )
-    profile = {
-        "command": "updateProfile",
-        "name": "forestbot",
-        # "about": "support: https://signal.group/#CjQKINbHvfKoeUx_pPjipkXVspTj5HiTiUjoNQeNgmGvCmDnEhCTYgZZ0puiT-hUG0hUUwlS",
-    }
-    await new_session.signalcli_input_queue.put(json.dumps(profile))
-    asyncio.create_task(new_session.launch_and_connect())
-    asyncio.create_task(new_session.handle_messages())
 
 
 async def send_message_handler(request: web.Request) -> Any:
@@ -513,83 +442,17 @@ async def inbound_handler(request: web.Request) -> web.Response:
     return web.Response(status=504, text="Sorry, no live workers.")
 
 
-# ["->", "fsync", "/+14703226669", "(1, 2)", "/app/signal-cli", ["/app/signal-cli", "--config", "/app", "--username=+14703226669", "--output=json", "stdio", ""], 0, 0, 523]
-# ["<-", "fsync", "0"]
-async def start_queue_monitor(app: web.Application) -> None:
-    async def background_sync_handler() -> None:
-        queue = app["mem_queue"]
-        while True:
-            queue_item = await queue.coro_get()
-            # iff fsync triggered by signal-cli
-            if (
-                queue_item[0:2] == ["->", "fsync"]
-                and queue_item[5][0] == "/app/signal-cli"
-            ):
-                # /+14703226669
-                # file_to_sync = queue_item[2]
-                # 14703226669
-                maybe_session = app.get("session")
-                if maybe_session:
-                    await maybe_session.put_file()
-
-    # app["mem_task"] = asyncio.create_task(background_sync_handler())
-
-
-async def on_shutdown(app: web.Application) -> None:
-    session = app.get("session")
-    if session:
-        await session.put_file()
-        session.proc.kill()
-        await session.proc.wait()
-        await session.put_file()
-        await session.mark_freed()
-
-
-async def start_memfs(app: web.Application) -> None:
-
-    import fuse
-    import mem
-
-    app["mem_queue"] = mem_queue = aioprocessing.AioQueue()
-    if not os.path.exists("/dev/fuse"):
-        proc = Popen(
-            ["/usr/sbin/insmod", "/app/fuse.ko"],
-            stdout=PIPE,
-            stderr=PIPE,
-        )
-        proc.wait()
-        (stdout, stderr) = proc.communicate()  # pylint: disable=unused-variable
-        if stderr:
-            raise Exception(
-                f"Could not load fuse module! You may need to recompile.\t\n{stderr.decode()}"
-            )
-
-    def memfs_proc(path: str = "data") -> fuse.FUSE:
-        pid = os.getpid()
-        open("/dev/stdout", "w").write(
-            f"Starting memfs with PID: {pid} on dir: {path}\n"
-        )
-        return fuse.FUSE(mem.Memory(logqueue=mem_queue), "data")  # type: ignore
-
-    async def launch() -> None:
-        memfs = aioprocessing.AioProcess(target=memfs_proc)
-        memfs.start()
-        app["memfs"] = memfs
-
-    await launch()
-
-
 app = web.Application()
 
-app.on_shutdown.append(on_shutdown)
-app.on_startup.append(start_memfs)
-app.on_startup.append(start_queue_monitor)
 app.on_startup.append(start_session)
+app.on_startup.append(datastore.start_memfs)
+app.on_startup.append(datastore.start_queue_monitor)
+app.on_shutdown.append(datastore.on_shutdown)
+
 app.add_routes(
     [
         web.get("/", noGet),
         web.post("/user/{phonenumber}", send_message_handler),
-        web.get("/user/{phonenumber}", get_handler),
         web.post("/inbound", inbound_handler),
     ]
 )
