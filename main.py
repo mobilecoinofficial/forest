@@ -1,3 +1,4 @@
+#!/usr/bin/python3.9
 from typing import Optional, AsyncIterator, Any, Union
 from asyncio import Queue
 import asyncio
@@ -11,6 +12,7 @@ import aiohttp
 import phonenumbers as pn
 import datastore
 from forest_tables import RoutingManager, PaymentsManager
+
 # pylint: disable=line-too-long,too-many-instance-attributes, import-outside-toplevel, fixme, redefined-outer-name
 
 HOSTNAME = open("/etc/hostname").read().strip()  #  FLY_ALLOC_ID
@@ -65,7 +67,7 @@ class Session:
     def __init__(self, bot_number: str) -> None:
         self.bot_number = bot_number
         self.datastore = datastore.SignalDatastore(bot_number)
-        self.proc: Optional[asyncio.Process] = None
+        self.proc: Optional[asyncio.subprocess.Process] = None
         self.signalcli_output_queue: Queue[Message] = Queue()
         self.signalcli_input_queue: Queue[str] = Queue()
         self.client_session = aiohttp.ClientSession()
@@ -192,7 +194,7 @@ class Session:
         async for message in self.signalcli_output_iter():
             # open("/dev/stdout", "w").write(f"{message}\n")
             if message.source:
-                maybe_routable = self.routing_manager.get_id(
+                maybe_routable = await self.routing_manager.get_id(
                     message.source.strip("+")
                 )
             else:
@@ -204,8 +206,8 @@ class Session:
             else:
                 numbers = None
             if numbers and message.command == "send":
-                #dest = await self.check_target_number(message)
-                #if dest:
+                # dest = await self.check_target_number(message)
+                # if dest:
                 response = await self.send_sms(
                     source=numbers[0],
                     destination=message.arg1,  # dest,
@@ -233,6 +235,7 @@ class Session:
                     "name": f"SMS with {message.arg1}",
                 }
                 await self.signalcli_input_queue.put(json.dumps(cmd))
+                await self.send_message(message.source, "invited you to a group")
             elif (
                 numbers
                 and message.group
@@ -348,14 +351,18 @@ class Session:
             self.proc.stdin.write(msg.encode() + b"\n")
         await self.proc.wait()
 
+
 async def start_session(app: web.Application) -> None:
-    app["session"] = new_session = Session(os.environ["BOT_NUMBER"])
+    # number = (await datastore.get_account_interface().get_free_account())[0].get("id")
+    number = os.environ["BOT_NUMBER"]
+    app["session"] = new_session = Session(number)
     asyncio.create_task(new_session.launch_and_connect())
     asyncio.create_task(new_session.handle_messages())
     profile = {
         "command": "updateProfile",
         "name": "forestbot",
-        # "about": "support: https://signal.group/#CjQKINbHvfKoeUx_pPjipkXVspTj5HiTiUjoNQeNgmGvCmDnEhCTYgZZ0puiT-hUG0hUUwlS",
+        "avatar": "avatar.png",
+        "about": "support: https://signal.group/#CjQKINbHvfKoeUx_pPjipkXVspTj5HiTiUjoNQeNgmGvCmDnEhCTYgZZ0puiT-hUG0hUUwlS",
     }
     await new_session.signalcli_input_queue.put(json.dumps(profile))
 
@@ -393,7 +400,6 @@ async def listen_to_signalcli(
 
 async def noGet(request: web.Request) -> web.Response:
     raise web.HTTPFound(location="https://signal.org/")
-
 
 
 async def send_message_handler(request: web.Request) -> Any:
