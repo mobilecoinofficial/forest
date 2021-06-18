@@ -4,38 +4,27 @@ import os
 import aioprocessing
 import aiohttp
 from aiohttp import web
+import sys
 import re
 import json
 import urllib
 import urllib.parse
 from requests import get
 import main
-import forest_tables
-
+from datastore import SignalDatastore, get_account_interface
 # avaiable options: state, npa (area code), nxx(midlde three digits), search (720***test will search for 720***8378)
 # number (string, required)
 # sms_post_url (string, optional)
 
 # load secrets file into environment before launching main
-os.environ.update(
-    {
-        x[0]: x[1]
-        for x in (line.split("=", 1) for line in open("secrets").read().split())
-    }
-)
+if os.path.exists("dev_secrets"):
+    secrets = dict(line.strip().split("=", 1) for line in open("dev_secrets"))
+    os.environ.update(secrets)
+
+
 TELI_KEY = os.environ.get("TELI_KEY")
 if not TELI_KEY:
     raise ValueError("Missing Teli Key")
-
-# numbers = [
-#     "7252203411",
-#     "7252203412",
-# ]
-
-try:
-    numbers = open("numbers").read().strip().split(", ")
-except FileNotFoundError:
-    numbers = []
 
 
 def buy_number() -> str:
@@ -49,7 +38,7 @@ def buy_number() -> str:
     new_number = available_numbers[0]
     if input(f"buy {new_number}? ") != "yes":
         print("not buying number")
-        return 
+        sys.exit(0)
     # buy {new_number}? y/n (response/react)
     url = f"https://apiv1.teleapi.net/dids/order?token={TELI_KEY}&number={available_numbers[0]}"
     print(url)
@@ -58,6 +47,7 @@ def buy_number() -> str:
     print(resp)
     open("numbers", "w").write(", ".join(numbers + [new_number]))
     return new_number
+
 
 # https://apidocs.teleapi.net/api/my-phone-numbers/set-call-forwarding
 #
@@ -69,9 +59,10 @@ def buy_number() -> str:
 
 
 async def inbound_handler(request):
-    msg_data = await request.text()
-    # parse query-string encoded sms/mms into object
-    msg_obj = {x: y[0] for x, y in urllib.parse.parse_qs(msg_data).items()}
+    # A coroutine that reads POST parameters from request body.
+    # Returns MultiDictProxy instance filled with parsed data.
+    # If method is not POST, PUT, PATCH, TRACE or DELETE or content_type is not empty or application/x-www-form-urlencoded or multipart/form-data returns empty multidict.
+    msg_obj = dict(await request.post()) 
     await request.app["sms_queue"].put(msg_obj)
     print(msg_obj)
     return web.json_response({"status": "OK"})
@@ -92,16 +83,19 @@ async def start_app():
     await runner.setup()
     site = web.TCPSite(runner, "localhost", 8080)
     print("starting SMS receiving server")
+
     await site.start()
 
 
 tunnel = None
+
+
 async def local_main():
     #    await main.start_sessions(globals())
     client_session = aiohttp.ClientSession()
-    user_manager_connection = forest_tables.UserManager()
-    await user_manager_connection.create_table()
+    account_interface = get_account_interface()
     await start_app()
+
     async def set_pingback(target):
         did_lookup = await (
             await client_session.get(
@@ -126,28 +120,47 @@ async def local_main():
         )
         print(await set_req.text())
 
-    global numbers
-    unreg_numbers = [
-        number
-        for number in numbers
-        if not (user := (await user_manager_connection.get_user(f"1{number}")))
-        or not json.loads(user[0].get("account"))["registered"]
-    ]
-    if not unreg_numbers:
+
+    # this all needs to be adjusted for the tarball
+    # def is_unregistered(number):
+    #     if len(sys.argv) > 1 and sys.argv[1] == "reregister":
+    #         return True
+    #     account = await account_interface.get_user(f"1{number}"))
+    #     return not user or not json.loads(account[0].get("account"))["registered"]
+
+    # global numbers
+    # unreg_numbers = list(filter(is_unregistered, numbers))
+    # if not unreg_numbers:
+    #     numbers = [buy_number()]
+    # else:
+    #     numbrers = unreg_numbers
+
+    try:
+        numbers = open("numbers").read().strip().split(", ")
+    except FileNotFoundError:
         numbers = [buy_number()]
-    else:
-        numbrers = unreg_numbers
 
     while numbers:
         target = numbers.pop(0)
         print(f"registering {target}...")
+        datastore = SignalDatastore("1" + target)
+        await datastore.account_interface.create_table()
+        try:
+            await datastore.download()
+        except (Exception, AssertionError):
+            pass
+        # should check if it's already registered before buying a captcha...
         await set_pingback(target)
         # await asyncio.sleep(1000)
         print("getting a captcha...")
-        resp = await client_session.post(
-            "https://human-after-all-21.fly.dev/6LedYI0UAAAAAMt8HLj4s-_2M_nYOhWMMFRGYHgY",
-            data="https://signalcaptchas.org/registration/generate.html",
-        )
+        try:
+            resp = await client_session.post(
+                "https://human-after-all-21.fly.dev/6LedYI0UAAAAAMt8HLj4s-_2M_nYOhWMMFRGYHgY",
+                data="https://signalcaptchas.org/registration/generate.html",
+            )
+        except aiohttp.client_exceptions.ServerDisconnectedError:
+            print("server disconnected :/")
+            sys.exit(1)
         rc_resp = (
             (await resp.json()).get("solution", {}).get("gRecaptchaResponse")
         )
@@ -162,9 +175,9 @@ async def local_main():
             # await register.wait()
             (so, se) = await register.communicate()
             print("signal-cli register:", so.decode(), "\n", se.decode())
-            await user_manager_connection.put_user(
-                f"1{target}", open(f"data/+1{target}").read()
-            )
+            if "Invalid captcha given" in so.decode():
+                continue
+            await datastore.upload()
             while True:
                 verif = await app["sms_queue"].get()
                 verif_msg = verif.get("message")
@@ -186,9 +199,7 @@ async def local_main():
             await verify.wait()
             (so, se) = await verify.communicate()
             print(so, "\n", se)
-            await user_manager_connection.set_user(
-                f"1{target}", open(f"data/+1{target}").read()
-            )
+            await datastore.upload()
     # await asyncio.sleep(1000)
 
 
