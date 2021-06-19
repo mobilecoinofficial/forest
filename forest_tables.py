@@ -9,8 +9,8 @@ if os.path.exists("dev_secrets") and not os.getenv("DATABASE_URL"):
 
 USER_DATABASE = os.environ["DATABASE_URL"]
 
-
 ROUTING_DATABASE = os.environ["DATABASE_URL"]
+
 
 RoutingPGExpressions = PGExpressions(
     table="routing",
@@ -24,14 +24,19 @@ RoutingPGExpressions = PGExpressions(
 )
 
 GroupRoutingPGExpressions = PGExpressions(
-    table="routing",
+    table="group_routing",
     create_table="CREATE TABLE IF NOT EXISTS {self.table} \
-        (id TEXT PRIMARY KEY, external_phone_number CHARACTER VARYING(16), \
-        signal_destination CHARACTER VARYING(16), \
-        group_id CHARACTER VARYING(16));",
-    get_group_id="SELECT group_id FROM {self.table} WHERE external_phone_number=$1;",
-    get_external_number="SELECT external_phone_number FROM {self.table} WHERE group_id=$1",
-    put_new_group="INSERT INTO {self.table} (external_phone_number, group_id) VALUES($1, $2) ON CONFLICT DO NOTHING",
+        (id SERIAL PRIMARY KEY, their_sms CHARACTER VARYING(16), \
+        our_sms CHARACTER VARYING(16), \
+        group_id CHARACTER VARYING(64));",
+    get_group_id_for_sms_route="SELECT group_id FROM {self.table} \
+        WHERE their_sms=$1 AND our_sms=$2;",
+    get_sms_route_for_group="SELECT their_sms, our_sms FROM {self.table} \
+        WHERE group_id=$1",
+    set_sms_route_for_group="INSERT INTO {self.table} \
+        (their_sms, our_sms, group_id)\
+        VALUES($1, $2, $3) ON CONFLICT DO NOTHING",
+    delete_table="DROP TABLE {self.table};",
 )
 
 PaymentsPGExpressions = PGExpressions(
@@ -46,6 +51,25 @@ PaymentsPGExpressions = PGExpressions(
     put_payment="INSERT INTO {self.table} (transaction_log_id, account_id, value_pmob, finalized_block_index, timestamp_ms, expiration_ms) \
                                     VALUES($1, $2, $3, $4, extract(epoch from now()) * 1000, (extract(epoch from now())+3600) * 1000) ON CONFLICT DO NOTHING",
 )
+
+
+# class GroupRouting:
+#     connection: Optional[asyncpg.connection.Connection] = None
+
+#     @classmethod
+#     async def connect(cls) -> GroupRouting:
+#         router = cls()
+#         router.connection = asyncpg.connect(ROUTING_DATABASE)
+#         return router
+
+#     def set_sms_route_for_group(self, their_sms, our_sms, group_id):
+#         return self.connection.execute(
+#             "INSERT INTO group_routing (their_sms, our_sms, group_id)"
+#             "VALUES ($1, $2, $3);",
+#             their_sms,
+#             our_sms,
+#             group_id,
+#         )
 
 
 class RoutingManager(PGInterface):
