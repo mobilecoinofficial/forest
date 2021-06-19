@@ -1,17 +1,17 @@
 #!/usr/bin/python3.9
 from typing import Optional, AsyncIterator, Any, Union
 from asyncio import Queue
+import sys
 import asyncio
 import json
 import os
 import urllib.parse
 import random
-from bidict import bidict
 from aiohttp import web
 import aiohttp
 import phonenumbers as pn
 import datastore
-from forest_tables import RoutingManager, PaymentsManager
+from forest_tables import RoutingManager, PaymentsManager, GroupRoutingManager
 
 # pylint: disable=line-too-long,too-many-instance-attributes, import-outside-toplevel, fixme, redefined-outer-name
 
@@ -30,8 +30,8 @@ class Message:
         self.envelope = envelope = blob.get("envelope", {})
         # {'envelope': {'source': '+15133278483', 'sourceDevice': 2, 'timestamp': 1621402445257, 'receiptMessage': {'when': 1621402445257, 'isDelivery': True, 'isRead': False, 'timestamps': [1621402444517]}}}
         self.source: str = envelope.get("source")
-        self.ts = round(envelope.get("timestamp", 0) / 1000)
         msg = envelope.get("dataMessage", {})
+        self.timestamp = envelope.get("timestamp")
         self.full_text = self.text = msg.get("message", "")
         # self.reactions: dict[str, str] = {}
         self.receipt = envelope.get("receiptMessage")
@@ -53,9 +53,6 @@ class Message:
 
     def __repr__(self) -> str:
         return f"<{self.envelope}>"
-
-
-groupid_to_external_number: bidict[str, str] = bidict()
 
 
 class Session:
@@ -110,6 +107,19 @@ class Session:
             }
         )
         await self.signalcli_input_queue.put(json_command)
+
+    async def send_reaction(self, emoji: str, target_msg: Message) -> None:
+        react = {
+            "command": "sendReaction",
+            "emoji": emoji,
+            "target_author": target_msg.source,
+            "target_timestamp": target_msg.timestamp,
+        }
+        if target_msg.group:
+            react["group"] = target_msg.group
+        else:
+            react["recipient"] = target_msg.source
+        await self.signalcli_input_queue.put(react)
 
     async def signalcli_output_iter(self) -> AsyncIterator[Message]:
         """Provides an asynchronous iterator over messages on the queue."""
@@ -213,37 +223,35 @@ class Session:
                     destination=message.arg1,  # dest,
                     message_text=message.text,
                 )
+                await self.send_reaction("📤", message)
                 # sms_uuid = response.get("data")
                 # TODO: store message.source and sms_uuid in a queue, enable https://apidocs.teleapi.net/api/sms/delivery-notifications
                 #    such that delivery notifs get redirected as responses to send command
                 await self.send_message(message.source, response)
+
             elif numbers and message.command in ("mkgroup", "query"):
                 # target_number = await self.check_target_number(message)
                 # if target_number:
-                if (
-                    "pending" in groupid_to_external_number
-                    and groupid_to_external_number["pending"] == message.arg1
-                ):
-                    await self.send_message(
-                        message.source, "looks like we've already made a group"
-                    )
-                    continue
-                groupid_to_external_number["pending"] = message.arg1
                 cmd = {
                     "command": "updateGroup",
                     "member": [message.source],
-                    "name": f"SMS with {message.arg1}",
+                    "name": f"SMS with {message.arg1} via {numbers[0]}",
                 }
                 await self.signalcli_input_queue.put(json.dumps(cmd))
+                await self.send_reaction("📤", message)
                 await self.send_message(message.source, "invited you to a group")
             elif (
                 numbers
                 and message.group
-                and message.group in groupid_to_external_number
+                and (
+                    group := await group_routing_manager.get_sms_route_for_group(
+                        message.group
+                    )
+                )
             ):
                 await self.send_sms(
-                    source=numbers[0],
-                    destination=groupid_to_external_number[message.group],
+                    source=group[0].get("our_sms"),
+                    destination=group[0].get("their_sms"),
                     message_text=message.text,
                 )
             elif (
@@ -261,6 +269,7 @@ class Session:
                     message_text=message.text,
                 )
                 trueprint("sent")
+                await self.send_reaction("📤", message)
                 await self.send_message(message.source, response)
             elif message.command == "help":
                 await self.send_message(
@@ -384,16 +393,14 @@ async def listen_to_signalcli(
         if "error" in blob:
             trueprint(blob["error"])
             continue
-        if set(blob.keys()) == {"group"}:
-            group = blob.get("group")
-            if group and "pending" in groupid_to_external_number:
-                external_number = groupid_to_external_number["pending"]
-                groupid_to_external_number[group] = external_number
-                trueprint(f"associated {external_number} with {group}")
-            else:
-                trueprint(
-                    "didn't find any pending numbers to associate with group {group}"
-                )
+        if "group" in blob:
+            # SMS with {number} via {number}
+            their, our = blob["name"].lstrip("SMS with ").split(" via ")
+            # TODO: this needs to use number[0]
+            await GroupRoutingManager().set_sms_route_for_group(
+                their, our, blob["group"]
+            )
+            trueprint("made a new group route from ", blob)
             continue
         await queue.put(Message(blob))
 
@@ -421,6 +428,7 @@ async def inbound_handler(request: web.Request) -> web.Response:
     if not msg_obj:
         # stick the contents under the message key
         msg_obj["message"] = msg_data
+    trueprint(msg_obj)
     destination = msg_obj.get("destination")
     ## lookup sms recipient to signal recipient
     maybe_dest = await RoutingManager().get_destination(destination)
@@ -428,12 +436,14 @@ async def inbound_handler(request: web.Request) -> web.Response:
     msg_obj["maybe_dest"] = str(maybe_dest)
     session = request.app.get("session")
     if session:
-        group = groupid_to_external_number.inverse.get(msg_obj["source"])
-        if group:
+        maybe_group = await group_routing_manager.get_group_id_for_sms_route(
+            msg_obj["source"], msg_obj["destination"]
+        )
+        if maybe_group:
             cmd = {
                 "command": "send",
                 "message": msg_obj["message"],
-                "group": group,
+                "group": maybe_group[0].get("group_id"),
             }
             await session.signalcli_input_queue.put(json.dumps(cmd))
         else:
@@ -448,6 +458,17 @@ async def inbound_handler(request: web.Request) -> web.Response:
     return web.Response(status=504, text="Sorry, no live workers.")
 
 
+async def terminate(request: web.Request) -> web.Response:
+    if await request.text() != FLY_ALLOC_ID:
+        return web.Response(
+            status=403, text="https://twitter.com/dril/status/922321981"
+        )
+    await request.app.shutdown()
+    await request.app.cleanup()
+    raise aiohttp.web_runner.GracefulExit
+    sys.exit(0)  # conflicting info about whether GracefulExit actually exits
+
+
 app = web.Application()
 
 app.on_startup.append(start_session)
@@ -460,6 +481,7 @@ app.add_routes(
         web.get("/", noGet),
         web.post("/user/{phonenumber}", send_message_handler),
         web.post("/inbound", inbound_handler),
+        web.post("/terminate", terminate),
     ]
 )
 
@@ -467,4 +489,6 @@ app["session"] = None
 
 
 if __name__ == "__main__":
+    trueprint("=========================new run=======================")
+    group_routing_manager = GroupRoutingManager()
     web.run_app(app, port=8080, host="0.0.0.0")

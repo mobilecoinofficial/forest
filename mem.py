@@ -1,3 +1,4 @@
+# type: ignore
 # Copyright 2017-2021 Ilia Daniher
 # Copyright 2013-2018 Mark Stover
 #

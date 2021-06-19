@@ -33,6 +33,7 @@ AccountPGExpressions = PGExpressions(
             last_claim_ms BIGINT, \
             active_node_name TEXT);",
     get_datastore="SELECT datastore FROM {self.table} WHERE id=$1;",  # AND
+    get_claim="SELECT active_node_name FROM {self.table} WHERE id=$1",
     mark_account_claimed="UPDATE {self.table} \
         SET active_node_name = $2, \
         last_claim_ms = (extract(epoch from now()) * 1000) \
@@ -80,15 +81,22 @@ class SignalDatastore:
         self.filepath = "/app/data/+" + number  # this is just the main one
         # await self.account_interface.create_table()
 
-    async def download(self) -> None:
-        """Fetch our account datastore from postgresql and mark it claimed"""
-
-        record = await self.account_interface.get_datastore(self.number)
+    async def is_claimed(self) -> bool:
+        record = await self.account_interface.get_claim(self.number)
         if not record:
             raise Exception(f"no record in db for {self.number}")
-        active_claim = record[0].get("active_node_name")
-        if active_claim:
-            raise Exception(f"{self.number} is in use by {active_claim}")
+        return record[0].get("active_node_name") != None
+
+    async def download(self) -> None:
+        """Fetch our account datastore from postgresql and mark it claimed"""
+        for i in range(10):
+            if not await self.is_claimed():
+                break
+            trueprint("this account is claimed, waiting...")
+            await asyncio.sleep(6)
+            if i == 9:
+                trueprint("a minute is up, downloading anyway")
+        record = await self.account_interface.get_datastore(self.number)
         buffer = BytesIO(record[0].get("datastore"))
         tarball = TarFile(fileobj=buffer)
         fnames = [member.name for member in tarball.getmembers()]
@@ -98,6 +106,8 @@ class SignalDatastore:
         await self.account_interface.mark_account_claimed(
             self.number, open("/etc/hostname").read().strip()  #  FLY_ALLOC_ID
         )
+        assert await self.is_claimed()
+        await self.account_interface.get_datastore(self.number)
 
     # async def mark_freed(self) -> Any:
     #     """Marks account as freed in PG database."""
@@ -181,6 +191,7 @@ async def start_queue_monitor(app: web.Application) -> None:
 
     async def background_sync_handler() -> None:
         queue = app["mem_queue"]
+        trueprint("monitoring memfs")
         while True:
             queue_item = await queue.coro_get()
             # iff fsync triggered by signal-cli
@@ -208,3 +219,4 @@ async def on_shutdown(app: web.Application) -> None:
         await session.datastore.account_interface.mark_account_freed(
             session.datastore.number
         )
+    trueprint("=============exited===================")
