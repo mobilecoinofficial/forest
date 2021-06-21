@@ -1,15 +1,8 @@
-import os
 from pghelp import PGExpressions, PGInterface, Loop
+import utils
 
 
-if os.path.exists("dev_secrets") and not os.getenv("DATABASE_URL"):
-    print("environ'ing secrets")
-    secrets = dict(line.strip().split("=", 1) for line in open("dev_secrets"))
-    os.environ.update(secrets)
-
-USER_DATABASE = os.environ["DATABASE_URL"]
-
-ROUTING_DATABASE = os.environ["DATABASE_URL"]
+USER_DATABASE = ROUTING_DATABASE = utils.get_secret("DATABASE_URL")
 
 
 RoutingPGExpressions = PGExpressions(
