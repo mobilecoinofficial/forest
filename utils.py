@@ -18,12 +18,15 @@ logging.basicConfig(
     level=logging.DEBUG, format="{levelname}: {message}", style="{"
 )
 
+
 def teli_format(raw_number: str) -> str:
     return pn.parse(raw_number, "US").national_number
 
-def signal_format(raw_number: str) -> str:
-    return pn.format_number(pn.parse(raw_number, "US"), pn.PhoneNumberFormat.E164)
 
+def signal_format(raw_number: str) -> str:
+    return pn.format_number(
+        pn.parse(raw_number, "US"), pn.PhoneNumberFormat.E164
+    )
 
 
 def load_secrets(env: Optional[str] = None) -> None:
@@ -94,12 +97,17 @@ Callback = Callable[[dict], Coroutine[Any, Any, None]]
 #             await self.app.shutdown()
 #             await self.app.cleanup()
 
+
 async def aprint(msg: Any) -> None:
     print(msg)
 
+
 @asynccontextmanager
-async def receive_sms(callback: Callback = aprint, port=8080) -> AsyncIterator[web.TCPSite]:
+async def receive_sms(
+    callback: Callback = aprint, port=8080
+) -> AsyncIterator[web.TCPSite]:
     print(port)
+
     async def handle_sms(request: web.Request) -> web.Response:
         msg_obj = dict(await request.post())
         logging.info(msg_obj)
@@ -134,7 +142,7 @@ def set_sms_url(raw_number: str, url: str) -> dict:
     ).json()
     if did_lookup.get("status") == "error":
         logging.error(did_lookup)
-        return did_lookup # not sure about this
+        return did_lookup  # not sure about this
     logging.info("did lookup: %s", did_lookup)
     did_id = did_lookup.get("data", {}).get("id")
     params = {
@@ -148,20 +156,20 @@ def set_sms_url(raw_number: str, url: str) -> dict:
     return set_url.json()
 
 
-
 async def print_sms(raw_number, port=8080):
     print(port)
     async with get_url(port) as url, receive_sms(aprint, port):
         set_sms_url(raw_number, url)
         try:
-            await asyncio.sleep(10**9)
+            await asyncio.sleep(10 ** 9)
         except KeyboardInterrupt:
             return
 
 
 def list_our_numbers() -> list[str]:
     blob = requests.get(
-        "https://apiv1.teleapi.net/user/dids/list", token=get_secret("TELI_KEY")
+        "https://apiv1.teleapi.net/user/dids/list",
+        params={"token": get_secret("TELI_KEY")},
     ).json()
     return [did["number"] for did in blob["data"]]
 
@@ -204,7 +212,7 @@ def buy_number(number: str, sms_post_url: Optional[str] = None) -> dict:
     nonnull_params = {key: value for key, value in params.items() if value}
     logging.info("buying %s", number)
     resp = requests.get(
-        "https://apiv1.teleapi.net/dids/list", params=nonnull_params
+        "https://apiv1.teleapi.net/dids/order", params=nonnull_params
     ).json()
     logging.info(resp.text)
     logging.info(resp)
