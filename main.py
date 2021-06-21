@@ -11,15 +11,13 @@ from aiohttp import web
 import aiohttp
 import phonenumbers as pn
 import datastore
+import utils
 from forest_tables import RoutingManager, PaymentsManager, GroupRoutingManager
 
 # pylint: disable=line-too-long,too-many-instance-attributes, import-outside-toplevel, fixme, redefined-outer-name
 
-HOSTNAME = open("/etc/hostname").read().strip()  #  FLY_ALLOC_ID
-admin = "+***REMOVED***"  # (sylvie; ilia is +15133278483)
 
-
-def trueprint(*args: Any, **kwargs: Any) -> None:
+def trueprint(*args: str, **kwargs: Any) -> None:
     print(*args, **kwargs, file=open("/dev/stdout", "w"))
 
 
@@ -66,7 +64,7 @@ class Session:
         self.datastore = datastore.SignalDatastore(bot_number)
         self.proc: Optional[asyncio.subprocess.Process] = None
         self.signalcli_output_queue: Queue[Message] = Queue()
-        self.signalcli_input_queue: Queue[str] = Queue()
+        self.signalcli_input_queue: Queue[dict] = Queue()
         self.client_session = aiohttp.ClientSession()
         self.scratch: dict[str, dict[str, Any]] = {"payments": {}}
         self.payments_manager = PaymentsManager()
@@ -99,13 +97,12 @@ class Session:
                 await self.send_message(recipient, m)
         if isinstance(msg, dict):
             msg = "\n".join((f"{key}:\t{value}" for key, value in msg.items()))
-        json_command = json.dumps(
-            {
-                "command": "send",
-                "recipient": [str(recipient)],
-                "message": msg,
-            }
-        )
+        json_command = {
+            "command": "send",
+            "recipient": [str(recipient)],
+            "message": msg,
+        }
+
         await self.signalcli_input_queue.put(json_command)
 
     async def send_reaction(self, emoji: str, target_msg: Message) -> None:
@@ -127,7 +124,7 @@ class Session:
             message = await self.signalcli_output_queue.get()
             yield message
 
-    async def signalcli_input_iter(self) -> AsyncIterator[str]:
+    async def signalcli_input_iter(self) -> AsyncIterator[dict]:
         """Provides an asynchronous iterator over pending signal-cli commands"""
         while True:
             command = await self.signalcli_input_queue.get()
@@ -188,6 +185,8 @@ class Session:
     async def check_target_number(self, msg: Message) -> Optional[str]:
         trueprint(msg.arg1)
         try:
+            #matches = list(pn.PhoneNumberMatcher(msg.text, "US"))
+            #assert len(matches) == 1 
             parsed = pn.parse(msg.arg1, "US")
             assert pn.is_valid_number(parsed)
             number = pn.format_number(parsed, pn.PhoneNumberFormat.E164)
@@ -220,7 +219,7 @@ class Session:
                 # if dest:
                 response = await self.send_sms(
                     source=numbers[0],
-                    destination=message.arg1,  # dest,
+                    destination=message.arg1,  # dest, #type: ignore
                     message_text=message.text,
                 )
                 await self.send_reaction("📤", message)
@@ -237,7 +236,7 @@ class Session:
                     "member": [message.source],
                     "name": f"SMS with {message.arg1} via {numbers[0]}",
                 }
-                await self.signalcli_input_queue.put(json.dumps(cmd))
+                await self.signalcli_input_queue.put(cmd)
                 await self.send_reaction("📤", message)
                 await self.send_message(message.source, "invited you to a group")
             elif (
@@ -254,6 +253,7 @@ class Session:
                     destination=group[0].get("their_sms"),
                     message_text=message.text,
                 )
+                await self.send_reaction("📤", message)
             elif (
                 numbers
                 and message.quoted_text
@@ -355,9 +355,8 @@ class Session:
         )
 
         async for msg in self.signalcli_input_iter():
-            msg_loaded = json.loads(msg)
-            open("/dev/stdout", "w").write(f"input to signal: {msg_loaded}\n")
-            self.proc.stdin.write(msg.encode() + b"\n")
+            open("/dev/stdout", "w").write(f"input to signal: {msg}\n")
+            self.proc.stdin.write(json.dumps(msg).encode() + b"\n")
         await self.proc.wait()
 
 
@@ -373,7 +372,7 @@ async def start_session(app: web.Application) -> None:
         "avatar": "avatar.png",
         "about": "support: https://signal.group/#CjQKINbHvfKoeUx_pPjipkXVspTj5HiTiUjoNQeNgmGvCmDnEhCTYgZZ0puiT-hUG0hUUwlS",
     }
-    await new_session.signalcli_input_queue.put(json.dumps(profile))
+    await new_session.signalcli_input_queue.put(profile)
 
 
 async def listen_to_signalcli(
@@ -432,7 +431,11 @@ async def inbound_handler(request: web.Request) -> web.Response:
     destination = msg_obj.get("destination")
     ## lookup sms recipient to signal recipient
     maybe_dest = await RoutingManager().get_destination(destination)
-    recipient = maybe_dest[0].get("destination") if maybe_dest else admin
+    if maybe_dest:
+        recipient = maybe_dest.get("destination")
+    else:
+        recipient = utils.get_secret("ADMIN")
+        msg_obj["message"] = "destination not found for " + msg_obj
     msg_obj["maybe_dest"] = str(maybe_dest)
     session = request.app.get("session")
     if session:
@@ -445,7 +448,7 @@ async def inbound_handler(request: web.Request) -> web.Response:
                 "message": msg_obj["message"],
                 "group": maybe_group[0].get("group_id"),
             }
-            await session.signalcli_input_queue.put(json.dumps(cmd))
+            await session.signalcli_input_queue.put(cmd)
         else:
             # send hashmap as signal message with newlines and tabs and stuff
             await session.send_message(recipient, msg_obj)
@@ -459,14 +462,17 @@ async def inbound_handler(request: web.Request) -> web.Response:
 
 
 async def terminate(request: web.Request) -> web.Response:
-    if await request.text() != FLY_ALLOC_ID:
+    if await request.text() != utils.HOSTNAME:
         return web.Response(
             status=403, text="https://twitter.com/dril/status/922321981"
         )
     await request.app.shutdown()
     await request.app.cleanup()
-    raise aiohttp.web_runner.GracefulExit
-    sys.exit(0)  # conflicting info about whether GracefulExit actually exits
+    try:
+        # conflicting info about whether GracefulExit actually exits
+        raise aiohttp.web_runner.GracefulExit
+    finally:
+        sys.exit(0) 
 
 
 app = web.Application()
@@ -486,6 +492,21 @@ app.add_routes(
 )
 
 app["session"] = None
+
+
+# class Forest:
+#     def __init__(self):
+#         self.signal = Signal(
+#             get_secret("BOT_NUMBER"), callback=self.handle_signal_message
+#         )
+#         self.teli = ManageSMS(callback=self.handle_sms_message)
+#         self.routing = RoutingManager()
+#         self.payments = PaymentsManager()
+
+#     async def run():
+#         with self.signal and self.teli:
+#             await self.signal.receive()
+#             await self.teli.receive()
 
 
 if __name__ == "__main__":
