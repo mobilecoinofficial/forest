@@ -6,7 +6,7 @@ RUN microdnf install -y git zlib-devel && rm -rf /var/cache/yum
 RUN gu install native-image
 RUN git clone https://github.com/forestcontact/signal-cli
 WORKDIR /app/signal-cli
-RUN git fetch -a && git checkout 4b082df    #stdio-generalized 
+RUN git fetch -a && git checkout forest-fork-v6  #stdio-generalized 
 RUN ./gradlew build && ./gradlew installDist
 RUN md5sum ./build/libs/* 
 RUN ./gradlew assembleNativeImage
@@ -41,5 +41,5 @@ COPY --from=sigbuilder /app/signal-cli/build/native-image/signal-cli /app
 # for signal-cli's unpacking of native deps
 COPY --from=sigbuilder /lib64/libz.so.1 /lib64
 COPY --from=libbuilder /app/venv/lib/python3.9/site-packages /app/
-COPY ./avatar.png ./datastore.py ./forest_tables.py ./fuse.py  ./mem.py  ./pghelp.py ./main.py /app/ 
+COPY ./utils.py ./avatar.png ./datastore.py ./forest_tables.py ./fuse.py  ./mem.py  ./pghelp.py ./main.py /app/ 
 ENTRYPOINT ["/usr/bin/python3.9", "/app/main.py"]

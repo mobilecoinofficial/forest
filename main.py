@@ -115,7 +115,7 @@ class Session:
         if target_msg.group:
             react["group"] = target_msg.group
         else:
-            react["recipient"] = target_msg.source
+            react["recipient"] = [target_msg.source]
         await self.signalcli_input_queue.put(react)
 
     async def signalcli_output_iter(self) -> AsyncIterator[Message]:
@@ -237,7 +237,7 @@ class Session:
                     "name": f"SMS with {message.arg1} via {numbers[0]}",
                 }
                 await self.signalcli_input_queue.put(cmd)
-                await self.send_reaction("📤", message)
+                await self.send_reaction("👥", message)
                 await self.send_message(message.source, "invited you to a group")
             elif (
                 numbers
@@ -371,6 +371,7 @@ async def start_session(app: web.Application) -> None:
         "name": "forestbot",
         "avatar": "avatar.png",
         "about": "support: https://signal.group/#CjQKINbHvfKoeUx_pPjipkXVspTj5HiTiUjoNQeNgmGvCmDnEhCTYgZZ0puiT-hUG0hUUwlS",
+        "about_emoji": "🌲"
     }
     await new_session.signalcli_input_queue.put(profile)
 
@@ -397,7 +398,7 @@ async def listen_to_signalcli(
             their, our = blob["name"].lstrip("SMS with ").split(" via ")
             # TODO: this needs to use number[0]
             await GroupRoutingManager().set_sms_route_for_group(
-                their, our, blob["group"]
+                utils.teli_format(their), utils.teli_format(our), blob["group"]
             )
             trueprint("made a new group route from ", blob)
             continue
@@ -432,8 +433,9 @@ async def inbound_handler(request: web.Request) -> web.Response:
     ## lookup sms recipient to signal recipient
     maybe_dest = await RoutingManager().get_destination(destination)
     if maybe_dest:
-        recipient = maybe_dest.get("destination")
+        recipient = maybe_dest[0].get("destination")
     else:
+        trueprint("falling back to admin")
         recipient = utils.get_secret("ADMIN")
         msg_obj["message"] = "destination not found for " + msg_obj
     msg_obj["maybe_dest"] = str(maybe_dest)
@@ -442,7 +444,9 @@ async def inbound_handler(request: web.Request) -> web.Response:
         maybe_group = await group_routing_manager.get_group_id_for_sms_route(
             msg_obj["source"], msg_obj["destination"]
         )
+        trueprint(maybe_group)
         if maybe_group:
+            trueprint("sending a group")
             cmd = {
                 "command": "send",
                 "message": msg_obj["message"],
@@ -474,6 +478,10 @@ async def terminate(request: web.Request) -> web.Response:
     finally:
         sys.exit(0) 
 
+
+
+# async def search(request: web.Request) -> web.Response:
+#     pass
 
 app = web.Application()
 

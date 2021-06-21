@@ -12,6 +12,7 @@ asyncpg = "*"
 #bidict = "*"
 phonenumbers = "*"
 #phonenumberslite = "*"
+requests = "*"
 
 #[dev-packages]
 #isort = "*"

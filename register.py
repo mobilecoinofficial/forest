@@ -25,6 +25,39 @@ def mod_pending_numbers(
     open("numbers", "w").write(", ".join(new_numbers))
     return new_numbers
 
+async def verify(sms_response: dict) -> None:
+    if "message" not in sms_response:
+        return
+    verif_msg = sms_response["message"]
+    print(verif_msg)
+    match = re.search(r"\d\d\d-?\d\d\d", verif_msg)
+    if not match:
+        return
+    code = match.group().replace("-", "")
+    print(f"got code {code}", code)
+    if not code:
+        return
+    if not verify:
+        print(code)
+        return
+    number = utils.signal_format(sms_response["destination"])
+    cmd = (
+        f"./signal-cli --verbose --config /tmp/signal-register -u {number} verify {code}".split()
+    )
+    proc = await subprocess.create_subprocess_exec(
+        *cmd,
+        stdout=subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    await proc.wait()
+    (so, se) = await proc.communicate()
+    print(so, "\n", se)
+    cwd = os.getcwd()
+    os.chdir("/tmp/signal-register")
+    await datastore.upload()
+    os.chdir(cwd)
+    mod_pending_numbers(rm=number)
+    return
 
 async def register_number(
     raw_number: str, verify: bool = True, timeout: int = 60
@@ -37,40 +70,8 @@ async def register_number(
         mod_pending_numbers(rm=number)
         return False
 
-    async def do_verify(sms_response: dict) -> None:
-        if "message" not in sms_response:
-            return
-        verif_msg = sms_response["message"]
-        print(verif_msg)
-        match = re.search(r"\d\d\d-?\d\d\d", verif_msg)
-        if not match:
-            return
-        code = match.group().replace("-", "")
-        print(f"got code {code}", code)
-        if not code:
-            return
-        if not verify:
-            print(code)
-            return
-        cmd = (
-            f"./signal-cli --verbose --config /tmp/signal-register -u {number} verify {code}".split()
-        )
-        proc = await subprocess.create_subprocess_exec(
-            *cmd,
-            stdout=subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        await proc.wait()
-        (so, se) = await proc.communicate()
-        print(so, "\n", se)
-        cwd = os.getcwd()
-        os.chdir("/tmp/signal-register")
-        await datastore.upload()
-        os.chdir(cwd)
-        mod_pending_numbers(rm=number)
-        return
 
-    receiver = utils.ReceiveSMS(callback=do_verify)
+    receiver = utils.ReceiveSMS(callback=verify)
     async with receiver.receive() as server, utils.get_url() as url:
         print(utils.set_sms_url(number, url))
         captcha = utils.get_signal_captcha()
