@@ -3,6 +3,7 @@ from subprocess import Popen, PIPE
 from tarfile import TarFile
 from io import BytesIO
 import os
+import logging
 import asyncio
 from aiohttp import web
 import aioprocessing
@@ -21,7 +22,7 @@ AccountPGExpressions = PGExpressions(
             last_update_ms BIGINT, \
             last_claim_ms BIGINT, \
             active_node_name TEXT);",
-    is_registered="SELECT id FROM {self.table} WHERE id=$1",
+    is_registered="SELECT datastore is not null as registered FROM {self.table} WHERE id=$1",
     get_datastore="SELECT datastore FROM {self.table} WHERE id=$1;",  # AND
     get_claim="SELECT active_node_name FROM {self.table} WHERE id=$1",
     mark_account_claimed="UPDATE {self.table} \
@@ -66,14 +67,18 @@ class SignalDatastore:
     """
 
     def __init__(self, number: str):
+        logging.info(number)
         self.account_interface = get_account_interface()
-        self.number = number
-        self.filepath = "data/+" + number
+        self.number = utils.signal_format(number)
+        logging.info(self.number)
+        self.filepath = "data/" + number
         # await self.account_interface.create_table()
 
     async def is_registered(self) -> bool:
         record = await self.account_interface.is_registered(self.number)
-        return bool(record)
+        if not record:
+            return False
+        return bool(record[0].get("registered"))
 
     async def is_claimed(self) -> bool:
         record = await self.account_interface.get_claim(self.number)
@@ -93,9 +98,10 @@ class SignalDatastore:
         record = await self.account_interface.get_datastore(self.number)
         buffer = BytesIO(record[0].get("datastore"))
         tarball = TarFile(fileobj=buffer)
+        expected = f"data/{self.number}"
         fnames = [member.name for member in tarball.getmembers()]
         trueprint(fnames)
-        trueprint("correct file exists: ", "data/+{self.number}" in fnames)
+        trueprint(f"expected file {expected} exists:", expected in fnames)
         tarball.extractall("/app")
         await self.account_interface.mark_account_claimed(
             self.number, open("/etc/hostname").read().strip()  #  FLY_ALLOC_ID
@@ -168,7 +174,7 @@ async def start_memfs(app: web.Application) -> None:
 
     async def launch() -> None:
         memfs = aioprocessing.AioProcess(target=memfs_proc)
-        memfs.start()
+        memfs.start() # pylint: disable=no-member
         app["memfs"] = memfs
 
     await launch()
@@ -206,8 +212,11 @@ async def on_shutdown(app: web.Application) -> None:
     session = app.get("session")
     if session:
         await session.datastore.upload()
-        session.proc.kill()
-        await session.proc.wait()
+        try:
+            session.proc.kill()
+            await session.proc.wait()
+        except ProcessLookupError:
+            pass
         await session.datastore.upload()
         await session.datastore.account_interface.mark_account_freed(
             session.datastore.number
