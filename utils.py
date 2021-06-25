@@ -20,7 +20,7 @@ logging.basicConfig(
 
 
 def teli_format(raw_number: str) -> str:
-    return pn.parse(raw_number, "US").national_number
+    return str(pn.parse(raw_number, "US").national_number)
 
 
 def signal_format(raw_number: str) -> str:
@@ -46,7 +46,7 @@ def get_secret(key: str, env: Optional[str] = None) -> str:
 
 
 @asynccontextmanager
-async def get_url(port=8080) -> AsyncIterator[str]:
+async def get_url(port: int = 8080) -> AsyncIterator[str]:
     if LOCAL:
         try:
             print("starting tunnel")
@@ -68,34 +68,34 @@ async def get_url(port=8080) -> AsyncIterator[str]:
 Callback = Callable[[dict], Coroutine[Any, Any, None]]
 
 
-# class ReceiveSMS:
-#     def __init__(self, callback: Callback, port = 8080):
-#         self.callback = callback
-#         self.port = port
+class ReceiveSMS:
+    def __init__(self, callback: Callback, port: int = 8080) -> None:
+        self.callback = callback
+        self.port = port
 
-#     async def handle_sms(self, request: web.Request) -> web.Response:
-#         # A coroutine that reads POST parameters from request body.
-#         # Returns MultiDictProxy instance filled with parsed data.
-#         msg_obj = dict(await request.post())
-#         logging.info(msg_obj)
-#         await self.callback(msg_obj)
-#         return web.json_response({"status": "OK"})
+    async def handle_sms(self, request: web.Request) -> web.Response:
+        # A coroutine that reads POST parameters from request body.
+        # Returns MultiDictProxy instance filled with parsed data.
+        msg_obj = dict(await request.post())
+        logging.info(msg_obj)
+        await self.callback(msg_obj)
+        return web.json_response({"status": "OK"})
 
-#     @asynccontextmanager
-#     async def receive(self) -> AsyncIterator[web.TCPSite]:
-#         self.app = web.Application()
-#         routes = [web.post("/inbound", self.handle_sms)]
-#         self.app.add_routes(routes)
-#         runner = web.AppRunner(self.app)
-#         await runner.setup()
-#         site = web.TCPSite(runner, "0.0.0.0", 7777)
-#         logging.info("starting SMS receiving server")
-#         try:
-#             await site.start()
-#             yield site
-#         finally:
-#             await self.app.shutdown()
-#             await self.app.cleanup()
+    @asynccontextmanager
+    async def receive(self) -> AsyncIterator[web.TCPSite]:
+        self.app = web.Application()
+        routes = [web.post("/inbound", self.handle_sms)]
+        self.app.add_routes(routes)
+        runner = web.AppRunner(self.app)
+        await runner.setup()
+        site = web.TCPSite(runner, "0.0.0.0", 7777)
+        logging.info("starting SMS receiving server")
+        try:
+            await site.start()
+            yield site
+        finally:
+            await self.app.shutdown()
+            await self.app.cleanup()
 
 
 async def aprint(msg: Any) -> None:
@@ -104,7 +104,7 @@ async def aprint(msg: Any) -> None:
 
 @asynccontextmanager
 async def receive_sms(
-    callback: Callback = aprint, port=8080
+    callback: Callback = aprint, port: int = 8080
 ) -> AsyncIterator[web.TCPSite]:
     print(port)
 
@@ -156,7 +156,7 @@ def set_sms_url(raw_number: str, url: str) -> dict:
     return set_url.json()
 
 
-async def print_sms(raw_number, port=8080):
+async def print_sms(raw_number: str, port: int =8080) -> None:
     print(port)
     async with get_url(port) as url, receive_sms(aprint, port):
         set_sms_url(raw_number, url)
@@ -164,7 +164,7 @@ async def print_sms(raw_number, port=8080):
             await asyncio.sleep(10 ** 9)
         except KeyboardInterrupt:
             return
-
+    return
 
 def list_our_numbers() -> list[str]:
     blob = requests.get(
@@ -213,13 +213,19 @@ def buy_number(number: str, sms_post_url: Optional[str] = None) -> dict:
     logging.info("buying %s", number)
     resp = requests.get(
         "https://apiv1.teleapi.net/dids/order", params=nonnull_params
-    ).json()
-    logging.info(resp.text)
+    )
     logging.info(resp)
+    logging.info(resp.text)
     return resp.json()
 
 
 def get_signal_captcha() -> Optional[str]:
+    try:
+        solution = open("/tmp/captcha").read().lstrip("signalcaptcha://")
+        os.rename("/tmp/captcha", "/tmp/used_captcha")
+        return solution
+    except FileNotFoundError:
+        pass
     logging.info("buying a captcha...")
     try:
         blob = requests.post(

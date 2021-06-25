@@ -3,8 +3,10 @@ from typing import Optional, AsyncIterator, Any, Union
 from asyncio import Queue
 import sys
 import asyncio
+import asyncio.subprocess as subprocess  # https://github.com/PyCQA/pylint/issues/1469
 import json
 import os
+import logging
 import urllib.parse
 import random
 from aiohttp import web
@@ -17,7 +19,7 @@ from forest_tables import RoutingManager, PaymentsManager, GroupRoutingManager
 # pylint: disable=line-too-long,too-many-instance-attributes, import-outside-toplevel, fixme, redefined-outer-name
 
 
-def trueprint(*args: str, **kwargs: Any) -> None:
+def trueprint(*args: Any, **kwargs: Any) -> None:
     print(*args, **kwargs, file=open("/dev/stdout", "w"))
 
 
@@ -25,6 +27,7 @@ class Message:
     """Represents a Message received from signal-cli, optionally containing a command with arguments."""
 
     def __init__(self, blob: dict) -> None:
+        self.blob = blob
         self.envelope = envelope = blob.get("envelope", {})
         # {'envelope': {'source': '+15133278483', 'sourceDevice': 2, 'timestamp': 1621402445257, 'receiptMessage': {'when': 1621402445257, 'isDelivery': True, 'isRead': False, 'timestamps': [1621402444517]}}}
         self.source: str = envelope.get("source")
@@ -60,9 +63,10 @@ class Session:
     """
 
     def __init__(self, bot_number: str) -> None:
+        logging.info(bot_number)
         self.bot_number = bot_number
         self.datastore = datastore.SignalDatastore(bot_number)
-        self.proc: Optional[asyncio.subprocess.Process] = None
+        self.proc: Optional[subprocess.Process] = None
         self.signalcli_output_queue: Queue[Message] = Queue()
         self.signalcli_input_queue: Queue[dict] = Queue()
         self.client_session = aiohttp.ClientSession()
@@ -92,6 +96,7 @@ class Session:
         self, recipient: str, msg: Union[str, list, dict]
     ) -> None:
         """Builds send command with specified recipient and msg, writes to signal-cli."""
+        assert recipient == utils.signal_format(recipient)
         if isinstance(msg, list):
             for m in msg:
                 await self.send_message(recipient, m)
@@ -130,7 +135,25 @@ class Session:
             command = await self.signalcli_input_queue.get()
             yield command
 
-    async def register(self, message: Message) -> bool:
+    async def check_target_number(self, msg: Message) -> Optional[str]:
+        trueprint(msg.arg1)
+        try:
+            # matches = list(pn.PhoneNumberMatcher(msg.text, "US"))
+            # assert len(matches) == 1
+            parsed = pn.parse(msg.arg1, "US")
+            assert pn.is_valid_number(parsed)
+            number = pn.format_number(parsed, pn.PhoneNumberFormat.E164)
+            return number
+        except (pn.phonenumberutil.NumberParseException, AssertionError):
+            await self.send_message(
+                msg.source,
+                f"{msg.arg1} doesn't look a valid number or user. "
+                "did you include the country code?",
+            )
+            return None
+
+    async def do_register(self, message: Message) -> bool:
+        """register for a phone number"""
         new_user = message.source
         usdt_price = 15.00
         # invpico = 100000000000 # doesn't work in mixin
@@ -141,7 +164,9 @@ class Session:
             )
             resp_json = await last_val.json()
             mob_rate = float(resp_json.get("data")[0].get("close"))
-        except aiohttp.ClientError:
+        except (aiohttp.ClientError, KeyError, json.JSONDecodeError) as e:
+            print(e)
+
             # big.one goes down sometimes, if it does... make up a price
             mob_rate = 14
         # perturb each price slightly
@@ -182,29 +207,104 @@ class Session:
             await asyncio.sleep(10)
         return False
 
-    async def check_target_number(self, msg: Message) -> Optional[str]:
-        trueprint(msg.arg1)
-        try:
-            #matches = list(pn.PhoneNumberMatcher(msg.text, "US"))
-            #assert len(matches) == 1 
-            parsed = pn.parse(msg.arg1, "US")
-            assert pn.is_valid_number(parsed)
-            number = pn.format_number(parsed, pn.PhoneNumberFormat.E164)
-            return number
-        except (pn.phonenumberutil.NumberParseException, AssertionError):
-            await self.send_message(
-                msg.source,
-                f"{msg.arg1} doesn't look a valid number or user. "
-                "did you include the country code?",
+    async def do_printerfact(self, _: Message) -> str:
+        async with self.client_session.get(
+            "https://colbyolson.com/printers"
+        ) as resp:
+            fact = await resp.text()
+        return fact.strip()
+
+    async def do_status(self, message: Message) -> Union[list[str], str]:
+        numbers: list[str] = [
+            registered.get("id")
+            for registered in await self.routing_manager.get_id(message.source)
+        ]
+        # paid but not registered
+        if self.scratch["payments"].get(message.source) and not numbers:
+            return [
+                "Welcome to the beta! Thank you for your payment. Please contact support to finish setting up your account by requesting to join this group. We will reach out within 12 hours.",
+                "https://signal.group/#CjQKINbHvfKoeUx_pPjipkXVspTj5HiTiUjoNQeNgmGvCmDnEhCTYgZZ0puiT-hUG0hUUwlS",
+                "Alternatively, try /order <area code>",
+            ]
+        if numbers and len(numbers) == 1:
+            # registered, one number
+            return (
+                f'Hi {message.source}! We found {numbers[0]} registered for your user. Try "/send {message.source} Hello from Forest Contact via {numbers[0]}!".'
             )
-            return None
+        # registered, many numbers
+        if numbers:
+            return (
+                f"Hi {message.source}! We found several numbers {numbers} registered for your user. Try '/send {message.source} Hello from Forest Contact via {numbers[0]}!'."
+            )
+        # not paid, not registered
+        return (
+            "We don't see any Forest Contact numbers for your account!"
+            " If you would like to register a new number, "
+            'try "/register" and following the instructions.'
+        )
+
+    async def do_pay(self, message: Message) -> str:
+        if message.arg1 == "shibboleth":
+            self.scratch["payments"][message.source] = True
+            return "...thank you for your payment"
+        if message.arg1 == "sibboleth":
+            return "sending attack drones to your location"
+        return "no"
+
+    async def do_order(self, msg: Message) -> str:
+        """usage: /order <area code>"""
+        if not msg.arg1:
+            return """usage: /order <area code>"""
+        if not (len(msg.arg1) == 3 and msg.arg1.isnumeric()):
+            return """usage: /order <area code>"""
+        if msg.source not in self.scratch["payments"]:
+            # this needs to check if there are *unfulfilled* payments
+            return "make a payment with /register first"
+        async with self.client_session.get(
+            "https://apiv1.teleapi.net/user/dids/list",
+            params={"token": utils.get_secret("TELI_KEY")},
+        ) as resp:
+            blob = await resp.json()
+        our_numbers = [
+            number["number"]
+            for number in blob
+            if number["number"].startswith(msg.arg1)
+            and "through-the-trees" not in number["sms_post_url"]
+        ]
+        logging.info("potentially available numbers: %s", our_numbers)
+        available_numbers = [
+            number
+            for number in our_numbers
+            if not await self.routing_manager.get_destination(number)
+            and not await self.datastore.account_interface.is_registered(number)
+        ]
+        logging.info("available and unregistered numbers: %s", available_numbers)
+        if available_numbers:
+            number = available_numbers[0]
+            utils.set_sms_url(number, os.environ["FLY_APP_NAME"] + ".fly.dev")
+            await self.send_message(msg.source, f"found {number} for you")
+        else:
+            number = utils.search_numbers(area_code=msg.arg1, limit=1)[0]
+            await self.send_message(msg.source, f"found {number}")
+            buy_info = utils.buy_number(
+                number, sms_post_url=os.environ["FLY_APP_NAME"] + ".fly.dev"
+            )
+            await self.send_message(msg.source, f"buying` {number}")
+            if "error" in buy_info:
+                return f"something went wrong: {buy_info}"
+
+        utils.set_sms_url(number, os.environ["FLY_APP_NAME"] + ".fly.dev")
+        await self.routing_manager.put_destination(number, msg.source)
+        if await self.routing_manager.get_destination(number):
+            return f"you are now the proud owner of {number}"
+        return "db error?"
 
     async def handle_messages(self) -> None:
         async for message in self.signalcli_output_iter():
             # open("/dev/stdout", "w").write(f"{message}\n")
             if message.source:
                 maybe_routable = await self.routing_manager.get_id(
-                    message.source.strip("+")
+                    message.source
                 )
             else:
                 maybe_routable = None
@@ -215,19 +315,22 @@ class Session:
             else:
                 numbers = None
             if numbers and message.command == "send":
-                # dest = await self.check_target_number(message)
-                # if dest:
-                response = await self.send_sms(
-                    source=numbers[0],
-                    destination=message.arg1,  # dest, #type: ignore
-                    message_text=message.text,
-                )
-                await self.send_reaction("📤", message)
-                # sms_uuid = response.get("data")
-                # TODO: store message.source and sms_uuid in a queue, enable https://apidocs.teleapi.net/api/sms/delivery-notifications
-                #    such that delivery notifs get redirected as responses to send command
-                await self.send_message(message.source, response)
-
+                dest = await self.check_target_number(message)
+                if dest:
+                    response = await self.send_sms(
+                        source=numbers[0],
+                        destination=dest,
+                        message_text=message.text,
+                    )
+                    await self.send_reaction("📤", message)
+                    # sms_uuid = response.get("data")
+                    # TODO: store message.source and sms_uuid in a queue, enable https://apidocs.teleapi.net/api/sms/delivery-notifications
+                    #    such that delivery notifs get redirected as responses to send command
+                    await self.send_message(message.source, response)
+                else:
+                    await self.send_message(
+                        message.source, "couldn't parse that number"
+                    )
             elif numbers and message.command in ("mkgroup", "query"):
                 # target_number = await self.check_target_number(message)
                 # if target_number:
@@ -277,60 +380,18 @@ class Session:
                     """Welcome to the Forest.contact Pre-Release!\nTo get started, try /register, or /status! If you've already registered, try to send a message via /send.""",
                 )
             elif message.command == "register":
-                asyncio.create_task(self.register(message))
-            # elif message.command = "pay":
-            #     self.scratch["payments"][message.source] = True
-            elif message.command == "status":
-                # paid but not registered
-                if self.scratch["payments"].get(message.source) and not numbers:
-                    # avaiable_numbers = [
-                    #     blob["number"]
-                    #     for blob in teli(user / dids / list)["data"]
-                    #     if not (await self.routing_manager.connection.execute(f"select id from routing where id=$1", blob["number"])
-                    # ]
-                    # if avaiable_numbers:
-                    #     self.routing_manager.put_destination(available_numbers[0], message.source)
-                    #
-                    #  send_message("what area code?")
-                    #  number = search_numbers(nxx=msg.arg1)[0]
-                    #  order(number) # later, y/n prompt
-                    #  routing_manager.put_destination(number, msg.source)
-                    await self.send_message(
-                        message.source,
-                        [
-                            "Welcome to the beta! Thank you for your payment. Please contact support to finish setting up your account by requesting to join this group. We will reach out within 12 hours.",
-                            "https://signal.group/#CjQKINbHvfKoeUx_pPjipkXVspTj5HiTiUjoNQeNgmGvCmDnEhCTYgZZ0puiT-hUG0hUUwlS",
-                        ],
-                    )
-                # registered, one number
-                elif numbers and len(numbers) == 1:
-                    await self.send_message(
-                        message.source,
-                        f'Hi {message.source}! We found {numbers[0]} registered for your user. Try "/send {message.source} Hello from Forest Contact via {numbers[0]}!".',
-                    )
-                # registered, many numbers
-                elif numbers:
-                    await self.send_message(
-                        message.source,
-                        f"Hi {message.source}! We found several numbers {numbers} registered for your user. Try '/send {message.source} Hello from Forest Contact via {numbers[0]}!'.",
-                    )
-                # not paid, not registered
-                else:
-                    await self.send_message(
-                        message.source,
-                        'We don\'t see any Forest Contact numbers for your account! If you would like to register a new number, try "/register" and following the instructions.',
-                    )
-            elif message.command == "printerfact":
-                async with self.client_session.get(
-                    "https://colbyolson.com/printers"
-                ) as resp:
-                    fact = await resp.text()
-                await self.send_message(message.source, fact.strip())
+                # need to abstract this into a decorator or something
+                asyncio.create_task(self.do_register(message))
             elif message.command:
-                await self.send_message(
-                    message.source,
-                    f"Sorry! Command {message.command} not recognized! Try /help. \n{message}",
-                )
+                if hasattr(self, "do_" + message.command):
+                    command_response = await getattr(
+                        self, "do_" + message.command
+                    )(message)
+                else:
+                    command_response = f"Sorry! Command {message.command} not recognized! Try /help."
+                await self.send_message(message.source, command_response)
+            elif message.text == "TERMINATE":
+                await self.send_message(message.source, "signal session reset")
             elif message.text:
                 await self.send_message(
                     message.source, "That didn't look like a command"
@@ -342,7 +403,8 @@ class Session:
             if os.path.exists(self.datastore.filepath):
                 break
             await asyncio.sleep(1)
-        COMMAND = f"/app/signal-cli --config /app --username=+{self.bot_number} --output=json stdio".split()
+        COMMAND = f"/app/signal-cli --config /app --username={self.bot_number} --output=json stdio".split()
+        logging.info(COMMAND)
         self.proc = await asyncio.create_subprocess_exec(
             *COMMAND,
             stdin=asyncio.subprocess.PIPE,
@@ -363,6 +425,7 @@ class Session:
 async def start_session(app: web.Application) -> None:
     # number = (await datastore.get_account_interface().get_free_account())[0].get("id")
     number = os.environ["BOT_NUMBER"]
+    logging.info(number)
     app["session"] = new_session = Session(number)
     asyncio.create_task(new_session.launch_and_connect())
     asyncio.create_task(new_session.handle_messages())
@@ -370,8 +433,9 @@ async def start_session(app: web.Application) -> None:
         "command": "updateProfile",
         "name": "forestbot",
         "avatar": "avatar.png",
-        "about": "support: https://signal.group/#CjQKINbHvfKoeUx_pPjipkXVspTj5HiTiUjoNQeNgmGvCmDnEhCTYgZZ0puiT-hUG0hUUwlS",
-        "about_emoji": "🌲"
+        "about": "forestbot",
+        # support: https://signal.group/#CjQKINbHvfKoeUx_pPjipkXVspTj5HiTiUjoNQeNgmGvCmDnEhCTYgZZ0puiT-hUG0hUUwlS",
+        "about_emoji": "🌲",
     }
     await new_session.signalcli_input_queue.put(profile)
 
@@ -381,7 +445,11 @@ async def listen_to_signalcli(
 ) -> None:
     while True:
         line = await stream.readline()
-        trueprint(line)
+        trueprint("signal: ", line.decode())
+        # don't print receiptMessage
+        # color non-json. pretty-print errors
+        # sensibly color web traffic, too?
+        # fly / db / asyncio and other lib warnings / java / signal logic and networking
         if not line:
             break
         try:
@@ -412,11 +480,12 @@ async def noGet(request: web.Request) -> web.Response:
 async def send_message_handler(request: web.Request) -> Any:
     # account = request.match_info.get("phonenumber")
     session = request.app.get("session")
-    msg_data = await request.text()
-    msg_obj = {x: y[0] for x, y in urllib.parse.parse_qs(msg_data).items()}
+    # post: A coroutine that reads POST parameters from request body.
+    # Returns MultiDictProxy instance filled with parsed data.
+    msg_obj = dict(await request.post())
     recipient = msg_obj.get("recipient", "+15133278483")
     if session:
-        await session.send_message(recipient, msg_data)
+        await session.send_message(recipient, msg_obj)
     return web.json_response({"status": "sent"})
 
 
@@ -437,7 +506,7 @@ async def inbound_handler(request: web.Request) -> web.Response:
     else:
         trueprint("falling back to admin")
         recipient = utils.get_secret("ADMIN")
-        msg_obj["message"] = "destination not found for " + msg_obj
+        msg_obj["message"] = "destination not found for " + str(msg_obj)
     msg_obj["maybe_dest"] = str(maybe_dest)
     session = request.app.get("session")
     if session:
@@ -476,8 +545,7 @@ async def terminate(request: web.Request) -> web.Response:
         # conflicting info about whether GracefulExit actually exits
         raise aiohttp.web_runner.GracefulExit
     finally:
-        sys.exit(0) 
-
+        sys.exit(0)
 
 
 # async def search(request: web.Request) -> web.Response:

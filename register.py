@@ -5,8 +5,10 @@ import asyncio
 import os
 import re
 import shutil
+import json
 import phonenumbers as pn
-from datastore import SignalDatastore
+import requests
+from datastore import SignalDatastore, get_account_interface
 import utils
 
 
@@ -17,13 +19,11 @@ def mod_pending_numbers(
         existing_numbers = open("numbers").read().split(", ")
     except FileNotFoundError:
         existing_numbers = []
-    new_numbers = (
-        [number for number in existing_numbers if number != rm] + [add]
-        if add
-        else []
-    )
+    added = [add] if add else []
+    new_numbers = [number for number in existing_numbers if number != rm] + added
     open("numbers", "w").write(", ".join(new_numbers))
     return new_numbers
+
 
 async def verify(sms_response: dict) -> None:
     if "message" not in sms_response:
@@ -41,9 +41,7 @@ async def verify(sms_response: dict) -> None:
         print(code)
         return
     number = utils.signal_format(sms_response["destination"])
-    cmd = (
-        f"./signal-cli --verbose --config /tmp/signal-register -u {number} verify {code}".split()
-    )
+    cmd = f"./signal-cli --verbose --config /tmp/signal-register -u {number} verify {code}".split()
     proc = await subprocess.create_subprocess_exec(
         *cmd,
         stdout=subprocess.PIPE,
@@ -54,22 +52,27 @@ async def verify(sms_response: dict) -> None:
     print(so, "\n", se)
     cwd = os.getcwd()
     os.chdir("/tmp/signal-register")
+    print(json.load(open(number))["registered"])
+    datastore = SignalDatastore(number)
     await datastore.upload()
+    print("uploaded")
     os.chdir(cwd)
     mod_pending_numbers(rm=number)
     return
 
+
 async def register_number(
-    raw_number: str, verify: bool = True, timeout: int = 60
+    raw_number: str, timeout: int = 60
 ) -> bool:
     number = utils.signal_format(raw_number)
-    datastore = SignalDatastore(number.lstrip("+"))
+    print(f"registering {number}") 
+    datastore = SignalDatastore(number)
     await datastore.account_interface.create_table()
+    print("made db..")
     if await datastore.is_registered():
         print("already registered")
         mod_pending_numbers(rm=number)
         return False
-
 
     receiver = utils.ReceiveSMS(callback=verify)
     async with receiver.receive() as server, utils.get_url() as url:
@@ -92,7 +95,10 @@ async def register_number(
             stderr=subprocess.PIPE,
         )
         (so, se) = await register.communicate()
-        print("signal-cli register:", so.decode(), "\n", se.decode())
+        if so or se:
+            print("signal-cli register:", so.decode(), "\n", se.decode())
+        else:
+            print("no output from signal-cli register")
         if "Invalid captcha given" in so.decode():
             return False
         for _ in range(timeout):
@@ -102,11 +108,29 @@ async def register_number(
         return False
 
 
+# async def add_device(uri: str):
+#     cmd = f"./signal-cli --config . addDevice --uri {uri}"
+
+
+def get_unregistered_numbers() -> list[str]:
+    blob = requests.get(
+        "https://apiv1.teleapi.net/user/dids/list",
+        params={"token": utils.get_secret("TELI_KEY")},
+    ).json()
+    accounts = get_account_interface()
+    return [
+        did["number"]
+        for did in blob["data"]
+        if "through-the-trees" not in did["sms_post_url"]
+        and not accounts.is_registered("1" + did["number"])
+    ]
+
+
 async def main() -> None:
     pending_numbers = mod_pending_numbers()
-    # as soon as a registration is successful, the iterator will end
-    if any(map(register_number, pending_numbers)):
-        return
+    for number in pending_numbers:
+        if await register_number(number):
+            return
     # if any(map(register_number, utils.list_our_numbers())):
     #    return
     available_numbers = utils.search_numbers(nxx="617", limit=1)
