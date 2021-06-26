@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Optional
 from subprocess import Popen, PIPE
 from tarfile import TarFile
 from io import BytesIO
@@ -12,7 +12,7 @@ import mem
 import utils
 from pghelp import PGExpressions, PGInterface
 
-# from base64 import urlsafe_b64encode, urlsafe_b64decode
+# maybe we'd like nicknames for accounts?
 
 AccountPGExpressions = PGExpressions(
     table="signal_accounts",
@@ -84,7 +84,7 @@ class SignalDatastore:
         record = await self.account_interface.get_claim(self.number)
         if not record:
             raise Exception(f"no record in db for {self.number}")
-        return record[0].get("active_node_name") is not  None
+        return record[0].get("active_node_name") is not None
 
     async def download(self) -> None:
         """Fetch our account datastore from postgresql and mark it claimed"""
@@ -98,11 +98,10 @@ class SignalDatastore:
         record = await self.account_interface.get_datastore(self.number)
         buffer = BytesIO(record[0].get("datastore"))
         tarball = TarFile(fileobj=buffer)
-        expected = f"data/{self.number}"
         fnames = [member.name for member in tarball.getmembers()]
         trueprint(fnames)
-        trueprint(f"expected file {expected} exists:", expected in fnames)
-        tarball.extractall("/app")
+        trueprint(f"expected file {self.filepath} exists:", self.filepath in fnames)
+        tarball.extractall("." if utils.LOCAL else "/app")
         await self.account_interface.mark_account_claimed(
             self.number, open("/etc/hostname").read().strip()  #  FLY_ALLOC_ID
         )
@@ -119,9 +118,10 @@ class SignalDatastore:
         tarball = TarFile(fileobj=buffer, mode="w")
         # os.chdir("/app")
         try:
-            tarball.add(f"data/+{self.number}")
-            tarball.add(f"data/+{self.number}.d")
+            tarball.add(self.filepath)
+            tarball.add(self.filepath + ".d")
         except FileNotFoundError:
+            logging.warn(f"couldn't find {self.filepath} in {os.getcwd()}, adding data instead")
             tarball.add("data")
         print(tarball.getmembers())
         tarball.close()
@@ -136,6 +136,15 @@ class SignalDatastore:
             result = await self.account_interface.upload(self.number, data)
         trueprint(result)
         trueprint(f"saved {kb} kb of tarballed datastore to supabase")
+
+ 
+async def getFreeSignalDatastore() -> SignalDatastore:
+    record = await get_account_interface().get_free_account()
+    if not record:
+        raise Exception("no free accounts")
+        # alternatively, register an account...
+    number = record[0].get("id")
+    return SignalDatastore(number)
 
 
 async def start_memfs(app: web.Application) -> None:
@@ -174,7 +183,7 @@ async def start_memfs(app: web.Application) -> None:
 
     async def launch() -> None:
         memfs = aioprocessing.AioProcess(target=memfs_proc)
-        memfs.start() # pylint: disable=no-member
+        memfs.start()  # pylint: disable=no-member
         app["memfs"] = memfs
 
     await launch()
@@ -213,8 +222,9 @@ async def on_shutdown(app: web.Application) -> None:
     if session:
         await session.datastore.upload()
         try:
-            session.proc.kill()
-            await session.proc.wait()
+            if session.proc:
+                session.proc.kill()
+                await session.proc.wait()
         except ProcessLookupError:
             pass
         await session.datastore.upload()

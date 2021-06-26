@@ -12,7 +12,8 @@ import phonenumbers as pn
 from aiohttp import web
 
 HOSTNAME = open("/etc/hostname").read().strip()  #  FLY_ALLOC_ID
-LOCAL = "FLY_APP_NAME" not in os.environ
+APP_NAME = os.getenv("FLY_APP_NAME")
+LOCAL = APP_NAME is None
 
 logging.basicConfig(
     level=logging.DEBUG, format="{levelname}: {message}", style="{"
@@ -47,7 +48,7 @@ def get_secret(key: str, env: Optional[str] = None) -> str:
 
 @asynccontextmanager
 async def get_url(port: int = 8080) -> AsyncIterator[str]:
-    if LOCAL:
+    if not APP_NAME:
         try:
             print("starting tunnel")
             tunnel = await create_subprocess_exec(
@@ -62,7 +63,7 @@ async def get_url(port: int = 8080) -> AsyncIterator[str]:
             logging.info("terminaitng tunnel")
             tunnel.terminate()
     else:
-        yield os.environ["FLY_APP_NAME"] + ".fly.io"
+        yield APP_NAME + ".fly.io"
 
 
 Callback = Callable[[dict], Coroutine[Any, Any, None]]
@@ -156,7 +157,7 @@ def set_sms_url(raw_number: str, url: str) -> dict:
     return set_url.json()
 
 
-async def print_sms(raw_number: str, port: int =8080) -> None:
+async def print_sms(raw_number: str, port: int = 8080) -> None:
     print(port)
     async with get_url(port) as url, receive_sms(aprint, port):
         set_sms_url(raw_number, url)
@@ -166,12 +167,22 @@ async def print_sms(raw_number: str, port: int =8080) -> None:
             return
     return
 
+
 def list_our_numbers() -> list[str]:
     blob = requests.get(
         "https://apiv1.teleapi.net/user/dids/list",
         params={"token": get_secret("TELI_KEY")},
     ).json()
-    return [did["number"] for did in blob["data"]]
+    # this actually needs to figure out the url of the other environment
+    # so prod doesn't take dev numbers
+    def predicate(did: dict[str, str]) -> bool:
+        # this actually needs to check if it's the *other* env
+        # and properly if the number is already used in another way...
+        # maybe based on whether the number is on signal...
+        url = did["sms_post_url"]
+        return "loca.lt" in url or "trees-dev" in url
+
+    return [did["number"] for did in blob["data"] if predicate(did)]
 
 
 def search_numbers(
