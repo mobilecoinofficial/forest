@@ -228,14 +228,10 @@ class Session:
             ]
         if numbers and len(numbers) == 1:
             # registered, one number
-            return (
-                f'Hi {message.source}! We found {numbers[0]} registered for your user. Try "/send {message.source} Hello from Forest Contact via {numbers[0]}!".'
-            )
+            return f'Hi {message.source}! We found {numbers[0]} registered for your user. Try "/send {message.source} Hello from Forest Contact via {numbers[0]}!".'
         # registered, many numbers
         if numbers:
-            return (
-                f"Hi {message.source}! We found several numbers {numbers} registered for your user. Try '/send {message.source} Hello from Forest Contact via {numbers[0]}!'."
-            )
+            return f"Hi {message.source}! We found several numbers {numbers} registered for your user. Try '/send {message.source} Hello from Forest Contact via {numbers[0]}!'."
         # not paid, not registered
         return (
             "We don't see any Forest Contact numbers for your account!"
@@ -251,6 +247,33 @@ class Session:
             return "sending attack drones to your location"
         return "no"
 
+    async def list_unused_numbers(self) -> list[str]:
+        our_numbers = utils.list_our_numbers()
+        logging.info("potentially available numbers: %s", our_numbers)
+        destinationless_numbers = [
+            our_number
+            for our_number in our_numbers
+            if not await self.routing_manager.get_destination(our_number)
+            and not await self.datastore.account_interface.is_registered(
+                our_number
+            )
+        ]
+        cmd = "./signal-cli --output=json getUserStatus".split()
+        proc = await subprocess.create_subprocess_exec(
+            *cmd, *map(utils.signal_format, destinationless_numbers), stdout=-1
+        )
+        out, _ = await proc.communicate()
+        registrations = {
+            utils.teli_format(pair["name"]): pair["isRegistered"]
+            for pair in json.loads(out)
+        }
+        print(registrations)
+        numbers = [
+            num for num in destinationless_numbers if not registrations[num]
+        ]
+        logging.info("available and unregistered numbers: %s", numbers)
+        return numbers
+
     async def do_order(self, msg: Message) -> str:
         """usage: /order <area code>"""
         if not msg.arg1:
@@ -260,44 +283,48 @@ class Session:
         if msg.source not in self.scratch["payments"]:
             # this needs to check if there are *unfulfilled* payments
             return "make a payment with /register first"
-        async with self.client_session.get(
-            "https://apiv1.teleapi.net/user/dids/list",
-            params={"token": utils.get_secret("TELI_KEY")},
-        ) as resp:
-            blob = await resp.json()
-        our_numbers = [
-            number["number"]
-            for number in blob
-            if number["number"].startswith(msg.arg1)
-            and "through-the-trees" not in number["sms_post_url"]
-        ]
-        logging.info("potentially available numbers: %s", our_numbers)
-        available_numbers = [
-            number
-            for number in our_numbers
-            if not await self.routing_manager.get_destination(number)
-            and not await self.datastore.account_interface.is_registered(number)
-        ]
-        logging.info("available and unregistered numbers: %s", available_numbers)
+        await self.routing_manager.sweep_expired_destinations()
+        available_numbers = await self.routing_manager.get_available()
         if available_numbers:
-            number = available_numbers[0]
+            number = available_numbers[0].get("id")
             utils.set_sms_url(number, os.environ["FLY_APP_NAME"] + ".fly.dev")
             await self.send_message(msg.source, f"found {number} for you")
         else:
             number = utils.search_numbers(area_code=msg.arg1, limit=1)[0]
             await self.send_message(msg.source, f"found {number}")
+            await self.routing_manager.intend_to_buy(number)
             buy_info = utils.buy_number(
                 number, sms_post_url=os.environ["FLY_APP_NAME"] + ".fly.dev"
             )
-            await self.send_message(msg.source, f"buying` {number}")
+            await self.send_message(msg.source, f"bought {number}")
             if "error" in buy_info:
+                await self.routing_manager.delete(number)
                 return f"something went wrong: {buy_info}"
-
+            await self.routing_manager.mark_bought(number)
         utils.set_sms_url(number, os.environ["FLY_APP_NAME"] + ".fly.dev")
-        await self.routing_manager.put_destination(number, msg.source)
+        await self.routing_manager.set_destination(number, msg.source)
         if await self.routing_manager.get_destination(number):
             return f"you are now the proud owner of {number}"
         return "db error?"
+
+    async def do_send(self, message: Message) -> Union[str, dict]:
+        numbers= [
+            registered.get("id")
+            for registered in await self.routing_manager.get_id(message.source)
+        ]
+        dest = await self.check_target_number(message)
+        if dest:
+            response = await self.send_sms(
+                source=numbers[0],
+                destination=dest,
+                message_text=message.text,
+            )
+            await self.send_reaction("📤", message)
+            # sms_uuid = response.get("data")
+            # TODO: store message.source and sms_uuid in a queue, enable https://apidocs.teleapi.net/api/sms/delivery-notifications
+            #    such that delivery notifs get redirected as responses to send command
+            return response
+        return "couldn't parse that number"
 
     async def handle_messages(self) -> None:
         async for message in self.signalcli_output_iter():
@@ -306,32 +333,13 @@ class Session:
                 maybe_routable = await self.routing_manager.get_id(
                     message.source
                 )
-            else:
-                maybe_routable = None
-            if maybe_routable:
                 numbers: Optional[list[str]] = [
                     registered.get("id") for registered in maybe_routable
                 ]
             else:
+                maybe_routable = None
                 numbers = None
-            if numbers and message.command == "send":
-                dest = await self.check_target_number(message)
-                if dest:
-                    response = await self.send_sms(
-                        source=numbers[0],
-                        destination=dest,
-                        message_text=message.text,
-                    )
-                    await self.send_reaction("📤", message)
-                    # sms_uuid = response.get("data")
-                    # TODO: store message.source and sms_uuid in a queue, enable https://apidocs.teleapi.net/api/sms/delivery-notifications
-                    #    such that delivery notifs get redirected as responses to send command
-                    await self.send_message(message.source, response)
-                else:
-                    await self.send_message(
-                        message.source, "couldn't parse that number"
-                    )
-            elif numbers and message.command in ("mkgroup", "query"):
+            if numbers and message.command in ("mkgroup", "query"):
                 # target_number = await self.check_target_number(message)
                 # if target_number:
                 cmd = {
@@ -363,7 +371,9 @@ class Session:
                 and "source" in message.quoted_text
             ):
                 destination = (
-                    message.quoted_text.split("\n")[0].lstrip("source:").strip()
+                    message.quoted_text.split("\n")[0]
+                    .removeprefix("source:")
+                    .strip()
                 )
                 trueprint("destination from quote: ", destination)
                 response = await self.send_sms(
@@ -403,6 +413,15 @@ class Session:
             if os.path.exists(self.datastore.filepath):
                 break
             await asyncio.sleep(1)
+
+        profileCmd = f"/app/signal-cli --config /app --username={self.bot_number} --output=json updateProfile --name forestbot --avatar avatar.png".split()
+        profileProc = await asyncio.create_subprocess_exec(
+            *profileCmd,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+        )
+        logging.info(await profileProc.communicate())
+
         COMMAND = f"/app/signal-cli --config /app --username={self.bot_number} --output=json stdio".split()
         logging.info(COMMAND)
         self.proc = await asyncio.create_subprocess_exec(
@@ -463,7 +482,7 @@ async def listen_to_signalcli(
             continue
         if "group" in blob:
             # SMS with {number} via {number}
-            their, our = blob["name"].lstrip("SMS with ").split(" via ")
+            their, our = blob["name"].removeprefix("SMS with ").split(" via ")
             # TODO: this needs to use number[0]
             await GroupRoutingManager().set_sms_route_for_group(
                 utils.teli_format(their), utils.teli_format(our), blob["group"]

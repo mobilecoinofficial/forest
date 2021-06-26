@@ -6,9 +6,9 @@ import os
 import re
 import shutil
 import json
-import phonenumbers as pn
 import requests
 from datastore import SignalDatastore, get_account_interface
+from forest_tables import RoutingManager
 import utils
 
 
@@ -54,6 +54,7 @@ async def verify(sms_response: dict) -> None:
     os.chdir("/tmp/signal-register")
     print(json.load(open(number))["registered"])
     datastore = SignalDatastore(number)
+    await RoutingManager().delete(utils.teli_format(number))
     await datastore.upload()
     print("uploaded")
     os.chdir(cwd)
@@ -61,11 +62,9 @@ async def verify(sms_response: dict) -> None:
     return
 
 
-async def register_number(
-    raw_number: str, timeout: int = 60
-) -> bool:
+async def register_number(raw_number: str, timeout: int = 60) -> bool:
     number = utils.signal_format(raw_number)
-    print(f"registering {number}") 
+    print(f"registering {number}")
     datastore = SignalDatastore(number)
     await datastore.account_interface.create_table()
     print("made db..")
@@ -75,7 +74,7 @@ async def register_number(
         return False
 
     receiver = utils.ReceiveSMS(callback=verify)
-    async with receiver.receive() as server, utils.get_url() as url:
+    async with receiver.receive() as _, utils.get_url() as url:
         print(utils.set_sms_url(number, url))
         captcha = utils.get_signal_captcha()
         if not captcha:
@@ -138,7 +137,13 @@ async def main() -> None:
     if input(f"buy {new_number}? ") != "yes":
         print("not buying number")
         return
-    utils.buy_number(new_number)
+    routing_manager = RoutingManager()
+    await routing_manager.intend_to_buy(new_number)
+    resp = utils.buy_number(new_number)
+    if "error" in resp:
+        print(resp)
+        routing_manager.delete(new_number)
+    await routing_manager.mark_bought(new_number)
     mod_pending_numbers(add=new_number)
     register_number(new_number)
     return
