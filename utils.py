@@ -151,10 +151,20 @@ def set_sms_url(raw_number: str, url: str) -> dict:
         "did_id": did_id,
         "url": url,
     }
+    logging.info(url)
     set_url = requests.get(
         "https://apiv1.teleapi.net/user/dids/smsurl/set", params=params
-    )
-    return set_url.json()
+    ).json()
+    logging.info(set_url)
+    actual_url = requests.get(
+        "https://apiv1.teleapi.net/user/dids/get",
+        params={
+            "token": get_secret("TELI_KEY"),
+            "number": number,
+        },
+    ).json()["data"]["sms_post_url"]
+    logging.info(actual_url)
+    return set_url
 
 
 async def print_sms(raw_number: str, port: int = 8080) -> None:

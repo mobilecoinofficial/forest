@@ -184,7 +184,7 @@ class PGInterface:
             def executer_with_args(*args: Any) -> Any:
                 """Closure over 'statement' in local state for application to arguments.
                 Allows deferred execution of f-strs, allowing PGExpresssions to operate on `args`."""
-                rebuilt_statement = eval(f"f'{statement}'")
+                rebuilt_statement = eval(f"f\"{statement}\"")
                 if (
                     rebuilt_statement != statement
                     and "args" in statement
