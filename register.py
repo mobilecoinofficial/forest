@@ -62,19 +62,20 @@ async def verify(sms_response: dict) -> None:
     return
 
 
-async def register_number(raw_number: str, timeout: int = 60) -> bool:
+async def register_number(
+    raw_number: str, timeout: int = 300, force: bool = False
+) -> bool:
     number = utils.signal_format(raw_number)
     print(f"registering {number}")
     datastore = SignalDatastore(number)
     await datastore.account_interface.create_table()
     print("made db..")
-    if await datastore.is_registered():
-        print("already registered")
+    if not force and await datastore.is_registered():
+        print("alranddy registered")
         mod_pending_numbers(rm=number)
         return False
-
-    receiver = utils.ReceiveSMS(callback=verify)
-    async with receiver.receive() as _, utils.get_url() as url:
+    receiver = utils.ReceiveSMS()
+    async with utils.ReceiveSMS().receive() as _, utils.get_url() as url:
         print(utils.set_sms_url(number, url))
         captcha = utils.get_signal_captcha()
         if not captcha:
@@ -99,17 +100,21 @@ async def register_number(raw_number: str, timeout: int = 60) -> bool:
         else:
             print("no output from signal-cli register")
         if "Invalid captcha given" in so.decode():
-            return False
-        for _ in range(timeout):
+            input("press enter when you've written a new captcha to /tmp/captcha")
+            return await register_number(raw_number, timeout, force)
+        for i in range(timeout):
+            msg = await receiver.msgs.get()
+            print(msg)
+            verify(msg)
             if await datastore.is_registered():
                 return True
             await asyncio.sleep(1)
+        print("timed out waiting for verification sms")
         return False
 
 
 # async def add_device(uri: str):
 #     cmd = f"./signal-cli --config . addDevice --uri {uri}"
-
 
 def get_unregistered_numbers() -> list[str]:
     blob = requests.get(
@@ -128,7 +133,7 @@ def get_unregistered_numbers() -> list[str]:
 async def main() -> None:
     pending_numbers = mod_pending_numbers()
     for number in pending_numbers:
-        if await register_number(number):
+        if await register_number(number, force=True):
             return
     # if any(map(register_number, utils.list_our_numbers())):
     #    return
