@@ -4,25 +4,24 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-aiohttp = {extras = ["speedups"], version = "*"}
 aioprocessing = "*"
-pyqrcode = "*" # is this needed?
+pyqrcode = "*"
 pynacl = "*"
 asyncpg = "*"
+# sylv additions
 phonenumbers = "*"
 requests = "*"
 termcolor = "*"
-#bidict = "*"
-#phonenumberslite = "*"
-
-#[dev-packages]
-#isort = "*"
-#black = "*"
-#aioconsole = "*"
-#requests = "*"
 
 [requires]
 python_version = "3.9"
 
 [pipenv]
 allow_prereleases = true
+
+[dev-packages]
+pytest = "*"
+
+[packages.aiohttp]
+extras = [ "speedups",]
+version = "*"

@@ -36,9 +36,6 @@ AccountPGExpressions = PGExpressions(
             WHERE active_node_name IS NULL \
             AND last_claim_ms = 0 \
             LIMIT 1;",
-    # mark_account_updated="UPDATE {self.table} SET \
-    #     last_update_ms = (extract(epoch from now()) * 1000) \
-    #     WHERE id=$1;",
     upload="UPDATE {self.table} SET \
             datastore = $2, \
             last_update_ms = (extract(epoch from now()) * 1000) \
@@ -93,8 +90,11 @@ class SignalDatastore:
             if not claim:
                 break
             logging.info("this account is claimed, waiting and trying to terminate %s", claim)
-            resp = requests.get(utils.URL + "/terminate", data=claim)
-            logging.info("got %s", resp.text)
+            try:
+                resp = requests.post(utils.URL + "/terminate", data=claim)
+                logging.info("got %s", resp.text)
+            except requests.exceptions.RequestException:
+                pass
             await asyncio.sleep(6)
             if i == 9:
                 logging.info("a minute is up, downloading anyway")
@@ -110,10 +110,6 @@ class SignalDatastore:
         )
         assert await self.is_claimed()
         await self.account_interface.get_datastore(self.number)
-
-    # async def mark_freed(self) -> Any:
-    #     """Marks account as freed in PG database."""
-    #     return await self.account_interface.mark_account_freed(self.number)
 
     async def upload(self, create: bool = False) -> Any:
         """Puts account datastore in postgresql."""

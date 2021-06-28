@@ -67,7 +67,10 @@ class Session:
         self.proc: Optional[subprocess.Process] = None
         self.signalcli_output_queue: Queue[Message] = Queue()
         self.signalcli_input_queue: Queue[dict] = Queue()
-        self.client_session = aiohttp.ClientSession()
+        self.raw_queue: Queue[dict] = Queue()
+        self.client_session = (
+            aiohttp.ClientSession()
+        )  # i don't think we need this?
         self.scratch: dict[str, dict[str, Any]] = {"payments": {}}
         self.payments_manager = PaymentsManager()
         self.routing_manager = RoutingManager()
@@ -259,33 +262,6 @@ class Session:
             return "sending attack drones to your location"
         return "no"
 
-    # async def list_unused_numbers(self) -> list[str]:
-    #     our_numbers = utils.list_our_numbers()
-    #     logging.info("potentially available numbers: %s", our_numbers)
-    #     destinationless_numbers = [
-    #         our_number
-    #         for our_number in our_numbers
-    #         if not await self.routing_manager.get_destination(our_number)
-    #         and not await self.datastore.account_interface.is_registered(
-    #             our_number
-    #         )
-    #     ]
-    #     cmd = "./signal-cli --output=json getUserStatus".split()
-    #     proc = await subprocess.create_subprocess_exec(
-    #         *cmd, *map(utils.signal_format, destinationless_numbers), stdout=-1
-    #     )
-    #     out, _ = await proc.communicate()
-    #     registrations = {
-    #         utils.teli_format(pair["name"]): pair["isRegistered"]
-    #         for pair in json.loads(out)
-    #     }
-    #     print(registrations)
-    #     numbers = [
-    #         num for num in destinationless_numbers if not registrations[num]
-    #     ]
-    #     logging.info("available and unregistered numbers: %s", numbers)
-    #     return numbers
-
     async def do_order(self, msg: Message) -> str:
         """usage: /order <area code>"""
         if not msg.arg1:
@@ -356,16 +332,18 @@ class Session:
                 maybe_routable = None
                 numbers = None
             if numbers and message.command in ("mkgroup", "query"):
-                # target_number = await self.check_target_number(message)
-                # if target_number:
-                cmd = {
-                    "command": "updateGroup",
-                    "member": [message.source],
-                    "name": f"SMS with {message.arg1} via {numbers[0]}",
-                }
-                await self.signalcli_input_queue.put(cmd)
-                await self.send_reaction("👥", message)
-                await self.send_message(message.source, "invited you to a group")
+                target_number = await self.check_target_number(message)
+                if target_number:
+                    cmd = {
+                        "command": "updateGroup",
+                        "member": [message.source],
+                        "name": f"SMS with {target_number} via {numbers[0]}",
+                    }
+                    await self.signalcli_input_queue.put(cmd)
+                    await self.send_reaction("👥", message)
+                    await self.send_message(
+                        message.source, "invited you to a group"
+                    )
             elif numbers and message.group:
                 group = await group_routing_manager.get_sms_route_for_group(
                     message.group
@@ -416,10 +394,6 @@ class Session:
 
     async def launch_and_connect(self) -> None:
         await self.datastore.download()
-        # for _ in range(5):
-        #     if os.path.exists(self.datastore.filepath):
-        #         break
-        #     await asyncio.sleep(1)
 
         profileCmd = f"/app/signal-cli --config /app --username={self.bot_number} --output=plain-text updateProfile --name forestbot --avatar avatar.png".split()
         profileProc = await asyncio.create_subprocess_exec(*profileCmd)
@@ -438,8 +412,15 @@ class Session:
             self.proc.pid,
         )
         assert self.proc.stdout and self.proc.stdin
+
+        # slap a feature flag on this
+
         asyncio.create_task(
-            listen_to_signalcli(self.proc.stdout, self.signalcli_output_queue)
+            listen_to_signalcli(
+                self.proc.stdout,
+                self.signalcli_output_queue,
+                self.raw_queue,
+            )
         )
 
         async for msg in self.signalcli_input_iter():
@@ -456,14 +437,21 @@ async def start_session(app: web.Application) -> None:
     asyncio.create_task(new_session.launch_and_connect())
     asyncio.create_task(new_session.handle_messages())
 
+    app["singal_input"] = asyncio.create_task(read_console_requests())
+
+
+JSON = dict[str, Any]
+
 
 async def listen_to_signalcli(
-    stream: asyncio.StreamReader, queue: Queue[Message]
+    stream: asyncio.StreamReader,
+    queue: Queue[Message],
+    raw_queue: Optional[Queue[JSON]],
 ) -> None:
     while True:
         line = await stream.readline()
         logging.info("signal: %s", line.decode())
-        # don't print receiptMessage
+        # TODO: don't print receiptMessage
         # color non-json. pretty-print errors
         # sensibly color web traffic, too?
         # fly / db / asyncio and other lib warnings / java / signal logic and networking
@@ -471,6 +459,7 @@ async def listen_to_signalcli(
             break
         try:
             blob = json.loads(line)
+            await raw_queue.put(blob)
         except json.JSONDecodeError:
             continue
         if not isinstance(blob, dict):  # e.g. a timestamp
@@ -502,12 +491,22 @@ async def send_message_handler(request: web.Request) -> Any:
     # Returns MultiDictProxy instance filled with parsed data.
     msg_obj = dict(await request.post())
     recipient = msg_obj.get("recipient", get_secret("ADMIN"))
+    content = msg_obj.get("message", msg_obj)
     if session:
-        await session.send_message(recipient, msg_obj)
+        await session.send_message(recipient, content)
     return web.json_response({"status": "sent"})
 
 
-async def inbound_handler(request: web.Request) -> web.Response:
+async def get_next_message_handler(
+    request: web.Request,
+) -> Any:  # web.Response...
+    session = request.app.get("session")
+    if session and session.raw_queue:
+        return web.json_response(await session.raw_queue.get())
+    return web.json_response({"error": "no session"})
+
+
+async def inbound_sms_handler(request: web.Request) -> web.Response:
     msg_data = await request.text()  # await request.post()
     # parse query-string encoded sms/mms into object
     msg_obj = {
@@ -565,41 +564,25 @@ async def terminate(request: web.Request) -> web.Response:
         sys.exit(0)
 
 
-# async def search(request: web.Request) -> web.Response:
-#     pass
-
 app = web.Application()
 
 app.on_startup.append(start_session)
 app.on_startup.append(datastore.start_memfs)
 app.on_startup.append(datastore.start_queue_monitor)
 app.on_shutdown.append(datastore.on_shutdown)
-
+maybe_extra = (
+    [web.get("/next_message", get_next_message_handler)] if utils.LOCAL else []
+)
 app.add_routes(
     [
         web.get("/", noGet),
         web.post("/user/{phonenumber}", send_message_handler),
-        web.post("/inbound", inbound_handler),
+        web.post("/inbound", inbound_sms_handler),
         web.post("/terminate", terminate),
-    ]
+    ] + maybe_extra
 )
 
 app["session"] = None
-
-
-# class Forest:
-#     def __init__(self):
-#         self.signal = Signal(
-#             get_secret("BOT_NUMBER"), callback=self.handle_signal_message
-#         )
-#         self.teli = ManageSMS(callback=self.handle_sms_message)
-#         self.routing = RoutingManager()
-#         self.payments = PaymentsManager()
-
-#     async def run():
-#         with self.signal and self.teli:
-#             await self.signal.receive()
-#             await self.teli.receive()
 
 
 if __name__ == "__main__":
