@@ -4,6 +4,7 @@ import utils
 
 USER_DATABASE = ROUTING_DATABASE = utils.get_secret("DATABASE_URL")
 
+# backwards compat: ignore absence of status
 
 RoutingPGExpressions = PGExpressions(
     table="routing",

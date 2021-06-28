@@ -5,22 +5,19 @@ import sys
 import asyncio
 import asyncio.subprocess as subprocess  # https://github.com/PyCQA/pylint/issues/1469
 import json
-import os
 import logging
 import urllib.parse
 import random
 from aiohttp import web
 import aiohttp
 import phonenumbers as pn
+import termcolor
 import datastore
 import utils
+from utils import get_secret
 from forest_tables import RoutingManager, PaymentsManager, GroupRoutingManager
 
 # pylint: disable=line-too-long,too-many-instance-attributes, import-outside-toplevel, fixme, redefined-outer-name
-
-
-def trueprint(*args: Any, **kwargs: Any) -> None:
-    print(*args, **kwargs, file=open("/dev/stdout", "w"))
 
 
 class Message:
@@ -38,10 +35,10 @@ class Message:
         self.receipt = envelope.get("receiptMessage")
         self.group: Optional[str] = msg.get("groupInfo", {}).get("groupId")
         if self.group:
-            trueprint("saw group: ", self.group)
+            logging.info("saw group: %s", self.group)
         self.quoted_text = msg.get("quote", {}).get("text")
         if self.quoted_text:
-            trueprint("saw quote: ", self.quoted_text)
+            logging.info("saw quote: %s", self.quoted_text)
         self.command: Optional[str] = None
         self.tokens: Optional[list[str]] = None
         if self.text and self.text.startswith("/"):
@@ -53,6 +50,7 @@ class Message:
             )
 
     def __repr__(self) -> str:
+        # it might be nice to prune this so the logs are easier to read
         return f"<{self.envelope}>"
 
 
@@ -86,17 +84,19 @@ class Session:
             "message": message_text,
         }
         response = await self.client_session.post(
-            "https://api.teleapi.net/sms/send?token=" + os.environ["TELI_KEY"],
+            "https://api.teleapi.net/sms/send?token=" + get_secret("TELI_KEY"),
             data=payload,
         )
         response_json = await response.json()
         return response_json
 
     async def send_message(
-        self, recipient: str, msg: Union[str, list, dict]
+        self,
+        recipient: Optional[str],
+        msg: Union[str, list, dict],
+        group: Optional[str] = None,
     ) -> None:
         """Builds send command with specified recipient and msg, writes to signal-cli."""
-        assert recipient == utils.signal_format(recipient)
         if isinstance(msg, list):
             for m in msg:
                 await self.send_message(recipient, m)
@@ -104,10 +104,13 @@ class Session:
             msg = "\n".join((f"{key}:\t{value}" for key, value in msg.items()))
         json_command = {
             "command": "send",
-            "recipient": [str(recipient)],
             "message": msg,
         }
-
+        if group:
+            json_command["group"] = group
+        elif recipient:
+            assert recipient == utils.signal_format(recipient)
+            json_command["recipient"] = [str(recipient)]
         await self.signalcli_input_queue.put(json_command)
 
     async def send_reaction(self, emoji: str, target_msg: Message) -> None:
@@ -136,7 +139,7 @@ class Session:
             yield command
 
     async def check_target_number(self, msg: Message) -> Optional[str]:
-        trueprint(msg.arg1)
+        logging.info(msg.arg1)
         try:
             # matches = list(pn.PhoneNumberMatcher(msg.text, "US"))
             # assert len(matches) == 1
@@ -175,6 +178,7 @@ class Session:
         nmob_price = int(mob_price * invnano)
         mob_price_exact = nmob_price / invnano
         continue_message = f"The current price for a SMS number is {mob_price_exact}MOB/month. If you would like to continue, please send exactly..."
+        # dunno if we want to generate new wallets? what happens if a user overpays?
         await self.send_message(
             new_user,
             [
@@ -224,7 +228,7 @@ class Session:
             return [
                 "Welcome to the beta! Thank you for your payment. Please contact support to finish setting up your account by requesting to join this group. We will reach out within 12 hours.",
                 "https://signal.group/#CjQKINbHvfKoeUx_pPjipkXVspTj5HiTiUjoNQeNgmGvCmDnEhCTYgZZ0puiT-hUG0hUUwlS",
-            #    "Alternatively, try /order <area code>",
+                #    "Alternatively, try /order <area code>",
             ]
         if numbers and len(numbers) == 1:
             # registered, one number
@@ -239,6 +243,14 @@ class Session:
             'try "/register" and following the instructions.'
         )
 
+    async def do_help(self, _: Message) -> str:
+        return (
+            "Welcome to the Forest.contact Pre-Release!\n"
+            "To get started, try /register, or /status! "
+            "If you've already registered, try to send a message via /send."
+            ""
+        )
+
     async def do_pay(self, message: Message) -> str:
         if message.arg1 == "shibboleth":
             self.scratch["payments"][message.source] = True
@@ -247,32 +259,32 @@ class Session:
             return "sending attack drones to your location"
         return "no"
 
-    async def list_unused_numbers(self) -> list[str]:
-        our_numbers = utils.list_our_numbers()
-        logging.info("potentially available numbers: %s", our_numbers)
-        destinationless_numbers = [
-            our_number
-            for our_number in our_numbers
-            if not await self.routing_manager.get_destination(our_number)
-            and not await self.datastore.account_interface.is_registered(
-                our_number
-            )
-        ]
-        cmd = "./signal-cli --output=json getUserStatus".split()
-        proc = await subprocess.create_subprocess_exec(
-            *cmd, *map(utils.signal_format, destinationless_numbers), stdout=-1
-        )
-        out, _ = await proc.communicate()
-        registrations = {
-            utils.teli_format(pair["name"]): pair["isRegistered"]
-            for pair in json.loads(out)
-        }
-        print(registrations)
-        numbers = [
-            num for num in destinationless_numbers if not registrations[num]
-        ]
-        logging.info("available and unregistered numbers: %s", numbers)
-        return numbers
+    # async def list_unused_numbers(self) -> list[str]:
+    #     our_numbers = utils.list_our_numbers()
+    #     logging.info("potentially available numbers: %s", our_numbers)
+    #     destinationless_numbers = [
+    #         our_number
+    #         for our_number in our_numbers
+    #         if not await self.routing_manager.get_destination(our_number)
+    #         and not await self.datastore.account_interface.is_registered(
+    #             our_number
+    #         )
+    #     ]
+    #     cmd = "./signal-cli --output=json getUserStatus".split()
+    #     proc = await subprocess.create_subprocess_exec(
+    #         *cmd, *map(utils.signal_format, destinationless_numbers), stdout=-1
+    #     )
+    #     out, _ = await proc.communicate()
+    #     registrations = {
+    #         utils.teli_format(pair["name"]): pair["isRegistered"]
+    #         for pair in json.loads(out)
+    #     }
+    #     print(registrations)
+    #     numbers = [
+    #         num for num in destinationless_numbers if not registrations[num]
+    #     ]
+    #     logging.info("available and unregistered numbers: %s", numbers)
+    #     return numbers
 
     async def do_order(self, msg: Message) -> str:
         """usage: /order <area code>"""
@@ -302,12 +314,14 @@ class Session:
                 await self.routing_manager.delete(number)
                 return f"something went wrong: {buy_info}"
             await self.routing_manager.mark_bought(number)
-        url = f"https://{utils.APP_NAME}.fly.dev/inbound"
-        utils.set_sms_url(number, url)
+        utils.set_sms_url(number, utils.URL + "/inbound")
         await self.routing_manager.set_destination(number, msg.source)
         if await self.routing_manager.get_destination(number):
             return f"you are now the proud owner of {number}"
         return "db error?"
+
+    if not get_secret("ORDER"):
+        del do_order, do_pay
 
     async def do_send(self, message: Message) -> Union[str, dict]:
         numbers = [
@@ -327,9 +341,6 @@ class Session:
             #    such that delivery notifs get redirected as responses to send command
             return response
         return "couldn't parse that number"
-
-    if not get_secret("ORDER"):
-        del do_order
 
     async def handle_messages(self) -> None:
         async for message in self.signalcli_output_iter():
@@ -355,47 +366,38 @@ class Session:
                 await self.signalcli_input_queue.put(cmd)
                 await self.send_reaction("👥", message)
                 await self.send_message(message.source, "invited you to a group")
-            elif (
-                numbers
-                and message.group
-                and (
-                    group := await group_routing_manager.get_sms_route_for_group(
-                        message.group
+            elif numbers and message.group:
+                group = await group_routing_manager.get_sms_route_for_group(
+                    message.group
+                )
+                if group:
+                    await self.send_sms(
+                        source=group[0].get("our_sms"),
+                        destination=group[0].get("their_sms"),
+                        message_text=message.text,
                     )
-                )
-            ):
-                await self.send_sms(
-                    source=group[0].get("our_sms"),
-                    destination=group[0].get("their_sms"),
-                    message_text=message.text,
-                )
-                await self.send_reaction("📤", message)
+                    await self.send_reaction("📤", message)
             elif (
                 numbers
                 and message.quoted_text
                 and "source" in message.quoted_text
             ):
-                destination = (
-                    message.quoted_text.split("\n")[0]
-                    .removeprefix("source:")
-                    .strip()
-                )
-                trueprint("destination from quote: ", destination)
+                pairs = [
+                    line.split(":") for line in message.quoted_text.split("\n")
+                ]
+                quoted = {key: value.strip() for key, value in pairs}
+                logging.info("destination from quote: %s", quoted["destination"])
                 response = await self.send_sms(
-                    source=numbers[0],
-                    destination=destination,
+                    source=quoted["source"],
+                    destination=quoted["destination"],
                     message_text=message.text,
                 )
-                trueprint("sent")
+                logging.info("sent")
                 await self.send_reaction("📤", message)
                 await self.send_message(message.source, response)
-            elif message.command == "help":
-                await self.send_message(
-                    message.source,
-                    """Welcome to the Forest.contact Pre-Release!\nTo get started, try /register, or /status! If you've already registered, try to send a message via /send.""",
-                )
             elif message.command == "register":
                 # need to abstract this into a decorator or something
+                # like def do_register(self, msg): asyncio.cerate_task(self.register(message))
                 asyncio.create_task(self.do_register(message))
             elif message.command:
                 if hasattr(self, "do_" + message.command):
@@ -414,10 +416,10 @@ class Session:
 
     async def launch_and_connect(self) -> None:
         await self.datastore.download()
-        for _ in range(5):
-            if os.path.exists(self.datastore.filepath):
-                break
-            await asyncio.sleep(1)
+        # for _ in range(5):
+        #     if os.path.exists(self.datastore.filepath):
+        #         break
+        #     await asyncio.sleep(1)
 
         profileCmd = f"/app/signal-cli --config /app --username={self.bot_number} --output=plain-text updateProfile --name forestbot --avatar avatar.png".split()
         profileProc = await asyncio.create_subprocess_exec(*profileCmd)
@@ -430,21 +432,25 @@ class Session:
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
         )
-        print(f"started signal-cli @ {self.bot_number} with PID {self.proc.pid}")
+        logging.info(
+            "started signal-cli @ %s with PID %s",
+            self.bot_number,
+            self.proc.pid,
+        )
         assert self.proc.stdout and self.proc.stdin
         asyncio.create_task(
             listen_to_signalcli(self.proc.stdout, self.signalcli_output_queue)
         )
 
         async for msg in self.signalcli_input_iter():
-            open("/dev/stdout", "w").write(f"input to signal: {msg}\n")
+            logging.info("input to signal: %s", msg)
             self.proc.stdin.write(json.dumps(msg).encode() + b"\n")
         await self.proc.wait()
 
 
 async def start_session(app: web.Application) -> None:
     # number = (await datastore.get_account_interface().get_free_account())[0].get("id")
-    number = os.environ["BOT_NUMBER"]
+    number = get_secret("BOT_NUMBER")
     logging.info(number)
     app["session"] = new_session = Session(number)
     asyncio.create_task(new_session.launch_and_connect())
@@ -456,7 +462,7 @@ async def listen_to_signalcli(
 ) -> None:
     while True:
         line = await stream.readline()
-        trueprint("signal: ", line.decode())
+        logging.info("signal: %s", line.decode())
         # don't print receiptMessage
         # color non-json. pretty-print errors
         # sensibly color web traffic, too?
@@ -470,16 +476,17 @@ async def listen_to_signalcli(
         if not isinstance(blob, dict):  # e.g. a timestamp
             continue
         if "error" in blob:
-            trueprint(blob["error"])
+            logging.error(termcolor.colored(blob["error"], "red"))
             continue
         if "group" in blob:
+            # maybe this info should just be in Message and handled in Session
             # SMS with {number} via {number}
             their, our = blob["name"].removeprefix("SMS with ").split(" via ")
             # TODO: this needs to use number[0]
             await GroupRoutingManager().set_sms_route_for_group(
                 utils.teli_format(their), utils.teli_format(our), blob["group"]
             )
-            trueprint("made a new group route from ", blob)
+            logging.info("made a new group route from %s", blob)
             continue
         await queue.put(Message(blob))
 
@@ -494,14 +501,14 @@ async def send_message_handler(request: web.Request) -> Any:
     # post: A coroutine that reads POST parameters from request body.
     # Returns MultiDictProxy instance filled with parsed data.
     msg_obj = dict(await request.post())
-    recipient = msg_obj.get("recipient", "+15133278483")
+    recipient = msg_obj.get("recipient", get_secret("ADMIN"))
     if session:
         await session.send_message(recipient, msg_obj)
     return web.json_response({"status": "sent"})
 
 
 async def inbound_handler(request: web.Request) -> web.Response:
-    msg_data = await request.text() # await request.post()
+    msg_data = await request.text()  # await request.post()
     # parse query-string encoded sms/mms into object
     msg_obj = {
         x: y[0]
@@ -509,18 +516,15 @@ async def inbound_handler(request: web.Request) -> web.Response:
         if x in ("source", "destination", "message")
     }
     # if it's a raw post (debugging / oops / whatnot - not a query string)
-    if not msg_obj:
-        # stick the contents under the message key
-        msg_obj["message"] = msg_data
-    trueprint(msg_obj)
+    logging.info(msg_obj)
     destination = msg_obj.get("destination")
-    ## lookup sms recipient to signal recipient
+    # lookup sms recipient to signal recipient
     maybe_dest = await RoutingManager().get_destination(destination)
     if maybe_dest:
         recipient = maybe_dest[0].get("destination")
     else:
-        trueprint("falling back to admin")
-        recipient = utils.get_secret("ADMIN")
+        logging.info("falling back to admin")
+        recipient = get_secret("ADMIN")
         msg_obj["message"] = "destination not found for " + str(msg_obj)
     # msg_obj["maybe_dest"] = str(maybe_dest)
     session = request.app.get("session")
@@ -528,21 +532,18 @@ async def inbound_handler(request: web.Request) -> web.Response:
         maybe_group = await group_routing_manager.get_group_id_for_sms_route(
             msg_obj["source"], msg_obj["destination"]
         )
-        trueprint(maybe_group)
+        logging.info(maybe_group)
         if maybe_group:
-            trueprint("sending a group")
-            cmd = {
-                "command": "send",
-                "message": msg_obj["message"],
-                "group": maybe_group[0].get("group_id"),
-            }
-            await session.signalcli_input_queue.put(cmd)
+            logging.info("sending a group")
+            group = maybe_group[0].get("group_id")
+            await session.send_message(None, msg_obj["message"], group=group)
         else:
             # send hashmap as signal message with newlines and tabs and stuff
             await session.send_message(recipient, msg_obj)
         return web.Response(text="TY!")
     # TODO: return non-200 if no delivery receipt / ok crypto state, let teli do our retry
     # no live worker sessions
+    # ...to do that, you would have to await a response from signal, which requires hooks or such
     await request.app["client_session"].post(
         "https://counter.pythia.workers.dev/post", data=msg_data
     )
@@ -554,6 +555,7 @@ async def terminate(request: web.Request) -> web.Response:
         return web.Response(
             status=403, text="https://twitter.com/dril/status/922321981"
         )
+    logging.warning("======terminating======")
     await request.app.shutdown()
     await request.app.cleanup()
     try:
@@ -601,6 +603,6 @@ app["session"] = None
 
 
 if __name__ == "__main__":
-    trueprint("=========================new run=======================")
+    logging.info("=========================new run=======================")
     group_routing_manager = GroupRoutingManager()
     web.run_app(app, port=8080, host="0.0.0.0")

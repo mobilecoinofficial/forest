@@ -14,6 +14,7 @@ from aiohttp import web
 HOSTNAME = open("/etc/hostname").read().strip()  #  FLY_ALLOC_ID
 APP_NAME = os.getenv("FLY_APP_NAME")
 LOCAL = APP_NAME is None
+URL = f"https://{APP_NAME}.fly.dev"
 
 logging.basicConfig(
     level=logging.DEBUG, format="{levelname}: {message}", style="{"
