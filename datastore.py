@@ -7,6 +7,7 @@ import logging
 import asyncio
 from aiohttp import web
 import aioprocessing
+import requests
 import fuse
 import mem
 import utils
@@ -49,6 +50,8 @@ AccountPGExpressions = PGExpressions(
             WHERE last_update_ms < ((extract(epoch from now())-3600) * 1000);",
 )
 
+# migration strategy:
+# backwards compat with non-tar datastore
 
 def get_account_interface() -> PGInterface:
     return PGInterface(
@@ -56,9 +59,6 @@ def get_account_interface() -> PGInterface:
         database=utils.get_secret("DATABASE_URL"),
     )
 
-
-def trueprint(*args: Any, **kwargs: Any) -> None:
-    print(*args, **kwargs, file=open("/dev/stdout", "w"))
 
 
 class SignalDatastore:
@@ -80,27 +80,30 @@ class SignalDatastore:
             return False
         return bool(record[0].get("registered"))
 
-    async def is_claimed(self) -> bool:
+    async def is_claimed(self) -> Optional[str]:
         record = await self.account_interface.get_claim(self.number)
         if not record:
             raise Exception(f"no record in db for {self.number}")
-        return record[0].get("active_node_name") is not None
+        return record[0].get("active_node_name")
 
     async def download(self) -> None:
         """Fetch our account datastore from postgresql and mark it claimed"""
         for i in range(10):
-            if not await self.is_claimed():
+            claim = await self.is_claimed()
+            if not claim:
                 break
-            trueprint("this account is claimed, waiting...")
+            logging.info("this account is claimed, waiting and trying to terminate %s", claim)
+            resp = requests.get(utils.URL + "/terminate", data=claim)
+            logging.info("got %s", resp.text)
             await asyncio.sleep(6)
             if i == 9:
-                trueprint("a minute is up, downloading anyway")
+                logging.info("a minute is up, downloading anyway")
         record = await self.account_interface.get_datastore(self.number)
         buffer = BytesIO(record[0].get("datastore"))
         tarball = TarFile(fileobj=buffer)
         fnames = [member.name for member in tarball.getmembers()]
-        trueprint(fnames)
-        trueprint(f"expected file {self.filepath} exists:", self.filepath in fnames)
+        logging.info(fnames)
+        logging.info(f"expected file {self.filepath} exists:", self.filepath in fnames)
         tarball.extractall("." if utils.LOCAL else "/app")
         await self.account_interface.mark_account_claimed(
             self.number, open("/etc/hostname").read().strip()  #  FLY_ALLOC_ID
@@ -134,8 +137,8 @@ class SignalDatastore:
             )
         else:
             result = await self.account_interface.upload(self.number, data)
-        trueprint(result)
-        trueprint(f"saved {kb} kb of tarballed datastore to supabase")
+        logging.info(result)
+        logging.info(f"saved {kb} kb of tarballed datastore to supabase")
 
  
 async def getFreeSignalDatastore() -> SignalDatastore:
@@ -199,7 +202,7 @@ async def start_queue_monitor(app: web.Application) -> None:
 
     async def background_sync_handler() -> None:
         queue = app["mem_queue"]
-        trueprint("monitoring memfs")
+        logging.info("monitoring memfs")
         while True:
             queue_item = await queue.coro_get()
             # iff fsync triggered by signal-cli
@@ -231,4 +234,4 @@ async def on_shutdown(app: web.Application) -> None:
         await session.datastore.account_interface.mark_account_freed(
             session.datastore.number
         )
-    trueprint("=============exited===================")
+    logging.info("=============exited===================")

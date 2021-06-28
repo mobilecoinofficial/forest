@@ -6,13 +6,14 @@ name = "pypi"
 [packages]
 aiohttp = {extras = ["speedups"], version = "*"}
 aioprocessing = "*"
-pyqrcode = "*"
+pyqrcode = "*" # is this needed?
 pynacl = "*"
 asyncpg = "*"
-#bidict = "*"
 phonenumbers = "*"
-#phonenumberslite = "*"
 requests = "*"
+termcolor = "*"
+#bidict = "*"
+#phonenumberslite = "*"
 
 #[dev-packages]
 #isort = "*"
