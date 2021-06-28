@@ -224,7 +224,7 @@ class Session:
             return [
                 "Welcome to the beta! Thank you for your payment. Please contact support to finish setting up your account by requesting to join this group. We will reach out within 12 hours.",
                 "https://signal.group/#CjQKINbHvfKoeUx_pPjipkXVspTj5HiTiUjoNQeNgmGvCmDnEhCTYgZZ0puiT-hUG0hUUwlS",
-                "Alternatively, try /order <area code>",
+            #    "Alternatively, try /order <area code>",
             ]
         if numbers and len(numbers) == 1:
             # registered, one number
@@ -284,31 +284,33 @@ class Session:
             # this needs to check if there are *unfulfilled* payments
             return "make a payment with /register first"
         await self.routing_manager.sweep_expired_destinations()
-        available_numbers = await self.routing_manager.get_available()
+        available_numbers = [
+            num
+            for record in await self.routing_manager.get_available()
+            if (num := record.get("id")).startswith(msg.arg1)
+        ]
         if available_numbers:
-            number = available_numbers[0].get("id")
-            utils.set_sms_url(number, os.environ["FLY_APP_NAME"] + ".fly.dev")
-            await self.send_message(msg.source, f"found {number} for you")
+            number = available_numbers[0]
+            await self.send_message(msg.source, f"found {number} for you...")
         else:
             number = utils.search_numbers(area_code=msg.arg1, limit=1)[0]
             await self.send_message(msg.source, f"found {number}")
             await self.routing_manager.intend_to_buy(number)
-            buy_info = utils.buy_number(
-                number, sms_post_url=os.environ["FLY_APP_NAME"] + ".fly.dev"
-            )
+            buy_info = utils.buy_number(number)
             await self.send_message(msg.source, f"bought {number}")
             if "error" in buy_info:
                 await self.routing_manager.delete(number)
                 return f"something went wrong: {buy_info}"
             await self.routing_manager.mark_bought(number)
-        utils.set_sms_url(number, os.environ["FLY_APP_NAME"] + ".fly.dev")
+        url = f"https://{utils.APP_NAME}.fly.dev/inbound"
+        utils.set_sms_url(number, url)
         await self.routing_manager.set_destination(number, msg.source)
         if await self.routing_manager.get_destination(number):
             return f"you are now the proud owner of {number}"
         return "db error?"
 
     async def do_send(self, message: Message) -> Union[str, dict]:
-        numbers= [
+        numbers = [
             registered.get("id")
             for registered in await self.routing_manager.get_id(message.source)
         ]
@@ -325,6 +327,9 @@ class Session:
             #    such that delivery notifs get redirected as responses to send command
             return response
         return "couldn't parse that number"
+
+    if not get_secret("ORDER"):
+        del do_order
 
     async def handle_messages(self) -> None:
         async for message in self.signalcli_output_iter():
@@ -414,12 +419,8 @@ class Session:
                 break
             await asyncio.sleep(1)
 
-        profileCmd = f"/app/signal-cli --config /app --username={self.bot_number} --output=json updateProfile --name forestbot --avatar avatar.png".split()
-        profileProc = await asyncio.create_subprocess_exec(
-            *profileCmd,
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-        )
+        profileCmd = f"/app/signal-cli --config /app --username={self.bot_number} --output=plain-text updateProfile --name forestbot --avatar avatar.png".split()
+        profileProc = await asyncio.create_subprocess_exec(*profileCmd)
         logging.info(await profileProc.communicate())
 
         COMMAND = f"/app/signal-cli --config /app --username={self.bot_number} --output=json stdio".split()
@@ -448,15 +449,6 @@ async def start_session(app: web.Application) -> None:
     app["session"] = new_session = Session(number)
     asyncio.create_task(new_session.launch_and_connect())
     asyncio.create_task(new_session.handle_messages())
-    profile = {
-        "command": "updateProfile",
-        "name": "forestbot",
-        "avatar": "avatar.png",
-        "about": "forestbot",
-        # support: https://signal.group/#CjQKINbHvfKoeUx_pPjipkXVspTj5HiTiUjoNQeNgmGvCmDnEhCTYgZZ0puiT-hUG0hUUwlS",
-        "about_emoji": "🌲",
-    }
-    await new_session.signalcli_input_queue.put(profile)
 
 
 async def listen_to_signalcli(
@@ -509,9 +501,13 @@ async def send_message_handler(request: web.Request) -> Any:
 
 
 async def inbound_handler(request: web.Request) -> web.Response:
-    msg_data = await request.text()
+    msg_data = await request.text() # await request.post()
     # parse query-string encoded sms/mms into object
-    msg_obj = {x: y[0] for x, y in urllib.parse.parse_qs(msg_data).items()}
+    msg_obj = {
+        x: y[0]
+        for x, y in urllib.parse.parse_qs(msg_data).items()
+        if x in ("source", "destination", "message")
+    }
     # if it's a raw post (debugging / oops / whatnot - not a query string)
     if not msg_obj:
         # stick the contents under the message key
@@ -526,7 +522,7 @@ async def inbound_handler(request: web.Request) -> web.Response:
         trueprint("falling back to admin")
         recipient = utils.get_secret("ADMIN")
         msg_obj["message"] = "destination not found for " + str(msg_obj)
-    msg_obj["maybe_dest"] = str(maybe_dest)
+    # msg_obj["maybe_dest"] = str(maybe_dest)
     session = request.app.get("session")
     if session:
         maybe_group = await group_routing_manager.get_group_id_for_sms_route(

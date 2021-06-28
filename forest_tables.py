@@ -15,9 +15,9 @@ RoutingPGExpressions = PGExpressions(
     # number management
     intend_to_buy="INSERT INTO {self.table} (id, status) VALUES ($1, 'pending');",
     mark_bought="UPDATE {self.table} SET status='available' WHERE id=$1;",
-    set_destination="UPDATE {self.table} SET destination=$2 status='assigned' WHERE id=$1;",
+    set_destination="UPDATE {self.table} SET destination=$2, status='assigned' WHERE id=$1;",
     set_expiration_ms="UPDATE {self.table} SET expiration_ms=$2 WHERE id=$1;",
-    sweep_expired_destinations="UPDATE {self.table} SET experation_ms=NULL status='available' WHERE expiration_ms IS NOT NULL AND expiration_ms < (extract(epoch from now()) * 1000);",
+    sweep_expired_destinations="UPDATE {self.table} SET expiration_ms=NULL, status='available' WHERE expiration_ms IS NOT NULL AND expiration_ms < (extract(epoch from now()) * 1000);",
     delete="DELETE FROM {self.table} WHERE id=$1", # if you want to turn a number into a signal account
     get_available="SELECT id FROM {self.table} WHERE status='available';",
     # routing
