@@ -259,33 +259,6 @@ class Session:
             return "sending attack drones to your location"
         return "no"
 
-    # async def list_unused_numbers(self) -> list[str]:
-    #     our_numbers = utils.list_our_numbers()
-    #     logging.info("potentially available numbers: %s", our_numbers)
-    #     destinationless_numbers = [
-    #         our_number
-    #         for our_number in our_numbers
-    #         if not await self.routing_manager.get_destination(our_number)
-    #         and not await self.datastore.account_interface.is_registered(
-    #             our_number
-    #         )
-    #     ]
-    #     cmd = "./signal-cli --output=json getUserStatus".split()
-    #     proc = await subprocess.create_subprocess_exec(
-    #         *cmd, *map(utils.signal_format, destinationless_numbers), stdout=-1
-    #     )
-    #     out, _ = await proc.communicate()
-    #     registrations = {
-    #         utils.teli_format(pair["name"]): pair["isRegistered"]
-    #         for pair in json.loads(out)
-    #     }
-    #     print(registrations)
-    #     numbers = [
-    #         num for num in destinationless_numbers if not registrations[num]
-    #     ]
-    #     logging.info("available and unregistered numbers: %s", numbers)
-    #     return numbers
-
     async def do_order(self, msg: Message) -> str:
         """usage: /order <area code>"""
         if not msg.arg1:
@@ -356,16 +329,18 @@ class Session:
                 maybe_routable = None
                 numbers = None
             if numbers and message.command in ("mkgroup", "query"):
-                # target_number = await self.check_target_number(message)
-                # if target_number:
-                cmd = {
-                    "command": "updateGroup",
-                    "member": [message.source],
-                    "name": f"SMS with {message.arg1} via {numbers[0]}",
-                }
-                await self.signalcli_input_queue.put(cmd)
-                await self.send_reaction("👥", message)
-                await self.send_message(message.source, "invited you to a group")
+                target_number = await self.check_target_number(message)
+                if target_number:
+                    cmd = {
+                        "command": "updateGroup",
+                        "member": [message.source],
+                        "name": f"SMS with {target_number} via {numbers[0]}",
+                    }
+                    await self.signalcli_input_queue.put(cmd)
+                    await self.send_reaction("👥", message)
+                    await self.send_message(
+                        message.source, "invited you to a group"
+                    )
             elif numbers and message.group:
                 group = await group_routing_manager.get_sms_route_for_group(
                     message.group
@@ -416,10 +391,6 @@ class Session:
 
     async def launch_and_connect(self) -> None:
         await self.datastore.download()
-        # for _ in range(5):
-        #     if os.path.exists(self.datastore.filepath):
-        #         break
-        #     await asyncio.sleep(1)
 
         profileCmd = f"/app/signal-cli --config /app --username={self.bot_number} --output=plain-text updateProfile --name forestbot --avatar avatar.png".split()
         profileProc = await asyncio.create_subprocess_exec(*profileCmd)
@@ -565,9 +536,6 @@ async def terminate(request: web.Request) -> web.Response:
         sys.exit(0)
 
 
-# async def search(request: web.Request) -> web.Response:
-#     pass
-
 app = web.Application()
 
 app.on_startup.append(start_session)
@@ -585,21 +553,6 @@ app.add_routes(
 )
 
 app["session"] = None
-
-
-# class Forest:
-#     def __init__(self):
-#         self.signal = Signal(
-#             get_secret("BOT_NUMBER"), callback=self.handle_signal_message
-#         )
-#         self.teli = ManageSMS(callback=self.handle_sms_message)
-#         self.routing = RoutingManager()
-#         self.payments = PaymentsManager()
-
-#     async def run():
-#         with self.signal and self.teli:
-#             await self.signal.receive()
-#             await self.teli.receive()
 
 
 if __name__ == "__main__":

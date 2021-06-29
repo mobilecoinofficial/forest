@@ -6,9 +6,10 @@ name = "pypi"
 [packages]
 aiohttp = {extras = ["speedups"], version = "*"}
 aioprocessing = "*"
-pyqrcode = "*" # is this needed?
+pyqrcode = "*"
 pynacl = "*"
 asyncpg = "*"
+# sylv additions
 phonenumbers = "*"
 requests = "*"
 termcolor = "*"
@@ -26,3 +27,10 @@ python_version = "3.9"
 
 [pipenv]
 allow_prereleases = true
+
+[dev-packages]
+pytest = "*"
+
+[packages.aiohttp]
+extras = [ "speedups",]
+version = "*"
