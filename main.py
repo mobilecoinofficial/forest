@@ -437,7 +437,7 @@ async def start_session(app: web.Application) -> None:
     asyncio.create_task(new_session.launch_and_connect())
     asyncio.create_task(new_session.handle_messages())
 
-    app["singal_input"] = asyncio.create_task(read_console_requests())
+    #app["singal_input"] = asyncio.create_task(read_console_requests())
 
 
 JSON = dict[str, Any]

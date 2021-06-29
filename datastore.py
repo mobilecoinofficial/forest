@@ -83,18 +83,22 @@ class SignalDatastore:
             raise Exception(f"no record in db for {self.number}")
         return record[0].get("active_node_name")
 
-    async def download(self) -> None:
-        """Fetch our account datastore from postgresql and mark it claimed"""
+    async def download(self, terminate=True) -> None:
+        """Fetch our account datastore from postgresql and mark it claimed
+        try terminating the old process by default"""
+        tried_to_terminate = False
         for i in range(10):
             claim = await self.is_claimed()
             if not claim:
                 break
             logging.info("this account is claimed, waiting and trying to terminate %s", claim)
-            try:
-                resp = requests.post(utils.URL + "/terminate", data=claim)
-                logging.info("got %s", resp.text)
-            except requests.exceptions.RequestException:
-                pass
+            if terminate and not tried_to_terminate:
+                try:
+                    resp = requests.post(utils.URL + "/terminate", data=claim)
+                    logging.info("got %s", resp.text)
+                except (requests.exceptions.RequestException, ConnectionError):
+                    pass
+                tried_to_terminate = True
             await asyncio.sleep(6)
             if i == 9:
                 logging.info("a minute is up, downloading anyway")
@@ -103,7 +107,7 @@ class SignalDatastore:
         tarball = TarFile(fileobj=buffer)
         fnames = [member.name for member in tarball.getmembers()]
         logging.info(fnames)
-        logging.info(f"expected file {self.filepath} exists:", self.filepath in fnames)
+        logging.info(f"expected file %s exists: %s", self.filepath, self.filepath in fnames)
         tarball.extractall("." if utils.LOCAL else "/app")
         await self.account_interface.mark_account_claimed(
             self.number, open("/etc/hostname").read().strip()  #  FLY_ALLOC_ID
@@ -126,7 +130,7 @@ class SignalDatastore:
         tarball.close()
         buffer.seek(0)
         data = buffer.read()
-        kb = round(len(data) / 1024)
+        kb = round(len(data) / 1024, 1)
         if create:
             result = await self.account_interface.create_account(
                 self.number, data

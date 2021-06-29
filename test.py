@@ -9,9 +9,9 @@ import subprocess
 from subprocess import PIPE
 from typing import Coroutine
 
-# from hypothesis import given, strategies as st
 
 import pytest
+import requests
 
 
 import datastore
@@ -20,57 +20,129 @@ import main
 from main import Message
 
 
+import filecmp
+import os.path
+
+# https://stackoverflow.com/a/6681395
+def are_dir_trees_equal(dir1, dir2):
+    """
+    Compare two directories recursively. Files in each directory are
+    assumed to be equal if their names and contents are equal.
+
+    @param dir1: First directory path
+    @param dir2: Second directory path
+
+    @return: True if the directory trees are the same and 
+        there were no errors while accessing the directories or files, 
+        False otherwise.
+   """
+
+    dirs_cmp = filecmp.dircmp(dir1, dir2)
+    if len(dirs_cmp.left_only)>0 or len(dirs_cmp.right_only)>0 or \
+        len(dirs_cmp.funny_files)>0:
+        return False
+    (_, mismatch, errors) =  filecmp.cmpfiles(
+        dir1, dir2, dirs_cmp.common_files, shallow=False)
+    if len(mismatch)>0 or len(errors)>0:
+        return False
+    for common_dir in dirs_cmp.common_dirs:
+        new_dir1 = os.path.join(dir1, common_dir)
+        new_dir2 = os.path.join(dir2, common_dir)
+        if not are_dir_trees_equal(new_dir1, new_dir2):
+            return False
+    return True
+
+_accounts= asyncio.run(get_account_interface().async_execute("SELECT id FROM signal_accounts")
+accounts = [record.get("id") for record in _accounts]
+
+# from hypothesis import given, strategies as st
+@given(st.builds(SignalDatastore, st.sample_from(accounts)):
+async def test_store(store: SignalDatastore, tmpdir_factory: "TempdirFactory") -> None:
+    dir1 = tmpdir_factory.mktemp("dir1")
+    os.chdir(dir1)
+    await store.download()
+    await store.upload()
+    dir2 = tmpdir_factory.mktemp("dir2")
+    os.chdir(dir2)
+    await store.download()
+    assert are_dir_trees_equal(dir1, dir2)
+
 class LocalForest:
-    def __init__(self):
-    # we're communicating exclusively over  http, shouldn't need pipes
-        self.get  = subprocess.Popen(["python3.9", "main.py"], stdout=PIPE, stderr=PIPE) # could run it in docker as well but it ought to work locally
+    def __init__(self) -> None:
+        pass
+
+
+    def __enter__(self) -> None:
+        # we're communicating exclusively over  http, shouldn't need pipes
+        self.proc = subprocess.Popen(
+            ["python3.9", "main.py"], stdout=PIPE, stderr=PIPE
+        )  # could run it in docker as well but it ought to work locally
         # we need to pass the "webhooks" flag or smth
+        print("started proc", self.proc)
+
+
+    def __exit__(self) -> None:
+        try:
+            self.proc.kill()
+        except (NameError, AttributeError):
+            pass
 
     def check(self) -> bool:
+        result = self.proc.poll()
+        print(result)
         if self.proc.poll():
-            print(stdout.decode()
-            print(stderr.decode()
-            return False# test failed
+            print("trying to print output")
+            print(self.proc.stdout.decode())
+            print(self.proc.stderr.decode())
+            return False  # test failed
         return True
 
-    def send(self, msg) -> bool:
-        if check():
+    def send(self, msg: str) -> bool:
+        if self.check():
             return False
         test_subject = utils.get_secret("BOT_NUMBER")
-        requests.post("http://localhost:8080/send/", data={"recipient": test_subject, "message": msg})
+        requests.post(
+            "http://localhost:8080/send/",
+            data={"recipient": test_subject, "message": msg},
+        )
 
+    def recv(self) -> Optional[dict]:
+        if self.check():
+            return None
+        resp = requests.post(
+            "https://localhost:8080/next_message", timeout=30
+        )
+        print(resp)
+        print(resp.json())
+        return resp.json()
 
-    def recv(self) -> dict:
-        if check():
-            return False
-        return requests.post("https://localhost:8080/next_message", timeout=30).json()
 
 async def test_datastore() -> None:
     local = LocalForest()
     # deploy
-    subprocess.run("fly deploy", shell=True)
+#    subprocess.run("fly deploy", shell=True)
 
     # send a message from a different account
     time.sleep(1)
     local.send("/printerfact")
-    assert "printer" in Message(local.recv()).text
-
+    resp = local.recv()
+    print(resp)
+    msg = Message(resp)
+    print(msg)
+    text= msg.text
+    print(text)
+    assert "printer" in text # Message(local.recv()).text
 
     # deploy
     # might need to tweak something for fly to redeploy? maybe change a secret?
     subprocess.run("fly deploy", shell=True)
     input("enter when fly has finished deploying")
     # send another message
-    local.send("/printerfact") # we want an echo for different ones
+    local.send("/printerfact")  # we want an echo for different ones
     assert "printer" in Message(local.recv()).text
 
-    await sess.send_message(utils.get_secret("BOT_NUMBER"), "/echo ham")
-    for msg in await sess.signalcli_output_iter():
-        # expect it to work
-        assert msg.text == "ham"
-        break
-
-
+if __name__ == "__main__":
+    asyncio.run(test_datastore())
 # class TestSignalInteractionRecording(Session):
 #     # idk import the parser that java uses...
 
@@ -101,7 +173,7 @@ async def test_datastore() -> None:
 # at the very end, i might use the same framework for more internal tests
 
 
-class RecordSignalTestShell(cmd.Cmd, Session):
+class RecordSignalTestShell(cmd.Cmd):
     # copied from https://docs.python.org/3/library/cmd.html#cmd-example
     intro = "record ye test\n"
     prompt = "(signal) "
@@ -115,16 +187,20 @@ class RecordSignalTestShell(cmd.Cmd, Session):
     cmdqueue = []
 
     def __init__(self) -> None:
-        Session.__init__(self, "+1" + "5" * 10)
+        #Session.__init__(self, "+1" + "5" * 10)
         cmd.Cmd.__init__(self)
         self.loop = asyncio.new_event_loop()
         asyncio.events.set_event_loop(self.loop)
         self.loop.set_debug(True)
 
+    async def do_init(self, line: str) -> None:
+        """launch and handle signal-cli if we are inheriting from Session"""
+        # await self.launch_and_connect()
+        # await self.handle_messages()
+
     def handle_message(self, msg: Message) -> None:
         msg.ts = None
         self.record_output(msg)
-
 
     def record_output(self, output) -> None:
         json.dump(output, self.file)
@@ -189,9 +265,7 @@ class RecordSignalTestShell(cmd.Cmd, Session):
     def do_mark_unsuccessful(self, arg):
         pass
 
-    async def do_init(self, line: str) -> None:
-        await self.launch_and_connect()
-        await self.handle_messages()
+
 
     def do_exec(self, arg: str) -> None:
         proc = subprocess.run(
@@ -229,7 +303,7 @@ class RecordSignalTestShell(cmd.Cmd, Session):
 #         )
 #         shell = RecordSignalTestShell(command_queue, output_queue)
 #         # later, allow constructing Message objects to pass to handle_messages in addition to legitimate messages
-#         shell.cmdloop() 
+#         shell.cmdloop()
 
 #         backend = mem.Memory(logqueue=mem_queue)  # type: ignore
 #         return fuse.FUSE(operations=backend, mountpoint="/app/data")  # type: ignore
@@ -248,7 +322,7 @@ class RecordSignalTestShell(cmd.Cmd, Session):
 # # i want to make send/receive requests via webhooks
 # # get to advance your queue
 
-# async def receive_logs(app: 
+# async def receive_logs(app:
 
 # # input, operation, path, arguments, caller
 # # ["->", "fsync", "/+14703226669", "(1, 2)", "/app/signal-cli", ["/app/signal-cli", "--config", "/app", "--username=+14703226669", "--output=json", "stdio", ""], 0, 0, 523]
@@ -268,8 +342,7 @@ class RecordSignalTestShell(cmd.Cmd, Session):
 #     app["singal_input"] = asyncio.create_task(read_console_requests())
 
 
-
-# async def 
+# async def
 
 # async def local_main() -> None:
 #     AioProcess(console_thread()
