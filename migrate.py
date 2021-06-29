@@ -49,6 +49,9 @@ def load_any(data: Union[bytes, str]) -> None:
     return
 
 
+# right now we don't want to exercise most of our intental tests
+# for starters let's just try to write a test for 
+
 async def main() -> None:
     try:
         os.mkdir("/tmp/migrate-forest-db")

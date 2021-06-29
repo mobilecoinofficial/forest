@@ -67,7 +67,10 @@ class Session:
         self.proc: Optional[subprocess.Process] = None
         self.signalcli_output_queue: Queue[Message] = Queue()
         self.signalcli_input_queue: Queue[dict] = Queue()
-        self.client_session = aiohttp.ClientSession()
+        self.raw_queue: Queue[dict] = Queue()
+        self.client_session = (
+            aiohttp.ClientSession()
+        )  # i don't think we need this?
         self.scratch: dict[str, dict[str, Any]] = {"payments": {}}
         self.payments_manager = PaymentsManager()
         self.routing_manager = RoutingManager()
@@ -409,8 +412,15 @@ class Session:
             self.proc.pid,
         )
         assert self.proc.stdout and self.proc.stdin
+
+        # slap a feature flag on this
+
         asyncio.create_task(
-            listen_to_signalcli(self.proc.stdout, self.signalcli_output_queue)
+            listen_to_signalcli(
+                self.proc.stdout,
+                self.signalcli_output_queue,
+                self.raw_queue,
+            )
         )
 
         async for msg in self.signalcli_input_iter():
@@ -427,14 +437,21 @@ async def start_session(app: web.Application) -> None:
     asyncio.create_task(new_session.launch_and_connect())
     asyncio.create_task(new_session.handle_messages())
 
+    app["singal_input"] = asyncio.create_task(read_console_requests())
+
+
+JSON = dict[str, Any]
+
 
 async def listen_to_signalcli(
-    stream: asyncio.StreamReader, queue: Queue[Message]
+    stream: asyncio.StreamReader,
+    queue: Queue[Message],
+    raw_queue: Optional[Queue[JSON]],
 ) -> None:
     while True:
         line = await stream.readline()
         logging.info("signal: %s", line.decode())
-        # don't print receiptMessage
+        # TODO: don't print receiptMessage
         # color non-json. pretty-print errors
         # sensibly color web traffic, too?
         # fly / db / asyncio and other lib warnings / java / signal logic and networking
@@ -442,6 +459,7 @@ async def listen_to_signalcli(
             break
         try:
             blob = json.loads(line)
+            await raw_queue.put(blob)
         except json.JSONDecodeError:
             continue
         if not isinstance(blob, dict):  # e.g. a timestamp
@@ -473,12 +491,22 @@ async def send_message_handler(request: web.Request) -> Any:
     # Returns MultiDictProxy instance filled with parsed data.
     msg_obj = dict(await request.post())
     recipient = msg_obj.get("recipient", get_secret("ADMIN"))
+    content = msg_obj.get("message", msg_obj)
     if session:
-        await session.send_message(recipient, msg_obj)
+        await session.send_message(recipient, content)
     return web.json_response({"status": "sent"})
 
 
-async def inbound_handler(request: web.Request) -> web.Response:
+async def get_next_message_handler(
+    request: web.Request,
+) -> Any:  # web.Response...
+    session = request.app.get("session")
+    if session and session.raw_queue:
+        return web.json_response(await session.raw_queue.get())
+    return web.json_response({"error": "no session"})
+
+
+async def inbound_sms_handler(request: web.Request) -> web.Response:
     msg_data = await request.text()  # await request.post()
     # parse query-string encoded sms/mms into object
     msg_obj = {
@@ -542,14 +570,16 @@ app.on_startup.append(start_session)
 app.on_startup.append(datastore.start_memfs)
 app.on_startup.append(datastore.start_queue_monitor)
 app.on_shutdown.append(datastore.on_shutdown)
-
+maybe_extra = (
+    [web.get("/next_message", get_next_message_handler)] if utils.LOCAL else []
+)
 app.add_routes(
     [
         web.get("/", noGet),
         web.post("/user/{phonenumber}", send_message_handler),
-        web.post("/inbound", inbound_handler),
+        web.post("/inbound", inbound_sms_handler),
         web.post("/terminate", terminate),
-    ]
+    ] + maybe_extra
 )
 
 app["session"] = None
