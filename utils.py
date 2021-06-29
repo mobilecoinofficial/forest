@@ -45,7 +45,7 @@ def get_secret(key: str, env: Optional[str] = None) -> str:
         return os.environ[key]
     except KeyError:
         load_secrets(env)
-        return os.environ.get(key)
+        return os.environ.get(key) or "" # fixme
 
 
 @asynccontextmanager
