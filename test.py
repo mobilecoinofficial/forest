@@ -7,9 +7,9 @@ import shlex
 import time
 import subprocess
 from subprocess import PIPE
-from typing import Coroutine
-
-
+from typing import Coroutine, Optional
+import logging
+import socket
 import pytest
 import requests
 
@@ -32,18 +32,22 @@ def are_dir_trees_equal(dir1, dir2):
     @param dir1: First directory path
     @param dir2: Second directory path
 
-    @return: True if the directory trees are the same and 
-        there were no errors while accessing the directories or files, 
+    @return: True if the directory trees are the same and
+        there were no errors while accessing the directories or files,
         False otherwise.
-   """
+    """
 
     dirs_cmp = filecmp.dircmp(dir1, dir2)
-    if len(dirs_cmp.left_only)>0 or len(dirs_cmp.right_only)>0 or \
-        len(dirs_cmp.funny_files)>0:
+    if (
+        len(dirs_cmp.left_only) > 0
+        or len(dirs_cmp.right_only) > 0
+        or len(dirs_cmp.funny_files) > 0
+    ):
         return False
-    (_, mismatch, errors) =  filecmp.cmpfiles(
-        dir1, dir2, dirs_cmp.common_files, shallow=False)
-    if len(mismatch)>0 or len(errors)>0:
+    (_, mismatch, errors) = filecmp.cmpfiles(
+        dir1, dir2, dirs_cmp.common_files, shallow=False
+    )
+    if len(mismatch) > 0 or len(errors) > 0:
         return False
     for common_dir in dirs_cmp.common_dirs:
         new_dir1 = os.path.join(dir1, common_dir)
@@ -52,94 +56,133 @@ def are_dir_trees_equal(dir1, dir2):
             return False
     return True
 
-_accounts= asyncio.run(get_account_interface().async_execute("SELECT id FROM signal_accounts")
-accounts = [record.get("id") for record in _accounts]
+
+# _accounts= asyncio.run(get_account_interface().async_execute("SELECT id FROM signal_accounts"))
+# accounts = [record.get("id") for record in _accounts]
 
 # from hypothesis import given, strategies as st
-@given(st.builds(SignalDatastore, st.sample_from(accounts)):
-async def test_store(store: SignalDatastore, tmpdir_factory: "TempdirFactory") -> None:
-    dir1 = tmpdir_factory.mktemp("dir1")
-    os.chdir(dir1)
-    await store.download()
-    await store.upload()
-    dir2 = tmpdir_factory.mktemp("dir2")
-    os.chdir(dir2)
-    await store.download()
-    assert are_dir_trees_equal(dir1, dir2)
+# @given(st.builds(SignalDatastore, st.sample_from(accounts)):
+# async def test_store(store: SignalDatastore, tmpdir_factory: "TempdirFactory") -> None:
+#     dir1 = tmpdir_factory.mktemp("dir1")
+#     os.chdir(dir1)
+#     await store.download()
+#     await store.upload()
+#     dir2 = tmpdir_factory.mktemp("dir2")
+#     os.chdir(dir2)
+#     await store.download()
+#     assert are_dir_trees_equal(dir1, dir2)
+
+# https://gist.github.com/butla/2d9a4c0f35ea47b7452156c96a4e7b12
+def wait_for_port(port, host="0.0.0.0", timeout=120):
+    """Wait until a port starts accepting TCP connections.
+    Args:
+        port (int): Port number.
+        host (str): Host address on which the port should exist.
+        timeout (float): In seconds. How long to wait before raising errors.
+    Raises:
+        TimeoutError: The port isn't accepting connection after time specified in `timeout`.
+    """
+    start_time = time.perf_counter()
+    while True:
+        try:
+            with socket.create_connection((host, port), timeout=timeout):
+                logging.info("up after %s s ", time.perf_counter() - start_time)
+                break
+        except OSError as ex:
+            time.sleep(0.01)
+            if time.perf_counter() - start_time >= timeout:
+                raise TimeoutError(
+                    "Waited too long for the port {} on host {} to start accepting "
+                    "connections.".format(port, host)
+                ) from ex
+
 
 class LocalForest:
     def __init__(self) -> None:
+        self.proc = None
         pass
 
-
     def __enter__(self) -> None:
+
         # we're communicating exclusively over  http, shouldn't need pipes
-        self.proc = subprocess.Popen(
-            ["python3.9", "main.py"], stdout=PIPE, stderr=PIPE
-        )  # could run it in docker as well but it ought to work locally
-        # we need to pass the "webhooks" flag or smth
-        print("started proc", self.proc)
+        self.proc = subprocess.Popen("./main.py +***REMOVED***".split())
+        #    "./signal-cli --config /tmp/local-signal --output-format=json stdio"
 
+        logging.info("started proc %s", self.proc)
+        return self
 
-    def __exit__(self) -> None:
-        try:
-            self.proc.kill()
-        except (NameError, AttributeError):
-            pass
+    def __exit__(self, _, __, ___) -> None:
+        if self.proc:
+            self.proc.send_signal(2)  # sigint
+            time.sleep(2)
+            self.proc.terminate()
+            # logging.info("trying to print output")
+            # logging.info(self.proc.stdout.read())
+            # logging.info(self.proc.stderr.read())
 
     def check(self) -> bool:
         result = self.proc.poll()
-        print(result)
-        if self.proc.poll():
-            print("trying to print output")
-            print(self.proc.stdout.decode())
-            print(self.proc.stderr.decode())
+        logging.info(result)
+        if self.proc.poll() is not None:
+            # logging.info("trying to print output")
+            # logging.info(self.proc.stdout.decode())
+            # logging.info(self.proc.stderr.decode())
             return False  # test failed
         return True
 
-    def send(self, msg: str) -> bool:
-        if self.check():
+    def send(self, msg: str, endsession=False) -> bool:
+        if not self.check():
             return False
         test_subject = utils.get_secret("BOT_NUMBER")
+        data = {
+            "recipient": test_subject,
+            "message": msg,
+            "endsession": endsession,
+        }
         requests.post(
-            "http://localhost:8080/send/",
-            data={"recipient": test_subject, "message": msg},
+            "http://0.0.0.0:8080/user/1",
+            data,
+            timeout=70,
         )
 
     def recv(self) -> Optional[dict]:
-        if self.check():
+        if not self.check():
             return None
-        resp = requests.post(
-            "https://localhost:8080/next_message", timeout=30
-        )
-        print(resp)
-        print(resp.json())
+        resp = requests.get("http://0.0.0.0:8080/next_message", timeout=70)
+        logging.info(resp)
+        logging.info(resp.json())
+        if not isinstance(resp, dict):
+            return self.recv()
         return resp.json()
 
 
 async def test_datastore() -> None:
-    local = LocalForest()
-    # deploy
-#    subprocess.run("fly deploy", shell=True)
+    with LocalForest() as local:
+        # deploy
+        #    subprocess.run("fly deploy", shell=True)
 
-    # send a message from a different account
-    time.sleep(1)
-    local.send("/printerfact")
-    resp = local.recv()
-    print(resp)
-    msg = Message(resp)
-    print(msg)
-    text= msg.text
-    print(text)
-    assert "printer" in text # Message(local.recv()).text
+        # send a message from a different account
+        time.sleep(1)
+        wait_for_port(8080)
+        local.send("", endsession=True)
+        local.send("/printerfact")
+        resp = local.recv()
+        assert resp
+        logging.info(resp)
+        msg = Message(resp)
+        logging.info(msg)
+        text = msg.text
+        logging.info(text)
+        assert "printer" in text  # Message(local.recv()).text
 
-    # deploy
-    # might need to tweak something for fly to redeploy? maybe change a secret?
-    subprocess.run("fly deploy", shell=True)
-    input("enter when fly has finished deploying")
-    # send another message
-    local.send("/printerfact")  # we want an echo for different ones
-    assert "printer" in Message(local.recv()).text
+        # deploy
+        # might need to tweak something for fly to redeploy? maybe change a secret?
+        subprocess.run("fly deploy", shell=True)
+        input("enter when fly has finished deploying")
+        # send another message
+        local.send("/printerfact")  # we want an echo for different ones
+        assert "printer" in Message(local.recv()).text
+
 
 if __name__ == "__main__":
     asyncio.run(test_datastore())
@@ -187,7 +230,7 @@ class RecordSignalTestShell(cmd.Cmd):
     cmdqueue = []
 
     def __init__(self) -> None:
-        #Session.__init__(self, "+1" + "5" * 10)
+        # Session.__init__(self, "+1" + "5" * 10)
         cmd.Cmd.__init__(self)
         self.loop = asyncio.new_event_loop()
         asyncio.events.set_event_loop(self.loop)
@@ -264,8 +307,6 @@ class RecordSignalTestShell(cmd.Cmd):
 
     def do_mark_unsuccessful(self, arg):
         pass
-
-
 
     def do_exec(self, arg: str) -> None:
         proc = subprocess.run(

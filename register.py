@@ -1,15 +1,21 @@
 #!/usr/bin/python3.9
-from typing import Optional
-import asyncio.subprocess as subprocess  # https://github.com/PyCQA/pylint/issues/1469
 import asyncio
+import asyncio.subprocess as subprocess  # https://github.com/PyCQA/pylint/issues/1469
+import json
+import logging
 import os
 import re
 import shutil
-import json
+from pathlib import Path
+from typing import Optional
+
 import requests
+
+import utils
 from datastore import SignalDatastore, get_account_interface
 from forest_tables import RoutingManager
-import utils
+
+# pylint: disable=logging-fstring-interpolation
 
 
 def mod_pending_numbers(
@@ -26,19 +32,20 @@ def mod_pending_numbers(
 
 
 async def verify(sms_response: dict) -> None:
+    logging.info(sms_response)
     if "message" not in sms_response:
         return
     verif_msg = sms_response["message"]
-    print(verif_msg)
+    logging.info(verif_msg)
     match = re.search(r"\d\d\d-?\d\d\d", verif_msg)
     if not match:
         return
     code = match.group().replace("-", "")
-    print(f"got code {code}", code)
+    logging.info(f"got code {code}")
     if not code:
         return
     if not verify:
-        print(code)
+        logging.info(code)
         return
     number = utils.signal_format(sms_response["destination"])
     cmd = f"./signal-cli --verbose --config /tmp/signal-register -u {number} verify {code}".split()
@@ -49,14 +56,14 @@ async def verify(sms_response: dict) -> None:
     )
     await proc.wait()
     (so, se) = await proc.communicate()
-    print(so, "\n", se)
+    logging.info((so, se))
     cwd = os.getcwd()
     os.chdir("/tmp/signal-register")
-    print(json.load(open(number))["registered"])
     datastore = SignalDatastore(number)
+    logging.info("registered: %s", datastore.is_registered_locally())
     await RoutingManager().delete(utils.teli_format(number))
     await datastore.upload()
-    print("uploaded")
+    logging.info("uploaded")
     os.chdir(cwd)
     mod_pending_numbers(rm=number)
     return
@@ -66,17 +73,17 @@ async def register_number(
     raw_number: str, timeout: int = 300, force: bool = False
 ) -> bool:
     number = utils.signal_format(raw_number)
-    print(f"registering {number}")
+    logging.info(f"registering {number}")
     datastore = SignalDatastore(number)
     await datastore.account_interface.create_table()
-    print("made db..")
-    if not force and await datastore.is_registered():
-        print("alranddy registered")
+    logging.info("made db..")
+    if not force and await datastore.is_registered_in_db():
+        logging.info("alranddy registered")
         mod_pending_numbers(rm=number)
         return False
     receiver = utils.ReceiveSMS()
-    async with utils.ReceiveSMS().receive() as _, utils.get_url() as url:
-        print(utils.set_sms_url(number, url))
+    async with utils.get_url() as url, receiver.receive() as _:
+        logging.info(utils.set_sms_url(number, url))
         captcha = utils.get_signal_captcha()
         if not captcha:
             return False
@@ -96,25 +103,30 @@ async def register_number(
         )
         (so, se) = await register.communicate()
         if so or se:
-            print("signal-cli register:", so.decode(), "\n", se.decode())
+            logging.info(
+                "signal-cli register out: %s\nerr: %s", so.decode(), se.decode()
+            )
         else:
-            print("no output from signal-cli register")
-        if "Invalid captcha given" in so.decode():
-            input("press enter when you've written a new captcha to /tmp/captcha")
+            logging.info("no errors from signal-cli register")
+        if "Invalid captcha given" in se.decode():
+            input(
+                "press enter when you've written a new captcha to /tmp/captcha"
+            )
             return await register_number(raw_number, timeout, force)
         for i in range(timeout):
             msg = await receiver.msgs.get()
-            print(msg)
-            verify(msg)
-            if await datastore.is_registered():
+            logging.info("register_number got an sms: %s", msg)
+            await verify(msg)
+            if await datastore.is_registered_in_db():
                 return True
             await asyncio.sleep(1)
-        print("timed out waiting for verification sms")
+        logging.info("timed out waiting for verification sms")
         return False
 
 
 # async def add_device(uri: str):
 #     cmd = f"./signal-cli --config . addDevice --uri {uri}"
+
 
 def get_unregistered_numbers() -> list[str]:
     blob = requests.get(
@@ -126,7 +138,7 @@ def get_unregistered_numbers() -> list[str]:
         did["number"]
         for did in blob["data"]
         if "through-the-trees" not in did["sms_post_url"]
-        and not accounts.is_registered("1" + did["number"])
+        and not accounts.is_registered_in_db("1" + did["number"])
     ]
 
 
