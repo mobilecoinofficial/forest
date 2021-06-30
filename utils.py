@@ -14,22 +14,15 @@ from aiohttp import web
 
 HOSTNAME = open("/etc/hostname").read().strip()  #  FLY_ALLOC_ID
 APP_NAME = os.getenv("FLY_APP_NAME")
-LOCAL = APP_NAME is None
 URL = f"https://{APP_NAME}.fly.dev"
+LOCAL = APP_NAME is None
+ROOT_DIR = "/tmp/local-signal" if LOCAL else "/app"
 
 logging.basicConfig(
-    level=logging.DEBUG, format="{levelname}: {message}", style="{"
+    level=logging.DEBUG, format="{levelname} {module}:{lineno}: {message}", style="{"
 )
 
 
-def teli_format(raw_number: str) -> str:
-    return str(pn.parse(raw_number, "US").national_number)
-
-
-def signal_format(raw_number: str) -> str:
-    return pn.format_number(
-        pn.parse(raw_number, "US"), pn.PhoneNumberFormat.E164
-    )
 
 
 def load_secrets(env: Optional[str] = None) -> None:
@@ -47,6 +40,14 @@ def get_secret(key: str, env: Optional[str] = None) -> str:
         load_secrets(env)
         return os.environ.get(key) or "" # fixme
 
+def teli_format(raw_number: str) -> str:
+    return str(pn.parse(raw_number, "US").national_number)
+
+
+def signal_format(raw_number: str) -> str:
+    return pn.format_number(
+        pn.parse(raw_number, "US"), pn.PhoneNumberFormat.E164
+    )
 
 @asynccontextmanager
 async def get_url(port: int = 8080) -> AsyncIterator[str]:
@@ -74,14 +75,14 @@ Callback = Callable[[dict], Coroutine[Any, Any, None]]
 class ReceiveSMS:
     def __init__(self, port: int = 8080
     ) -> None:
-        self.msgs = asyncio.Queue()
+        self.msgs: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         self.port = port
 
     async def handle_sms(self, request: web.Request) -> web.Response:
         # A coroutine that reads POST parameters from request body.
         # Returns MultiDictProxy instance filled with parsed data.
         msg_obj = dict(await request.post())
-        logging.info(msg_obj)
+        logging.info("ReceiveSMS.handle_sms got %s", msg_obj)
         await self.msgs.put(msg_obj)
         return web.json_response({"status": "OK"})
 
@@ -93,14 +94,16 @@ class ReceiveSMS:
         runner = web.AppRunner(self.app)
         await runner.setup()
         site = web.TCPSite(runner, "0.0.0.0", self.port)
-        logging.info("starting SMS receiving server")
+        logging.info("starting ReceiveSMS")
         try:
             await site.start()
             yield site
         finally:
+            logging.info("shutting down ReceiveSMS")
+            #try:
             await self.app.shutdown()
             await self.app.cleanup()
-
+            #except (OSError, RuntimeError): pass
 
 async def aprint(msg: Any) -> None:
     print(msg)

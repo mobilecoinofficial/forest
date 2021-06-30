@@ -98,6 +98,7 @@ class Session:
         recipient: Optional[str],
         msg: Union[str, list, dict],
         group: Optional[str] = None,
+        endsession: bool = False,
     ) -> None:
         """Builds send command with specified recipient and msg, writes to signal-cli."""
         if isinstance(msg, list):
@@ -109,6 +110,8 @@ class Session:
             "command": "send",
             "message": msg,
         }
+        if endsession:
+            json_command["endsession"] = True
         if group:
             json_command["group"] = group
         elif recipient:
@@ -394,12 +397,15 @@ class Session:
 
     async def launch_and_connect(self) -> None:
         await self.datastore.download()
-
-        profileCmd = f"/app/signal-cli --config /app --username={self.bot_number} --output=plain-text updateProfile --name forestbot --avatar avatar.png".split()
+        name = "localbot" if utils.LOCAL else "forestbot"
+        baseCmd = f"./signal-cli --config . --username={self.bot_number} "
+        profileCmd = (
+            baseCmd + "--output=plain-text updateProfile "
+            f"--name {name} --avatar avatar.png"
+        ).split()
         profileProc = await asyncio.create_subprocess_exec(*profileCmd)
         logging.info(await profileProc.communicate())
-
-        COMMAND = f"/app/signal-cli --config /app --username={self.bot_number} --output=json stdio".split()
+        COMMAND = (baseCmd + "--output=json stdio").split()
         logging.info(COMMAND)
         self.proc = await asyncio.create_subprocess_exec(
             *COMMAND,
@@ -431,13 +437,16 @@ class Session:
 
 async def start_session(app: web.Application) -> None:
     # number = (await datastore.get_account_interface().get_free_account())[0].get("id")
-    number = get_secret("BOT_NUMBER")
+    try:
+        number = utils.signal_format(sys.argv[1])
+    except IndexError:
+        number = get_secret("BOT_NUMBER")
     logging.info(number)
     app["session"] = new_session = Session(number)
     asyncio.create_task(new_session.launch_and_connect())
     asyncio.create_task(new_session.handle_messages())
 
-    #app["singal_input"] = asyncio.create_task(read_console_requests())
+    # app["singal_input"] = asyncio.create_task(read_console_requests())
 
 
 JSON = dict[str, Any]
@@ -493,7 +502,9 @@ async def send_message_handler(request: web.Request) -> Any:
     recipient = msg_obj.get("recipient", get_secret("ADMIN"))
     content = msg_obj.get("message", msg_obj)
     if session:
-        await session.send_message(recipient, content)
+        await session.send_message(
+            recipient, content, endsession=bool(msg_obj.get("endsession"))
+        )
     return web.json_response({"status": "sent"})
 
 
@@ -579,7 +590,8 @@ app.add_routes(
         web.post("/user/{phonenumber}", send_message_handler),
         web.post("/inbound", inbound_sms_handler),
         web.post("/terminate", terminate),
-    ] + maybe_extra
+    ]
+    + maybe_extra
 )
 
 app["session"] = None
