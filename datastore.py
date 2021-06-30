@@ -1,13 +1,18 @@
-from typing import Any, Optional
-from subprocess import Popen, PIPE
-from tarfile import TarFile
-from io import BytesIO
-import os
-import logging
 import asyncio
-from aiohttp import web
+import json
+import logging
+import os
+import shutil
+from io import BytesIO
+from pathlib import Path
+from subprocess import PIPE, Popen
+from tarfile import TarFile
+from typing import Any, Optional
+
 import aioprocessing
 import requests
+from aiohttp import web
+
 import fuse
 import mem
 import utils
@@ -38,6 +43,8 @@ AccountPGExpressions = PGExpressions(
             LIMIT 1;",
     upload="UPDATE {self.table} SET \
             datastore = $2, \
+            len_keys = $3, \
+            registered = $4, \
             last_update_ms = (extract(epoch from now()) * 1000) \
             WHERE id=$1;",
     create_account="INSERT INTO {self.table} (id, datastore) \
@@ -50,12 +57,12 @@ AccountPGExpressions = PGExpressions(
 # migration strategy:
 # backwards compat with non-tar datastore
 
+
 def get_account_interface() -> PGInterface:
     return PGInterface(
         query_strings=AccountPGExpressions,
         database=utils.get_secret("DATABASE_URL"),
     )
-
 
 
 class SignalDatastore:
@@ -64,14 +71,19 @@ class SignalDatastore:
     """
 
     def __init__(self, number: str):
-        logging.info(number)
         self.account_interface = get_account_interface()
         self.number = utils.signal_format(number)
-        logging.info(self.number)
+        logging.info("SignalDatastore number is %s", self.number)
         self.filepath = "data/" + number
         # await self.account_interface.create_table()
 
-    async def is_registered(self) -> bool:
+    def is_registered_locally(self) -> bool:
+        try:
+            return json.load(open(self.filepath))["registered"]
+        except (FileNotFoundError, json.JSONDecodeError, KeyError):
+            return False
+
+    async def is_registered_in_db(self) -> bool:
         record = await self.account_interface.is_registered(self.number)
         if not record:
             return False
@@ -83,16 +95,19 @@ class SignalDatastore:
             raise Exception(f"no record in db for {self.number}")
         return record[0].get("active_node_name")
 
-    async def download(self, terminate=True) -> None:
+    async def download(self, terminate: bool = True) -> None:
         """Fetch our account datastore from postgresql and mark it claimed
         try terminating the old process by default"""
         tried_to_terminate = False
-        for i in range(10):
+        for i in range(5):
             claim = await self.is_claimed()
             if not claim:
                 break
-            logging.info("this account is claimed, waiting and trying to terminate %s", claim)
             if terminate and not tried_to_terminate:
+                logging.info(
+                    "this account is claimed, waiting and trying to terminate %s",
+                    claim,
+                )
                 try:
                     resp = requests.post(utils.URL + "/terminate", data=claim)
                     logging.info("got %s", resp.text)
@@ -101,30 +116,41 @@ class SignalDatastore:
                 tried_to_terminate = True
             await asyncio.sleep(6)
             if i == 9:
-                logging.info("a minute is up, downloading anyway")
+                logging.info("30s is up, downloading anyway")
         record = await self.account_interface.get_datastore(self.number)
         buffer = BytesIO(record[0].get("datastore"))
         tarball = TarFile(fileobj=buffer)
         fnames = [member.name for member in tarball.getmembers()]
         logging.info(fnames)
-        logging.info(f"expected file %s exists: %s", self.filepath, self.filepath in fnames)
-        tarball.extractall("." if utils.LOCAL else "/app")
+        logging.info(
+            f"expected file %s exists: %s",
+            self.filepath,
+            self.filepath in fnames,
+        )
+        tarball.extractall(utils.ROOT_DIR)
         await self.account_interface.mark_account_claimed(
-            self.number, open("/etc/hostname").read().strip()  #  FLY_ALLOC_ID
+            self.number, utils.HOSTNAME
         )
         assert await self.is_claimed()
         await self.account_interface.get_datastore(self.number)
 
     async def upload(self, create: bool = False) -> Any:
         """Puts account datastore in postgresql."""
+        if not self.is_registered_locally():
+            logging.error("datastore not registered. not uploading")
+            return
         buffer = BytesIO()
         tarball = TarFile(fileobj=buffer, mode="w")
-        # os.chdir("/app")
         try:
             tarball.add(self.filepath)
-            tarball.add(self.filepath + ".d")
+            try:
+                tarball.add(self.filepath + ".d")
+            except FileNotFoundError:
+                logging.info("ignoring no %s", self.filepath + ".d")
         except FileNotFoundError:
-            logging.warn(f"couldn't find {self.filepath} in {os.getcwd()}, adding data instead")
+            logging.warning(
+                f"couldn't find {self.filepath}.d in {os.getcwd()}, adding data instead"
+            )
             tarball.add("data")
         print(tarball.getmembers())
         tarball.close()
@@ -136,11 +162,17 @@ class SignalDatastore:
                 self.number, data
             )
         else:
-            result = await self.account_interface.upload(self.number, data)
-        logging.info(result)
+            len_keys = len(
+                json.load(open(self.filepath))["axolotlStore"]["preKeys"]
+            )
+            result = await self.account_interface.upload(
+                self.number, data, len_keys, self.is_registered_locally()
+            )
+        logging.info("upload query result %s", result)
         logging.info(f"saved {kb} kb of tarballed datastore to supabase")
+        return
 
- 
+
 async def getFreeSignalDatastore() -> SignalDatastore:
     record = await get_account_interface().get_free_account()
     if not record:
@@ -159,11 +191,18 @@ async def start_memfs(app: web.Application) -> None:
     """
     app["mem_queue"] = mem_queue = aioprocessing.AioQueue()
     if utils.LOCAL:
-        Popen("sudo mkdir /app".split())
-        Popen("sudo chmod 777 /app".split())
-        Popen("ln -s ( readlink -f ./signal-cli ) /app/signal-cli".split())
-        return
+        try:
+            shutil.rmtree(utils.ROOT_DIR)
+        except (FileNotFoundError, OSError) as e:
+            logging.warning("couldn't remove rootdir: %s", e)
+        os.mkdir(utils.ROOT_DIR)
+        os.mkdir(utils.ROOT_DIR + "/data")
+        # we're going to be running in the repo
+        os.symlink(Path("signal-cli").absolute(), utils.ROOT_DIR + "/signal-cli")
+        os.chdir(utils.ROOT_DIR)
+        return 
     if not os.path.exists("/dev/fuse"):
+        # you *must* have fuse already loaded locally
         proc = Popen(
             ["/usr/sbin/insmod", "/app/fuse.ko"],
             stdout=PIPE,
@@ -182,7 +221,7 @@ async def start_memfs(app: web.Application) -> None:
             f"Starting memfs with PID: {pid} on dir: {path}\n"
         )
         backend = mem.Memory(logqueue=mem_queue)  # type: ignore
-        return fuse.FUSE(operations=backend, mountpoint="/app/data")  # type: ignore
+        return fuse.FUSE(operations=backend, mountpoint=utils.ROOT_DIR + "/data")  # type: ignore
 
     async def launch() -> None:
         memfs = aioprocessing.AioProcess(target=memfs_proc)
@@ -208,7 +247,7 @@ async def start_queue_monitor(app: web.Application) -> None:
             # iff fsync triggered by signal-cli
             if (
                 queue_item[0:2] == ["->", "fsync"]
-                and queue_item[5][0] == "/app/signal-cli"
+                and queue_item[5][0] == utils.ROOT_DIR + "/signal-cli"
             ):
                 # /+14703226669
                 # file_to_sync = queue_item[2]

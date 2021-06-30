@@ -21,6 +21,10 @@ allow_prereleases = true
 
 [dev-packages]
 pytest = "*"
+# isort = "*"
+# black = "*"
+# aioconsole = "*"
+
 
 [packages.aiohttp]
 extras = [ "speedups",]
