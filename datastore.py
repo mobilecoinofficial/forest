@@ -254,7 +254,7 @@ async def start_queue_monitor(app: web.Application) -> None:
                 # 14703226669
                 maybe_session = app.get("session")
                 if maybe_session:
-                    await maybe_session.datastore.put_file()
+                    await maybe_session.datastore.upload()
 
     app["mem_task"] = asyncio.create_task(background_sync_handler())
 
