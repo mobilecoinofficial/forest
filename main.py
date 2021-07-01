@@ -2,6 +2,7 @@
 from typing import Optional, AsyncIterator, Any, Union
 from asyncio import Queue
 import sys
+import signal
 import asyncio
 import asyncio.subprocess as subprocess  # https://github.com/PyCQA/pylint/issues/1469
 import json
@@ -394,6 +395,8 @@ class Session:
                 )
 
     async def launch_and_connect(self) -> None:
+        signal.signal(signal.SIGINT, self.sync_signal_handler)
+        signal.signal(signal.SIGTERM, self.sync_signal_handler)
         await self.datastore.download()
         name = "localbot" if utils.LOCAL else "forestbot"
         baseCmd = f"./signal-cli --config . --username={self.bot_number} "
@@ -432,6 +435,32 @@ class Session:
             self.proc.stdin.write(json.dumps(msg).encode() + b"\n")
         await self.proc.wait()
 
+
+    async def async_shutdown(self): -> None:
+        await self.datastore.upload()
+        try:
+            if self.proc:
+                self.proc.kill()
+                await self.proc.wait()
+        except ProcessLookupError:
+            pass
+        await self.datastore.upload()
+        await self.datastore.mark_freed()
+        logging.info("=============exited===================")
+
+        try:
+            # conflicting info about whether GracefulExit actually exits
+            raise aiohttp.web_runner.GracefulExit
+        finally:
+            sys.exit(0)
+
+
+    def sync_signal_handler(self):
+        try:
+            loop = asyncio.get_current_loop()
+            loop.run_soon(self.async_shutdown)
+        except RuntimeError:
+            asyncio.run(self.async_shutdown)
 
 async def start_session(app: web.Application) -> None:
     # number = (await datastore.get_account_interface().get_free_account())[0].get("id")
@@ -558,19 +587,6 @@ async def inbound_sms_handler(request: web.Request) -> web.Response:
     return web.Response(status=504, text="Sorry, no live workers.")
 
 
-async def terminate(request: web.Request) -> web.Response:
-    if await request.text() != utils.HOSTNAME:
-        return web.Response(
-            status=403, text="https://twitter.com/dril/status/922321981"
-        )
-    logging.warning("======terminating======")
-    await request.app.shutdown()
-    await request.app.cleanup()
-    try:
-        # conflicting info about whether GracefulExit actually exits
-        raise aiohttp.web_runner.GracefulExit
-    finally:
-        sys.exit(0)
 
 
 app = web.Application()
@@ -578,7 +594,6 @@ app = web.Application()
 app.on_startup.append(start_session)
 app.on_startup.append(datastore.start_memfs)
 app.on_startup.append(datastore.start_queue_monitor)
-app.on_shutdown.append(datastore.on_shutdown)
 maybe_extra = (
     [web.get("/next_message", get_next_message_handler)] if utils.LOCAL else []
 )

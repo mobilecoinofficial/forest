@@ -139,6 +139,8 @@ class SignalDatastore:
         if not self.is_registered_locally():
             logging.error("datastore not registered. not uploading")
             return
+        # fixme: check if the last thing we downloaded/uploaded
+        # is older than the last thing in the db
         buffer = BytesIO()
         tarball = TarFile(fileobj=buffer, mode="w")
         try:
@@ -264,16 +266,3 @@ async def start_queue_monitor(app: web.Application) -> None:
     app["mem_task"] = asyncio.create_task(background_sync_handler())
 
 
-async def on_shutdown(app: web.Application) -> None:
-    session = app.get("session")
-    if session:
-        await session.datastore.upload()
-        try:
-            if session.proc:
-                session.proc.kill()
-                await session.proc.wait()
-        except ProcessLookupError:
-            pass
-        await session.datastore.upload()
-        await session.datastore.mark_freed()
-    logging.info("=============exited===================")
