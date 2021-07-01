@@ -95,35 +95,26 @@ class SignalDatastore:
             raise Exception(f"no record in db for {self.number}")
         return record[0].get("active_node_name")
 
-    async def download(self, terminate: bool = True) -> None:
-        """Fetch our account datastore from postgresql and mark it claimed
-        try terminating the old process by default"""
-        tried_to_terminate = False
+    async def download(self) -> None:
+        """Fetch our account datastore from postgresql and mark it claimed"""
         for i in range(5):
             claim = await self.is_claimed()
             if not claim:
                 break
-            if terminate and not tried_to_terminate:
-                logging.info(
-                    "this account is claimed, waiting and trying to terminate %s",
-                    claim,
-                )
-                try:
-                    resp = requests.post(utils.URL + "/terminate", data=claim)
-                    logging.info("got %s", resp.text)
-                except (requests.exceptions.RequestException, ConnectionError):
-                    pass
-                tried_to_terminate = True
+            # maybe still keep the terminate route?
+            logging.info(
+                "this account is claimed by %s, waiting",
+                claim,
+            )
             await asyncio.sleep(6)
-            if i == 9:
-                logging.info("30s is up, downloading anyway")
+        logging.info("downloading")
         record = await self.account_interface.get_datastore(self.number)
         buffer = BytesIO(record[0].get("datastore"))
         tarball = TarFile(fileobj=buffer)
         fnames = [member.name for member in tarball.getmembers()]
         logging.info(fnames)
         logging.info(
-            f"expected file %s exists: %s",
+            "expected file %s exists: %s",
             self.filepath,
             self.filepath in fnames,
         )
@@ -134,11 +125,13 @@ class SignalDatastore:
         assert await self.is_claimed()
         await self.account_interface.get_datastore(self.number)
 
-    async def upload(self, create: bool = False) -> Any:
-        """Puts account datastore in postgresql."""
+
+    def tarball_data(self) -> Optional[bytes]:
         if not self.is_registered_locally():
             logging.error("datastore not registered. not uploading")
             return
+        # fixme: check if the last thing we downloaded/uploaded
+        # is older than the last thing in the db
         buffer = BytesIO()
         tarball = TarFile(fileobj=buffer, mode="w")
         try:
@@ -156,6 +149,14 @@ class SignalDatastore:
         tarball.close()
         buffer.seek(0)
         data = buffer.read()
+        return data
+
+
+    async def upload(self, create: bool = False) -> Any:
+        """Puts account datastore in postgresql."""
+        data = self.tarball_data()
+        if not data:
+            return
         kb = round(len(data) / 1024, 1)
         if create:
             result = await self.account_interface.create_account(
@@ -175,7 +176,6 @@ class SignalDatastore:
     async def mark_freed(self):
         """Marks account as freed in PG database."""
         return await self.account_interface.mark_account_freed(self.number)
-
 
 
 async def getFreeSignalDatastore() -> SignalDatastore:
@@ -205,7 +205,7 @@ async def start_memfs(app: web.Application) -> None:
         # we're going to be running in the repo
         os.symlink(Path("signal-cli").absolute(), utils.ROOT_DIR + "/signal-cli")
         os.chdir(utils.ROOT_DIR)
-        return 
+        return
     if not os.path.exists("/dev/fuse"):
         # you *must* have fuse already loaded locally
         proc = Popen(
@@ -262,18 +262,3 @@ async def start_queue_monitor(app: web.Application) -> None:
                     await maybe_session.datastore.upload()
 
     app["mem_task"] = asyncio.create_task(background_sync_handler())
-
-
-async def on_shutdown(app: web.Application) -> None:
-    session = app.get("session")
-    if session:
-        await session.datastore.upload()
-        try:
-            if session.proc:
-                session.proc.kill()
-                await session.proc.wait()
-        except ProcessLookupError:
-            pass
-        await session.datastore.upload()
-        await session.datastore.mark_freed()
-    logging.info("=============exited===================")
