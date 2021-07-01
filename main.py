@@ -147,9 +147,7 @@ class Session:
     async def check_target_number(self, msg: Message) -> Optional[str]:
         logging.info(msg.arg1)
         try:
-            # matches = list(pn.PhoneNumberMatcher(msg.text, "US"))
-            # assert len(matches) == 1
-            parsed = pn.parse(msg.arg1, "US")
+            parsed = pn.parse(msg.arg1, "US") # fixme: use PhoneNumberMatcher 
             assert pn.is_valid_number(parsed)
             number = pn.format_number(parsed, pn.PhoneNumberFormat.E164)
             return number
