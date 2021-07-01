@@ -172,6 +172,11 @@ class SignalDatastore:
         logging.info(f"saved {kb} kb of tarballed datastore to supabase")
         return
 
+    async def mark_freed(self):
+        """Marks account as freed in PG database."""
+        return await self.account_interface.mark_account_freed(self.number)
+
+
 
 async def getFreeSignalDatastore() -> SignalDatastore:
     record = await get_account_interface().get_free_account()
@@ -270,7 +275,5 @@ async def on_shutdown(app: web.Application) -> None:
         except ProcessLookupError:
             pass
         await session.datastore.upload()
-        await session.datastore.account_interface.mark_account_freed(
-            session.datastore.number
-        )
+        await session.datastore.mark_freed()
     logging.info("=============exited===================")
