@@ -404,11 +404,11 @@ class Session:
         loop.add_signal_handler(signal.SIGINT, self.sync_signal_handler)
         # this doesn't work either
         signal.signal(signal.SIGINT, self.sync_signal_handler)
-        
+
         await self.datastore.download()
         name = "localbot" if utils.LOCAL else "forestbot"
         baseCmd = f"./signal-cli --config . --username={self.bot_number} "
-        # # requires graal fix 
+        # # requires graal fix
         # profileCmd = (
         #     baseCmd + "--output=plain-text updateProfile "
         #     f"--name {name} --avatar avatar.png"
@@ -445,7 +445,7 @@ class Session:
         await self.proc.wait()
 
     async def async_shutdown(self, *args, wait: bool = False) -> None:
-
+        logging.info("starting async_shutdown")
         await self.datastore.upload()
         if wait and self.proc:
             try:
@@ -453,23 +453,27 @@ class Session:
                 await self.proc.wait()
                 await self.datastore.upload()
             except ProcessLookupError:
+                logging.info("no process")
                 pass
         await self.datastore.mark_freed()
         logging.info("=============exited===================")
-        try:
-            # conflicting info about whether GracefulExit actually exits
-            raise aiohttp.web_runner.GracefulExit
-        finally:
-            sys.exit(0)
+        loop.close()
+        sys.exit(0)
 
+    sigints = 0
     def sync_signal_handler(self, signal: Any = None, frame: Any = None) -> None:
+        logging.info("handling sigint. sigints: %s", self.sigints)
+        self.sigints += 1
         try:
-            loop = asyncio.get_running_loop()
-            logging.info("got running loop")
-            loop.call_soon(self.async_shutdown)
+            loop  = asyncio.get_running_loop()
+            logging.info("got running loop, scheduling async_shutdown")
+            asyncio.run_coroutine_threadsafe(self.async_shutdown(), loop)
         except RuntimeError:
             asyncio.run(self.async_shutdown)
-
+        if self.sigints >= 3:
+            sys.exit(1)
+            raise KeyboardInterrupt
+            logging.info("this should never get called")
 
 async def start_session(app: web.Application) -> None:
     # number = (await datastore.get_account_interface().get_free_account())[0].get("id")
@@ -614,6 +618,7 @@ app.add_routes(
 )
 
 app["session"] = None
+
 
 
 if __name__ == "__main__":
