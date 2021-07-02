@@ -107,8 +107,7 @@ class SignalDatastore:
                 claim,
             )
             await asyncio.sleep(6)
-            if i == 9:
-                logging.info("30s is up, downloading anyway")
+        logging.info("downloading")
         record = await self.account_interface.get_datastore(self.number)
         buffer = BytesIO(record[0].get("datastore"))
         tarball = TarFile(fileobj=buffer)
@@ -126,8 +125,8 @@ class SignalDatastore:
         assert await self.is_claimed()
         await self.account_interface.get_datastore(self.number)
 
-    async def upload(self, create: bool = False) -> Any:
-        """Puts account datastore in postgresql."""
+
+    def tarball_data(self) -> Optional[bytes]:
         if not self.is_registered_locally():
             logging.error("datastore not registered. not uploading")
             return
@@ -150,6 +149,14 @@ class SignalDatastore:
         tarball.close()
         buffer.seek(0)
         data = buffer.read()
+        return data
+
+
+    async def upload(self, create: bool = False) -> Any:
+        """Puts account datastore in postgresql."""
+        data = self.tarball_data()
+        if not data:
+            return
         kb = round(len(data) / 1024, 1)
         if create:
             result = await self.account_interface.create_account(
