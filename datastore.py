@@ -95,25 +95,17 @@ class SignalDatastore:
             raise Exception(f"no record in db for {self.number}")
         return record[0].get("active_node_name")
 
-    async def download(self, terminate: bool = True) -> None:
-        """Fetch our account datastore from postgresql and mark it claimed
-        try terminating the old process by default"""
-        tried_to_terminate = False
+    async def download(self) -> None:
+        """Fetch our account datastore from postgresql and mark it claimed"""
         for i in range(5):
             claim = await self.is_claimed()
             if not claim:
                 break
-            if terminate and not tried_to_terminate:
-                logging.info(
-                    "this account is claimed, waiting and trying to terminate %s",
-                    claim,
-                )
-                try:
-                    resp = requests.post(utils.URL + "/terminate", data=claim)
-                    logging.info("got %s", resp.text)
-                except (requests.exceptions.RequestException, ConnectionError):
-                    pass
-                tried_to_terminate = True
+            # maybe still keep the terminate route?
+            logging.info(
+                "this account is claimed by %s, waiting",
+                claim,
+            )
             await asyncio.sleep(6)
             if i == 9:
                 logging.info("30s is up, downloading anyway")
@@ -123,7 +115,7 @@ class SignalDatastore:
         fnames = [member.name for member in tarball.getmembers()]
         logging.info(fnames)
         logging.info(
-            f"expected file %s exists: %s",
+            "expected file %s exists: %s",
             self.filepath,
             self.filepath in fnames,
         )
@@ -179,7 +171,6 @@ class SignalDatastore:
         return await self.account_interface.mark_account_freed(self.number)
 
 
-
 async def getFreeSignalDatastore() -> SignalDatastore:
     record = await get_account_interface().get_free_account()
     if not record:
@@ -207,7 +198,7 @@ async def start_memfs(app: web.Application) -> None:
         # we're going to be running in the repo
         os.symlink(Path("signal-cli").absolute(), utils.ROOT_DIR + "/signal-cli")
         os.chdir(utils.ROOT_DIR)
-        return 
+        return
     if not os.path.exists("/dev/fuse"):
         # you *must* have fuse already loaded locally
         proc = Popen(
@@ -264,5 +255,3 @@ async def start_queue_monitor(app: web.Application) -> None:
                     await maybe_session.datastore.upload()
 
     app["mem_task"] = asyncio.create_task(background_sync_handler())
-
-

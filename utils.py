@@ -19,10 +19,10 @@ LOCAL = APP_NAME is None
 ROOT_DIR = "/tmp/local-signal" if LOCAL else "/app"
 
 logging.basicConfig(
-    level=logging.DEBUG, format="{levelname} {module}:{lineno}: {message}", style="{"
+    level=logging.DEBUG,
+    format="{levelname} {module}:{lineno}: {message}",
+    style="{",
 )
-
-
 
 
 def load_secrets(env: Optional[str] = None) -> None:
@@ -38,7 +38,8 @@ def get_secret(key: str, env: Optional[str] = None) -> str:
         return os.environ[key]
     except KeyError:
         load_secrets(env)
-        return os.environ.get(key) or "" # fixme
+        return os.environ.get(key) or ""  # fixme
+
 
 def teli_format(raw_number: str) -> str:
     return str(pn.parse(raw_number, "US").national_number)
@@ -48,6 +49,7 @@ def signal_format(raw_number: str) -> str:
     return pn.format_number(
         pn.parse(raw_number, "US"), pn.PhoneNumberFormat.E164
     )
+
 
 @asynccontextmanager
 async def get_url(port: int = 8080) -> AsyncIterator[str]:
@@ -73,8 +75,7 @@ Callback = Callable[[dict], Coroutine[Any, Any, None]]
 
 
 class ReceiveSMS:
-    def __init__(self, port: int = 8080
-    ) -> None:
+    def __init__(self, port: int = 8080) -> None:
         self.msgs: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         self.port = port
 
@@ -100,10 +101,11 @@ class ReceiveSMS:
             yield site
         finally:
             logging.info("shutting down ReceiveSMS")
-            #try:
+            # try:
             await self.app.shutdown()
             await self.app.cleanup()
-            #except (OSError, RuntimeError): pass
+            # except (OSError, RuntimeError): pass
+
 
 async def aprint(msg: Any) -> None:
     print(msg)
@@ -257,7 +259,9 @@ def get_signal_captcha(buy: Optional[bool] = None) -> Optional[str]:
         return solution
     except FileNotFoundError:
         if buy is None:
-            input("press enter if you've put a captcha in /tmp/captcha or want to buy one")
+            input(
+                "press enter if you've put a captcha in /tmp/captcha or want to buy one"
+            )
             return get_signal_captcha(True)
         if buy is False:
             return None

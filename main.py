@@ -1,22 +1,24 @@
 #!/usr/bin/python3.9
-from typing import Optional, AsyncIterator, Any, Union
-from asyncio import Queue
-import sys
-import signal
 import asyncio
 import asyncio.subprocess as subprocess  # https://github.com/PyCQA/pylint/issues/1469
 import json
 import logging
-import urllib.parse
 import random
-from aiohttp import web
+import signal
+import sys
+import urllib.parse
+from asyncio import Queue
+from typing import Any, AsyncIterator, Optional, Union
+
 import aiohttp
 import phonenumbers as pn
 import termcolor
+from aiohttp import web
+
 import datastore
 import utils
+from forest_tables import GroupRoutingManager, PaymentsManager, RoutingManager
 from utils import get_secret
-from forest_tables import RoutingManager, PaymentsManager, GroupRoutingManager
 
 # pylint: disable=line-too-long,too-many-instance-attributes, import-outside-toplevel, fixme, redefined-outer-name
 
@@ -148,7 +150,7 @@ class Session:
     async def check_target_number(self, msg: Message) -> Optional[str]:
         logging.info(msg.arg1)
         try:
-            parsed = pn.parse(msg.arg1, "US") # fixme: use PhoneNumberMatcher 
+            parsed = pn.parse(msg.arg1, "US")  # fixme: use PhoneNumberMatcher
             assert pn.is_valid_number(parsed)
             number = pn.format_number(parsed, pn.PhoneNumberFormat.E164)
             return number
@@ -395,17 +397,24 @@ class Session:
                 )
 
     async def launch_and_connect(self) -> None:
+        loop = asyncio.get_running_loop()
+        # this would cause TypeError: coroutines cannot be used with add_signal_handler()
+        # loop.add_signal_handler(signal.SIGINT, self.async_shutdown)
+        # this doesn't work
+        loop.add_signal_handler(signal.SIGINT, self.sync_signal_handler)
+        # this doesn't work either
         signal.signal(signal.SIGINT, self.sync_signal_handler)
-        signal.signal(signal.SIGTERM, self.sync_signal_handler)
+        
         await self.datastore.download()
         name = "localbot" if utils.LOCAL else "forestbot"
         baseCmd = f"./signal-cli --config . --username={self.bot_number} "
-        profileCmd = (
-            baseCmd + "--output=plain-text updateProfile "
-            f"--name {name} --avatar avatar.png"
-        ).split()
-        profileProc = await asyncio.create_subprocess_exec(*profileCmd)
-        logging.info(await profileProc.communicate())
+        # # requires graal fix 
+        # profileCmd = (
+        #     baseCmd + "--output=plain-text updateProfile "
+        #     f"--name {name} --avatar avatar.png"
+        # ).split()
+        # profileProc = await asyncio.create_subprocess_exec(*profileCmd)
+        # logging.info(await profileProc.communicate())
         COMMAND = (baseCmd + "--output=json stdio").split()
         logging.info(COMMAND)
         self.proc = await asyncio.create_subprocess_exec(
@@ -435,32 +444,32 @@ class Session:
             self.proc.stdin.write(json.dumps(msg).encode() + b"\n")
         await self.proc.wait()
 
+    async def async_shutdown(self, *args, wait: bool = False) -> None:
 
-    async def async_shutdown(self): -> None:
         await self.datastore.upload()
-        try:
-            if self.proc:
+        if wait and self.proc:
+            try:
                 self.proc.kill()
                 await self.proc.wait()
-        except ProcessLookupError:
-            pass
-        await self.datastore.upload()
+                await self.datastore.upload()
+            except ProcessLookupError:
+                pass
         await self.datastore.mark_freed()
         logging.info("=============exited===================")
-
         try:
             # conflicting info about whether GracefulExit actually exits
             raise aiohttp.web_runner.GracefulExit
         finally:
             sys.exit(0)
 
-
-    def sync_signal_handler(self):
+    def sync_signal_handler(self, signal: Any = None, frame: Any = None) -> None:
         try:
-            loop = asyncio.get_current_loop()
-            loop.run_soon(self.async_shutdown)
+            loop = asyncio.get_running_loop()
+            logging.info("got running loop")
+            loop.call_soon(self.async_shutdown)
         except RuntimeError:
             asyncio.run(self.async_shutdown)
+
 
 async def start_session(app: web.Application) -> None:
     # number = (await datastore.get_account_interface().get_free_account())[0].get("id")
@@ -587,8 +596,6 @@ async def inbound_sms_handler(request: web.Request) -> web.Response:
     return web.Response(status=504, text="Sorry, no live workers.")
 
 
-
-
 app = web.Application()
 
 app.on_startup.append(start_session)
@@ -602,7 +609,6 @@ app.add_routes(
         web.get("/", noGet),
         web.post("/user/{phonenumber}", send_message_handler),
         web.post("/inbound", inbound_sms_handler),
-        web.post("/terminate", terminate),
     ]
     + maybe_extra
 )
