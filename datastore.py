@@ -10,7 +10,6 @@ from tarfile import TarFile
 from typing import Any, Optional
 
 import aioprocessing
-import requests
 from aiohttp import web
 
 import fuse
@@ -97,9 +96,12 @@ class SignalDatastore:
 
     async def download(self) -> None:
         """Fetch our account datastore from postgresql and mark it claimed"""
+        logging.info("datastore download entered")
         for i in range(5):
+            logging.info("checking claim")
             claim = await self.is_claimed()
             if not claim:
+                logging.info("no account claim!")
                 break
             # maybe still keep the terminate route?
             logging.info(
@@ -109,6 +111,7 @@ class SignalDatastore:
             await asyncio.sleep(6)
         logging.info("downloading")
         record = await self.account_interface.get_datastore(self.number)
+        logging.info("got datastore from pg")
         buffer = BytesIO(record[0].get("datastore"))
         tarball = TarFile(fileobj=buffer)
         fnames = [member.name for member in tarball.getmembers()]
@@ -122,6 +125,7 @@ class SignalDatastore:
         await self.account_interface.mark_account_claimed(
             self.number, utils.HOSTNAME
         )
+        logging.debug("marked account as claimed, checking that this is the case")
         assert await self.is_claimed()
         await self.account_interface.get_datastore(self.number)
 
@@ -142,7 +146,9 @@ class SignalDatastore:
                 logging.info("ignoring no %s", self.filepath + ".d")
         except FileNotFoundError:
             logging.warning(
-                f"couldn't find {self.filepath}.d in {os.getcwd()}, adding data instead"
+                "couldn't find %s in %s, adding data instead",
+                self.filepath + ".d",
+                os.getcwd()
             )
             tarball.add("data")
         print(tarball.getmembers())
@@ -170,7 +176,7 @@ class SignalDatastore:
                 self.number, data, len_keys, self.is_registered_locally()
             )
         logging.info("upload query result %s", result)
-        logging.info(f"saved {kb} kb of tarballed datastore to supabase")
+        logging.info(f"saved %s kb of tarballed datastore to supabase", kb)
         return
 
     async def mark_freed(self):
@@ -194,6 +200,7 @@ async def start_memfs(app: web.Application) -> None:
     this means we can log signal-cli's interactions with fs,
     and store them in mem_queue
     """
+    logging.info("starting memfs")
     app["mem_queue"] = mem_queue = aioprocessing.AioQueue()
     if utils.LOCAL:
         try:
@@ -221,18 +228,22 @@ async def start_memfs(app: web.Application) -> None:
             )
 
     def memfs_proc(path: str = "data") -> Any:
+        logging.info("in memfs_proc")
         pid = os.getpid()
         open("/dev/stdout", "w").write(
             f"Starting memfs with PID: {pid} on dir: {path}\n"
         )
         backend = mem.Memory(logqueue=mem_queue)  # type: ignore
+        logging.info("initing FUSE")
         return fuse.FUSE(operations=backend, mountpoint=utils.ROOT_DIR + "/data")  # type: ignore
 
     async def launch() -> None:
+        logging.info("about to launch memfs with aioprocessing")
         memfs = aioprocessing.AioProcess(target=memfs_proc)
         memfs.start()  # pylint: disable=no-member
         app["memfs"] = memfs
 
+    logging.info("awaiting launch func")
     await launch()
 
 

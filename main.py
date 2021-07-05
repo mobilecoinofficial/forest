@@ -6,6 +6,7 @@ import logging
 import random
 import signal
 import sys
+import os
 import urllib.parse
 from asyncio import Queue
 from typing import Any, AsyncIterator, Optional, Union
@@ -21,6 +22,8 @@ from forest_tables import GroupRoutingManager, PaymentsManager, RoutingManager
 from utils import get_secret
 
 # pylint: disable=line-too-long,too-many-instance-attributes, import-outside-toplevel, fixme, redefined-outer-name
+
+JSON = dict[str, Any]
 
 
 class Message:
@@ -71,9 +74,7 @@ class Session:
         self.signalcli_output_queue: Queue[Message] = Queue()
         self.signalcli_input_queue: Queue[dict] = Queue()
         self.raw_queue: Queue[dict] = Queue()
-        self.client_session = (
-            aiohttp.ClientSession()
-        )  # i don't think we need this?
+        self.client_session = aiohttp.ClientSession()
         self.scratch: dict[str, dict[str, Any]] = {"payments": {}}
         self.payments_manager = PaymentsManager()
         self.routing_manager = RoutingManager()
@@ -109,7 +110,7 @@ class Session:
                 await self.send_message(recipient, m)
         if isinstance(msg, dict):
             msg = "\n".join((f"{key}:\t{value}" for key, value in msg.items()))
-        json_command = {
+        json_command: JSON = {
             "command": "send",
             "message": msg,
         }
@@ -268,9 +269,7 @@ class Session:
 
     async def do_order(self, msg: Message) -> str:
         """usage: /order <area code>"""
-        if not msg.arg1:
-            return """usage: /order <area code>"""
-        if not (len(msg.arg1) == 3 and msg.arg1.isnumeric()):
+        if not (msg.arg1 and len(msg.arg1) == 3 and msg.arg1.isnumeric()):
             return """usage: /order <area code>"""
         if msg.source not in self.scratch["payments"]:
             # this needs to check if there are *unfulfilled* payments
@@ -285,7 +284,10 @@ class Session:
             number = available_numbers[0]
             await self.send_message(msg.source, f"found {number} for you...")
         else:
-            number = utils.search_numbers(area_code=msg.arg1, limit=1)[0]
+            numbers = utils.search_numbers(area_code=msg.arg1, limit=1)
+            if not numbers:
+                return "sorry, no numbers for that area code"
+            number = numbers[0]
             await self.send_message(msg.source, f"found {number}")
             await self.routing_manager.intend_to_buy(number)
             buy_info = utils.buy_number(number)
@@ -324,7 +326,6 @@ class Session:
 
     async def handle_messages(self) -> None:
         async for message in self.signalcli_output_iter():
-            # open("/dev/stdout", "w").write(f"{message}\n")
             if message.source:
                 maybe_routable = await self.routing_manager.get_id(
                     message.source
@@ -397,16 +398,16 @@ class Session:
                 )
 
     async def launch_and_connect(self) -> None:
+        logging.info("in launch_and_connect")
         loop = asyncio.get_running_loop()
-        # this would cause TypeError: coroutines cannot be used with add_signal_handler()
-        # loop.add_signal_handler(signal.SIGINT, self.async_shutdown)
-        # this doesn't work
+        logging.info("got running loop")
+        # things that don't work: loop.add_signal_handler(async_shutdown) - TypeError
+        # signal.signal(sync_signal_handler) - can't interact with loop
         loop.add_signal_handler(signal.SIGINT, self.sync_signal_handler)
-        # this doesn't work either
-        signal.signal(signal.SIGINT, self.sync_signal_handler)
+        logging.info("added signal handler, downloading...")
 
         await self.datastore.download()
-        name = "localbot" if utils.LOCAL else "forestbot"
+        # name = "localbot" if utils.LOCAL else "forestbot"
         baseCmd = f"./signal-cli --config . --username={self.bot_number} "
         # # requires graal fix
         # profileCmd = (
@@ -428,9 +429,6 @@ class Session:
             self.proc.pid,
         )
         assert self.proc.stdout and self.proc.stdin
-
-        # slap a feature flag on this
-
         asyncio.create_task(
             listen_to_signalcli(
                 self.proc.stdout,
@@ -438,13 +436,12 @@ class Session:
                 self.raw_queue,
             )
         )
-
         async for msg in self.signalcli_input_iter():
             logging.info("input to signal: %s", msg)
             self.proc.stdin.write(json.dumps(msg).encode() + b"\n")
         await self.proc.wait()
 
-    async def async_shutdown(self, *args, wait: bool = False) -> None:
+    async def async_shutdown(self, *args_, wait: bool = False) -> None:
         logging.info("starting async_shutdown")
         await self.datastore.upload()
         if wait and self.proc:
@@ -454,18 +451,24 @@ class Session:
                 await self.datastore.upload()
             except ProcessLookupError:
                 logging.info("no process")
-                pass
         await self.datastore.mark_freed()
         logging.info("=============exited===================")
-        loop.close()
         sys.exit(0)
+        logging.info(
+            "called sys.exit but still running, os.kill sigint to %s",
+            os.getpid(),
+        )
+        os.kill(os.getpid(), signal.SIGINT)
+        logging.info("still running after os.kill, trying os._exit")
+        os._exit(1)
 
     sigints = 0
-    def sync_signal_handler(self, signal: Any = None, frame: Any = None) -> None:
+
+    def sync_signal_handler(self, *args_) -> None:
         logging.info("handling sigint. sigints: %s", self.sigints)
         self.sigints += 1
         try:
-            loop  = asyncio.get_running_loop()
+            loop = asyncio.get_running_loop()
             logging.info("got running loop, scheduling async_shutdown")
             asyncio.run_coroutine_threadsafe(self.async_shutdown(), loop)
         except RuntimeError:
@@ -473,10 +476,10 @@ class Session:
         if self.sigints >= 3:
             sys.exit(1)
             raise KeyboardInterrupt
-            logging.info("this should never get called")
+            logging.info("this should never get called") #pylint: disable=unreachable
+
 
 async def start_session(app: web.Application) -> None:
-    # number = (await datastore.get_account_interface().get_free_account())[0].get("id")
     try:
         number = utils.signal_format(sys.argv[1])
     except IndexError:
@@ -485,11 +488,6 @@ async def start_session(app: web.Application) -> None:
     app["session"] = new_session = Session(number)
     asyncio.create_task(new_session.launch_and_connect())
     asyncio.create_task(new_session.handle_messages())
-
-    # app["singal_input"] = asyncio.create_task(read_console_requests())
-
-
-JSON = dict[str, Any]
 
 
 async def listen_to_signalcli(
@@ -531,30 +529,6 @@ async def listen_to_signalcli(
 
 async def noGet(request: web.Request) -> web.Response:
     raise web.HTTPFound(location="https://signal.org/")
-
-
-async def send_message_handler(request: web.Request) -> Any:
-    # account = request.match_info.get("phonenumber")
-    session = request.app.get("session")
-    # post: A coroutine that reads POST parameters from request body.
-    # Returns MultiDictProxy instance filled with parsed data.
-    msg_obj = dict(await request.post())
-    recipient = msg_obj.get("recipient", get_secret("ADMIN"))
-    content = msg_obj.get("message", msg_obj)
-    if session:
-        await session.send_message(
-            recipient, content, endsession=bool(msg_obj.get("endsession"))
-        )
-    return web.json_response({"status": "sent"})
-
-
-async def get_next_message_handler(
-    request: web.Request,
-) -> Any:  # web.Response...
-    session = request.app.get("session")
-    if session and session.raw_queue:
-        return web.json_response(await session.raw_queue.get())
-    return web.json_response({"error": "no session"})
 
 
 async def inbound_sms_handler(request: web.Request) -> web.Response:
@@ -605,20 +579,14 @@ app = web.Application()
 app.on_startup.append(start_session)
 app.on_startup.append(datastore.start_memfs)
 app.on_startup.append(datastore.start_queue_monitor)
-maybe_extra = (
-    [web.get("/next_message", get_next_message_handler)] if utils.LOCAL else []
-)
 app.add_routes(
     [
         web.get("/", noGet),
-        web.post("/user/{phonenumber}", send_message_handler),
         web.post("/inbound", inbound_sms_handler),
     ]
-    + maybe_extra
 )
 
 app["session"] = None
-
 
 
 if __name__ == "__main__":

@@ -139,8 +139,9 @@ async def aprint(msg: Any) -> None:
 #         await app.cleanup()
 #         await site.stop()
 
+Session = Optional[aiohttp.client.ClientSession]
 
-def set_sms_url(raw_number: str, url: str) -> dict:
+def set_sms_url(raw_number: str, url: str, session: Session) -> dict:
     number = teli_format(raw_number)
     did_lookup = requests.get(
         "https://apiv1.teleapi.net/user/dids/get",
