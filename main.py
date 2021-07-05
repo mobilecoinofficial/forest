@@ -21,7 +21,6 @@ import utils
 from forest_tables import GroupRoutingManager, PaymentsManager, RoutingManager
 from utils import get_secret
 
-# pylint: disable=line-too-long,too-many-instance-attributes, import-outside-toplevel, fixme, redefined-outer-name
 
 JSON = dict[str, Any]
 
@@ -441,7 +440,7 @@ class Session:
             self.proc.stdin.write(json.dumps(msg).encode() + b"\n")
         await self.proc.wait()
 
-    async def async_shutdown(self, *args_, wait: bool = False) -> None:
+    async def async_shutdown(self, *unused: Any, wait: bool = False) -> None:
         logging.info("starting async_shutdown")
         await self.datastore.upload()
         if wait and self.proc:
@@ -464,7 +463,7 @@ class Session:
 
     sigints = 0
 
-    def sync_signal_handler(self, *args_) -> None:
+    def sync_signal_handler(self, *unused: Any) -> None:
         logging.info("handling sigint. sigints: %s", self.sigints)
         self.sigints += 1
         try:
@@ -472,7 +471,7 @@ class Session:
             logging.info("got running loop, scheduling async_shutdown")
             asyncio.run_coroutine_threadsafe(self.async_shutdown(), loop)
         except RuntimeError:
-            asyncio.run(self.async_shutdown)
+            asyncio.run(self.async_shutdown())
         if self.sigints >= 3:
             sys.exit(1)
             raise KeyboardInterrupt
@@ -506,7 +505,8 @@ async def listen_to_signalcli(
             break
         try:
             blob = json.loads(line)
-            await raw_queue.put(blob)
+            if raw_queue:
+                await raw_queue.put(blob)
         except json.JSONDecodeError:
             continue
         if not isinstance(blob, dict):  # e.g. a timestamp

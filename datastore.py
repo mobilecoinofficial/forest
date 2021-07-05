@@ -133,7 +133,7 @@ class SignalDatastore:
     def tarball_data(self) -> Optional[bytes]:
         if not self.is_registered_locally():
             logging.error("datastore not registered. not uploading")
-            return
+            return None
         # fixme: check if the last thing we downloaded/uploaded
         # is older than the last thing in the db
         buffer = BytesIO()
@@ -176,10 +176,10 @@ class SignalDatastore:
                 self.number, data, len_keys, self.is_registered_locally()
             )
         logging.info("upload query result %s", result)
-        logging.info(f"saved %s kb of tarballed datastore to supabase", kb)
+        logging.info("saved %s kb of tarballed datastore to supabase", kb)
         return
 
-    async def mark_freed(self):
+    async def mark_freed(self) -> list:
         """Marks account as freed in PG database."""
         return await self.account_interface.mark_account_freed(self.number)
 
