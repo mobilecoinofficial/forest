@@ -21,10 +21,9 @@ allow_prereleases = true
 
 [dev-packages]
 pytest = "*"
-# isort = "*"
-# black = "*"
-# aioconsole = "*"
-
+mypy = "*"
+pylint = "*"
+isort = "*"
 
 [packages.aiohttp]
 extras = [ "speedups",]

@@ -11,6 +11,8 @@ import sys
 import requests
 import phonenumbers as pn
 from aiohttp import web
+import aiohttp
+
 
 HOSTNAME = open("/etc/hostname").read().strip()  #  FLY_ALLOC_ID
 APP_NAME = os.getenv("FLY_APP_NAME")
@@ -139,6 +141,7 @@ async def aprint(msg: Any) -> None:
 #         await app.cleanup()
 #         await site.stop()
 
+Session = Optional[aiohttp.client.ClientSession]
 
 def set_sms_url(raw_number: str, url: str) -> dict:
     number = teli_format(raw_number)
@@ -253,7 +256,7 @@ def buy_number(number: str, sms_post_url: Optional[str] = None) -> dict:
 
 def get_signal_captcha(buy: Optional[bool] = None) -> Optional[str]:
     try:
-        solution = open("/tmp/captcha").read().lstrip("signalcaptcha://")
+        solution = open("/tmp/captcha").read().removeprefix("signalcaptcha://")
         logging.info("using local captcha")
         os.rename("/tmp/captcha", "/tmp/used_captcha")
         return solution
