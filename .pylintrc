@@ -16,4 +16,4 @@ disable=
 
 
 [VARIABLES]
-dummy-variables-rgx=(_|dummy|unused|i)$
+dummy-variables-rgx=(_|dummy|unused|i)

@@ -25,6 +25,9 @@ from utils import get_secret
 JSON = dict[str, Any]
 
 
+
+
+
 class Message:
     """Represents a Message received from signal-cli, optionally containing a command with arguments."""
 
@@ -42,8 +45,6 @@ class Message:
         if self.group:
             logging.info("saw group: %s", self.group)
         self.quoted_text = msg.get("quote", {}).get("text")
-        if self.quoted_text:
-            logging.info("saw quote: %s", self.quoted_text)
         self.command: Optional[str] = None
         self.tokens: Optional[list[str]] = None
         if self.text and self.text.startswith("/"):
@@ -93,7 +94,12 @@ class Session:
             "https://api.teleapi.net/sms/send?token=" + get_secret("TELI_KEY"),
             data=payload,
         )
-        response_json = await response.json()
+        response_json_all = await response.json()
+        response_json = {
+            k: v
+            for k, v in response_json_all.items()
+            if k in ("status", "segment_count")
+        } # hide how the sausage is made
         return response_json
 
     async def send_message(
@@ -370,8 +376,8 @@ class Session:
                 quoted = {key: value.strip() for key, value in pairs}
                 logging.info("destination from quote: %s", quoted["destination"])
                 response = await self.send_sms(
-                    source=quoted["source"],
-                    destination=quoted["destination"],
+                    source=quoted["destination"],
+                    destination=quoted["source"],
                     message_text=message.text,
                 )
                 logging.info("sent")
@@ -406,15 +412,15 @@ class Session:
         logging.info("added signal handler, downloading...")
 
         await self.datastore.download()
-        # name = "localbot" if utils.LOCAL else "forestbot"
         baseCmd = f"./signal-cli --config . --username={self.bot_number} "
-        # # requires graal fix
-        # profileCmd = (
-        #     baseCmd + "--output=plain-text updateProfile "
-        #     f"--name {name} --avatar avatar.png"
-        # ).split()
-        # profileProc = await asyncio.create_subprocess_exec(*profileCmd)
-        # logging.info(await profileProc.communicate())
+        # requires graal fix
+        name = "localbot" if utils.LOCAL else "forestbot"
+        profileCmd = (
+            baseCmd + "--output=plain-text updateProfile "
+            f"--name {name} --avatar avatar.png"
+        ).split()
+        profileProc = await asyncio.create_subprocess_exec(*profileCmd)
+        logging.info(await profileProc.communicate())
         COMMAND = (baseCmd + "--output=json stdio").split()
         logging.info(COMMAND)
         self.proc = await asyncio.create_subprocess_exec(
@@ -443,11 +449,12 @@ class Session:
     async def async_shutdown(self, *unused: Any, wait: bool = False) -> None:
         logging.info("starting async_shutdown")
         await self.datastore.upload()
-        if wait and self.proc:
+        if self.proc:
             try:
                 self.proc.kill()
-                await self.proc.wait()
-                await self.datastore.upload()
+                if wait:
+                    await self.proc.wait()
+                    await self.datastore.upload()
             except ProcessLookupError:
                 logging.info("no process")
         await self.datastore.mark_freed()
@@ -475,7 +482,9 @@ class Session:
         if self.sigints >= 3:
             sys.exit(1)
             raise KeyboardInterrupt
-            logging.info("this should never get called") #pylint: disable=unreachable
+            logging.info(
+                "this should never get called"
+            )  # pylint: disable=unreachable
 
 
 async def start_session(app: web.Application) -> None:
@@ -558,6 +567,8 @@ async def inbound_sms_handler(request: web.Request) -> web.Response:
         )
         logging.info(maybe_group)
         if maybe_group:
+            # if we can't notice group membership changes,
+            # we could check if the person is still in the group
             logging.info("sending a group")
             group = maybe_group[0].get("group_id")
             await session.send_message(None, msg_obj["message"], group=group)

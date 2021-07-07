@@ -1,18 +1,16 @@
-"""
-remember, teli uses national_number; signal uses E164
-"""
-from typing import Any, Callable, Coroutine, Optional, AsyncIterator, cast
-from contextlib import asynccontextmanager
-from asyncio.subprocess import create_subprocess_exec, PIPE
 import asyncio
+import functools
 import logging
 import os
 import sys
-import requests
-import phonenumbers as pn
-from aiohttp import web
-import aiohttp
+from asyncio.subprocess import PIPE, create_subprocess_exec
+from contextlib import asynccontextmanager
+from typing import Any, AsyncIterator, Callable, Coroutine, Optional, cast
 
+import aiohttp
+import phonenumbers as pn
+import requests
+from aiohttp import web
 
 HOSTNAME = open("/etc/hostname").read().strip()  #  FLY_ALLOC_ID
 APP_NAME = os.getenv("FLY_APP_NAME")
@@ -20,11 +18,24 @@ URL = f"https://{APP_NAME}.fly.dev"
 LOCAL = APP_NAME is None
 ROOT_DIR = "/tmp/local-signal" if LOCAL else "/app"
 
+
+class FuckAiohttp(logging.Filter):
+    """https://github.com/aio-libs/aiohttp/issues/4408#issuecomment-874510823"""
+
+    def filter(record: logging.LogRecord) -> bool:
+        if "was destroyed but it is pending" in record.message:
+            return False
+        if record.message.stardwith("task :") and record.message.endswith(">"):
+            return False
+        return True
+
+
 logging.basicConfig(
     level=logging.DEBUG,
     format="{levelname} {module}:{lineno}: {message}",
     style="{",
 )
+logging.getLogger().addFilter(FuckAiohttp)
 
 
 def load_secrets(env: Optional[str] = None) -> None:
@@ -142,6 +153,24 @@ async def aprint(msg: Any) -> None:
 #         await site.stop()
 
 Session = Optional[aiohttp.client.ClientSession]
+
+
+@functools.cache
+async def get_session() -> aiohttp.client.ClientSession:
+    return aiohttp.client.ClientSession()
+
+
+async def http_get(url: str, params: dict[str, str]) -> web.Response:
+    async with get_session().get(url, params=params) as resp:
+        return resp
+
+
+async def http_get(
+    url: str, params: Optional[dict] = {}, data: Optional[dict] = None
+) -> web.Response:
+    async with get_session().post(url, params=params) as resp:
+        return resp
+
 
 def set_sms_url(raw_number: str, url: str) -> dict:
     number = teli_format(raw_number)
