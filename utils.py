@@ -1,15 +1,13 @@
 import asyncio
-import functools
 import logging
 import os
 import sys
 from asyncio.subprocess import PIPE, create_subprocess_exec
 from contextlib import asynccontextmanager
-from typing import Any, AsyncIterator, Callable, Coroutine, Optional, cast
+from typing import Any, AsyncIterator, Optional, cast
 
 import aiohttp
 import phonenumbers as pn
-import requests
 from aiohttp import web
 
 HOSTNAME = open("/etc/hostname").read().strip()  #  FLY_ALLOC_ID
@@ -19,15 +17,12 @@ LOCAL = APP_NAME is None
 ROOT_DIR = "/tmp/local-signal" if LOCAL else "/app"
 
 
-class FuckAiohttp(logging.Filter):
-    """https://github.com/aio-libs/aiohttp/issues/4408#issuecomment-874510823"""
-
-    def filter(record: logging.LogRecord) -> bool:
-        if "was destroyed but it is pending" in record.message:
-            return False
-        if record.message.stardwith("task :") and record.message.endswith(">"):
-            return False
-        return True
+def FuckAiohttp(record: logging.LogRecord) -> bool:
+    if "was destroyed but it is pending" in record.msg:
+        return False
+    if str(record.msg).startswith("task :") and str(record.msg).endswith(">"):
+        return False
+    return True
 
 
 logging.basicConfig(
@@ -84,9 +79,6 @@ async def get_url(port: int = 8080) -> AsyncIterator[str]:
         yield APP_NAME + ".fly.io"
 
 
-Callback = Callable[[dict], Coroutine[Any, Any, None]]
-
-
 class ReceiveSMS:
     def __init__(self, port: int = 8080) -> None:
         self.msgs: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
@@ -120,98 +112,118 @@ class ReceiveSMS:
             # except (OSError, RuntimeError): pass
 
 
-async def aprint(msg: Any) -> None:
-    print(msg)
+class Teli:
+    def __init__(self) -> None:
+        self.session = aiohttp.client.ClientSession()
 
+    async def set_sms_url(self, raw_number: str, url: str) -> dict:
+        number = teli_format(raw_number)
+        async with self.session.get(
+            "https://apiv1.teleapi.net/user/dids/get",
+            params={
+                "token": get_secret("TELI_KEY"),
+                "number": number,
+            },
+        ) as resp:
+            did_lookup = await resp.json()
+        if did_lookup.get("status") == "error":
+            logging.error(did_lookup)
+            return did_lookup  # not sure about this
+        logging.info("did lookup: %s", did_lookup)
+        did_id = did_lookup.get("data", {}).get("id")
+        params = {
+            "token": get_secret("TELI_KEY"),
+            "did_id": did_id,
+            "url": url,
+        }
+        logging.info(url)
+        async with self.session.get(
+            "https://apiv1.teleapi.net/user/dids/smsurl/set", params=params
+        ) as resp:
+            set_url = await resp.json()
+        logging.info(set_url)
+        async with self.session.get(
+            "https://apiv1.teleapi.net/user/dids/get",
+            params={
+                "token": get_secret("TELI_KEY"),
+                "number": number,
+            },
+        ) as resp:
+            actual_url = (await resp.json())["data"]["sms_post_url"]
+        logging.info(actual_url)
+        return set_url
 
-# @asynccontextmanager
-# async def receive_sms(
-#     callback: Callback = aprint, port: int = 8080
-# ) -> AsyncIterator[web.TCPSite]:
-#     print(port)
+    async def list_our_numbers(
+        self,
+    ) -> list[str]:
+        async with self.session.get(
+            "https://apiv1.teleapi.net/user/dids/list",
+            params={"token": get_secret("TELI_KEY")},
+        ) as resp:
+            blob = await resp.json()
+        # this actually needs to figure out the url of the other environment
+        # so prod doesn't take dev numbers
+        def predicate(did: dict[str, str]) -> bool:
+            # this actually needs to check if it's the *other* env
+            # and properly if the number is already used in another way...
+            # maybe based on whether the number is on signal...
+            url = did["sms_post_url"]
+            return "loca.lt" in url or "trees-dev" in url
 
-#     async def handle_sms(request: web.Request) -> web.Response:
-#         msg_obj = dict(await request.post())
-#         logging.info(msg_obj)
-#         await callback(msg_obj)
-#         return web.json_response({"status": "OK"})
+        return [did["number"] for did in blob["data"] if predicate(did)]
 
-#     app = web.Application()
-#     app.add_routes([web.post("/inbound", handle_sms)])
-#     runner = web.AppRunner(app)
-#     await runner.setup()
-#     print(port)
-#     site = web.TCPSite(runner, "0.0.0.0", port)
-#     logging.info("starting SMS receiving server")
-#     try:
-#         await site.start()
-#         yield site
-#     finally:
-#         logging.info("shutting down SMS server")
-#         await app.shutdown()
-#         await app.cleanup()
-#         await site.stop()
+    async def search_numbers(
+        self,
+        area_code: Optional[str] = None,
+        nxx: Optional[str] = None,
+        search_term: Optional[str] = None,
+        limit: Optional[int] = None,
+    ) -> list[str]:
+        """
+        search teli for available numbers to buy. nxx is middle three digits
+        for search_term 720***test will search for 720***8378
+        if you don't specify anything, teli will probably not respond
+        """
+        params = {
+            "token": get_secret("TELI_KEY"),
+            "npa": area_code,
+            "nxx": nxx,
+            "search": search_term,
+            "limit": limit,
+        }
+        # this is a little ugly
+        nonnull_params = {key: value for key, value in params.items() if value}
+        async with self.session.get(
+            "https://apiv1.teleapi.net/dids/list", params=nonnull_params
+        ) as resp:
+            blob = await resp.json()
+        if "error" in blob:
+            logging.warning(blob)
+        dids = blob["data"]["dids"]
+        return [info["number"] for info in dids]
 
-Session = Optional[aiohttp.client.ClientSession]
-
-
-@functools.cache
-async def get_session() -> aiohttp.client.ClientSession:
-    return aiohttp.client.ClientSession()
-
-
-async def http_get(url: str, params: dict[str, str]) -> web.Response:
-    async with get_session().get(url, params=params) as resp:
-        return resp
-
-
-async def http_get(
-    url: str, params: Optional[dict] = {}, data: Optional[dict] = None
-) -> web.Response:
-    async with get_session().post(url, params=params) as resp:
-        return resp
-
-
-def set_sms_url(raw_number: str, url: str) -> dict:
-    number = teli_format(raw_number)
-    did_lookup = requests.get(
-        "https://apiv1.teleapi.net/user/dids/get",
-        params={
+    async def buy_number(
+        self, number: str, sms_post_url: Optional[str] = None
+    ) -> dict:
+        params = {
             "token": get_secret("TELI_KEY"),
             "number": number,
-        },
-    ).json()
-    if did_lookup.get("status") == "error":
-        logging.error(did_lookup)
-        return did_lookup  # not sure about this
-    logging.info("did lookup: %s", did_lookup)
-    did_id = did_lookup.get("data", {}).get("id")
-    params = {
-        "token": get_secret("TELI_KEY"),
-        "did_id": did_id,
-        "url": url,
-    }
-    logging.info(url)
-    set_url = requests.get(
-        "https://apiv1.teleapi.net/user/dids/smsurl/set", params=params
-    ).json()
-    logging.info(set_url)
-    actual_url = requests.get(
-        "https://apiv1.teleapi.net/user/dids/get",
-        params={
-            "token": get_secret("TELI_KEY"),
-            "number": number,
-        },
-    ).json()["data"]["sms_post_url"]
-    logging.info(actual_url)
-    return set_url
+            "sms_post_url": sms_post_url,
+        }
+        nonnull_params = {key: value for key, value in params.items() if value}
+        logging.info("buying %s", number)
+        async with self.session.get(
+            "https://apiv1.teleapi.net/dids/order", params=nonnull_params
+        ) as resp:
+            logging.info(resp)
+            return await resp.json()
 
 
 async def print_sms(raw_number: str, port: int = 8080) -> None:
     print(port)
     receiver = ReceiveSMS()
     async with get_url(port) as url, receiver.receive():
-        set_sms_url(raw_number, url)
+        await Teli().set_sms_url(raw_number, url)
         try:
             while 1:
                 print(await receiver.msgs.get())
@@ -219,97 +231,6 @@ async def print_sms(raw_number: str, port: int = 8080) -> None:
         except KeyboardInterrupt:
             return
     return
-
-
-def list_our_numbers() -> list[str]:
-    blob = requests.get(
-        "https://apiv1.teleapi.net/user/dids/list",
-        params={"token": get_secret("TELI_KEY")},
-    ).json()
-    # this actually needs to figure out the url of the other environment
-    # so prod doesn't take dev numbers
-    def predicate(did: dict[str, str]) -> bool:
-        # this actually needs to check if it's the *other* env
-        # and properly if the number is already used in another way...
-        # maybe based on whether the number is on signal...
-        url = did["sms_post_url"]
-        return "loca.lt" in url or "trees-dev" in url
-
-    return [did["number"] for did in blob["data"] if predicate(did)]
-
-
-def search_numbers(
-    area_code: Optional[str] = None,
-    nxx: Optional[str] = None,
-    search_term: Optional[str] = None,
-    limit: Optional[int] = None,
-) -> list[str]:
-    """
-    search teli for available numbers to buy. nxx is middle three digits
-    for search_term 720***test will search for 720***8378
-    if you don't specify anything, teli will probably not respond
-    """
-    params = {
-        "token": get_secret("TELI_KEY"),
-        "npa": area_code,
-        "nxx": nxx,
-        "search": search_term,
-        "limit": limit,
-    }
-    # this is a little ugly
-    nonnull_params = {key: value for key, value in params.items() if value}
-    blob = requests.get(
-        "https://apiv1.teleapi.net/dids/list", params=nonnull_params
-    ).json()
-    if "error" in blob:
-        logging.warning(blob)
-    dids = blob["data"]["dids"]
-    return [info["number"] for info in dids]
-
-
-def buy_number(number: str, sms_post_url: Optional[str] = None) -> dict:
-    params = {
-        "token": get_secret("TELI_KEY"),
-        "number": number,
-        "sms_post_url": sms_post_url,
-    }
-    nonnull_params = {key: value for key, value in params.items() if value}
-    logging.info("buying %s", number)
-    resp = requests.get(
-        "https://apiv1.teleapi.net/dids/order", params=nonnull_params
-    )
-    logging.info(resp)
-    logging.info(resp.text)
-    return resp.json()
-
-
-def get_signal_captcha(buy: Optional[bool] = None) -> Optional[str]:
-    try:
-        solution = open("/tmp/captcha").read().removeprefix("signalcaptcha://")
-        logging.info("using local captcha")
-        os.rename("/tmp/captcha", "/tmp/used_captcha")
-        return solution
-    except FileNotFoundError:
-        if buy is None:
-            input(
-                "press enter if you've put a captcha in /tmp/captcha or want to buy one"
-            )
-            return get_signal_captcha(True)
-        if buy is False:
-            return None
-    logging.info("buying a captcha...")
-    try:
-        blob = requests.post(
-            get_secret("SOLVER"),
-            data="https://signalcaptchas.org/registration/generate.html",
-        ).json()
-        solution = blob.get("solution", {}).get("gRecaptchaResponse")
-    except requests.exceptions.RequestException as e:
-        logging.error(e)
-        if input("type something if you've put a new captcha in /tmp/captcha"):
-            return get_signal_captcha()
-    logging.info("captcha solution: %s", solution)
-    return solution
 
 
 if __name__ == "__main__":
