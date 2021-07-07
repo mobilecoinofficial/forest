@@ -75,6 +75,7 @@ class Session:
         self.signalcli_input_queue: Queue[dict] = Queue()
         self.raw_queue: Queue[dict] = Queue()
         self.client_session = aiohttp.ClientSession()
+        self.teli = utils.Teli()
         self.scratch: dict[str, dict[str, Any]] = {"payments": {}}
         self.payments_manager = PaymentsManager()
         self.routing_manager = RoutingManager()
@@ -289,19 +290,19 @@ class Session:
             number = available_numbers[0]
             await self.send_message(msg.source, f"found {number} for you...")
         else:
-            numbers = utils.search_numbers(area_code=msg.arg1, limit=1)
+            numbers = await self.teli.search_numbers(area_code=msg.arg1, limit=1)
             if not numbers:
                 return "sorry, no numbers for that area code"
             number = numbers[0]
             await self.send_message(msg.source, f"found {number}")
             await self.routing_manager.intend_to_buy(number)
-            buy_info = utils.buy_number(number)
+            buy_info = await self.teli.buy_number(number)
             await self.send_message(msg.source, f"bought {number}")
             if "error" in buy_info:
                 await self.routing_manager.delete(number)
                 return f"something went wrong: {buy_info}"
             await self.routing_manager.mark_bought(number)
-        utils.set_sms_url(number, utils.URL + "/inbound")
+        await self.teli.set_sms_url(number, utils.URL + "/inbound")
         await self.routing_manager.set_destination(number, msg.source)
         if await self.routing_manager.get_destination(number):
             return f"you are now the proud owner of {number}"
@@ -487,13 +488,13 @@ class Session:
             )  # pylint: disable=unreachable
 
 
-async def start_session(app: web.Application) -> None:
+async def start_session(our_app: web.Application) -> None:
     try:
         number = utils.signal_format(sys.argv[1])
     except IndexError:
         number = get_secret("BOT_NUMBER")
     logging.info(number)
-    app["session"] = new_session = Session(number)
+    our_app["session"] = new_session = Session(number)
     asyncio.create_task(new_session.launch_and_connect())
     asyncio.create_task(new_session.handle_messages())
 
