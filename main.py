@@ -25,9 +25,6 @@ from utils import get_secret
 JSON = dict[str, Any]
 
 
-
-
-
 class Message:
     """Represents a Message received from signal-cli, optionally containing a command with arguments."""
 
@@ -100,7 +97,7 @@ class Session:
             k: v
             for k, v in response_json_all.items()
             if k in ("status", "segment_count")
-        } # hide how the sausage is made
+        }  # hide how the sausage is made
         return response_json
 
     async def send_message(
@@ -576,6 +573,7 @@ async def inbound_sms_handler(request: web.Request) -> web.Response:
         else:
             # send hashmap as signal message with newlines and tabs and stuff
             await session.send_message(recipient, msg_obj)
+
         return web.Response(text="TY!")
     # TODO: return non-200 if no delivery receipt / ok crypto state, let teli do our retry
     # no live worker sessions

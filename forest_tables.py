@@ -6,9 +6,15 @@ USER_DATABASE = ROUTING_DATABASE = utils.get_secret("DATABASE_URL")
 
 # backwards compat: ignore absence of status
 
+
+# + status
+# + 
+
+
 RoutingPGExpressions = PGExpressions(
     table="routing",
-    create_table="CREATE TABLE IF NOT EXISTS {self.table} \
+    migrate="ALTER TABLE IF EXISTS ADD status CHARACTER VARYING(16);",
+    create_table="CREATE TABLE IF NOT EXISTS {self.table} 
         (id TEXT PRIMARY KEY, \
         destination CHARACTER VARYING(16), \
         expiration_ms BIGINT\
@@ -54,25 +60,6 @@ PaymentsPGExpressions = PGExpressions(
     put_payment="INSERT INTO {self.table} (transaction_log_id, account_id, value_pmob, finalized_block_index, timestamp_ms, expiration_ms) \
                                     VALUES($1, $2, $3, $4, extract(epoch from now()) * 1000, (extract(epoch from now())+3600) * 1000) ON CONFLICT DO NOTHING",
 )
-
-
-# class GroupRouting:
-#     connection: Optional[asyncpg.connection.Connection] = None
-
-#     @classmethod
-#     async def connect(cls) -> GroupRouting:
-#         router = cls()
-#         router.connection = asyncpg.connect(ROUTING_DATABASE)
-#         return router
-
-#     def set_sms_route_for_group(self, their_sms, our_sms, group_id):
-#         return self.connection.execute(
-#             "INSERT INTO group_routing (their_sms, our_sms, group_id)"
-#             "VALUES ($1, $2, $3);",
-#             their_sms,
-#             our_sms,
-#             group_id,
-#         )
 
 
 class RoutingManager(PGInterface):
