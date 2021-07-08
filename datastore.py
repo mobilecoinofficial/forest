@@ -17,16 +17,23 @@ import mem
 import utils
 from pghelp import PGExpressions, PGInterface
 
+# diff:
+# - id has a +
+# new datastore, registered column
+
 # maybe we'd like nicknames for accounts?
 
 AccountPGExpressions = PGExpressions(
     table="signal_accounts",
+    migrate="ALTER TABLE IF EXISTS {self.table} ADD IF NOT EXISTS datastore BYTEA, \
+        ADD IF NOT EXISTS registered BOOL; ",
     create_table="CREATE TABLE IF NOT EXISTS {self.table} \
             (id TEXT PRIMARY KEY, \
             datastore BYTEA, \
             last_update_ms BIGINT, \
             last_claim_ms BIGINT, \
-            active_node_name TEXT);",
+            active_node_name TEXT, \
+            registered BOOL);",
     is_registered="SELECT datastore is not null as registered FROM {self.table} WHERE id=$1",
     get_datastore="SELECT datastore FROM {self.table} WHERE id=$1;",  # AND
     get_claim="SELECT active_node_name FROM {self.table} WHERE id=$1",
@@ -42,7 +49,6 @@ AccountPGExpressions = PGExpressions(
             LIMIT 1;",
     upload="UPDATE {self.table} SET \
             datastore = $2, \
-            len_keys = $3, \
             registered = $4, \
             last_update_ms = (extract(epoch from now()) * 1000) \
             WHERE id=$1;",
@@ -111,7 +117,29 @@ class SignalDatastore:
             await asyncio.sleep(6)
         logging.info("downloading")
         record = await self.account_interface.get_datastore(self.number)
+        if not record and utils.get_secret("MIGRATE"):
+            logging.warning("trying without plus")
+            record = await self.account_interface.get_datastore(
+                self.number.removeprefix("+")
+            )
         logging.info("got datastore from pg")
+        if (json_data := record[0].get("account")) :
+            loaded_data = json.loads(json_data)
+            if "username" in loaded_data:
+                try:
+                    os.mkdir("data")
+                except FileExistsError:
+                    pass
+                open("data/" + loaded_data["username"], "w").write(json_data)
+
+                await self.account_interface.mark_account_claimed(
+                    self.number, utils.HOSTNAME
+                )
+                logging.debug(
+                    "marked account as claimed, checking that this is the case"
+                )
+                assert await self.is_claimed()
+                return
         buffer = BytesIO(record[0].get("datastore"))
         tarball = TarFile(fileobj=buffer)
         fnames = [member.name for member in tarball.getmembers()]
@@ -125,10 +153,11 @@ class SignalDatastore:
         await self.account_interface.mark_account_claimed(
             self.number, utils.HOSTNAME
         )
-        logging.debug("marked account as claimed, checking that this is the case")
+        logging.debug(
+            "marked account as claimed, checking that this is the case"
+        )
         assert await self.is_claimed()
-        await self.account_interface.get_datastore(self.number)
-
+        return
 
     def tarball_data(self) -> Optional[bytes]:
         if not self.is_registered_locally():
@@ -148,7 +177,7 @@ class SignalDatastore:
             logging.warning(
                 "couldn't find %s in %s, adding data instead",
                 self.filepath + ".d",
-                os.getcwd()
+                os.getcwd(),
             )
             tarball.add("data")
         print(tarball.getmembers())
@@ -156,7 +185,6 @@ class SignalDatastore:
         buffer.seek(0)
         data = buffer.read()
         return data
-
 
     async def upload(self, create: bool = False) -> Any:
         """Puts account datastore in postgresql."""
@@ -169,11 +197,8 @@ class SignalDatastore:
                 self.number, data
             )
         else:
-            len_keys = len(
-                json.load(open(self.filepath))["axolotlStore"]["preKeys"]
-            )
             result = await self.account_interface.upload(
-                self.number, data, len_keys, self.is_registered_locally()
+                self.number, data, self.is_registered_locally()
             )
         logging.info("upload query result %s", result)
         logging.info("saved %s kb of tarballed datastore to supabase", kb)
@@ -185,11 +210,15 @@ class SignalDatastore:
 
 
 async def getFreeSignalDatastore() -> SignalDatastore:
-    record = await get_account_interface().get_free_account()
+    interface = get_account_interface()
+    await interface.free_accounts_not_updated_in_the_last_hour()
+    record = await interface.get_free_account()
     if not record:
         raise Exception("no free accounts")
         # alternatively, register an account...
     number = record[0].get("id")
+    print(number)
+    assert number
     return SignalDatastore(number)
 
 

@@ -6,20 +6,25 @@ USER_DATABASE = ROUTING_DATABASE = utils.get_secret("DATABASE_URL")
 
 # backwards compat: ignore absence of status
 
+
+# additions over mainline: routing + status
+
+
 RoutingPGExpressions = PGExpressions(
     table="routing",
+    migrate="ALTER TABLE IF EXISTS {self.table} ADD status IF NOT EXISTS status CHARACTER VARYING(16);",
     create_table="CREATE TABLE IF NOT EXISTS {self.table} \
         (id TEXT PRIMARY KEY, \
         destination CHARACTER VARYING(16), \
         expiration_ms BIGINT\
-        status CHARACTER VARYING(8));",
+        status CHARACTER VARYING(16));",
     # number management
     intend_to_buy="INSERT INTO {self.table} (id, status) VALUES ($1, 'pending');",
     mark_bought="UPDATE {self.table} SET status='available' WHERE id=$1;",
     set_destination="UPDATE {self.table} SET destination=$2, status='assigned' WHERE id=$1;",
     set_expiration_ms="UPDATE {self.table} SET expiration_ms=$2 WHERE id=$1;",
     sweep_expired_destinations="UPDATE {self.table} SET expiration_ms=NULL, status='available' WHERE expiration_ms IS NOT NULL AND expiration_ms < (extract(epoch from now()) * 1000);",
-    delete="DELETE FROM {self.table} WHERE id=$1", # if you want to turn a number into a signal account
+    delete="DELETE FROM {self.table} WHERE id=$1",  # if you want to turn a number into a signal account
     get_available="SELECT id FROM {self.table} WHERE status='available';",
     # routing
     get_destination="SELECT destination FROM {self.table} WHERE id=$1 AND (expiration_ms > extract(epoch from now()) * 1000 OR expiration_ms is NULL);",
@@ -54,25 +59,6 @@ PaymentsPGExpressions = PGExpressions(
     put_payment="INSERT INTO {self.table} (transaction_log_id, account_id, value_pmob, finalized_block_index, timestamp_ms, expiration_ms) \
                                     VALUES($1, $2, $3, $4, extract(epoch from now()) * 1000, (extract(epoch from now())+3600) * 1000) ON CONFLICT DO NOTHING",
 )
-
-
-# class GroupRouting:
-#     connection: Optional[asyncpg.connection.Connection] = None
-
-#     @classmethod
-#     async def connect(cls) -> GroupRouting:
-#         router = cls()
-#         router.connection = asyncpg.connect(ROUTING_DATABASE)
-#         return router
-
-#     def set_sms_route_for_group(self, their_sms, our_sms, group_id):
-#         return self.connection.execute(
-#             "INSERT INTO group_routing (their_sms, our_sms, group_id)"
-#             "VALUES ($1, $2, $3);",
-#             their_sms,
-#             our_sms,
-#             group_id,
-#         )
 
 
 class RoutingManager(PGInterface):
