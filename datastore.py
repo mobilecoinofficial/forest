@@ -115,6 +115,8 @@ class SignalDatastore:
                 claim,
             )
             await asyncio.sleep(6)
+            if i == 4:
+                print("time's up")
         logging.info("downloading")
         record = await self.account_interface.get_datastore(self.number)
         if not record and utils.get_secret("MIGRATE"):

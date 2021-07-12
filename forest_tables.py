@@ -12,7 +12,7 @@ USER_DATABASE = ROUTING_DATABASE = utils.get_secret("DATABASE_URL")
 
 RoutingPGExpressions = PGExpressions(
     table="routing",
-    migrate="ALTER TABLE IF EXISTS {self.table} ADD status IF NOT EXISTS status CHARACTER VARYING(16);",
+    migrate="ALTER TABLE IF EXISTS {self.table} ADD IF NOT EXISTS status CHARACTER VARYING(16);",
     create_table="CREATE TABLE IF NOT EXISTS {self.table} \
         (id TEXT PRIMARY KEY, \
         destination CHARACTER VARYING(16), \
