@@ -18,10 +18,9 @@ ROOT_DIR = "/tmp/local-signal" if LOCAL else "/app"
 
 
 def FuckAiohttp(record: logging.LogRecord) -> bool:
-    print("filtering", record)
     if "was destroyed but it is pending" in record.msg:
         return False
-    if str(record.msg).startswith("task :") and str(record.msg).endswith(">"):
+    if str(record.msg).startswith("task:") and str(record.msg).endswith(">"):
         return False
     return True
 
@@ -32,7 +31,7 @@ logging.basicConfig(
     style="{",
 )
 logger = logging.getLogger()
-logging.getLogger().addFilter(FuckAiohttp)
+logging.getLogger().handlers[0].addFilter(FuckAiohttp)
 
 
 def load_secrets(env: Optional[str] = None) -> None:
@@ -44,6 +43,7 @@ def load_secrets(env: Optional[str] = None) -> None:
         os.environ.update(dict(can_be_a_dict))
     except FileNotFoundError:
         pass
+
 
 def get_secret(key: str, env: Optional[str] = None) -> str:
     try:
@@ -58,16 +58,14 @@ def teli_format(raw_number: str) -> str:
 
 
 def signal_format(raw_number: str) -> str:
-    return pn.format_number(
-        pn.parse(raw_number, "US"), pn.PhoneNumberFormat.E164
-    )
+    return pn.format_number(pn.parse(raw_number, "US"), pn.PhoneNumberFormat.E164)
 
 
 @asynccontextmanager
 async def get_url(port: int = 8080) -> AsyncIterator[str]:
     if not APP_NAME:
         try:
-            print("starting tunnel")
+            logging.info("starting tunnel")
             tunnel = await create_subprocess_exec(
                 *(f"lt -p {port}".split()),
                 stdout=PIPE,
@@ -207,9 +205,7 @@ class Teli:
         dids = blob["data"]["dids"]
         return [info["number"] for info in dids]
 
-    async def buy_number(
-        self, number: str, sms_post_url: Optional[str] = None
-    ) -> dict:
+    async def buy_number(self, number: str, sms_post_url: Optional[str] = None) -> dict:
         params = {
             "token": get_secret("TELI_KEY"),
             "number": number,
