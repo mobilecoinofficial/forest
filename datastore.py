@@ -26,7 +26,7 @@ from pghelp import PGExpressions, PGInterface
 AccountPGExpressions = PGExpressions(
     table="signal_accounts",
     migrate="ALTER TABLE IF EXISTS {self.table} ADD IF NOT EXISTS datastore BYTEA, \
-        IF NOT EXISTS registered BOOL; ",
+        ADD IF NOT EXISTS registered BOOL; ",
     create_table="CREATE TABLE IF NOT EXISTS {self.table} \
             (id TEXT PRIMARY KEY, \
             datastore BYTEA, \
@@ -119,8 +119,27 @@ class SignalDatastore:
         record = await self.account_interface.get_datastore(self.number)
         if not record and utils.get_secret("MIGRATE"):
             logging.warning("trying without plus")
-            record = await self.account_interface.get_datastore(self.number.removeprefix("+"))
+            record = await self.account_interface.get_datastore(
+                self.number.removeprefix("+")
+            )
         logging.info("got datastore from pg")
+        if (json_data := record[0].get("account")) :
+            loaded_data = json.loads(json_data)
+            if "username" in loaded_data:
+                try:
+                    os.mkdir("data")
+                except FileExistsError:
+                    pass
+                open("data/" + loaded_data["username"], "w").write(json_data)
+
+                await self.account_interface.mark_account_claimed(
+                    self.number, utils.HOSTNAME
+                )
+                logging.debug(
+                    "marked account as claimed, checking that this is the case"
+                )
+                assert await self.is_claimed()
+                return
         buffer = BytesIO(record[0].get("datastore"))
         tarball = TarFile(fileobj=buffer)
         fnames = [member.name for member in tarball.getmembers()]
@@ -134,10 +153,11 @@ class SignalDatastore:
         await self.account_interface.mark_account_claimed(
             self.number, utils.HOSTNAME
         )
-        logging.debug("marked account as claimed, checking that this is the case")
+        logging.debug(
+            "marked account as claimed, checking that this is the case"
+        )
         assert await self.is_claimed()
-        await self.account_interface.get_datastore(self.number)
-
+        return
 
     def tarball_data(self) -> Optional[bytes]:
         if not self.is_registered_locally():
@@ -157,7 +177,7 @@ class SignalDatastore:
             logging.warning(
                 "couldn't find %s in %s, adding data instead",
                 self.filepath + ".d",
-                os.getcwd()
+                os.getcwd(),
             )
             tarball.add("data")
         print(tarball.getmembers())
@@ -165,7 +185,6 @@ class SignalDatastore:
         buffer.seek(0)
         data = buffer.read()
         return data
-
 
     async def upload(self, create: bool = False) -> Any:
         """Puts account datastore in postgresql."""
