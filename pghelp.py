@@ -30,9 +30,7 @@ def get_logger(name: str) -> logging.Logger:
     if not logger.hasHandlers():
         sh = logging.StreamHandler()
         sh.setFormatter(
-            logging.Formatter(
-                "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-            )
+            logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
         )
         logger.addHandler(sh)
     return logger
@@ -66,9 +64,7 @@ class PGInterface:
         self, query_strings: PGExpressions, database: str = "", loop: Loop = None
     ) -> None:
         self.loop = loop or asyncio.get_event_loop()
-        self.database: Any = copy.deepcopy(
-            database
-        )  # idk when this is made into a db
+        self.database: Any = copy.deepcopy(database)  # idk when this is made into a db
         self.queries = query_strings
         self.table = self.queries.table
         self.MAX_RESP_LOG_LEN = MAX_RESP_LOG_LEN
@@ -160,9 +156,7 @@ class PGInterface:
 
         if not self.connection and self.database is not None:
             canned_response = self.database.get(qstring, [[None]]).pop(0)
-            if qstring in self.database and not len(
-                self.database.get(qstring, [])
-            ):
+            if qstring in self.database and not len(self.database.get(qstring, [])):
                 self.database.pop(qstring)
 
             def return_canned(*args: Any, **kwargs: Any) -> Any:
@@ -184,7 +178,7 @@ class PGInterface:
             def executer_with_args(*args: Any) -> Any:
                 """Closure over 'statement' in local state for application to arguments.
                 Allows deferred execution of f-strs, allowing PGExpresssions to operate on `args`."""
-                rebuilt_statement = eval(f"f\"{statement}\"")
+                rebuilt_statement = eval(f'f"{statement}"')
                 if (
                     rebuilt_statement != statement
                     and "args" in statement
@@ -193,9 +187,7 @@ class PGInterface:
                     args = ()
                 resp = executer(rebuilt_statement, args)
                 short_strresp = self.truncate(f"{resp}")
-                self.logger.debug(
-                    f"{rebuilt_statement} {args} -> {short_strresp}"
-                )
+                self.logger.debug(f"{rebuilt_statement} {args} -> {short_strresp}")
                 return resp
 
             return executer_with_args

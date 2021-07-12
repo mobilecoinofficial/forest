@@ -24,6 +24,7 @@ pytest = "*"
 mypy = "*"
 pylint = "*"
 isort = "*"
+black = "*"
 
 [packages.aiohttp]
 extras = [ "speedups",]
