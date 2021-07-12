@@ -123,7 +123,7 @@ class SignalDatastore:
                 self.number.removeprefix("+")
             )
         logging.info("got datastore from pg")
-        if (json_data := record[0].get("account")) :
+        if json_data := record[0].get("account"):
             loaded_data = json.loads(json_data)
             if "username" in loaded_data:
                 try:
