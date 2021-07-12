@@ -48,9 +48,7 @@ class Message:
             command, *self.tokens = self.text.split(" ")
             self.command = command[1:]  # remove /
             self.arg1 = self.tokens[0] if self.tokens else None
-            self.text = (
-                " ".join(self.tokens[1:]) if len(self.tokens) > 1 else None
-            )
+            self.text = " ".join(self.tokens[1:]) if len(self.tokens) > 1 else None
 
     def __repr__(self) -> str:
         # it might be nice to prune this so the logs are easier to read
@@ -203,9 +201,7 @@ class Session:
         )
         # check for payments every 10s for 1hr
         for _ in range(360):
-            payment_done = await self.payments_manager.get_payment(
-                nmob_price * 1000
-            )
+            payment_done = await self.payments_manager.get_payment(nmob_price * 1000)
             if payment_done:
                 payment_done = payment_done[0]
                 await self.send_message(
@@ -224,9 +220,7 @@ class Session:
         return False
 
     async def do_printerfact(self, _: Message) -> str:
-        async with self.client_session.get(
-            "https://colbyolson.com/printers"
-        ) as resp:
+        async with self.client_session.get("https://colbyolson.com/printers") as resp:
             fact = await resp.text()
         return fact.strip()
 
@@ -331,9 +325,7 @@ class Session:
     async def handle_messages(self) -> None:
         async for message in self.signalcli_output_iter():
             if message.source:
-                maybe_routable = await self.routing_manager.get_id(
-                    message.source
-                )
+                maybe_routable = await self.routing_manager.get_id(message.source)
                 numbers: Optional[list[str]] = [
                     registered.get("id") for registered in maybe_routable
                 ]
@@ -350,9 +342,7 @@ class Session:
                     }
                     await self.signalcli_input_queue.put(cmd)
                     await self.send_reaction("👥", message)
-                    await self.send_message(
-                        message.source, "invited you to a group"
-                    )
+                    await self.send_message(message.source, "invited you to a group")
             elif numbers and message.group:
                 group = await group_routing_manager.get_sms_route_for_group(
                     message.group
@@ -364,14 +354,8 @@ class Session:
                         message_text=message.text,
                     )
                     await self.send_reaction("📤", message)
-            elif (
-                numbers
-                and message.quoted_text
-                and "source" in message.quoted_text
-            ):
-                pairs = [
-                    line.split(":") for line in message.quoted_text.split("\n")
-                ]
+            elif numbers and message.quoted_text and "source" in message.quoted_text:
+                pairs = [line.split(":") for line in message.quoted_text.split("\n")]
                 quoted = {key: value.strip() for key, value in pairs}
                 logging.info("destination from quote: %s", quoted["destination"])
                 response = await self.send_sms(
@@ -388,11 +372,13 @@ class Session:
                 asyncio.create_task(self.do_register(message))
             elif message.command:
                 if hasattr(self, "do_" + message.command):
-                    command_response = await getattr(
-                        self, "do_" + message.command
-                    )(message)
+                    command_response = await getattr(self, "do_" + message.command)(
+                        message
+                    )
                 else:
-                    command_response = f"Sorry! Command {message.command} not recognized! Try /help."
+                    command_response = (
+                        f"Sorry! Command {message.command} not recognized! Try /help."
+                    )
                 await self.send_message(message.source, command_response)
             elif message.text == "TERMINATE":
                 await self.send_message(message.source, "signal session reset")
@@ -481,9 +467,7 @@ class Session:
         if self.sigints >= 3:
             sys.exit(1)
             raise KeyboardInterrupt
-            logging.info(  # pylint: disable=unreachable
-                "this should never get called"
-            )
+            logging.info("this should never get called")  # pylint: disable=unreachable
 
 
 async def start_session(our_app: web.Application) -> None:

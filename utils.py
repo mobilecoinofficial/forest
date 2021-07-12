@@ -45,6 +45,7 @@ def load_secrets(env: Optional[str] = None) -> None:
     except FileNotFoundError:
         pass
 
+
 def get_secret(key: str, env: Optional[str] = None) -> str:
     try:
         return os.environ[key]
@@ -58,9 +59,7 @@ def teli_format(raw_number: str) -> str:
 
 
 def signal_format(raw_number: str) -> str:
-    return pn.format_number(
-        pn.parse(raw_number, "US"), pn.PhoneNumberFormat.E164
-    )
+    return pn.format_number(pn.parse(raw_number, "US"), pn.PhoneNumberFormat.E164)
 
 
 @asynccontextmanager
@@ -207,9 +206,7 @@ class Teli:
         dids = blob["data"]["dids"]
         return [info["number"] for info in dids]
 
-    async def buy_number(
-        self, number: str, sms_post_url: Optional[str] = None
-    ) -> dict:
+    async def buy_number(self, number: str, sms_post_url: Optional[str] = None) -> dict:
         params = {
             "token": get_secret("TELI_KEY"),
             "number": number,
