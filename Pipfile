@@ -8,9 +8,9 @@ aioprocessing = "*"
 pyqrcode = "*"
 pynacl = "*"
 asyncpg = "*"
+aiohttp = {extras = [ "speedups",], version = "*"}
 # sylv additions
 phonenumbers = "*"
-requests = "*"
 termcolor = "*"
 
 [requires]
@@ -26,6 +26,3 @@ pylint = "*"
 isort = "*"
 black = "*"
 
-[packages.aiohttp]
-extras = [ "speedups",]
-version = "*"
