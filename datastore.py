@@ -97,6 +97,9 @@ class SignalDatastore:
     async def is_claimed(self) -> Optional[str]:
         record = await self.account_interface.get_claim(self.number)
         if not record:
+            record = await self.account_interface.get_claim(self.number[1::])
+            if record:
+                return record[0].get("active_node_name")
             raise Exception(f"no record in db for {self.number}")
         return record[0].get("active_node_name")
 
