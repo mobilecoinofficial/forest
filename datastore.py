@@ -123,7 +123,7 @@ class SignalDatastore:
                 self.number.removeprefix("+")
             )
         logging.info("got datastore from pg")
-        if (json_data := record[0].get("account")) :
+        if json_data := record[0].get("account"):
             loaded_data = json.loads(json_data)
             if "username" in loaded_data:
                 try:
@@ -150,12 +150,8 @@ class SignalDatastore:
             self.filepath in fnames,
         )
         tarball.extractall(utils.ROOT_DIR)
-        await self.account_interface.mark_account_claimed(
-            self.number, utils.HOSTNAME
-        )
-        logging.debug(
-            "marked account as claimed, checking that this is the case"
-        )
+        await self.account_interface.mark_account_claimed(self.number, utils.HOSTNAME)
+        logging.debug("marked account as claimed, checking that this is the case")
         assert await self.is_claimed()
         return
 
@@ -193,9 +189,7 @@ class SignalDatastore:
             return
         kb = round(len(data) / 1024, 1)
         if create:
-            result = await self.account_interface.create_account(
-                self.number, data
-            )
+            result = await self.account_interface.create_account(self.number, data)
         else:
             result = await self.account_interface.upload(
                 self.number, data, self.is_registered_locally()
