@@ -65,6 +65,7 @@ class Session:
 
     def __init__(self, bot_number: str) -> None:
         logging.info(bot_number)
+
         self.bot_number = bot_number
         self.datastore = datastore.SignalDatastore(bot_number)
         self.proc: Optional[subprocess.Process] = None
@@ -108,7 +109,6 @@ class Session:
         endsession: bool = False,
     ) -> None:
         """Builds send command with specified recipient and msg, writes to signal-cli."""
-        print("migrating db...")
         if isinstance(msg, list):
             for m in msg:
                 await self.send_message(recipient, m)
@@ -180,7 +180,7 @@ class Session:
             resp_json = await last_val.json()
             mob_rate = float(resp_json.get("data")[0].get("close"))
         except (aiohttp.ClientError, KeyError, json.JSONDecodeError) as e:
-            print(e)
+            logging.error(e)
 
             # big.one goes down sometimes, if it does... make up a price
             mob_rate = 14
@@ -494,7 +494,7 @@ async def start_session(our_app: web.Application) -> None:
     logging.info(number)
     our_app["session"] = new_session = Session(number)
     if utils.get_secret("MIGRATE"):
-        print("migrating db...")
+        logging.info("migrating db...")
         await new_session.routing_manager.migrate()
         await new_session.datastore.account_interface.migrate()
     asyncio.create_task(new_session.launch_and_connect())

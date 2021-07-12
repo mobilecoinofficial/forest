@@ -32,7 +32,7 @@ logging.basicConfig(
     style="{",
 )
 logger = logging.getLogger()
-logging.getLogger().addFilter(FuckAiohttp)
+logging.getLogger().handlers[0].addFilter(FuckAiohttp)
 
 
 def load_secrets(env: Optional[str] = None) -> None:
@@ -67,7 +67,7 @@ def signal_format(raw_number: str) -> str:
 async def get_url(port: int = 8080) -> AsyncIterator[str]:
     if not APP_NAME:
         try:
-            print("starting tunnel")
+            logging.info("starting tunnel")
             tunnel = await create_subprocess_exec(
                 *(f"lt -p {port}".split()),
                 stdout=PIPE,
