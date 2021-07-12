@@ -18,6 +18,7 @@ ROOT_DIR = "/tmp/local-signal" if LOCAL else "/app"
 
 
 def FuckAiohttp(record: logging.LogRecord) -> bool:
+    print("filtering", record)
     if "was destroyed but it is pending" in record.msg:
         return False
     if str(record.msg).startswith("task :") and str(record.msg).endswith(">"):
@@ -30,16 +31,19 @@ logging.basicConfig(
     format="{levelname} {module}:{lineno}: {message}",
     style="{",
 )
+logger = logging.getLogger()
 logging.getLogger().addFilter(FuckAiohttp)
 
 
 def load_secrets(env: Optional[str] = None) -> None:
     if not env:
         env = "dev"
-    secrets = [line.strip().split("=", 1) for line in open(f"{env}_secrets")]
-    can_be_a_dict = cast(list[tuple[str, str]], secrets)
-    os.environ.update(dict(can_be_a_dict))
-
+    try:
+        secrets = [line.strip().split("=", 1) for line in open(f"{env}_secrets")]
+        can_be_a_dict = cast(list[tuple[str, str]], secrets)
+        os.environ.update(dict(can_be_a_dict))
+    except FileNotFoundError:
+        pass
 
 def get_secret(key: str, env: Optional[str] = None) -> str:
     try:
@@ -161,6 +165,7 @@ class Teli:
             params={"token": get_secret("TELI_KEY")},
         ) as resp:
             blob = await resp.json()
+        return blob
         # this actually needs to figure out the url of the other environment
         # so prod doesn't take dev numbers
         def predicate(did: dict[str, str]) -> bool:

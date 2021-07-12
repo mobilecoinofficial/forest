@@ -108,6 +108,7 @@ class Session:
         endsession: bool = False,
     ) -> None:
         """Builds send command with specified recipient and msg, writes to signal-cli."""
+        print("migrating db...")
         if isinstance(msg, list):
             for m in msg:
                 await self.send_message(recipient, m)
@@ -480,9 +481,9 @@ class Session:
         if self.sigints >= 3:
             sys.exit(1)
             raise KeyboardInterrupt
-            logging.info(
+            logging.info(  # pylint: disable=unreachable
                 "this should never get called"
-            )  # pylint: disable=unreachable
+            )
 
 
 async def start_session(our_app: web.Application) -> None:
@@ -492,6 +493,10 @@ async def start_session(our_app: web.Application) -> None:
         number = get_secret("BOT_NUMBER")
     logging.info(number)
     our_app["session"] = new_session = Session(number)
+    if utils.get_secret("MIGRATE"):
+        print("migrating db...")
+        await new_session.routing_manager.migrate()
+        await new_session.datastore.account_interface.migrate()
     asyncio.create_task(new_session.launch_and_connect())
     asyncio.create_task(new_session.handle_messages())
 
