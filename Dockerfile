@@ -19,7 +19,7 @@ RUN DEBIAN_FRONTEND="noninteractive" apt install -yy python3.9 python3.9-venv li
 RUN python3.9 -m venv /app/venv
 COPY Pipfile.lock Pipfile /app/
 RUN VIRTUAL_ENV=/app/venv pipenv install 
-RUN VIRTUAL_ENV=/app/venv pipenv run pip uninstall dataclasses -y
+#RUN VIRTUAL_ENV=/app/venv pipenv run pip uninstall dataclasses -y
 
 FROM ubuntu:hirsute
 WORKDIR /app
