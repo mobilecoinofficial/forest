@@ -36,7 +36,7 @@ logging.getLogger().handlers[0].addFilter(FuckAiohttp)
 
 def load_secrets(env: Optional[str] = None) -> None:
     if not env:
-        env = "dev"
+        env = os.environ.get("ENV", "dev")
     try:
         secrets = [line.strip().split("=", 1) for line in open(f"{env}_secrets")]
         can_be_a_dict = cast(list[tuple[str, str]], secrets)

@@ -43,7 +43,8 @@ GroupRoutingPGExpressions = PGExpressions(
         WHERE group_id=$1",
     set_sms_route_for_group="INSERT INTO {self.table} \
         (their_sms, our_sms, group_id)\
-        VALUES($1, $2, $3) ON CONFLICT DO UPDATE",
+        VALUES($1, $2, $3) ON CONFLICT (id) DO UPDATE SET \
+        their_sms=$1, our_sms=$2, group_id=$3;",
     delete_table="DROP TABLE {self.table};",
 )
 

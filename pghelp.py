@@ -187,7 +187,8 @@ class PGInterface:
                     args = ()
                 resp = executer(rebuilt_statement, args)
                 short_strresp = self.truncate(f"{resp}")
-                self.logger.debug(f"{rebuilt_statement} {args} -> {short_strresp}")
+                short_args = self.truncate(str(args))
+                self.logger.debug(f"{rebuilt_statement} {short_args} -> {short_strresp}")
                 return resp
 
             return executer_with_args
