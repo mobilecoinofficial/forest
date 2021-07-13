@@ -481,6 +481,7 @@ async def start_session(our_app: web.Application) -> None:
         logging.info("migrating db...")
         await new_session.routing_manager.migrate()
         await new_session.datastore.account_interface.migrate()
+        await group_routing_manager.create_table()
     asyncio.create_task(new_session.launch_and_connect())
     asyncio.create_task(new_session.handle_messages())
 

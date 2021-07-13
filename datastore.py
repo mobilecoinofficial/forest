@@ -35,7 +35,7 @@ AccountPGExpressions = PGExpressions(
             active_node_name TEXT, \
             registered BOOL);",
     is_registered="SELECT datastore is not null as registered FROM {self.table} WHERE id=$1",
-    get_datastore="SELECT datastore FROM {self.table} WHERE id=$1;",  # AND
+    get_datastore="SELECT account, datastore FROM {self.table} WHERE id=$1;",
     get_claim="SELECT active_node_name FROM {self.table} WHERE id=$1",
     mark_account_claimed="UPDATE {self.table} \
         SET active_node_name = $2, \
@@ -47,13 +47,10 @@ AccountPGExpressions = PGExpressions(
             WHERE active_node_name IS NULL \
             AND last_claim_ms = 0 \
             LIMIT 1;",
-    upload="UPDATE {self.table} SET \
-            datastore = $2, \
-            registered = $4, \
-            last_update_ms = (extract(epoch from now()) * 1000) \
-            WHERE id=$1;",
-    create_account="INSERT INTO {self.table} (id, datastore) \
-            VALUES($1, $2) ON CONFLICT DO NOTHING;",
+    upload="INSERT INTO {self.table} (id, datastore, last_update_ms) \
+            VALUES($1, $2, (extract(epoch from now()) * 1000)) \
+            ON CONFLICT (id) DO UPDATE SET \
+            datastore = $2, last_update_ms = EXCLUDED.last_update_ms;",
     free_accounts_not_updated_in_the_last_hour="UPDATE {self.table} \
             SET last_claim_ms = 0, active_node_name = NULL \
             WHERE last_update_ms < ((extract(epoch from now())-3600) * 1000);",
@@ -85,7 +82,8 @@ class SignalDatastore:
     def is_registered_locally(self) -> bool:
         try:
             return json.load(open(self.filepath))["registered"]
-        except (FileNotFoundError, json.JSONDecodeError, KeyError):
+        except (FileNotFoundError, json.JSONDecodeError, KeyError) as e:
+            logging.error(e)
             return False
 
     async def is_registered_in_db(self) -> bool:
@@ -136,14 +134,6 @@ class SignalDatastore:
                 except FileExistsError:
                     pass
                 open("data/" + loaded_data["username"], "w").write(json_data)
-
-                await self.account_interface.mark_account_claimed(
-                    self.number, utils.HOSTNAME
-                )
-                logging.debug(
-                    "marked account as claimed, checking that this is the case"
-                )
-                assert await self.is_claimed()
                 return
         buffer = BytesIO(record[0].get("datastore"))
         tarball = TarFile(fileobj=buffer)
@@ -155,8 +145,12 @@ class SignalDatastore:
             self.filepath in fnames,
         )
         tarball.extractall(utils.ROOT_DIR)
-        await self.account_interface.mark_account_claimed(self.number, utils.HOSTNAME)
-        logging.debug("marked account as claimed, checking that this is the case")
+        await self.account_interface.mark_account_claimed(
+            self.number, utils.HOSTNAME
+        )
+        logging.debug(
+            "marked account as claimed, checking that this is the case"
+        )
         assert await self.is_claimed()
         return
 
@@ -187,18 +181,13 @@ class SignalDatastore:
         data = buffer.read()
         return data
 
-    async def upload(self, create: bool = False) -> Any:
+    async def upload(self) -> Any:
         """Puts account datastore in postgresql."""
         data = self.tarball_data()
         if not data:
             return
         kb = round(len(data) / 1024, 1)
-        if create:
-            result = await self.account_interface.create_account(self.number, data)
-        else:
-            result = await self.account_interface.upload(
-                self.number, data, self.is_registered_locally()
-            )
+        result = await self.account_interface.upload(self.number, data)
         logging.info("upload query result %s", result)
         logging.info("saved %s kb of tarballed datastore to supabase", kb)
         return
