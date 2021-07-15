@@ -16,8 +16,8 @@ import phonenumbers as pn
 import termcolor
 from aiohttp import web
 
-import datastore
 import utils
+import datastore
 from forest_tables import GroupRoutingManager, PaymentsManager, RoutingManager
 from utils import get_secret
 
