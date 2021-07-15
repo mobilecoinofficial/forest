@@ -23,6 +23,11 @@ from pghelp import PGExpressions, PGInterface
 
 # maybe we'd like nicknames for accounts?
 
+if utils.get_secret("MIGRATE"):
+    get_datastore = "SELECT account, datastore FROM {self.table} WHERE id=$1"
+else:
+    get_datastore = "SELECT datastore FROM {self.table} WHERE id=$1"
+
 AccountPGExpressions = PGExpressions(
     table="signal_accounts",
     migrate="ALTER TABLE IF EXISTS {self.table} ADD IF NOT EXISTS datastore BYTEA, \
@@ -35,7 +40,7 @@ AccountPGExpressions = PGExpressions(
             active_node_name TEXT, \
             registered BOOL);",
     is_registered="SELECT datastore is not null as registered FROM {self.table} WHERE id=$1",
-    get_datastore="SELECT account, datastore FROM {self.table} WHERE id=$1;",
+    get_datastore=get_datastore,
     get_claim="SELECT active_node_name FROM {self.table} WHERE id=$1",
     mark_account_claimed="UPDATE {self.table} \
         SET active_node_name = $2, \
@@ -104,6 +109,7 @@ class SignalDatastore:
     async def download(self) -> None:
         """Fetch our account datastore from postgresql and mark it claimed"""
         logging.info("datastore download entered")
+        await self.account_interface.free_accounts_not_updated_in_the_last_hour()
         for i in range(5):
             logging.info("checking claim")
             claim = await self.is_claimed()
