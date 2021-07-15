@@ -104,6 +104,7 @@ class SignalDatastore:
     async def download(self) -> None:
         """Fetch our account datastore from postgresql and mark it claimed"""
         logging.info("datastore download entered")
+        await self.account_interface.free_accounts_not_updated_in_the_last_hour()
         for i in range(5):
             logging.info("checking claim")
             claim = await self.is_claimed()
