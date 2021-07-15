@@ -132,8 +132,8 @@ class Session:
         react = {
             "command": "sendReaction",
             "emoji": emoji,
-            "target_author": target_msg.source,
-            "target_timestamp": target_msg.timestamp,
+            "target-author": target_msg.source,
+            "target-timestamp": target_msg.timestamp,
         }
         if target_msg.group:
             react["group"] = target_msg.group

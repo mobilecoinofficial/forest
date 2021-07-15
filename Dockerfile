@@ -1,5 +1,4 @@
 FROM ghcr.io/graalvm/graalvm-ce:latest as sigbuilder
-ENV cache_bursts=1
 ENV GRAALVM_HOME=/opt/graalvm-ce-java11-21.1.0/ 
 SHELL ["/usr/bin/bash", "-c"]
 WORKDIR /app
@@ -7,8 +6,7 @@ RUN microdnf install -y git zlib-devel && rm -rf /var/cache/yum
 RUN gu install native-image
 RUN git clone https://github.com/forestcontact/signal-cli
 WORKDIR /app/signal-cli
-RUN git pull origin forest-fork-v7.3 && git checkout forest-fork-v7.3 #b2f2b16 #forest-fork-v6  #stdio-generalized
-RUN git log -1 --pretty=%B | tee commit-msg
+RUN git pull origin graalvm-for-0.8.4.1 #b2f2b16 #forest-fork-v6  #stdio-generalized
 RUN ./gradlew build && ./gradlew installDist
 RUN md5sum ./build/libs/* 
 RUN ./gradlew assembleNativeImage
