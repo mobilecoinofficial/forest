@@ -16,8 +16,8 @@ import phonenumbers as pn
 import termcolor
 from aiohttp import web
 
-import datastore
 import utils
+import datastore
 from forest_tables import GroupRoutingManager, PaymentsManager, RoutingManager
 from utils import get_secret
 
@@ -176,10 +176,9 @@ class Session:
                 "https://big.one/api/xn/v1/asset_pairs/8e900cb1-6331-4fe7-853c-d678ba136b2f"
             )
             resp_json = await last_val.json()
-            mob_rate = float(resp_json.get("data")[0].get("close"))
-        except (aiohttp.ClientError, KeyError, json.JSONDecodeError) as e:
+            mob_rate = float(resp_json.get("data").get("ticker").get("close"))
+        except (aiohttp.ClientError, KeyError, TypeError, json.JSONDecodeError) as e:
             logging.error(e)
-
             # big.one goes down sometimes, if it does... make up a price
             mob_rate = 14
         # perturb each price slightly
