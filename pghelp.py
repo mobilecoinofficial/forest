@@ -1,8 +1,6 @@
 import asyncio
-import hashlib
 import logging
 import os
-import inspect
 import copy
 from typing import Any, Awaitable, Callable, Union, Optional
 
@@ -64,23 +62,24 @@ class PGInterface:
         self, query_strings: PGExpressions, database: str = "", loop: Loop = None
     ) -> None:
         self.loop = loop or asyncio.get_event_loop()
-        self.database: Any = copy.deepcopy(database)  # idk when this is made into a db
+        self.database: Union[str, dict] = copy.deepcopy(
+            database
+        )  # either a db uri or canned resps
         self.queries = query_strings
         self.table = self.queries.table
         self.MAX_RESP_LOG_LEN = MAX_RESP_LOG_LEN
         # self.loop.create_task(self.connect_pg())
-        self.connection: Any = "PENDING:" + self.database
+        self.pool = None
         if isinstance(database, dict):
-            self.connection = None
             self.invocations: list[dict] = []
         self.logger = get_logger(
-            f'{self.table}{"_fake" if not self.connection else ""}_interface'
+            f'{self.table}{"_fake" if not self.pool else ""}_interface'
         )
 
     def finish_init(self) -> None:
-        if not self.connection:
+        if not self.pool:
             self.logger.warning("RUNNING IN FAKE MODE")
-        if self.connection and self.table and not self.sync_exists():
+        if self.pool and self.table and not self.sync_exists():
             if AUTOCREATE:
                 self.sync_create_table()
                 self.logger.warning(f"building table {self.table}")
@@ -94,23 +93,25 @@ class PGInterface:
                 self.__getattribute__(f"sync_{k}")()
 
     async def connect_pg(self) -> None:
-        self.connection = await asyncpg.connect(self.database)
+        self.pool = await asyncpg.create_pool(self.database)
 
     async def execute(
         self, qstring: str, *args: str, timeout: int = 180
     ) -> Optional[Awaitable[asyncpg.Record]]:
         """Invoke the asyncpg connection's `execute` given a provided query string and set of arguments"""
-        if isinstance(self.connection, str) and "PENDING" in self.connection:
+        if not self.pool and not isinstance(self.database, dict):
             await self.connect_pg()
         if not args or args == ((),):
             args = ()
         elif args and len(args[0]):
             args = args[0]  # type: ignore # not sure why this is necessary
-        if self.connection:
-            ret: list[asyncpg.Record] = await self.connection._execute(
-                qstring, args, 0, timeout, return_status=True
-            )
-            return ret[0]
+        if self.pool:
+            async with self.pool.acquire() as connection:
+                result: list[asyncpg.Record]
+                result, stmt = await connection._execute(
+                    qstring, args, 0, timeout, return_status=True
+                )
+                return result
         return None
 
     def sync_execute(self, qstring: str, *args: Any) -> asyncpg.Record:
@@ -119,9 +120,9 @@ class PGInterface:
         return ret
 
     def sync_close(self) -> Any:
-        self.logger.info(f"closing connection: {self.connection}")
-        if self.connection:
-            ret = self.loop.run_until_complete(self.connection.close())
+        self.logger.info(f"closing connection: {self.pool}")
+        if self.pool:
+            ret = self.loop.run_until_complete(self.pool.close())
             return ret
 
     def truncate(self, thing: str) -> str:
@@ -130,8 +131,7 @@ class PGInterface:
                 f"{thing[:self.MAX_RESP_LOG_LEN]}..."
                 "[{len(thing)-self.MAX_RESP_LOG_LEN} omitted]"
             )
-        else:
-            return thing
+        return thing
 
     def __getattribute__(self, key: str) -> Callable[..., asyncpg.Record]:
         """Implicitly define methods on this class for every statement in self.query_strings.
@@ -154,9 +154,9 @@ class PGInterface:
         if not statement:
             raise ValueError(f"No statement of name {qstring} or {key} found!")
 
-        if not self.connection and self.database is not None:
+        if not self.pool and isinstance(self.database, dict):
             canned_response = self.database.get(qstring, [[None]]).pop(0)
-            if qstring in self.database and not len(self.database.get(qstring, [])):
+            if qstring in self.database and not self.database.get(qstring, []):
                 self.database.pop(qstring)
 
             def return_canned(*args: Any, **kwargs: Any) -> Any:
@@ -188,7 +188,9 @@ class PGInterface:
                 resp = executer(rebuilt_statement, args)
                 short_strresp = self.truncate(f"{resp}")
                 short_args = self.truncate(str(args))
-                self.logger.debug(f"{rebuilt_statement} {short_args} -> {short_strresp}")
+                self.logger.debug(
+                    f"{rebuilt_statement} {short_args} -> {short_strresp}"
+                )
                 return resp
 
             return executer_with_args
