@@ -333,7 +333,7 @@ class Session:
             else:
                 maybe_routable = None
                 numbers = None
-            if numbers and message.command in ("mkgroup", "query"):
+            if numbers and message.command in ("mkgroup", "query") and utils.get_secret("GROUPS"):
                 target_number = await self.check_target_number(message)
                 if target_number:
                     cmd = {
@@ -494,6 +494,7 @@ async def listen_to_signalcli(
 ) -> None:
     while True:
         line = await stream.readline()
+        #if utils.get_secret("I_AM_NOT_A_FEDERAL_AGENT"):
         logging.info("signal: %s", line.decode())
         # TODO: don't print receiptMessage
         # color non-json. pretty-print errors
@@ -594,3 +595,4 @@ if __name__ == "__main__":
     logging.info("=========================new run=======================")
     group_routing_manager = GroupRoutingManager()
     web.run_app(app, port=8080, host="0.0.0.0")
+
