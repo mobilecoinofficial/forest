@@ -107,11 +107,11 @@ class PGInterface:
             args = args[0]  # type: ignore # not sure why this is necessary
         if self.pool:
             async with self.pool.acquire() as connection:
-                result: list[asyncpg.Record]
-                result, stmt = await connection._execute(
+                result  = await connection._execute(
                     qstring, args, 0, timeout, return_status=True
                 )
-                return result
+                # list[asyncpg.Record], str, bool
+                return result[0]
         return None
 
     def sync_execute(self, qstring: str, *args: Any) -> asyncpg.Record:
