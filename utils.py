@@ -18,9 +18,10 @@ ROOT_DIR = "/tmp/local-signal" if LOCAL else "/app"
 
 
 def FuckAiohttp(record: logging.LogRecord) -> bool:
-    if "was destroyed but it is pending" in record.msg:
+    str_msg = str(getattr(record, "msg", ""))
+    if "was destroyed but it is pending" in str_msg:
         return False
-    if str(record.msg).startswith("task:") and str(record.msg).endswith(">"):
+    if str_msg.startswith("task:") and str_msg.endswith(">"):
         return False
     return True
 

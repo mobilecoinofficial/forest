@@ -110,6 +110,7 @@ class Session:
         if isinstance(msg, list):
             for m in msg:
                 await self.send_message(recipient, m)
+            return
         if isinstance(msg, dict):
             msg = "\n".join((f"{key}:\t{value}" for key, value in msg.items()))
         json_command: JSON = {
@@ -124,6 +125,7 @@ class Session:
             assert recipient == utils.signal_format(recipient)
             json_command["recipient"] = [str(recipient)]
         await self.signalcli_input_queue.put(json_command)
+        return
 
     async def send_reaction(self, emoji: str, target_msg: Message) -> None:
         react = {
@@ -176,10 +178,9 @@ class Session:
                 "https://big.one/api/xn/v1/asset_pairs/8e900cb1-6331-4fe7-853c-d678ba136b2f"
             )
             resp_json = await last_val.json()
-            mob_rate = float(resp_json.get("data")[0].get("close"))
-        except (aiohttp.ClientError, KeyError, json.JSONDecodeError) as e:
+            mob_rate = float(resp_json.get("data").get("ticker").get("close"))
+        except (aiohttp.ClientError, KeyError, TypeError, json.JSONDecodeError) as e:
             logging.error(e)
-
             # big.one goes down sometimes, if it does... make up a price
             mob_rate = 14
         # perturb each price slightly
@@ -332,7 +333,7 @@ class Session:
             else:
                 maybe_routable = None
                 numbers = None
-            if numbers and message.command in ("mkgroup", "query"):
+            if numbers and message.command in ("mkgroup", "query") and utils.get_secret("GROUPS"):
                 target_number = await self.check_target_number(message)
                 if target_number:
                     cmd = {
@@ -493,6 +494,7 @@ async def listen_to_signalcli(
 ) -> None:
     while True:
         line = await stream.readline()
+        #if utils.get_secret("I_AM_NOT_A_FEDERAL_AGENT"):
         logging.info("signal: %s", line.decode())
         # TODO: don't print receiptMessage
         # color non-json. pretty-print errors
@@ -593,3 +595,4 @@ if __name__ == "__main__":
     logging.info("=========================new run=======================")
     group_routing_manager = GroupRoutingManager()
     web.run_app(app, port=8080, host="0.0.0.0")
+
