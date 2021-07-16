@@ -27,7 +27,7 @@ AccountPGExpressions = PGExpressions(
     table="signal_accounts",
     migrate="ALTER TABLE IF EXISTS {self.table} ADD IF NOT EXISTS datastore BYTEA, \
         ADD IF NOT EXISTS registered BOOL; ",
-    create_table="CREATE TABLE IF NOT EXISTS {self.table} \
+    create_table="CREATE TABLE IF NOT EXIsTS {self.table} \
             (id TEXT PRIMARY KEY, \
             datastore BYTEA, \
             last_update_ms BIGINT, \
@@ -95,6 +95,7 @@ class SignalDatastore:
     async def is_claimed(self) -> Optional[str]:
         record = await self.account_interface.get_claim(self.number)
         if not record:
+            logging.warning("checking claim without plus instead")
             record = await self.account_interface.get_claim(self.number[1::])
             if record:
                 return record[0].get("active_node_name")
@@ -150,7 +151,7 @@ class SignalDatastore:
             self.number, utils.HOSTNAME
         )
         logging.debug(
-            "marked account as claimed, checking that this is the case"
+            "marked account as claimed, asserting that this is the case"
         )
         assert await self.is_claimed()
         return
