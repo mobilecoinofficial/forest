@@ -223,7 +223,7 @@ class Teli:
 
 
 async def print_sms(raw_number: str, port: int = 8080) -> None:
-    print(port)
+    logging.info(port)
     receiver = ReceiveSMS()
     async with get_url(port) as url, receiver.receive():
         await Teli().set_sms_url(raw_number, url)

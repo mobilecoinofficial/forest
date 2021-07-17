@@ -124,7 +124,7 @@ class SignalDatastore:
             )
             await asyncio.sleep(6)
             if i == 4:
-                print("time's up")
+                logging.info("time's up")
         logging.info("downloading")
         record = await self.account_interface.get_datastore(self.number)
         if not record and utils.get_secret("MIGRATE"):
@@ -182,7 +182,7 @@ class SignalDatastore:
                 os.getcwd(),
             )
             tarball.add("data")
-        print(tarball.getmembers())
+        logging.debug(tarball.getmembers())
         tarball.close()
         buffer.seek(0)
         data = buffer.read()
@@ -212,7 +212,7 @@ async def getFreeSignalDatastore() -> SignalDatastore:
         raise Exception("no free accounts")
         # alternatively, register an account...
     number = record[0].get("id")
-    print(number)
+    logging.info(number)
     assert number
     return SignalDatastore(number)
 

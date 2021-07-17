@@ -4,3 +4,10 @@
 
 > flyctl deploy [<workingdirectory>] [flags]
 >  --strategy string      The strategy for replacing running instances. Options are canary, rolling, bluegreen, or immediate. Default is canary
+
+
+things we hold evident
+
+design considerations
+
+experiments tried
