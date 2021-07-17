@@ -23,6 +23,11 @@ from pghelp import PGExpressions, PGInterface
 
 # maybe we'd like nicknames for accounts?
 
+if utils.get_secret("MIGRATE"):
+    get_datastore = "SELECT account, datastore FROM {self.table} WHERE id=$1"
+else:
+    get_datastore = "SELECT datastore FROM {self.table} WHERE id=$1"
+
 AccountPGExpressions = PGExpressions(
     table="signal_accounts",
     migrate="ALTER TABLE IF EXISTS {self.table} ADD IF NOT EXISTS datastore BYTEA, \
@@ -35,7 +40,7 @@ AccountPGExpressions = PGExpressions(
             active_node_name TEXT, \
             registered BOOL);",
     is_registered="SELECT datastore is not null as registered FROM {self.table} WHERE id=$1",
-    get_datastore="SELECT account, datastore FROM {self.table} WHERE id=$1;",
+    get_datastore=get_datastore,
     get_claim="SELECT active_node_name FROM {self.table} WHERE id=$1",
     mark_account_claimed="UPDATE {self.table} \
         SET active_node_name = $2, \
@@ -119,7 +124,7 @@ class SignalDatastore:
             )
             await asyncio.sleep(6)
             if i == 4:
-                print("time's up")
+                logging.info("time's up")
         logging.info("downloading")
         record = await self.account_interface.get_datastore(self.number)
         if not record and utils.get_secret("MIGRATE"):
@@ -177,7 +182,7 @@ class SignalDatastore:
                 os.getcwd(),
             )
             tarball.add("data")
-        print(tarball.getmembers())
+        logging.debug(tarball.getmembers())
         tarball.close()
         buffer.seek(0)
         data = buffer.read()
@@ -207,7 +212,7 @@ async def getFreeSignalDatastore() -> SignalDatastore:
         raise Exception("no free accounts")
         # alternatively, register an account...
     number = record[0].get("id")
-    print(number)
+    logging.info(number)
     assert number
     return SignalDatastore(number)
 
@@ -230,6 +235,7 @@ async def start_memfs(app: web.Application) -> None:
         os.mkdir(utils.ROOT_DIR + "/data")
         # we're going to be running in the repo
         os.symlink(Path("signal-cli").absolute(), utils.ROOT_DIR + "/signal-cli")
+        os.symlink(Path("avatar.png").absolute(), utils.ROOT_DIR + "/avatar.png")
         os.chdir(utils.ROOT_DIR)
         return
     if not os.path.exists("/dev/fuse"):
