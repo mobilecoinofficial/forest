@@ -39,6 +39,7 @@ def load_secrets(env: Optional[str] = None) -> None:
     if not env:
         env = os.environ.get("ENV", "dev")
     try:
+        logging.info("loading secrets from %s_secrets", env)
         secrets = [line.strip().split("=", 1) for line in open(f"{env}_secrets")]
         can_be_a_dict = cast(list[tuple[str, str]], secrets)
         os.environ.update(dict(can_be_a_dict))
@@ -222,7 +223,7 @@ class Teli:
 
 
 async def print_sms(raw_number: str, port: int = 8080) -> None:
-    print(port)
+    logging.info(port)
     receiver = ReceiveSMS()
     async with get_url(port) as url, receiver.receive():
         await Teli().set_sms_url(raw_number, url)
