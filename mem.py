@@ -169,7 +169,7 @@ class Memory(LoggingMixIn, Operations):
         dirobj.properties.st_nlink += 1
 
     def open(self, path, flags):
-        print("opening", get_caller())
+        logging.debug("opening", get_caller())
         self.fd += 1
         return self.fd
 

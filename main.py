@@ -131,8 +131,8 @@ class Session:
         react = {
             "command": "sendReaction",
             "emoji": emoji,
-            "target_author": target_msg.source,
-            "target_timestamp": target_msg.timestamp,
+            "target-author": target_msg.source,
+            "target-timestamp": target_msg.timestamp,
         }
         if target_msg.group:
             react["group"] = target_msg.group
@@ -405,6 +405,7 @@ class Session:
             baseCmd + "--output=plain-text updateProfile "
             f"--name {name} --avatar avatar.png"
         ).split()
+        logging.info("setting profile...")
         profileProc = await asyncio.create_subprocess_exec(*profileCmd)
         logging.info(await profileProc.communicate())
         COMMAND = (baseCmd + "--output=json stdio").split()
