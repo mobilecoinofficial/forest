@@ -31,9 +31,6 @@ RUN apt-get clean autoclean && apt-get autoremove --yes && rm -rf /var/lib/{apt,
 # v5.12.2 for fly.io
 RUN wget -q -O fuse.ko "https://public.getpost.workers.dev/?key=01F54FQVAX85R1Y98ACCXT2AGT&raw"
 #RUN sudo insmod fuse.ko
-#RUN wget -q -O websocat https://github.com/vi/websocat/releases/download/v1.8.0/websocat_amd64-linux-static
-#RUN wget -q -O cloudflared https://github.com/cloudflare/cloudflared/releases/download/2021.4.0/cloudflared-linux-amd64
-#RUN wget -q -O jq https://github.com/stedolan/jq/releases/download/jq-1.6/jq-linux64
 #RUN wget -q -O curl https://github.com/moparisthebest/static-curl/releases/download/v7.76.1/curl-amd64
 #RUN chmod +x ./curl ./jq ./cloudflared ./websocat
 #RUN chmod +x ./cloudflared ./websocat
