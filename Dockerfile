@@ -6,7 +6,9 @@ RUN microdnf install -y git zlib-devel && rm -rf /var/cache/yum
 RUN gu install native-image
 RUN git clone https://github.com/forestcontact/signal-cli
 WORKDIR /app/signal-cli
+ARG cache_burst=4
 RUN git pull origin graalvm-for-0.8.4.1 #b2f2b16 #forest-fork-v6  #stdio-generalized 
+RUN git log -1 --pretty=%B 
 RUN ./gradlew build && ./gradlew installDist
 RUN md5sum ./build/libs/* 
 RUN ./gradlew assembleNativeImage

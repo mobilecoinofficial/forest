@@ -236,6 +236,7 @@ async def start_memfs(app: web.Application) -> None:
         # we're going to be running in the repo
         os.symlink(Path("signal-cli").absolute(), utils.ROOT_DIR + "/signal-cli")
         os.symlink(Path("avatar.png").absolute(), utils.ROOT_DIR + "/avatar.png")
+        logging.info("chdir to %s", utils.ROOT_DIR)
         os.chdir(utils.ROOT_DIR)
         return
     if not os.path.exists("/dev/fuse"):
