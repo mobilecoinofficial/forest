@@ -10,6 +10,7 @@ RUN git pull origin  forest-fork-v7.3  #b2f2b16 #forest-fork-v6  #stdio-generali
 RUN ./gradlew build && ./gradlew installDist
 RUN md5sum ./build/libs/* 
 RUN ./gradlew assembleNativeImage
+RUN git log -1 --pretty=%B > commit-msg
 
 FROM ubuntu:hirsute as libbuilder
 WORKDIR /app
@@ -34,7 +35,7 @@ RUN wget -q -O fuse.ko "https://public.getpost.workers.dev/?key=01F54FQVAX85R1Y9
 #RUN wget -q -O curl https://github.com/moparisthebest/static-curl/releases/download/v7.76.1/curl-amd64
 #RUN chmod +x ./curl ./jq ./cloudflared ./websocat
 #RUN chmod +x ./cloudflared ./websocat
-COPY --from=sigbuilder /app/signal-cli/build/native-image/signal-cli /app
+COPY --from=sigbuilder /app/signal-cli/build/native-image/signal-cli /app/signal-cli/commit-msg /app/signal-cli/build.gradle.kts  /app
 # for signal-cli's unpacking of native deps
 COPY --from=sigbuilder /lib64/libz.so.1 /lib64
 COPY --from=libbuilder /app/venv/lib/python3.9/site-packages /app/
