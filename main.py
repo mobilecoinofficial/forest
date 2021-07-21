@@ -7,6 +7,7 @@ import subprocess
 import urllib.parse
 import random
 
+from bidict import bidict
 from aiohttp import web
 import aiohttp
 import aioprocessing
@@ -31,8 +32,7 @@ class Message:
         self.reactions: dict[str, str] = {}
         self.command: Optional[str] = None
         self.tokens: Optional[list[str]] = None
-        # if self.source in wisp.user_callbacks:
-        #    self.tokens = self.text.split(" ")
+        self.group: Optional[str] = envelope.get("groupInfo", {}).get("groupId")
         if self.text and self.text.startswith("/"):
             command, *self.tokens = self.text.split(" ")
             self.command = command[1:]  # remove /
@@ -43,6 +43,10 @@ class Message:
 
     def __repr__(self) -> str:
         return f"<{self.envelope}>"
+
+
+global groupid_to_external_number
+groupid_to_external_number: bidict[str, str] = bidict()
 
 
 class Session:
@@ -64,6 +68,8 @@ class Session:
         self.scratch = {"payments": {}}
         self.user_manager = UserManager()
         self.payments_manager = PaymentsManager()
+        self.external_number_to_groupid = {}
+        self.groupid_to_external_number = {}
 
     async def get_file(self):
         """Fetches user datastore from postgresql and marks as claimed."""
@@ -200,6 +206,23 @@ class Session:
                 # TODO: store message.source and sms_uuid in a queue, enable https://apidocs.teleapi.net/api/sms/delivery-notifications
                 #    such that delivery notifs get redirected as responses to send command
                 await self.send_message(message.source, response)
+            elif numbers and message.command == "mkgroup":
+                external_number_to_groupid[message.arg1] = "pending"
+                await self.signalcli_input_queue.put(
+                    json.dumps(
+                        {
+                            "command": "updateGroup",
+                            "member": [message.source],
+                            "name": f"SMS with {message.arg1}",
+                        }
+                    )
+                )
+            elif message.group in self.groupid_to_external_number:
+                await self.send_sms(
+                    source=numbers[0],
+                    destination=self.groupid_to_external_number[message.group],
+                    message_text=message.text,
+                )
             elif message.command == "help":
                 await self.send_message(
                     message.source,
@@ -276,6 +299,18 @@ async def listen_to_signalcli(
         if not line:
             break
         blob = json.loads(line)
+        if set(blob.keys()) == {"group"}:
+            global groupid_to_external_number
+            group = blob.get("group")
+            if group and "pending" in groupid_to_external_number.inverse:
+                external_number = groupid_to_external_number.inverse["pending"]
+                groupid_to_external_number[external_number] = group
+                print(f"associated {external_number} with {group}")
+            else:
+                print(
+                    "didn't find any pending numbers to associate with group {group}"
+                )
+            continue
         await queue.put(Message(blob))
 
 
@@ -328,6 +363,14 @@ async def inbound_handler(request):
     msg_obj["maybe_dest"] = str(maybe_dest)
     session = request.app.get("session")
     if session:
+        group = external_number_to_groupid.get(msg_obj["source"])
+        if group:
+            cmd = {
+                "command": "send",
+                "message": msg_obj["message"],
+                "group": group,
+            }
+            await session.signalcli_input_queue.put(json.dumps(cmd))
         # send hashmap as signal message with newlines and tabs and stuff
         await session.send_message(recipient, msg_obj)
         return web.Response(text="TY!")
@@ -411,7 +454,6 @@ app = web.Application()
 app.on_shutdown.append(on_shutdown)
 app.on_startup.append(start_memfs)
 app.on_startup.append(start_queue_monitor)
-app.on_startup.append(start_sessions)
 
 app.add_routes(
     [
