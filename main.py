@@ -110,6 +110,7 @@ class Session:
         if isinstance(msg, list):
             for m in msg:
                 await self.send_message(recipient, m)
+            return
         if isinstance(msg, dict):
             msg = "\n".join((f"{key}:\t{value}" for key, value in msg.items()))
         json_command: JSON = {
@@ -124,6 +125,7 @@ class Session:
             assert recipient == utils.signal_format(recipient)
             json_command["recipient"] = [str(recipient)]
         await self.signalcli_input_queue.put(json_command)
+        return
 
     async def send_reaction(self, emoji: str, target_msg: Message) -> None:
         react = {
