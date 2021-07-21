@@ -108,6 +108,19 @@ class Session:
         )
         await self.signalcli_input_queue.put(json_command)
 
+    async def send_reaction(self, emoji: str, target_msg: Message) -> None:
+        react = {
+            "command": "sendReaction",
+            "emoji": emoji,
+            "target_author": target_msg.source,
+            "target_timestamp": target_msg.timestamp,
+        }
+        if target_msg.group:
+            react["group"] = target_msg.group
+        else:
+            react["recipient"] = target_msg.source
+        await self.signalcli_input_queue.put(react)
+
     async def signalcli_output_iter(self) -> AsyncIterator[Message]:
         """Provides an asynchronous iterator over messages on the queue."""
         while True:
@@ -210,6 +223,7 @@ class Session:
                     destination=message.arg1,  # dest,
                     message_text=message.text,
                 )
+                await self.send_reaction("📤", message)
                 # sms_uuid = response.get("data")
                 # TODO: store message.source and sms_uuid in a queue, enable https://apidocs.teleapi.net/api/sms/delivery-notifications
                 #    such that delivery notifs get redirected as responses to send command
@@ -224,6 +238,7 @@ class Session:
                     "name": f"SMS with {message.arg1} via {numbers[0]}",
                 }
                 await self.signalcli_input_queue.put(json.dumps(cmd))
+                await self.send_reaction("📤", message)
                 await self.send_message(message.source, "invited you to a group")
             elif (
                 numbers
@@ -254,6 +269,7 @@ class Session:
                     message_text=message.text,
                 )
                 trueprint("sent")
+                await self.send_reaction("📤", message)
                 await self.send_message(message.source, response)
             elif message.command == "help":
                 await self.send_message(
@@ -412,6 +428,7 @@ async def inbound_handler(request: web.Request) -> web.Response:
     if not msg_obj:
         # stick the contents under the message key
         msg_obj["message"] = msg_data
+    trueprint(msg_obj)
     destination = msg_obj.get("destination")
     ## lookup sms recipient to signal recipient
     maybe_dest = await RoutingManager().get_destination(destination)
