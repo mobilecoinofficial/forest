@@ -441,6 +441,17 @@ async def inbound_handler(request: web.Request) -> web.Response:
     return web.Response(status=504, text="Sorry, no live workers.")
 
 
+async def terminate(request: web.Request) -> web.Response:
+    if await request.text() != FLY_ALLOC_ID:
+        return web.Response(
+            status=403, text="https://twitter.com/dril/status/922321981"
+        )
+    await request.app.shutdown()
+    await request.app.cleanup()
+    raise aiohttp.web_runner.GracefulExit
+    sys.exit(0)  # conflicting info about whether GracefulExit actually exits
+
+
 app = web.Application()
 
 app.on_startup.append(start_session)
@@ -453,6 +464,7 @@ app.add_routes(
         web.get("/", noGet),
         web.post("/user/{phonenumber}", send_message_handler),
         web.post("/inbound", inbound_handler),
+        web.post("/terminate", terminate),
     ]
 )
 
