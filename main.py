@@ -157,9 +157,13 @@ class Session:
     async def check_target_number(self, msg: Message) -> Optional[str]:
         logging.info(msg.arg1)
         try:
-            parsed = pn.parse(msg.arg1, "US")  # fixme: use PhoneNumberMatcher
-            assert pn.is_valid_number(parsed)
-            number = pn.format_number(parsed, pn.PhoneNumberFormat.E164)
+            matches = list(pn.PhoneNumberMatcher(msg.full_text, "US"))
+            assert matches
+            match = matches[0]
+            assert pn.is_valid_number(match)
+            msg.text = msg.full_text.split(match.raw_string, 1)[1]
+            number = pn.format_number(match, pn.PhoneNumberFormat.E164)
+            # maybe it should be national_number instead...?
             return number
         except (pn.phonenumberutil.NumberParseException, AssertionError):
             await self.send_message(
