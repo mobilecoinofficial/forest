@@ -1,9 +1,7 @@
-import os
 import time
-
+import mobilecoin
 import forest_tables
 
-import mobilecoin
 
 mobilecoind = mobilecoin.Client()
 account_id = list(mobilecoind.get_all_accounts().keys())[0]
