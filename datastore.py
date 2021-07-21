@@ -30,6 +30,7 @@ else:
 
 AccountPGExpressions = PGExpressions(
     table="signal_accounts",
+    #rename="ALTAR TABLE IF EXISTS prod_users RENAME TO {self.table}",
     migrate="ALTER TABLE IF EXISTS {self.table} ADD IF NOT EXISTS datastore BYTEA, \
         ADD IF NOT EXISTS registered BOOL; ",
     create_table="CREATE TABLE IF NOT EXIsTS {self.table} \
