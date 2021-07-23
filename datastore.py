@@ -182,7 +182,8 @@ class SignalDatastore:
                 os.getcwd(),
             )
             tarball.add("data")
-        logging.debug(tarball.getmembers())
+        fnames = [member.name for member in tarball.getmembers()]
+        logging.debug(fnames)
         tarball.close()
         buffer.seek(0)
         data = buffer.read()
