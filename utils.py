@@ -60,7 +60,9 @@ def teli_format(raw_number: str) -> str:
 
 
 def signal_format(raw_number: str) -> str:
-    return pn.format_number(pn.parse(raw_number, "US"), pn.PhoneNumberFormat.E164)
+    return pn.format_number(
+        pn.parse(raw_number, "US"), pn.PhoneNumberFormat.E164
+    )
 
 
 @asynccontextmanager

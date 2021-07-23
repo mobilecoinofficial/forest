@@ -97,7 +97,7 @@ class PGInterface:
 
     async def execute(
         self, qstring: str, *args: str, timeout: int = 180
-    ) -> Optional[Awaitable[asyncpg.Record]]:
+    ) -> Optional[list[asyncpg.Record]]:
         """Invoke the asyncpg connection's `execute` given a provided query string and set of arguments"""
         if not self.pool and not isinstance(self.database, dict):
             await self.connect_pg()
