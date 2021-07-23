@@ -403,7 +403,7 @@ class Session:
         name = "localbot" if utils.LOCAL else "forestbot"
         profileCmd = (
             baseCmd + "--output=plain-text updateProfile "
-            f"--given-name {name} --family-name '{utils.get_secret('ENV')}' --avatar avatar.png"
+            f"--given-name {name} --family-name {utils.get_secret('ENV')} --avatar avatar.png"
         ).split()
         logging.info(" ".join(profileCmd))
         profileProc = await asyncio.create_subprocess_exec(*profileCmd)
