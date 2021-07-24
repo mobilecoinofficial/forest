@@ -166,16 +166,6 @@ class Teli:
         ) as resp:
             blob = await resp.json()
         return blob
-        # this actually needs to figure out the url of the other environment
-        # so prod doesn't take dev numbers
-        def predicate(did: dict[str, str]) -> bool:
-            # this actually needs to check if it's the *other* env
-            # and properly if the number is already used in another way...
-            # maybe based on whether the number is on signal...
-            url = did["sms_post_url"]
-            return "loca.lt" in url or "trees-dev" in url
-
-        return [did["number"] for did in blob["data"] if predicate(did)]
 
     async def search_numbers(
         self,
@@ -207,7 +197,9 @@ class Teli:
         dids = blob["data"]["dids"]
         return [info["number"] for info in dids]
 
-    async def buy_number(self, number: str, sms_post_url: Optional[str] = None) -> dict:
+    async def buy_number(
+        self, number: str, sms_post_url: Optional[str] = None
+    ) -> dict:
         params = {
             "token": get_secret("TELI_KEY"),
             "number": number,

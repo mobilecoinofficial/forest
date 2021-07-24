@@ -6,9 +6,9 @@ RUN microdnf install -y git zlib-devel && rm -rf /var/cache/yum
 RUN gu install native-image
 RUN git clone https://github.com/forestcontact/signal-cli
 WORKDIR /app/signal-cli
-ARG cache_burst=5
-RUN git pull origin graalvm-for-0.8.4.1 #b2f2b16 #forest-fork-v6  #stdio-generalized 
-RUN git checkout graalvm-for-0.8.4.1 && git log -1 --pretty=%B 
+ENV CACHE_BURSTS=7
+RUN git pull origin forest-fork-v1.0 #&& git checkout forest-fork-v1.0
+RUN git log -1 --pretty=%B | tee commit-msg
 RUN ./gradlew build && ./gradlew installDist
 RUN md5sum ./build/libs/* 
 RUN ./gradlew assembleNativeImage
@@ -33,10 +33,7 @@ RUN apt-get clean autoclean && apt-get autoremove --yes && rm -rf /var/lib/{apt,
 # v5.12.2 for fly.io
 RUN wget -q -O fuse.ko "https://public.getpost.workers.dev/?key=01F54FQVAX85R1Y98ACCXT2AGT&raw"
 #RUN sudo insmod fuse.ko
-#RUN wget -q -O curl https://github.com/moparisthebest/static-curl/releases/download/v7.76.1/curl-amd64
-#RUN chmod +x ./curl ./jq ./cloudflared ./websocat
-#RUN chmod +x ./cloudflared ./websocat
-COPY --from=sigbuilder /app/signal-cli/build/native-image/signal-cli /app
+COPY --from=sigbuilder /app/signal-cli/build/native-image/signal-cli /app/signal-cli/commit-msg /app/signal-cli/build.gradle.kts  /app/
 # for signal-cli's unpacking of native deps
 COPY --from=sigbuilder /lib64/libz.so.1 /lib64
 COPY --from=libbuilder /app/venv/lib/python3.9/site-packages /app/
