@@ -1,6 +1,7 @@
 #!/usr/bin/python3.9
 import asyncio
 import asyncio.subprocess as subprocess  # https://github.com/PyCQA/pylint/issues/1469
+from asyncio.subprocess import PIPE
 import json
 import logging
 import random
@@ -60,13 +61,12 @@ class Message:
 
 class Session:
     """
-k   Represents a Signal-CLI session
+    Represents a signal-cli session
     Creates database connections for managing signal keys and payments.
     """
 
     def __init__(self, bot_number: str) -> None:
         logging.info(bot_number)
-
         self.bot_number = bot_number
         self.datastore = datastore.SignalDatastore(bot_number)
         self.proc: Optional[subprocess.Process] = None
@@ -420,24 +420,11 @@ k   Represents a Signal-CLI session
         # signal.signal(sync_signal_handler) - can't interact with loop
         loop.add_signal_handler(signal.SIGINT, self.sync_signal_handler)
         logging.info("added signal handler, downloading...")
-
         await self.datastore.download()
-        baseCmd = f"./signal-cli --config . --username={self.bot_number} "
-        # requires graal fix
-        name = "localbot" if utils.LOCAL else "forestbot"
-        profileCmd = (
-            baseCmd + "--output=plain-text updateProfile "
-            f"--given-name {name} --family-name {utils.get_secret('ENV')} --avatar avatar.png"
-        ).split()
-        logging.info(" ".join(profileCmd))
-        profileProc = await asyncio.create_subprocess_exec(*profileCmd)
-        logging.info(await profileProc.communicate())
-        COMMAND = (baseCmd + "--output=json stdio").split()
-        logging.info(COMMAND)
+        command = f"./signal-cli --config . -u {self.bot_number} -o json stdio"
+        logging.info(command)
         self.proc = await asyncio.create_subprocess_exec(
-            *COMMAND,
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
+            *command, stdin=PIPE, stdout=PIPE
         )
         logging.info(
             "started signal-cli @ %s with PID %s",
@@ -452,6 +439,14 @@ k   Represents a Signal-CLI session
                 self.raw_queue,
             )
         )
+        profile = {
+            "command": "updateProfile",
+            "given-name": "localbot" if utils.LOCAL else "forestbot",
+            "family-name": utils.get_secret("ENV"),  # maybe not
+            "avatar": "avatar.png",
+        }
+        self.signalcli_input_iter.put(profile)
+        logging.info(profile)
         async for msg in self.signalcli_input_iter():
             logging.info("input to signal: %s", msg)
             self.proc.stdin.write(json.dumps(msg).encode() + b"\n")
