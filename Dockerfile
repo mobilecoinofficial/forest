@@ -1,5 +1,4 @@
 FROM ghcr.io/graalvm/graalvm-ce:latest as sigbuilder
-ENV cache_bursts=1
 ENV GRAALVM_HOME=/opt/graalvm-ce-java11-21.1.0/ 
 SHELL ["/usr/bin/bash", "-c"]
 WORKDIR /app
@@ -7,8 +6,8 @@ RUN microdnf install -y git zlib-devel && rm -rf /var/cache/yum
 RUN gu install native-image
 RUN git clone https://github.com/forestcontact/signal-cli
 WORKDIR /app/signal-cli
-ARG cache_burst=5
-RUN git pull origin graalvm-for-0.8.4.1 && git checkout graalvm-for-0.8.4.1
+ENV CACHE_BURSTS=6
+RUN git pull origin forest-fork-v1.0 && git checkout forest-fork-v1.0
 RUN git log -1 --pretty=%B | tee commit-msg
 RUN ./gradlew build && ./gradlew installDist
 RUN md5sum ./build/libs/* 

@@ -33,6 +33,7 @@ class Message:
         self.envelope = envelope = blob.get("envelope", {})
         # {'envelope': {'source': '+15133278483', 'sourceDevice': 2, 'timestamp': 1621402445257, 'receiptMessage': {'when': 1621402445257, 'isDelivery': True, 'isRead': False, 'timestamps': [1621402444517]}}}
         self.source: str = envelope.get("source")
+        self.name: str = envelope.get("sourceName")
         msg = envelope.get("dataMessage", {})
         self.timestamp = envelope.get("timestamp")
         self.full_text = self.text = msg.get("message", "")
@@ -59,7 +60,7 @@ class Message:
 
 class Session:
     """
-    Represents a Signal-CLI session
+k   Represents a Signal-CLI session
     Creates database connections for managing signal keys and payments.
     """
 
@@ -250,10 +251,10 @@ class Session:
             ]
         if numbers and len(numbers) == 1:
             # registered, one number
-            return f'Hi {message.source}! We found {numbers[0]} registered for your user. Try "/send {message.source} Hello from Forest Contact via {numbers[0]}!".'
+            return f'Hi {message.name}! We found {numbers[0]} registered for your user. Try "/send {message.source} Hello from Forest Contact via {numbers[0]}!".'
         # registered, many numbers
         if numbers:
-            return f"Hi {message.source}! We found several numbers {numbers} registered for your user. Try '/send {message.source} Hello from Forest Contact via {numbers[0]}!'."
+            return f"Hi {message.name}! We found several numbers {numbers} registered for your user. Try '/send {message.source} Hello from Forest Contact via {numbers[0]}!'."
         # not paid, not registered
         return (
             "We don't see any Forest Contact numbers for your account!"
