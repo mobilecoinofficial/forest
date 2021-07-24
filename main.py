@@ -33,7 +33,7 @@ class Message:
         self.envelope = envelope = blob.get("envelope", {})
         # {'envelope': {'source': '+15133278483', 'sourceDevice': 2, 'timestamp': 1621402445257, 'receiptMessage': {'when': 1621402445257, 'isDelivery': True, 'isRead': False, 'timestamps': [1621402444517]}}}
         self.source: str = envelope.get("source")
-        self.name: str = envelope.get("sourceName")
+        self.name: str = envelope.get("sourceName") or self.source
         msg = envelope.get("dataMessage", {})
         self.timestamp = envelope.get("timestamp")
         self.full_text = self.text = msg.get("message", "")
