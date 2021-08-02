@@ -565,49 +565,44 @@ async def noGet(request: web.Request) -> web.Response:
 
 
 async def inbound_sms_handler(request: web.Request) -> web.Response:
-    msg_data = await request.text()  # await request.post()
-    # parse query-string encoded sms/mms into object
-    msg_obj = {
-        x: y[0]
-        for x, y in urllib.parse.parse_qs(msg_data).items()
-        if x in ("source", "destination", "message")
-    }
-    # if it's a raw post (debugging / oops / whatnot - not a query string)
-    logging.info(msg_obj)
+    session = request.app.get("session")
+    if not session:
+        # TODO: return non-200 if no delivery receipt / ok crypto state, let teli do our retry
+        # no live worker sessions
+        # ...to do that, you would have to await a response from signal, which requires hooks or such
+        await request.app["client_session"].post(
+            "https://counter.pythia.workers.dev/post", data=msg_data
+        )
+        return web.Response(status=504, text="Sorry, no live workers.")
+    msg_data = await request.post()
     destination = msg_obj.get("destination")
     # lookup sms recipient to signal recipient
+    maybe_group = await group_routing_manager.get_group_id_for_sms_route(
+        msg_data.get("source"), msg_data.get("destination")
+    )
+    if maybe_group:
+        # if we can't notice group membership changes,
+        # we could check if the person is still in the group
+        logging.info("sending a group")
+        group = maybe_group[0].get("group_id")
+        await session.send_message(None, msg_obj["message"], group=group)
+        return web.Response(text="TY!")
+
+
+    # send hashmap as signal message with newlines and tabs and stuff
+    await session.send_message(recipient, msg_obj)
+
     maybe_dest = await RoutingManager().get_destination(destination)
     if maybe_dest:
         recipient = maybe_dest[0].get("destination")
+        msg = {k:v for k, v in msg_data.items() if k in ("source", "destination", "message")}
     else:
         logging.info("falling back to admin")
         recipient = get_secret("ADMIN")
-        msg_obj["message"] = "destination not found for " + str(msg_obj)
-    # msg_obj["maybe_dest"] = str(maybe_dest)
-    session = request.app.get("session")
-    if session:
-        maybe_group = await group_routing_manager.get_group_id_for_sms_route(
-            msg_obj["source"], msg_obj["destination"]
-        )
-        logging.info(maybe_group)
-        if maybe_group:
-            # if we can't notice group membership changes,
-            # we could check if the person is still in the group
-            logging.info("sending a group")
-            group = maybe_group[0].get("group_id")
-            await session.send_message(None, msg_obj["message"], group=group)
-        else:
-            # send hashmap as signal message with newlines and tabs and stuff
-            await session.send_message(recipient, msg_obj)
+        msg_data["note"] = "destination not found"
 
-        return web.Response(text="TY!")
-    # TODO: return non-200 if no delivery receipt / ok crypto state, let teli do our retry
-    # no live worker sessions
-    # ...to do that, you would have to await a response from signal, which requires hooks or such
-    await request.app["client_session"].post(
-        "https://counter.pythia.workers.dev/post", data=msg_data
-    )
-    return web.Response(status=504, text="Sorry, no live workers.")
+        msg_obj["message"] = "destination not found for " + str(msg_obj)
+    return web.Response(text="TY!")
 
 
 app = web.Application()
