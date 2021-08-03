@@ -567,41 +567,41 @@ async def noGet(request: web.Request) -> web.Response:
 async def inbound_sms_handler(request: web.Request) -> web.Response:
     session = request.app.get("session")
     if not session:
-        # TODO: return non-200 if no delivery receipt / ok crypto state, let teli do our retry
         # no live worker sessions
-        # ...to do that, you would have to await a response from signal, which requires hooks or such
+        # if we can't get a signal delivery receipt/bad session, we could
+        # return non-200 and let teli do our retry
+        # however, this would require awaiting output from signal; tricky
         await request.app["client_session"].post(
             "https://counter.pythia.workers.dev/post", data=msg_data
         )
         return web.Response(status=504, text="Sorry, no live workers.")
-    msg_data = await request.post()
-    destination = msg_obj.get("destination")
+    msg_data: dict[str, str] = await request.post()
+    destination = msg_data.get("destination")
     # lookup sms recipient to signal recipient
+    maybe_dest = await RoutingManager().get_destination(destination)
     maybe_group = await group_routing_manager.get_group_id_for_sms_route(
         msg_data.get("source"), msg_data.get("destination")
     )
-    if maybe_group:
+    if maybe_dest:
+        recipient = maybe_dest[0].get("destination")
+        # send hashmap as signal message with newlines and tabs and stuff
+        keep = ("source", "destination", "message")
+        msg_clean = {k: v for k, v in msg_data.items() if k in keep}
+        await session.send_message(recipient, msg_clean)
+    elif maybe_group:
         # if we can't notice group membership changes,
         # we could check if the person is still in the group
         logging.info("sending a group")
         group = maybe_group[0].get("group_id")
-        await session.send_message(None, msg_obj["message"], group=group)
-        return web.Response(text="TY!")
-
-
-    # send hashmap as signal message with newlines and tabs and stuff
-    await session.send_message(recipient, msg_obj)
-
-    maybe_dest = await RoutingManager().get_destination(destination)
-    if maybe_dest:
-        recipient = maybe_dest[0].get("destination")
-        msg = {k:v for k, v in msg_data.items() if k in ("source", "destination", "message")}
+        # if it's a group, the to/from is already in the group name
+        text = msg_data.get("message", "<empty message>")
+        await session.send_message(None, test, group=group)
     else:
         logging.info("falling back to admin")
         recipient = get_secret("ADMIN")
         msg_data["note"] = "destination not found"
-
-        msg_obj["message"] = "destination not found for " + str(msg_obj)
+        # send the admin the full post body, not just the user-friendly part
+        await session.send_message(recipient, msg_data)
     return web.Response(text="TY!")
 
 
