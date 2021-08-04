@@ -321,7 +321,7 @@ class Session:
             for registered in await self.routing_manager.get_id(message.source)
         ]
         if not numbers:
-            return "You don't have any numberse. Register with /register"
+            return "You don't have any numbers. Register with /register"
         sms_dest = await self.check_target_number(message)
         if not sms_dest:
             return "Couldn't parse that number"
@@ -378,23 +378,29 @@ class Session:
                         message_text=message.text,
                     )
                     await self.send_reaction("📤", message)
-            elif (
-                numbers
-                and message.quoted_text
-                and "source" in message.quoted_text
-            ):
-                pairs = [
-                    line.split(":\t", 1) for line in message.quoted_text.split("\n")
-                ]
-                quoted = {key: value.strip() for key, value in pairs}
-                logging.info("sms destination from quote: %s", quoted["destination"])
-                response = await self.send_sms(
-                    source=quoted["destination"],
-                    destination=quoted["source"],
-                    message_text=message.text,
-                )
-                logging.info("sent")
-                await self.send_reaction("📤", message)
+            elif message.quoted_text:
+                try:
+                    quoted = dict(
+                        line.split(":\t", 1)
+                        for line in message.quoted_text.split("\n")
+                    )
+                except ValueError:
+                    quoted = {}
+                if quoted.get("destination") in numbers and quoted.get("source"):
+                    logging.info(
+                        "sms destination from quote: %s", quoted["destination"]
+                    )
+                    response = await self.send_sms(
+                        source=quoted["destination"],
+                        destination=quoted["source"],
+                        message_text=message.text,
+                    )
+                    emoji = "\N{Outbox Tray}"
+                    logging.info("sent")
+                else:
+                    response = "Couldn't send that reply"
+                    emoji = "\N{Cross Mark}"
+                await self.send_reaction(emoji, message)
                 await self.send_message(message.source, response)
             elif message.command == "register":
                 # need to abstract this into a decorator or something
@@ -412,7 +418,7 @@ class Session:
                 await self.send_message(message.source, "signal session reset")
             elif message.text:
                 await self.send_message(
-                    message.source, "That didn't look like a command"
+                    message.source, "That didn't look like a valid command"
                 )
 
     async def launch_and_connect(self) -> None:
@@ -603,7 +609,9 @@ async def inbound_sms_handler(request: web.Request) -> web.Response:
     else:
         logging.info("falling back to admin")
         recipient = get_secret("ADMIN")
-        msg_data["note"] = "signal destination not found for this sms destination"
+        msg_data[
+            "note"
+        ] = "signal destination not found for this sms destination"
         # send the admin the full post body, not just the user-friendly part
         await session.send_message(recipient, msg_data)
     return web.Response(text="TY!")
