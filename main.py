@@ -115,6 +115,10 @@ class Session:
             return
         if isinstance(msg, dict):
             msg = "\n".join((f"{key}:\t{value}" for key, value in msg.items()))
+                pairs = [
+                    line.split(":\t", 1) for line in message.quoted_text.split("\n")
+                ]
+                quoted = {key: value.strip() for key, value in pairs}
         json_command: JSON = {
             "command": "send",
             "message": msg,
@@ -320,11 +324,11 @@ class Session:
             registered.get("id")
             for registered in await self.routing_manager.get_id(message.source)
         ]
-        dest = await self.check_target_number(message)
-        if dest:
+        sms_dest = await self.check_target_number(message)
+        if sms_dest:
             response = await self.send_sms(
                 source=numbers[0],
-                destination=dest,
+                destination=sms_dest,
                 message_text=message.text,
             )
             await self.send_reaction("📤", message)
@@ -383,7 +387,7 @@ class Session:
                     line.split(":") for line in message.quoted_text.split("\n")
                 ]
                 quoted = {key: value.strip() for key, value in pairs}
-                logging.info("destination from quote: %s", quoted["destination"])
+                logging.info("sms destination from quote: %s", quoted["destination"])
                 response = await self.send_sms(
                     source=quoted["destination"],
                     destination=quoted["source"],
@@ -576,14 +580,14 @@ async def inbound_sms_handler(request: web.Request) -> web.Response:
         )
         return web.Response(status=504, text="Sorry, no live workers.")
     msg_data: dict[str, str] = await request.post()
-    destination = msg_data.get("destination")
+    sms_destination = msg_data.get("destination")
     # lookup sms recipient to signal recipient
-    maybe_dest = await RoutingManager().get_destination(destination)
+    maybe_signal_dest = await RoutingManager().get_destination(destination)
     maybe_group = await group_routing_manager.get_group_id_for_sms_route(
         msg_data.get("source"), msg_data.get("destination")
     )
-    if maybe_dest:
-        recipient = maybe_dest[0].get("destination")
+    if maybe_signal_dest:
+        recipient = maybe_signal_dest[0].get("destination")
         # send hashmap as signal message with newlines and tabs and stuff
         keep = ("source", "destination", "message")
         msg_clean = {k: v for k, v in msg_data.items() if k in keep}
@@ -599,7 +603,7 @@ async def inbound_sms_handler(request: web.Request) -> web.Response:
     else:
         logging.info("falling back to admin")
         recipient = get_secret("ADMIN")
-        msg_data["note"] = "destination not found"
+        msg_data["note"] = "signal destination not found for this sms destination"
         # send the admin the full post body, not just the user-friendly part
         await session.send_message(recipient, msg_data)
     return web.Response(text="TY!")
