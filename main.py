@@ -115,10 +115,6 @@ class Session:
             return
         if isinstance(msg, dict):
             msg = "\n".join((f"{key}:\t{value}" for key, value in msg.items()))
-                pairs = [
-                    line.split(":\t", 1) for line in message.quoted_text.split("\n")
-                ]
-                quoted = {key: value.strip() for key, value in pairs}
         json_command: JSON = {
             "command": "send",
             "message": msg,
@@ -384,7 +380,7 @@ class Session:
                 and "source" in message.quoted_text
             ):
                 pairs = [
-                    line.split(":") for line in message.quoted_text.split("\n")
+                    line.split(":\t", 1) for line in message.quoted_text.split("\n")
                 ]
                 quoted = {key: value.strip() for key, value in pairs}
                 logging.info("sms destination from quote: %s", quoted["destination"])
@@ -570,6 +566,7 @@ async def noGet(request: web.Request) -> web.Response:
 
 async def inbound_sms_handler(request: web.Request) -> web.Response:
     session = request.app.get("session")
+    msg_data: dict[str, str] = await request.post()
     if not session:
         # no live worker sessions
         # if we can't get a signal delivery receipt/bad session, we could
@@ -579,10 +576,9 @@ async def inbound_sms_handler(request: web.Request) -> web.Response:
             "https://counter.pythia.workers.dev/post", data=msg_data
         )
         return web.Response(status=504, text="Sorry, no live workers.")
-    msg_data: dict[str, str] = await request.post()
     sms_destination = msg_data.get("destination")
     # lookup sms recipient to signal recipient
-    maybe_signal_dest = await RoutingManager().get_destination(destination)
+    maybe_signal_dest = await RoutingManager().get_destination(sms_destination)
     maybe_group = await group_routing_manager.get_group_id_for_sms_route(
         msg_data.get("source"), msg_data.get("destination")
     )
@@ -599,7 +595,7 @@ async def inbound_sms_handler(request: web.Request) -> web.Response:
         group = maybe_group[0].get("group_id")
         # if it's a group, the to/from is already in the group name
         text = msg_data.get("message", "<empty message>")
-        await session.send_message(None, test, group=group)
+        await session.send_message(None, text, group=group)
     else:
         logging.info("falling back to admin")
         recipient = get_secret("ADMIN")
