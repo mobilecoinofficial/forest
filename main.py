@@ -320,19 +320,23 @@ class Session:
             registered.get("id")
             for registered in await self.routing_manager.get_id(message.source)
         ]
+        if not numbers:
+            return "You don't have any numberse. Register with /register"
         sms_dest = await self.check_target_number(message)
-        if sms_dest:
-            response = await self.send_sms(
-                source=numbers[0],
-                destination=sms_dest,
-                message_text=message.text,
-            )
-            await self.send_reaction("📤", message)
-            # sms_uuid = response.get("data")
-            # TODO: store message.source and sms_uuid in a queue, enable https://apidocs.teleapi.net/api/sms/delivery-notifications
-            #    such that delivery notifs get redirected as responses to send command
-            return response
-        return "couldn't parse that number"
+        if not sms_dest:
+            return "Couldn't parse that number"
+        response = await self.send_sms(
+            source=numbers[0],
+            destination=sms_dest,
+            message_text=message.text,
+        )
+        await self.send_reaction("📤", message)
+        # sms_uuid = response.get("data")
+        # TODO: store message.source and sms_uuid in a queue, enable https://apidocs.teleapi.net/api/sms/delivery-notifications
+        #    such that delivery notifs get redirected as responses to send command
+        return response
+
+    do_msg = do_send
 
     async def handle_messages(self) -> None:
         async for message in self.signalcli_output_iter():
