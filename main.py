@@ -431,7 +431,7 @@ class Session:
         loop.add_signal_handler(signal.SIGINT, self.sync_signal_handler)
         logging.info("added signal handler, downloading...")
         await self.datastore.download()
-        command = f"./signal-cli --config . -u {self.bot_number} -o json stdio"
+        command = f"./signal-cli --config . --output=json stdio"
         logging.info(command)
         self.proc = await asyncio.create_subprocess_exec(
             *command, stdin=PIPE, stdout=PIPE
