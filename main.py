@@ -551,6 +551,7 @@ async def listen_to_signalcli(
             if raw_queue:
                 await raw_queue.put(blob)
         except json.JSONDecodeError:
+            logging.info("signal: %s", line.decode())
             continue
         if not isinstance(blob, dict):  # e.g. a timestamp
             continue
@@ -567,8 +568,10 @@ async def listen_to_signalcli(
             )
             logging.info("made a new group route from %s", blob)
             continue
-        await queue.put(Message(blob))
-
+        msg = Message(blob)
+        if not msg.receipt:
+            logging.info("signal: %s", line.decode())
+        await queue.put(msg)
 
 async def noGet(request: web.Request) -> web.Response:
     raise web.HTTPFound(location="https://signal.org/")
@@ -576,7 +579,7 @@ async def noGet(request: web.Request) -> web.Response:
 
 async def inbound_sms_handler(request: web.Request) -> web.Response:
     session = request.app.get("session")
-    msg_data: dict[str, str] = await request.post()
+    msg_data: dict[str, str] = dict(await request.post())
     if not session:
         # no live worker sessions
         # if we can't get a signal delivery receipt/bad session, we could
