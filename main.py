@@ -64,7 +64,7 @@ class Session:
     """
 
     def __init__(self, bot_number: str) -> None:
-        logging.info(bot_number)
+        logging.debug("bot number: %s", bot_number)
         self.bot_number = bot_number
         self.datastore = datastore.SignalDatastore(bot_number)
         self.proc: Optional[subprocess.Process] = None
@@ -154,7 +154,7 @@ class Session:
             yield command
 
     async def check_target_number(self, msg: Message) -> Optional[str]:
-        logging.info(msg.arg1)
+        logging.debug("checking %s", msg.arg1)
         try:
             parsed = pn.parse(msg.arg1, "US")  # fixme: use PhoneNumberMatcher
             assert pn.is_valid_number(parsed)
@@ -414,15 +414,15 @@ class Session:
                 )
 
     async def launch_and_connect(self) -> None:
-        logging.info("in launch_and_connect")
+        logging.debug("in launch_and_connect")
         loop = asyncio.get_running_loop()
-        logging.info("got running loop")
+        logging.debug("got running loop")
         # things that don't work: loop.add_signal_handler(async_shutdown) - TypeError
         # signal.signal(sync_signal_handler) - can't interact with loop
         loop.add_signal_handler(signal.SIGINT, self.sync_signal_handler)
-        logging.info("added signal handler, downloading...")
+        logging.debug("added signal handler, downloading...")
         await self.datastore.download()
-        command = f"./signal-cli --config . --output=json stdio"
+        command = f"{utils.ROOT_DIR}/signal-cli --config {utils.ROOT_DIR} --output=json stdio".split()
         logging.info(command)
         self.proc = await asyncio.create_subprocess_exec(
             *command, stdin=PIPE, stdout=PIPE
@@ -446,7 +446,7 @@ class Session:
             "family-name": utils.get_secret("ENV"),  # maybe not
             "avatar": "avatar.png",
         }
-        self.signalcli_input_iter.put(profile)
+        await self.signalcli_input_queue.put(profile)
         logging.info(profile)
         async for msg in self.signalcli_input_iter():
             logging.info("input to signal: %s", msg)
@@ -498,7 +498,6 @@ async def start_session(our_app: web.Application) -> None:
         number = utils.signal_format(sys.argv[1])
     except IndexError:
         number = get_secret("BOT_NUMBER")
-    logging.info(number)
     our_app["session"] = new_session = Session(number)
     if utils.get_secret("MIGRATE"):
         logging.info("migrating db...")
@@ -540,10 +539,13 @@ async def listen_to_signalcli(
         if not isinstance(blob, dict):  # e.g. a timestamp
             continue
         if "error" in blob:
-            exception, *tb = blob["traceback"].split("\n")
-            logging.error(termcolor.colored(exception, "red"))
-            for line in tb:
-                logging.error(line)
+            if "traceback" in blob:
+                exception, *tb = blob["traceback"].split("\n")
+                logging.error(termcolor.colored(exception, "red"))
+                for line in tb:
+                    logging.error(line)
+            else:
+                logging.error(termcolor.colored(blob["error"], "red"))
             continue
         if "group" in blob:
             # maybe this info should just be in Message and handled in Session
