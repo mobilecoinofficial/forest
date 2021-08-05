@@ -21,7 +21,7 @@ import utils
 import datastore
 from forest_tables import GroupRoutingManager, PaymentsManager, RoutingManager
 from utils import get_secret
-
+import pghelp
 
 JSON = dict[str, Any]
 
@@ -474,6 +474,7 @@ class Session:
             except ProcessLookupError:
                 logging.info("no process")
         await self.datastore.mark_freed()
+        await pghelp.close_pools()
         logging.info("=============exited===================")
         sys.exit(0)
         logging.info(
@@ -607,14 +608,26 @@ async def inbound_sms_handler(request: web.Request) -> web.Response:
         await session.send_message(None, text, group=group)
     else:
         logging.info("falling back to admin")
+        if not msg_data:
+            msg_data["text"] = await request.text()
         recipient = get_secret("ADMIN")
         msg_data[
             "note"
-        ] = "signal destination not found for this sms destination"
+        ] = "fallback, signal destination not found for this sms destination"
+        msg_data["user-Agent"] = request.headers.get("User-Agent")
         # send the admin the full post body, not just the user-friendly part
         await session.send_message(recipient, msg_data)
     return web.Response(text="TY!")
 
+
+async def send_message_handler(request):
+    account = request.match_info.get("phonenumber")
+    session = request.app.get("session")
+    msg_data = await request.text()
+    recipient = msg_obj.get("recipient", utils.get_secret("ADMIN"))
+    if session and (await session.routing_manager.get_id(recipient)):
+        await session.send_message(recipient, msg_data)
+    return web.json_response({"status": "sent"})
 
 app = web.Application()
 

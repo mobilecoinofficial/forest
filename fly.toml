@@ -1,6 +1,6 @@
 # fly.toml file generated for earnest on 2021-08-03T19:09:15-04:00
 
-app = "through-the-trees"
+app = "forest-dev"
 
 kill_signal = "SIGINT"
 kill_timeout = 5
