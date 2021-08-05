@@ -197,9 +197,7 @@ class Teli:
         dids = blob["data"]["dids"]
         return [info["number"] for info in dids]
 
-    async def buy_number(
-        self, number: str, sms_post_url: Optional[str] = None
-    ) -> dict:
+    async def buy_number(self, number: str, sms_post_url: Optional[str] = None) -> dict:
         params = {
             "token": get_secret("TELI_KEY"),
             "number": number,

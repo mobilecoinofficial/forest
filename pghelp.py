@@ -33,7 +33,9 @@ def get_logger(name: str) -> logging.Logger:
         logger.addHandler(sh)
     return logger
 
+
 pools = []
+
 
 async def close_pools():
     for pool in pools:
@@ -41,6 +43,7 @@ async def close_pools():
             await pool.close()
         except (PostgresError, InternalClientError) as e:
             logging.error(e)
+
 
 class PGExpressions(dict):
     def __init__(self, table: str = "", **kwargs: str) -> None:
@@ -116,7 +119,7 @@ class PGInterface:
             args = args[0]  # type: ignore # not sure why this is necessary
         if self.pool:
             async with self.pool.acquire() as connection:
-                result  = await connection._execute(
+                result = await connection._execute(
                     qstring, args, 0, timeout, return_status=True
                 )
                 # list[asyncpg.Record], str, bool
