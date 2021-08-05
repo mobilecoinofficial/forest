@@ -30,7 +30,7 @@ else:
 
 AccountPGExpressions = PGExpressions(
     table="signal_accounts",
-    #rename="ALTAR TABLE IF EXISTS prod_users RENAME TO {self.table}",
+    # rename="ALTAR TABLE IF EXISTS prod_users RENAME TO {self.table}",
     migrate="ALTER TABLE IF EXISTS {self.table} ADD IF NOT EXISTS datastore BYTEA, \
         ADD IF NOT EXISTS registered BOOL; ",
     create_table="CREATE TABLE IF NOT EXIsTS {self.table} \
@@ -153,12 +153,8 @@ class SignalDatastore:
             self.filepath in fnames,
         )
         tarball.extractall(utils.ROOT_DIR)
-        await self.account_interface.mark_account_claimed(
-            self.number, utils.HOSTNAME
-        )
-        logging.debug(
-            "marked account as claimed, asserting that this is the case"
-        )
+        await self.account_interface.mark_account_claimed(self.number, utils.HOSTNAME)
+        logging.debug("marked account as claimed, asserting that this is the case")
         assert await self.is_claimed()
         return
 
