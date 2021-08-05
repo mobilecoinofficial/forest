@@ -1,15 +1,15 @@
-# fly.toml file generated for earnest on 2021-08-03T19:09:15-04:00
+# fly.toml file generated for forest-dev on 2021-06-16T23:53:35-04:00
 
 app = "forest-dev"
-
-kill_signal = "SIGINT"
+#"forest-dev" # 
+kill_signal = "SIGINT" # hm.
 kill_timeout = 5
 
 [env]
-
+# dev
 [experimental]
   allowed_public_ports = []
-  auto_rollback = true
+  auto_rollback = false
 
 [[services]]
   http_checks = []
