@@ -353,6 +353,7 @@ class Session:
                     cmd = {
                         "command": "updateGroup",
                         "member": [message.source],
+                        "admin": [message.source],
                         "name": f"SMS with {target_number} via {numbers[0]}",
                     }
                     await self.signalcli_input_queue.put(cmd)
