@@ -71,7 +71,6 @@ class Session:
         self.proc: Optional[subprocess.Process] = None
         self.signalcli_output_queue: Queue[Message] = Queue()
         self.signalcli_input_queue: Queue[dict] = Queue()
-        self.raw_queue: Queue[dict] = Queue()
         self.client_session = aiohttp.ClientSession()
         self.teli = utils.Teli()
         self.scratch: dict[str, dict[str, Any]] = {"payments": {}}
@@ -320,19 +319,23 @@ class Session:
             registered.get("id")
             for registered in await self.routing_manager.get_id(message.source)
         ]
-        dest = await self.check_target_number(message)
-        if dest:
-            response = await self.send_sms(
-                source=numbers[0],
-                destination=dest,
-                message_text=message.text,
-            )
-            await self.send_reaction("📤", message)
-            # sms_uuid = response.get("data")
-            # TODO: store message.source and sms_uuid in a queue, enable https://apidocs.teleapi.net/api/sms/delivery-notifications
-            #    such that delivery notifs get redirected as responses to send command
-            return response
-        return "couldn't parse that number"
+        if not numbers:
+            return "You don't have any numbers. Register with /register"
+        sms_dest = await self.check_target_number(message)
+        if not sms_dest:
+            return "Couldn't parse that number"
+        response = await self.send_sms(
+            source=numbers[0],
+            destination=sms_dest,
+            message_text=message.text,
+        )
+        await self.send_reaction("📤", message)
+        # sms_uuid = response.get("data")
+        # TODO: store message.source and sms_uuid in a queue, enable https://apidocs.teleapi.net/api/sms/delivery-notifications
+        #    such that delivery notifs get redirected as responses to send command
+        return response
+
+    do_msg = do_send
 
     async def handle_messages(self) -> None:
         async for message in self.signalcli_output_iter():
@@ -374,23 +377,29 @@ class Session:
                         message_text=message.text,
                     )
                     await self.send_reaction("📤", message)
-            elif (
-                numbers
-                and message.quoted_text
-                and "source" in message.quoted_text
-            ):
-                pairs = [
-                    line.split(":") for line in message.quoted_text.split("\n")
-                ]
-                quoted = {key: value.strip() for key, value in pairs}
-                logging.info("destination from quote: %s", quoted["destination"])
-                response = await self.send_sms(
-                    source=quoted["destination"],
-                    destination=quoted["source"],
-                    message_text=message.text,
-                )
-                logging.info("sent")
-                await self.send_reaction("📤", message)
+            elif message.quoted_text:
+                try:
+                    quoted = dict(
+                        line.split(":\t", 1)
+                        for line in message.quoted_text.split("\n")
+                    )
+                except ValueError:
+                    quoted = {}
+                if quoted.get("destination") in numbers and quoted.get("source"):
+                    logging.info(
+                        "sms destination from quote: %s", quoted["destination"]
+                    )
+                    response = await self.send_sms(
+                        source=quoted["destination"],
+                        destination=quoted["source"],
+                        message_text=message.text,
+                    )
+                    emoji = "\N{Outbox Tray}"
+                    logging.info("sent")
+                else:
+                    response = "Couldn't send that reply"
+                    emoji = "\N{Cross Mark}"
+                await self.send_reaction(emoji, message)
                 await self.send_message(message.source, response)
             elif message.command == "register":
                 # need to abstract this into a decorator or something
@@ -408,7 +417,7 @@ class Session:
                 await self.send_message(message.source, "signal session reset")
             elif message.text:
                 await self.send_message(
-                    message.source, "That didn't look like a command"
+                    message.source, "That didn't look like a valid command"
                 )
 
     async def launch_and_connect(self) -> None:
@@ -448,7 +457,6 @@ class Session:
             listen_to_signalcli(
                 self.proc.stdout,
                 self.signalcli_output_queue,
-                self.raw_queue,
             )
         )
         async for msg in self.signalcli_input_iter():
@@ -524,13 +532,10 @@ async def start_session(our_app: web.Application) -> None:
 async def listen_to_signalcli(
     stream: asyncio.StreamReader,
     queue: Queue[Message],
-    raw_queue: Optional[Queue[JSON]],
 ) -> None:
     while True:
         line = await stream.readline()
         # if utils.get_secret("I_AM_NOT_A_FEDERAL_AGENT"):
-        logging.info("signal: %s", line.decode())
-        # TODO: don't print receiptMessage
         # color non-json. pretty-print errors
         # sensibly color web traffic, too?
         # fly / db / asyncio and other lib warnings / java / signal logic and networking
@@ -538,9 +543,8 @@ async def listen_to_signalcli(
             break
         try:
             blob = json.loads(line)
-            if raw_queue:
-                await raw_queue.put(blob)
         except json.JSONDecodeError:
+            logging.info("signal: %s", line.decode())
             continue
         if not isinstance(blob, dict):  # e.g. a timestamp
             continue
@@ -557,57 +561,56 @@ async def listen_to_signalcli(
             )
             logging.info("made a new group route from %s", blob)
             continue
-        await queue.put(Message(blob))
-
+        msg = Message(blob)
+        if not msg.receipt:
+            logging.info("signal: %s", line.decode())
+        await queue.put(msg)
 
 async def noGet(request: web.Request) -> web.Response:
     raise web.HTTPFound(location="https://signal.org/")
 
 
 async def inbound_sms_handler(request: web.Request) -> web.Response:
-    msg_data = await request.text()  # await request.post()
-    # parse query-string encoded sms/mms into object
-    msg_obj = {
-        x: y[0]
-        for x, y in urllib.parse.parse_qs(msg_data).items()
-        if x in ("source", "destination", "message")
-    }
-    # if it's a raw post (debugging / oops / whatnot - not a query string)
-    logging.info(msg_obj)
-    destination = msg_obj.get("destination")
+    session = request.app.get("session")
+    msg_data: dict[str, str] = dict(await request.post())
+    if not session:
+        # no live worker sessions
+        # if we can't get a signal delivery receipt/bad session, we could
+        # return non-200 and let teli do our retry
+        # however, this would require awaiting output from signal; tricky
+        await request.app["client_session"].post(
+            "https://counter.pythia.workers.dev/post", data=msg_data
+        )
+        return web.Response(status=504, text="Sorry, no live workers.")
+    sms_destination = msg_data.get("destination")
     # lookup sms recipient to signal recipient
-    maybe_dest = await RoutingManager().get_destination(destination)
-    if maybe_dest:
-        recipient = maybe_dest[0].get("destination")
+    maybe_signal_dest = await RoutingManager().get_destination(sms_destination)
+    maybe_group = await group_routing_manager.get_group_id_for_sms_route(
+        msg_data.get("source"), msg_data.get("destination")
+    )
+    if maybe_signal_dest:
+        recipient = maybe_signal_dest[0].get("destination")
+        # send hashmap as signal message with newlines and tabs and stuff
+        keep = ("source", "destination", "message")
+        msg_clean = {k: v for k, v in msg_data.items() if k in keep}
+        await session.send_message(recipient, msg_clean)
+    elif maybe_group:
+        # if we can't notice group membership changes,
+        # we could check if the person is still in the group
+        logging.info("sending a group")
+        group = maybe_group[0].get("group_id")
+        # if it's a group, the to/from is already in the group name
+        text = msg_data.get("message", "<empty message>")
+        await session.send_message(None, text, group=group)
     else:
         logging.info("falling back to admin")
         recipient = get_secret("ADMIN")
-        msg_obj["message"] = "destination not found for " + str(msg_obj)
-    # msg_obj["maybe_dest"] = str(maybe_dest)
-    session = request.app.get("session")
-    if session:
-        maybe_group = await group_routing_manager.get_group_id_for_sms_route(
-            msg_obj["source"], msg_obj["destination"]
-        )
-        logging.info(maybe_group)
-        if maybe_group:
-            # if we can't notice group membership changes,
-            # we could check if the person is still in the group
-            logging.info("sending a group")
-            group = maybe_group[0].get("group_id")
-            await session.send_message(None, msg_obj["message"], group=group)
-        else:
-            # send hashmap as signal message with newlines and tabs and stuff
-            await session.send_message(recipient, msg_obj)
-
-        return web.Response(text="TY!")
-    # TODO: return non-200 if no delivery receipt / ok crypto state, let teli do our retry
-    # no live worker sessions
-    # ...to do that, you would have to await a response from signal, which requires hooks or such
-    await request.app["client_session"].post(
-        "https://counter.pythia.workers.dev/post", data=msg_data
-    )
-    return web.Response(status=504, text="Sorry, no live workers.")
+        msg_data[
+            "note"
+        ] = "signal destination not found for this sms destination"
+        # send the admin the full post body, not just the user-friendly part
+        await session.send_message(recipient, msg_data)
+    return web.Response(text="TY!")
 
 
 app = web.Application()
