@@ -49,9 +49,7 @@ class Message:
             command, *self.tokens = self.text.split(" ")
             self.command = command[1:]  # remove /
             self.arg1 = self.tokens[0] if self.tokens else None
-            self.text = (
-                " ".join(self.tokens[1:]) if len(self.tokens) > 1 else None
-            )
+            self.text = " ".join(self.tokens[1:]) if len(self.tokens) > 1 else None
 
     def __repr__(self) -> str:
         # it might be nice to prune this so the logs are easier to read
@@ -208,9 +206,7 @@ k   Represents a signal-cli session
         )
         # check for payments every 10s for 1hr
         for _ in range(360):
-            payment_done = await self.payments_manager.get_payment(
-                nmob_price * 1000
-            )
+            payment_done = await self.payments_manager.get_payment(nmob_price * 1000)
             if payment_done:
                 payment_done = payment_done[0]
                 await self.send_message(
@@ -229,9 +225,7 @@ k   Represents a signal-cli session
         return False
 
     async def do_printerfact(self, _: Message) -> str:
-        async with self.client_session.get(
-            "https://colbyolson.com/printers"
-        ) as resp:
+        async with self.client_session.get("https://colbyolson.com/printers") as resp:
             fact = await resp.text()
         return fact.strip()
 
@@ -340,9 +334,7 @@ k   Represents a signal-cli session
     async def handle_messages(self) -> None:
         async for message in self.signalcli_output_iter():
             if message.source:
-                maybe_routable = await self.routing_manager.get_id(
-                    message.source
-                )
+                maybe_routable = await self.routing_manager.get_id(message.source)
                 numbers: Optional[list[str]] = [
                     registered.get("id") for registered in maybe_routable
                 ]
@@ -363,10 +355,8 @@ k   Represents a signal-cli session
                         "name": f"SMS with {target_number} via {numbers[0]}",
                     }
                     await self.signalcli_input_queue.put(cmd)
-                    await self.send_reaction("👥", message)
-                    await self.send_message(
-                        message.source, "invited you to a group"
-                    )
+                    await self.send_reaction("\N{Busts In Silhouette}", message)
+                    await self.send_message(message.source, "invited you to a group")
             elif numbers and message.group:
                 group = await group_routing_manager.get_sms_route_for_group(
                     message.group
@@ -381,8 +371,7 @@ k   Represents a signal-cli session
             elif message.quoted_text:
                 try:
                     quoted = dict(
-                        line.split(":\t", 1)
-                        for line in message.quoted_text.split("\n")
+                        line.split(":\t", 1) for line in message.quoted_text.split("\n")
                     )
                 except ValueError:
                     quoted = {}
@@ -408,11 +397,13 @@ k   Represents a signal-cli session
                 asyncio.create_task(self.do_register(message))
             elif message.command:
                 if hasattr(self, "do_" + message.command):
-                    command_response = await getattr(
-                        self, "do_" + message.command
-                    )(message)
+                    command_response = await getattr(self, "do_" + message.command)(
+                        message
+                    )
                 else:
-                    command_response = f"Sorry! Command {message.command} not recognized! Try /help."
+                    command_response = (
+                        f"Sorry! Command {message.command} not recognized! Try /help."
+                    )
                 await self.send_message(message.source, command_response)
             elif message.text == "TERMINATE":
                 await self.send_message(message.source, "signal session reset")
@@ -497,9 +488,7 @@ k   Represents a signal-cli session
         if self.sigints >= 3:
             sys.exit(1)
             raise KeyboardInterrupt
-            logging.info(
-                "this should never get called"
-            )  # pylint: disable=unreachable
+            logging.info("this should never get called")  # pylint: disable=unreachable
 
 
 async def start_session(our_app: web.Application) -> None:
@@ -516,9 +505,7 @@ async def start_session(our_app: web.Application) -> None:
         )
         for row in rows if rows else []:
             new_dest = utils.signal_format(row.get("destination"))
-            await new_session.routing_manager.set_destination(
-                row.get("id"), new_dest
-            )
+            await new_session.routing_manager.set_destination(row.get("id"), new_dest)
         await new_session.datastore.account_interface.migrate()
         await group_routing_manager.create_table()
     asyncio.create_task(new_session.launch_and_connect())
@@ -561,6 +548,11 @@ async def listen_to_signalcli(
             await GroupRoutingManager().set_sms_route_for_group(
                 utils.teli_format(their), utils.teli_format(our), blob["group"]
             )
+            # cmd = {
+            #     "command": "updateGroup",
+            #     "group": blob["group"],
+            #     "admin": message.source,
+            # }
             logging.info("made a new group route from %s", blob)
             continue
         msg = Message(blob)
