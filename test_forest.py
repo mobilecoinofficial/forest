@@ -107,3 +107,12 @@ def signal():
 def test_printerfact(signal):
     signal.send("TERMINATE", endsession=True)
     assert "printer" in signal.communicate("/printerfact").text.lower()
+
+
+def test_groups(signal, our_number, their_number):
+    signal.send("TERMINATE", endsession=True)
+    # ensure number?
+    group = signal.communicate(f"/mkgroup {their_number}")
+    assert signal.recv().emoji == "\N{Busts In Silhouette}"
+    assert "Invited you to a group" in signal.recv().text
+    # requires sending to a group...
