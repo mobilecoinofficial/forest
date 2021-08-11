@@ -28,7 +28,9 @@ def get_logger(name: str) -> logging.Logger:
     if not logger.hasHandlers():
         sh = logging.StreamHandler()
         sh.setFormatter(
-            logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+            logging.Formatter(
+                "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+            )
         )
         logger.addHandler(sh)
     return logger
@@ -119,6 +121,15 @@ class PGInterface:
             args = args[0]  # type: ignore # not sure why this is necessary
         if self.pool:
             async with self.pool.acquire() as connection:
+                # try:
+                # except asyncpg.TooManyConnectionsError:
+                    # await connection.execute(
+                    #     """SELECT pg_terminate_backend(pg_stat_activity.pid)
+                    #     FROM pg_stat_activity
+                    #     WHERE pg_stat_activity.datname = 'postgres'
+                    #     AND pid <> pg_backend_pid();"""
+                    # )
+                    # return self.execute(qstring, *args, timeout=timeout)
                 result = await connection._execute(
                     qstring, args, 0, timeout, return_status=True
                 )

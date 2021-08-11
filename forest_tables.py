@@ -36,14 +36,15 @@ GroupRoutingPGExpressions = PGExpressions(
     create_table="CREATE TABLE IF NOT EXISTS {self.table} \
         (id SERIAL PRIMARY KEY, their_sms CHARACTER VARYING(16), \
         our_sms CHARACTER VARYING(16), \
-        group_id CHARACTER VARYING(64));",
+        group_id CHARACTER VARYING(64), \
+        unique (their_sms, our_sms));",
     get_group_id_for_sms_route="SELECT group_id FROM {self.table} \
         WHERE their_sms=$1 AND our_sms=$2;",
     get_sms_route_for_group="SELECT their_sms, our_sms FROM {self.table} \
         WHERE group_id=$1",
     set_sms_route_for_group="INSERT INTO {self.table} \
         (their_sms, our_sms, group_id)\
-        VALUES($1, $2, $3) ON CONFLICT (id) DO UPDATE SET \
+        VALUES($1, $2, $3) ON CONFLICT ON CONSTRAINT group_routing_their_sms_our_sms_key DO UPDATE SET \
         their_sms=$1, our_sms=$2, group_id=$3;",
     delete_table="DROP TABLE {self.table};",
 )
