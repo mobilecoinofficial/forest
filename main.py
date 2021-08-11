@@ -351,6 +351,7 @@ class Session:
                 target_number = await self.check_target_number(message)
                 if target_number:
                     cmd = {
+                        "output": "json",
                         "command": "updateGroup",
                         "member": [message.source],
                         "admin": [message.source],
@@ -370,6 +371,8 @@ class Session:
                         message_text=message.text,
                     )
                     await self.send_reaction("📤", message)
+                else:
+                    logging.warn("couldn't find the route for this group...")
             elif message.quoted_text:
                 try:
                     quoted = dict(
