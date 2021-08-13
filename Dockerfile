@@ -7,10 +7,8 @@ RUN microdnf install -y git zlib-devel && rm -rf /var/cache/yum
 RUN gu install native-image
 RUN git clone https://github.com/forestcontact/signal-cli
 WORKDIR /app/signal-cli
-RUN git pull origin forest-fork-v1.0.1
+RUN git pull origin forest-fork-v1.0.5
 RUN git log -1 --pretty=%B | tee commit-msg
-RUN ./gradlew build && ./gradlew installDist
-RUN md5sum ./build/libs/* 
 RUN ./gradlew assembleNativeImage
 
 FROM ubuntu:hirsute as libbuilder

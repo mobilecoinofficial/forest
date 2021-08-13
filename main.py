@@ -332,6 +332,7 @@ class Session:
     do_msg = do_send
 
     async def handle_messages(self) -> None:
+        # restart on error?
         async for message in self.signalcli_output_iter():
             if message.source:
                 maybe_routable = await self.routing_manager.get_id(message.source)
@@ -358,7 +359,7 @@ class Session:
                     await self.signalcli_input_queue.put(cmd)
                     await self.send_reaction("\N{Busts In Silhouette}", message)
                     await self.send_message(message.source, "invited you to a group")
-            elif numbers and message.group:
+            elif numbers and message.group and message.text:
                 group = await group_routing_manager.get_sms_route_for_group(
                     message.group
                 )
@@ -370,7 +371,7 @@ class Session:
                     )
                     await self.send_reaction("📤", message)
                 else:
-                    logging.warn("couldn't find the route for this group...")
+                    logging.warning("couldn't find the route for this group...")
             elif message.quoted_text:
                 try:
                     quoted = dict(
@@ -507,9 +508,11 @@ async def start_session(our_app: web.Application) -> None:
             "SELECT id, destination FROM routing"
         )
         for row in rows if rows else []:
-            new_dest = utils.signal_format(row.get("destination"))
-            await new_session.routing_manager.set_destination(row.get("id"), new_dest)
+            if (dest := row.get("destination")):
+                new_dest = utils.signal_format(dest)
+                await new_session.routing_manager.set_destination(row.get("id"), new_dest)
         await new_session.datastore.account_interface.migrate()
+        await group_routing_manager.execute("DROP TABLE IF EXISTS group_routing")
         await group_routing_manager.create_table()
     asyncio.create_task(new_session.launch_and_connect())
     asyncio.create_task(new_session.handle_messages())
@@ -588,13 +591,7 @@ async def inbound_sms_handler(request: web.Request) -> web.Response:
     maybe_group = await group_routing_manager.get_group_id_for_sms_route(
         msg_data.get("source"), msg_data.get("destination")
     )
-    if maybe_signal_dest:
-        recipient = maybe_signal_dest[0].get("destination")
-        # send hashmap as signal message with newlines and tabs and stuff
-        keep = ("source", "destination", "message")
-        msg_clean = {k: v for k, v in msg_data.items() if k in keep}
-        await session.send_message(recipient, msg_clean)
-    elif maybe_group:
+    if maybe_group:
         # if we can't notice group membership changes,
         # we could check if the person is still in the group
         logging.info("sending a group")
@@ -602,6 +599,12 @@ async def inbound_sms_handler(request: web.Request) -> web.Response:
         # if it's a group, the to/from is already in the group name
         text = msg_data.get("message", "<empty message>")
         await session.send_message(None, text, group=group)
+    elif maybe_signal_dest:
+        recipient = maybe_signal_dest[0].get("destination")
+        # send hashmap as signal message with newlines and tabs and stuff
+        keep = ("source", "destination", "message")
+        msg_clean = {k: v for k, v in msg_data.items() if k in keep}
+        await session.send_message(recipient, msg_clean)
     else:
         logging.info("falling back to admin")
         if not msg_data:
