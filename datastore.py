@@ -146,7 +146,7 @@ class SignalDatastore:
         buffer = BytesIO(record[0].get("datastore"))
         tarball = TarFile(fileobj=buffer)
         fnames = [member.name for member in tarball.getmembers()]
-        logging.debug(fnames)
+        logging.debug(fnames[:2])
         logging.info(
             "expected file %s exists: %s",
             self.filepath,
@@ -180,7 +180,7 @@ class SignalDatastore:
             )
             tarball.add("data")
         fnames = [member.name for member in tarball.getmembers()]
-        logging.debug(fnames)
+        logging.debug(fnames[:2])
         tarball.close()
         buffer.seek(0)
         data = buffer.read()
