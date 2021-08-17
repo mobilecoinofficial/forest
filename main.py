@@ -445,7 +445,7 @@ class Session:
         profile = {
             "command": "updateProfile",
             "given-name": "localbot" if utils.LOCAL else "forestbot",
-            "family-name": utils.get_secret("ENV"),  # maybe not
+            "family-name": "" if utils.get_secret("PROD") else utils.get_secret("ENV"),
             "avatar": "avatar.png",
         }
         await self.signalcli_input_queue.put(profile)
