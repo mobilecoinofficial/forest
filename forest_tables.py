@@ -1,63 +1,51 @@
-import os
-from typing import cast
 from pghelp import PGExpressions, PGInterface, Loop
+import utils
 
 
-if os.path.exists("secrets") and not os.getenv("USER_DATABASE"):
-    os.environ.update(
-        {
-            key: value
-            for key, value in [
-                print(line) or line.strip().split("=", 1)
-                for line in open("secrets").read().split()
-            ]
-        }
-    )
-USER_DATABASE = os.environ["USER_DATABASE"]
+USER_DATABASE = ROUTING_DATABASE = utils.get_secret("DATABASE_URL")
 
-UserPGExpressions = PGExpressions(
-    table="prod_users",
-    create_table="CREATE TABLE IF NOT EXISTS {self.table} \
-            (id TEXT PRIMARY KEY, \
-            account JSON, \
-            last_update_ms BIGINT, \
-            last_claim_ms BIGINT, \
-            active_node_name TEXT);",
-    get_user="SELECT account FROM {self.table} WHERE id=$1;",  # AND
-    mark_user_claimed="UPDATE {self.table} \
-        SET active_node_name = $2, \
-        last_claim_ms = (extract(epoch from now()) * 1000) \
-        WHERE id=$1;",
-    mark_user_freed="UPDATE {self.table} SET last_claim_ms = 0, active_node_name = NULL WHERE id=$1;",
-    get_free_user="SELECT (id, account) FROM {self.table} \
-            WHERE active_node_name IS NULL \
-            AND last_claim_ms = 0 \
-            ORDER BY RANDOM() LIMIT 1;",
-    mark_user_update="UPDATE {self.table} SET \
-        last_update_ms = (extract(epoch from now()) * 1000) \
-        WHERE id=$1;",
-    set_user="UPDATE {self.table} SET \
-            account = $2, \
-            last_update_ms = (extract(epoch from now()) * 1000) \
-            WHERE id=$1;",
-    put_user="INSERT INTO {self.table} (id, account) \
-            VALUES($1, $2) ON CONFLICT DO NOTHING;",
-    sweep_leaked_users="UPDATE {self.table} \
-            SET last_claim_ms = 0, active_node_name = NULL \
-            WHERE last_update_ms < ((extract(epoch from now())-3600) * 1000);",
-)
+# backwards compat: ignore absence of status
 
-ROUTING_DATABASE = os.getenv("USER_DATABASE")
+
+# additions over mainline: routing + status
+
 
 RoutingPGExpressions = PGExpressions(
     table="routing",
-    create_table="CREATE TABLE IF NOT EXISTS {self.table} (id TEXT PRIMARY KEY, destination CHARACTER VARYING(16), expiration_ms BIGINT);",
+    migrate="ALTER TABLE IF EXISTS {self.table} ADD IF NOT EXISTS status CHARACTER VARYING(16);",
+    create_table="CREATE TABLE IF NOT EXISTS {self.table} \
+        (id TEXT PRIMARY KEY, \
+        destination CHARACTER VARYING(16), \
+        expiration_ms BIGINT\
+        status CHARACTER VARYING(16));",
+    # number management
+    intend_to_buy="INSERT INTO {self.table} (id, status) VALUES ($1, 'pending');",
+    mark_bought="UPDATE {self.table} SET status='available' WHERE id=$1;",
+    set_destination="UPDATE {self.table} SET destination=$2, status='assigned' WHERE id=$1;",
+    set_expiration_ms="UPDATE {self.table} SET expiration_ms=$2 WHERE id=$1;",
+    sweep_expired_destinations="UPDATE {self.table} SET expiration_ms=NULL, status='available' WHERE expiration_ms IS NOT NULL AND expiration_ms < (extract(epoch from now()) * 1000);",
+    delete="DELETE FROM {self.table} WHERE id=$1",  # if you want to turn a number into a signal account
+    get_available="SELECT id FROM {self.table} WHERE status='available';",
+    # routing
     get_destination="SELECT destination FROM {self.table} WHERE id=$1 AND (expiration_ms > extract(epoch from now()) * 1000 OR expiration_ms is NULL);",
     get_id="SELECT id FROM {self.table} WHERE destination=$1;",
-    set_destination="UPDATE {self.table} SET destination=$2 WHERE id=$1;",
-    set_expiration_ms="UPDATE {self.table} SET expiration_ms=$2 WHERE id=$1;",
-    put_destination="INSERT INTO {self.table} (id, destination) VALUES($1, $2) ON CONFLICT DO NOTHING;",
-    sweep_expired_destinations="DELETE FROM {self.table} WHERE expiration_ms IS NOT NULL AND expiration_ms < (extract(epoch from now()) * 1000);",
+)
+
+GroupRoutingPGExpressions = PGExpressions(
+    table="group_routing",
+    create_table="CREATE TABLE IF NOT EXISTS {self.table} \
+        (id SERIAL PRIMARY KEY, their_sms CHARACTER VARYING(16), \
+        our_sms CHARACTER VARYING(16), \
+        group_id CHARACTER VARYING(64));",
+    get_group_id_for_sms_route="SELECT group_id FROM {self.table} \
+        WHERE their_sms=$1 AND our_sms=$2;",
+    get_sms_route_for_group="SELECT their_sms, our_sms FROM {self.table} \
+        WHERE group_id=$1",
+    set_sms_route_for_group="INSERT INTO {self.table} \
+        (their_sms, our_sms, group_id)\
+        VALUES($1, $2, $3) ON CONFLICT (id) DO UPDATE SET \
+        their_sms=$1, our_sms=$2, group_id=$3;",
+    delete_table="DROP TABLE {self.table};",
 )
 
 PaymentsPGExpressions = PGExpressions(
@@ -84,12 +72,10 @@ class RoutingManager(PGInterface):
         super().__init__(queries, database, loop)
 
 
-class UserManager(PGInterface):
-    """Abstraction for operations on the `user` table."""
-
+class GroupRoutingManager(PGInterface):
     def __init__(
         self,
-        queries: PGExpressions = UserPGExpressions,
+        queries: PGExpressions = GroupRoutingPGExpressions,
         database: str = USER_DATABASE,
         loop: Loop = None,
     ) -> None:

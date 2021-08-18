@@ -4,20 +4,25 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-aiohttp = {extras = ["speedups"], version = "*"}
 aioprocessing = "*"
 pyqrcode = "*"
 pynacl = "*"
 asyncpg = "*"
-
-[dev-packages]
-isort = "*"
-black = "*"
-aioconsole = "*"
-requests = "*"
+aiohttp = {extras = [ "speedups",], version = "*"}
+# sylv additions
+phonenumbers = "*"
+termcolor = "*"
 
 [requires]
 python_version = "3.9"
 
 [pipenv]
 allow_prereleases = true
+
+[dev-packages]
+pytest = "*"
+mypy = "*"
+pylint = "*"
+isort = "*"
+black = "*"
+

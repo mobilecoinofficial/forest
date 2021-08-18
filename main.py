@@ -1,39 +1,49 @@
-import typing as T
-# we're using py3.9, only Optional is needed
-from typing import Optional, List, Dict
+#!/usr/bin/python3.9
 import asyncio
+import asyncio.subprocess as subprocess  # https://github.com/PyCQA/pylint/issues/1469
 import json
-import os
-import subprocess
-import urllib.parse
+import logging
 import random
+import signal
+import sys
+import os
+import urllib.parse
+from asyncio import Queue
+from typing import Any, AsyncIterator, Optional, Union
 
-from aiohttp import web
 import aiohttp
-import aioprocessing
+import phonenumbers as pn
+import termcolor
+from aiohttp import web
 
-from forest_tables import RoutingManager, PaymentsManager, UserManager
+import utils
+import datastore
+from forest_tables import GroupRoutingManager, PaymentsManager, RoutingManager
+from utils import get_secret
 
-HOSTNAME = open("/etc/hostname").read().strip()  #  FLY_ALLOC_ID
+
+JSON = dict[str, Any]
 
 
 class Message:
     """Represents a Message received from signal-cli, optionally containing a command with arguments."""
 
     def __init__(self, blob: dict) -> None:
+        self.blob = blob
         self.envelope = envelope = blob.get("envelope", {})
         # {'envelope': {'source': '+15133278483', 'sourceDevice': 2, 'timestamp': 1621402445257, 'receiptMessage': {'when': 1621402445257, 'isDelivery': True, 'isRead': False, 'timestamps': [1621402444517]}}}
-        self.error = envelope.get("error")
-        self.receipt = envelope.get("receiptMessage")
         self.source: str = envelope.get("source")
-        self.ts = round(envelope.get("timestamp", 0) / 1000)
         msg = envelope.get("dataMessage", {})
+        self.timestamp = envelope.get("timestamp")
         self.full_text = self.text = msg.get("message", "")
-        self.reactions: Dict[str, str] = {}
+        # self.reactions: dict[str, str] = {}
+        self.receipt = envelope.get("receiptMessage")
+        self.group: Optional[str] = msg.get("groupInfo", {}).get("groupId")
+        if self.group:
+            logging.info("saw group: %s", self.group)
+        self.quoted_text = msg.get("quote", {}).get("text")
         self.command: Optional[str] = None
-        self.tokens: Optional[List[str]] = None
-        # if self.source in wisp.user_callbacks:
-        #    self.tokens = self.text.split(" ")
+        self.tokens: Optional[list[str]] = None
         if self.text and self.text.startswith("/"):
             command, *self.tokens = self.text.split(" ")
             self.command = command[1:]  # remove /
@@ -43,90 +53,123 @@ class Message:
             )
 
     def __repr__(self) -> str:
+        # it might be nice to prune this so the logs are easier to read
         return f"<{self.envelope}>"
 
 
 class Session:
-    """Represents a Signal-CLI session, with stdin/stdout content mirrored to a websocket at `dialout_address`.
-    Creates database connections for managing users and payments."""
+    """
+    Represents a Signal-CLI session
+    Creates database connections for managing signal keys and payments.
+    """
 
-    def __init__(
-        self,
-        user,
-        dialout_address,
-    ):
-        self.user = user
-        self.loop = asyncio.get_event_loop()
-        self.proc = None
-        self.filepath = "/app/data/+" + user
-        self.piso_message_queue = asyncio.Queue()
-        self.sipo_message_queue = asyncio.Queue()
+    def __init__(self, bot_number: str) -> None:
+        logging.info(bot_number)
+
+        self.bot_number = bot_number
+        self.datastore = datastore.SignalDatastore(bot_number)
+        self.proc: Optional[subprocess.Process] = None
+        self.signalcli_output_queue: Queue[Message] = Queue()
+        self.signalcli_input_queue: Queue[dict] = Queue()
         self.client_session = aiohttp.ClientSession()
-        self.scratch = {"payments": {}}
-        self.user_manager = UserManager()
+        self.teli = utils.Teli()
+        self.scratch: dict[str, dict[str, Any]] = {"payments": {}}
         self.payments_manager = PaymentsManager()
+        self.routing_manager = RoutingManager()
 
-    async def get_file(self):
-        """Fetches user datastore from postgresql and marks as claimed."""
-        from_pgh = await self.user_manager.get_user(self.user)
-        open(self.filepath, "w").write(from_pgh[0].get("account"))
-        update_claim = await self.user_manager.mark_user_claimed(
-            self.user, HOSTNAME
-        )
-        return update_claim
-
-    async def mark_freed(self):
-        """Marks user as freed in PG database."""
-        return await self.user_manager.mark_user_freed(self.user)
-
-    async def put_file(self):
-        """Puts user datastore in postgresql."""
-        file_contents = open(self.filepath, "r").read()
-        return await self.user_manager.set_user(self.user, file_contents)
-
-    async def send_sms(self, source, destination, message_text) -> dict:
-        """Sends SMS via teliapi.net call from specified source, to specified destination, with specified message text - and returns the response."""
+    async def send_sms(
+        self, source: str, destination: str, message_text: str
+    ) -> dict[str, str]:
+        """
+        Send SMS via teliapi.net call and returns the response
+        """
         payload = {
             "source": source,
             "destination": destination,
             "message": message_text,
         }
         response = await self.client_session.post(
-            "https://api.teleapi.net/sms/send?token="
-            + os.environ.get("TELI_KEY"),
+            "https://api.teleapi.net/sms/send?token=" + get_secret("TELI_KEY"),
             data=payload,
         )
-        response_json = await response.json()
+        response_json_all = await response.json()
+        response_json = {
+            k: v
+            for k, v in response_json_all.items()
+            if k in ("status", "segment_count")
+        }  # hide how the sausage is made
         return response_json
 
-    async def send_message(self, recipient, msg):
-        """Builds sendMessage command with specified recipient and msg, writes to signal-cli."""
+    async def send_message(
+        self,
+        recipient: Optional[str],
+        msg: Union[str, list, dict],
+        group: Optional[str] = None,
+        endsession: bool = False,
+    ) -> None:
+        """Builds send command with specified recipient and msg, writes to signal-cli."""
         if isinstance(msg, list):
-            return [await self.send_message(recipient, m) for m in msg]
+            for m in msg:
+                await self.send_message(recipient, m)
+            return
         if isinstance(msg, dict):
             msg = "\n".join((f"{key}:\t{value}" for key, value in msg.items()))
-        json_command = json.dumps(
-            {
-                "command": "send",
-                "recipient": [str(recipient)],
-                "message": msg,
-            }
-        )
-        await self.sipo_message_queue.put(json_command)
+        json_command: JSON = {
+            "command": "send",
+            "message": msg,
+        }
+        if endsession:
+            json_command["endsession"] = True
+        if group:
+            json_command["group"] = group
+        elif recipient:
+            assert recipient == utils.signal_format(recipient)
+            json_command["recipient"] = [str(recipient)]
+        await self.signalcli_input_queue.put(json_command)
+        return
 
-    async def piso_message_iter(self):
+    async def send_reaction(self, emoji: str, target_msg: Message) -> None:
+        react = {
+            "command": "sendReaction",
+            "emoji": emoji,
+            "target_author": target_msg.source,
+            "target_timestamp": target_msg.timestamp,
+        }
+        if target_msg.group:
+            react["group"] = target_msg.group
+        else:
+            react["recipient"] = [target_msg.source]
+        await self.signalcli_input_queue.put(react)
+
+    async def signalcli_output_iter(self) -> AsyncIterator[Message]:
         """Provides an asynchronous iterator over messages on the queue."""
         while True:
-            message = await self.piso_message_queue.get()
+            message = await self.signalcli_output_queue.get()
             yield message
 
-    async def sipo_message_iter(self):
-        """Provides an asynchronous iterator over messages on the queue."""
+    async def signalcli_input_iter(self) -> AsyncIterator[dict]:
+        """Provides an asynchronous iterator over pending signal-cli commands"""
         while True:
-            message = await self.sipo_message_queue.get()
-            yield message
+            command = await self.signalcli_input_queue.get()
+            yield command
 
-    async def register(self, message):
+    async def check_target_number(self, msg: Message) -> Optional[str]:
+        logging.info(msg.arg1)
+        try:
+            parsed = pn.parse(msg.arg1, "US")  # fixme: use PhoneNumberMatcher
+            assert pn.is_valid_number(parsed)
+            number = pn.format_number(parsed, pn.PhoneNumberFormat.E164)
+            return number
+        except (pn.phonenumberutil.NumberParseException, AssertionError):
+            await self.send_message(
+                msg.source,
+                f"{msg.arg1} doesn't look a valid number or user. "
+                "did you include the country code?",
+            )
+            return None
+
+    async def do_register(self, message: Message) -> bool:
+        """register for a phone number"""
         new_user = message.source
         usdt_price = 15.00
         # invpico = 100000000000 # doesn't work in mixin
@@ -136,8 +179,14 @@ class Session:
                 "https://big.one/api/xn/v1/asset_pairs/8e900cb1-6331-4fe7-853c-d678ba136b2f"
             )
             resp_json = await last_val.json()
-            mob_rate = float(resp_json.get("data")[0].get("close"))
-        except:
+            mob_rate = float(resp_json.get("data").get("ticker").get("close"))
+        except (
+            aiohttp.ClientError,
+            KeyError,
+            TypeError,
+            json.JSONDecodeError,
+        ) as e:
+            logging.error(e)
             # big.one goes down sometimes, if it does... make up a price
             mob_rate = 14
         # perturb each price slightly
@@ -146,6 +195,7 @@ class Session:
         nmob_price = int(mob_price * invnano)
         mob_price_exact = nmob_price / invnano
         continue_message = f"The current price for a SMS number is {mob_price_exact}MOB/month. If you would like to continue, please send exactly..."
+        # dunno if we want to generate new wallets? what happens if a user overpays?
         await self.send_message(
             new_user,
             [
@@ -176,254 +226,402 @@ class Session:
                 )
                 return True
             await asyncio.sleep(10)
+        return False
 
-    async def handle_messages(self):
-        async for message in self.piso_message_iter():
-            open("/dev/stdout", "w").write(f"{message}\n")
+    async def do_printerfact(self, _: Message) -> str:
+        async with self.client_session.get(
+            "https://colbyolson.com/printers"
+        ) as resp:
+            fact = await resp.text()
+        return fact.strip()
+
+    async def do_status(self, message: Message) -> Union[list[str], str]:
+        numbers: list[str] = [
+            registered.get("id")
+            for registered in await self.routing_manager.get_id(message.source)
+        ]
+        # paid but not registered
+        if self.scratch["payments"].get(message.source) and not numbers:
+            return [
+                "Welcome to the beta! Thank you for your payment. Please contact support to finish setting up your account by requesting to join this group. We will reach out within 12 hours.",
+                "https://signal.group/#CjQKINbHvfKoeUx_pPjipkXVspTj5HiTiUjoNQeNgmGvCmDnEhCTYgZZ0puiT-hUG0hUUwlS",
+                #    "Alternatively, try /order <area code>",
+            ]
+        if numbers and len(numbers) == 1:
+            # registered, one number
+            return f'Hi {message.source}! We found {numbers[0]} registered for your user. Try "/send {message.source} Hello from Forest Contact via {numbers[0]}!".'
+        # registered, many numbers
+        if numbers:
+            return f"Hi {message.source}! We found several numbers {numbers} registered for your user. Try '/send {message.source} Hello from Forest Contact via {numbers[0]}!'."
+        # not paid, not registered
+        return (
+            "We don't see any Forest Contact numbers for your account!"
+            " If you would like to register a new number, "
+            'try "/register" and following the instructions.'
+        )
+
+    async def do_help(self, _: Message) -> str:
+        return (
+            "Welcome to the Forest.contact Pre-Release!\n"
+            "To get started, try /register, or /status! "
+            "If you've already registered, try to send a message via /send."
+            ""
+        )
+
+    async def do_pay(self, message: Message) -> str:
+        if message.arg1 == "shibboleth":
+            self.scratch["payments"][message.source] = True
+            return "...thank you for your payment"
+        if message.arg1 == "sibboleth":
+            return "sending attack drones to your location"
+        return "no"
+
+    async def do_order(self, msg: Message) -> str:
+        """usage: /order <area code>"""
+        if not (msg.arg1 and len(msg.arg1) == 3 and msg.arg1.isnumeric()):
+            return """usage: /order <area code>"""
+        if msg.source not in self.scratch["payments"]:
+            # this needs to check if there are *unfulfilled* payments
+            return "make a payment with /register first"
+        await self.routing_manager.sweep_expired_destinations()
+        available_numbers = [
+            num
+            for record in await self.routing_manager.get_available()
+            if (num := record.get("id")).startswith(msg.arg1)
+        ]
+        if available_numbers:
+            number = available_numbers[0]
+            await self.send_message(msg.source, f"found {number} for you...")
+        else:
+            numbers = await self.teli.search_numbers(area_code=msg.arg1, limit=1)
+            if not numbers:
+                return "sorry, no numbers for that area code"
+            number = numbers[0]
+            await self.send_message(msg.source, f"found {number}")
+            await self.routing_manager.intend_to_buy(number)
+            buy_info = await self.teli.buy_number(number)
+            await self.send_message(msg.source, f"bought {number}")
+            if "error" in buy_info:
+                await self.routing_manager.delete(number)
+                return f"something went wrong: {buy_info}"
+            await self.routing_manager.mark_bought(number)
+        await self.teli.set_sms_url(number, utils.URL + "/inbound")
+        await self.routing_manager.set_destination(number, msg.source)
+        if await self.routing_manager.get_destination(number):
+            return f"you are now the proud owner of {number}"
+        return "db error?"
+
+    if not get_secret("ORDER"):
+        del do_order, do_pay
+
+    async def do_send(self, message: Message) -> Union[str, dict]:
+        numbers = [
+            registered.get("id")
+            for registered in await self.routing_manager.get_id(message.source)
+        ]
+        if not numbers:
+            return "You don't have any numbers. Register with /register"
+        sms_dest = await self.check_target_number(message)
+        if not sms_dest:
+            return "Couldn't parse that number"
+        response = await self.send_sms(
+            source=numbers[0],
+            destination=sms_dest,
+            message_text=message.text,
+        )
+        await self.send_reaction("📤", message)
+        # sms_uuid = response.get("data")
+        # TODO: store message.source and sms_uuid in a queue, enable https://apidocs.teleapi.net/api/sms/delivery-notifications
+        #    such that delivery notifs get redirected as responses to send command
+        return response
+
+    do_msg = do_send
+
+    async def handle_messages(self) -> None:
+        async for message in self.signalcli_output_iter():
             if message.source:
-                maybe_routable = await RoutingManager().get_id(
-                    message.source.strip("+")
+                maybe_routable = await self.routing_manager.get_id(
+                    message.source
                 )
+                numbers: Optional[list[str]] = [
+                    registered.get("id") for registered in maybe_routable
+                ]
             else:
                 maybe_routable = None
-            if maybe_routable:
-                numbers = [registered.get("id") for registered in maybe_routable]
-            else:
                 numbers = None
-            if numbers and message.command == "send":
-                response = await self.send_sms(
-                    source=numbers[0],
-                    destination=message.arg1,
-                    message_text=message.text,
+            if (
+                numbers
+                and message.command in ("mkgroup", "query")
+                and utils.get_secret("GROUPS")
+            ):
+                target_number = await self.check_target_number(message)
+                if target_number:
+                    cmd = {
+                        "command": "updateGroup",
+                        "member": [message.source],
+                        "name": f"SMS with {target_number} via {numbers[0]}",
+                    }
+                    await self.signalcli_input_queue.put(cmd)
+                    await self.send_reaction("👥", message)
+                    await self.send_message(
+                        message.source, "invited you to a group"
+                    )
+            elif numbers and message.group:
+                group = await group_routing_manager.get_sms_route_for_group(
+                    message.group
                 )
-                sms_uuid = response.get("data")
-                # TODO: store message.source and sms_uuid in a queue, enable https://apidocs.teleapi.net/api/sms/delivery-notifications
-                #    such that delivery notifs get redirected as responses to send command
-                await self.send_message(message.source, response)
-            elif message.command == "help":
-                await self.send_message(
-                    message.source,
-                    """Welcome to the Forest.contact Pre-Release!\nTo get started, try /register, or /status! If you've already registered, try to send a message via /send.""",
-                )
-            elif message.command == "register":
-                asyncio.create_task(self.register(message))
-            elif message.command == "status":
-                # paid but not registered
-                if self.scratch["payments"].get(message.source) and not numbers:
-                    await self.send_message(
-                        message.source,
-                        [
-                            "Welcome to the beta! Thank you for your payment. Please contact support to finish setting up your account by requesting to join this group. We will reach out within 12 hours.",
-                            "https://signal.group/#CjQKINbHvfKoeUx_pPjipkXVspTj5HiTiUjoNQeNgmGvCmDnEhCTYgZZ0puiT-hUG0hUUwlS",
-                        ],
+                if group:
+                    await self.send_sms(
+                        source=group[0].get("our_sms"),
+                        destination=group[0].get("their_sms"),
+                        message_text=message.text,
                     )
-                # registered, one number
-                elif numbers and len(numbers) == 1:
-                    await self.send_message(
-                        message.source,
-                        f'Hi {message.source}! We found {numbers[0]} registered for your user. Try "/send {message.source} Hello from Forest Contact via {numbers[0]}!".',
+                    await self.send_reaction("📤", message)
+            elif message.quoted_text:
+                try:
+                    quoted = dict(
+                        line.split(":\t", 1)
+                        for line in message.quoted_text.split("\n")
                     )
-                # registered, many numbers
-                elif numbers:
-                    await self.send_message(
-                        message.source,
-                        f"Hi {message.source}! We found several numbers {numbers} registered for your user. Try '/send {message.source} Hello from Forest Contact via {numbers[0]}!'.",
+                except ValueError:
+                    quoted = {}
+                if quoted.get("destination") in numbers and quoted.get("source"):
+                    logging.info(
+                        "sms destination from quote: %s", quoted["destination"]
                     )
-                # not paid, not registered
+                    response = await self.send_sms(
+                        source=quoted["destination"],
+                        destination=quoted["source"],
+                        message_text=message.text,
+                    )
+                    emoji = "\N{Outbox Tray}"
+                    logging.info("sent")
                 else:
-                    await self.send_message(
-                        message.source,
-                        f'We don\'t see any Forest Contact numbers for your account! If you would like to register a new number, try "/register" and following the instructions.',
-                    )
-            elif message.command or message.text:
+                    response = "Couldn't send that reply"
+                    emoji = "\N{Cross Mark}"
+                await self.send_reaction(emoji, message)
+                await self.send_message(message.source, response)
+            elif message.command == "register":
+                # need to abstract this into a decorator or something
+                # like def do_register(self, msg): asyncio.cerate_task(self.register(message))
+                asyncio.create_task(self.do_register(message))
+            elif message.command:
+                if hasattr(self, "do_" + message.command):
+                    command_response = await getattr(
+                        self, "do_" + message.command
+                    )(message)
+                else:
+                    command_response = f"Sorry! Command {message.command} not recognized! Try /help."
+                await self.send_message(message.source, command_response)
+            elif message.text == "TERMINATE":
+                await self.send_message(message.source, "signal session reset")
+            elif message.text:
                 await self.send_message(
-                    message.source,
-                    f"Sorry! Command {message.command} not recognized! Try /help. \n{message}",
+                    message.source, "That didn't look like a valid command"
                 )
 
-    async def launch_and_connect(self):
-        await self.get_file()
-        for _ in range(5):
-            if os.path.exists(self.filepath):
-                break
-            await asyncio.sleep(1)
-        COMMAND = f"/app/signal-cli --config /app --username=+{self.user} --output=json stdio".split()
+    async def launch_and_connect(self) -> None:
+        logging.info("in launch_and_connect")
+        loop = asyncio.get_running_loop()
+        logging.info("got running loop")
+        # things that don't work: loop.add_signal_handler(async_shutdown) - TypeError
+        # signal.signal(sync_signal_handler) - can't interact with loop
+        loop.add_signal_handler(signal.SIGINT, self.sync_signal_handler)
+        logging.info("added signal handler, downloading...")
 
-        self.proc = await asyncio.subprocess.create_subprocess_exec(
+        await self.datastore.download()
+        baseCmd = f"./signal-cli --config . --username={self.bot_number} "
+        # requires graal fix
+        name = "localbot" if utils.LOCAL else "forestbot"
+        profileCmd = (
+            baseCmd + "--output=plain-text updateProfile "
+            f"--name {name} --avatar avatar.png"
+        ).split()
+        logging.info("setting profile...")
+        profileProc = await asyncio.create_subprocess_exec(*profileCmd)
+        logging.info(await profileProc.communicate())
+        COMMAND = (baseCmd + "--output=json stdio").split()
+        logging.info(COMMAND)
+        self.proc = await asyncio.create_subprocess_exec(
             *COMMAND,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
         )
-        print(f"started signal-cli @ {self.user} with PID {self.proc.pid}")
-
-        # public String commandName;
-        # public String recipient;
-        # public String content;
-        # public JsonNode details;
-
-        asyncio.create_task(
-            spool_lines_to_cb(self.proc.stdout, self.piso_message_queue.put)
+        logging.info(
+            "started signal-cli @ %s with PID %s",
+            self.bot_number,
+            self.proc.pid,
         )
-
-        async for msg in self.sipo_message_iter():
-            msg_loaded = json.loads(msg)
-            open("/dev/stdout", "w").write(f"sig-in py-out: {msg_loaded}\n")
-            if msg_loaded.get("command") in ("send", "updateGroup"):
-                self.proc.stdin.write(msg.encode() + b"\n")
+        assert self.proc.stdout and self.proc.stdin
+        asyncio.create_task(
+            listen_to_signalcli(
+                self.proc.stdout,
+                self.signalcli_output_queue,
+            )
+        )
+        async for msg in self.signalcli_input_iter():
+            logging.info("input to signal: %s", msg)
+            self.proc.stdin.write(json.dumps(msg).encode() + b"\n")
         await self.proc.wait()
 
+    async def async_shutdown(self, *unused: Any, wait: bool = False) -> None:
+        logging.info("starting async_shutdown")
+        await self.datastore.upload()
+        if self.proc:
+            try:
+                self.proc.kill()
+                if wait:
+                    await self.proc.wait()
+                    await self.datastore.upload()
+            except ProcessLookupError:
+                logging.info("no process")
+        await self.datastore.mark_freed()
+        logging.info("=============exited===================")
+        sys.exit(0)
+        logging.info(
+            "called sys.exit but still running, os.kill sigint to %s",
+            os.getpid(),
+        )
+        os.kill(os.getpid(), signal.SIGINT)
+        logging.info("still running after os.kill, trying os._exit")
+        os._exit(1)
 
-async def spool_lines_to_cb(
-    stream: asyncio.StreamReader, callback: T.Callable[[str], None]
-):
+    sigints = 0
 
+    def sync_signal_handler(self, *unused: Any) -> None:
+        logging.info("handling sigint. sigints: %s", self.sigints)
+        self.sigints += 1
+        try:
+            loop = asyncio.get_running_loop()
+            logging.info("got running loop, scheduling async_shutdown")
+            asyncio.run_coroutine_threadsafe(self.async_shutdown(), loop)
+        except RuntimeError:
+            asyncio.run(self.async_shutdown())
+        if self.sigints >= 3:
+            sys.exit(1)
+            raise KeyboardInterrupt
+            logging.info(  # pylint: disable=unreachable
+                "this should never get called"
+            )
+
+
+async def start_session(our_app: web.Application) -> None:
+    try:
+        number = utils.signal_format(sys.argv[1])
+    except IndexError:
+        number = get_secret("BOT_NUMBER")
+    logging.info(number)
+    our_app["session"] = new_session = Session(number)
+    if utils.get_secret("MIGRATE"):
+        logging.info("migrating db...")
+        await new_session.routing_manager.migrate()
+        rows = await new_session.routing_manager.execute(
+            "SELECT id, destination FROM routing"
+        )
+        for row in rows if rows else []:
+            new_dest = utils.signal_format(row.get("destination"))
+            await new_session.routing_manager.set_destination(
+                row.get("id"), new_dest
+            )
+        await new_session.datastore.account_interface.migrate()
+        await group_routing_manager.create_table()
+    asyncio.create_task(new_session.launch_and_connect())
+    asyncio.create_task(new_session.handle_messages())
+
+
+async def listen_to_signalcli(
+    stream: asyncio.StreamReader,
+    queue: Queue[Message],
+) -> None:
     while True:
         line = await stream.readline()
+        # if utils.get_secret("I_AM_NOT_A_FEDERAL_AGENT"):
+        # color non-json. pretty-print errors
+        # sensibly color web traffic, too?
+        # fly / db / asyncio and other lib warnings / java / signal logic and networking
         if not line:
             break
-        await callback(line.decode())
+        try:
+            blob = json.loads(line)
+        except json.JSONDecodeError:
+            logging.info("signal: %s", line.decode())
+            continue
+        if not isinstance(blob, dict):  # e.g. a timestamp
+            continue
+        if "error" in blob:
+            logging.error(termcolor.colored(blob["error"], "red"))
+            continue
+        if "group" in blob:
+            # maybe this info should just be in Message and handled in Session
+            # SMS with {number} via {number}
+            their, our = blob["name"].removeprefix("SMS with ").split(" via ")
+            # TODO: this needs to use number[0]
+            await GroupRoutingManager().set_sms_route_for_group(
+                utils.teli_format(their), utils.teli_format(our), blob["group"]
+            )
+            logging.info("made a new group route from %s", blob)
+            continue
+        msg = Message(blob)
+        if not msg.receipt:
+            logging.info("signal: %s", line.decode())
+        await queue.put(msg)
 
-
-async def noGet(request):
+async def noGet(request: web.Request) -> web.Response:
     raise web.HTTPFound(location="https://signal.org/")
 
 
-async def get_handler(request):
-    account = request.match_info.get("phonenumber")
+async def inbound_sms_handler(request: web.Request) -> web.Response:
     session = request.app.get("session")
-    status = ""
+    msg_data: dict[str, str] = dict(await request.post())
     if not session:
-        request.app["session"] = new_session = Session(
-            account,
-            "",
+        # no live worker sessions
+        # if we can't get a signal delivery receipt/bad session, we could
+        # return non-200 and let teli do our retry
+        # however, this would require awaiting output from signal; tricky
+        await request.app["client_session"].post(
+            "https://counter.pythia.workers.dev/post", data=msg_data
         )
-        asyncio.create_task(new_session.launch_and_connect())
-        asyncio.create_task(new_session.handle_messages())
-        status = "launched"
-    else:
-        status = str(session)
-    return web.json_response({"status": status})
-
-
-async def send_message_handler(request):
-    account = request.match_info.get("phonenumber")
-    session = request.app.get("session")
-    msg_data = await request.text()
-    msg_obj = {x: y[0] for x, y in urllib.parse.parse_qs(msg_data).items()}
-    recipient = msg_obj.get("recipient", "+15133278483")
-    if session:
-        await session.send_message(recipient, msg_data)
-    return web.json_response({"status": "sent"})
-
-
-async def inbound_handler(request):
-    msg_data = await request.text()
-    # parse query-string encoded sms/mms into object
-    msg_obj = {x: y[0] for x, y in urllib.parse.parse_qs(msg_data).items()}
-    # if it's a raw post (debugging / oops / whatnot - not a query string)
-    if not msg_obj:
-        # stick the contents under the message key
-        msg_obj["message"] = msg_data
-    destination = msg_obj.get("destination")
-    ## lookup sms recipient to signal recipient
-    recipient = {}.get(destination, "+15133278483")
-    maybe_dest = await RoutingManager().get_destination(destination)
-    if maybe_dest:
-        recipient = maybe_dest[0].get("destination")
-    msg_obj["maybe_dest"] = str(maybe_dest)
-    session = request.app.get("session")
-    if session:
-        # send hashmap as signal message with newlines and tabs and stuff
-        await session.send_message(recipient, msg_obj)
-        return web.Response(text="TY!")
-    # TODO: return non-200 if no delivery receipt / ok crypto state, let teli do our retry
-    # no live worker sessions
-    await request.app["client_session"].post(
-        "https://counter.pythia.workers.dev/post", data=msg_data
+        return web.Response(status=504, text="Sorry, no live workers.")
+    sms_destination = msg_data.get("destination")
+    # lookup sms recipient to signal recipient
+    maybe_signal_dest = await RoutingManager().get_destination(sms_destination)
+    maybe_group = await group_routing_manager.get_group_id_for_sms_route(
+        msg_data.get("source"), msg_data.get("destination")
     )
-    return web.Response(status=504, text="Sorry, no live workers.")
-
-
-# ["->", "fsync", "/+14703226669", "(1, 2)", "/app/signal-cli", ["/app/signal-cli", "--config", "/app", "--username=+14703226669", "--output=json", "stdio", ""], 0, 0, 523]
-# ["<-", "fsync", "0"]
-async def start_queue_monitor(app):
-    async def background_sync_handler():
-        queue = app["mem_queue"]
-        while True:
-            queue_item = await queue.coro_get()
-            # iff fsync triggered by signal-cli
-            if (
-                queue_item[0:2] == ["->", "fsync"]
-                and queue_item[5][0] == "/app/signal-cli"
-            ):
-                # /+14703226669
-                file_to_sync = queue_item[2]
-                # 14703226669
-                maybe_session = app.get("session")
-                if maybe_session:
-                    await maybe_session.put_file()
-
-    app["mem_task"] = asyncio.create_task(background_sync_handler())
-
-
-async def on_shutdown(app):
-    session = app.get("session")
-    if session:
-        await session.put_file()
-        session.proc.kill()
-        await session.proc.wait()
-        await session.put_file()
-        await session.mark_freed()
-
-
-async def start_memfs(app):
-
-    import fuse
-    import mem
-
-    app["mem_queue"] = aioprocessing.AioQueue()
-    mem_queue = app["mem_queue"]
-    if not os.path.exists("/dev/fuse"):
-        proc = subprocess.Popen(
-            ["/usr/sbin/insmod", "/app/fuse.ko"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        proc.wait()
-        (stdout, stderr) = proc.communicate()
-        if stderr:
-            raise Exception(
-                f"Could not load fuse module! You may need to recompile.\n    {stderr}"
-            )
-
-    def memfs_proc(path="data"):
-        pid = os.getpid()
-        open("/dev/stdout", "w").write(
-            f"Starting memfs with PID: {pid} on dir: {path}\n"
-        )
-        return fuse.FUSE(mem.Memory(logqueue=mem_queue), "data")
-
-    async def launch():
-        memfs = aioprocessing.AioProcess(target=memfs_proc)
-        memfs.start()
-        app["memfs"] = memfs
-
-    await launch()
+    if maybe_signal_dest:
+        recipient = maybe_signal_dest[0].get("destination")
+        # send hashmap as signal message with newlines and tabs and stuff
+        keep = ("source", "destination", "message")
+        msg_clean = {k: v for k, v in msg_data.items() if k in keep}
+        await session.send_message(recipient, msg_clean)
+    elif maybe_group:
+        # if we can't notice group membership changes,
+        # we could check if the person is still in the group
+        logging.info("sending a group")
+        group = maybe_group[0].get("group_id")
+        # if it's a group, the to/from is already in the group name
+        text = msg_data.get("message", "<empty message>")
+        await session.send_message(None, text, group=group)
+    else:
+        logging.info("falling back to admin")
+        recipient = get_secret("ADMIN")
+        msg_data[
+            "note"
+        ] = "signal destination not found for this sms destination"
+        # send the admin the full post body, not just the user-friendly part
+        await session.send_message(recipient, msg_data)
+    return web.Response(text="TY!")
 
 
 app = web.Application()
 
-app.on_shutdown.append(on_shutdown)
-app.on_startup.append(start_memfs)
-app.on_startup.append(start_queue_monitor)
-app.on_startup.append(start_sessions)
-
+app.on_startup.append(start_session)
+app.on_startup.append(datastore.start_memfs)
+app.on_startup.append(datastore.start_queue_monitor)
 app.add_routes(
     [
         web.get("/", noGet),
-        web.post("/user/{phonenumber}", send_message_handler),
-        web.get("/user/{phonenumber}", get_handler),
-        web.post("/inbound", inbound_handler),
+        web.post("/inbound", inbound_sms_handler),
     ]
 )
 
@@ -431,4 +629,6 @@ app["session"] = None
 
 
 if __name__ == "__main__":
+    logging.info("=========================new run=======================")
+    group_routing_manager = GroupRoutingManager()
     web.run_app(app, port=8080, host="0.0.0.0")

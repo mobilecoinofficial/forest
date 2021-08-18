@@ -1,3 +1,4 @@
+# type: ignore
 # Copyright (c) 2021 Ilia Daniher <itdaniher@gmail.com> (hacker)
 # Copyright (c) 2017 Ian Daniher <itdaniher@gmail.com> (hacker)
 # Copyright (c) 2012 Terence Honles <terence@honles.com> (maintainer)
@@ -427,7 +428,7 @@ class FUSE(object):
 
     def __init__(
         self, operations, mountpoint, raw_fi=False, encoding="utf-8", **kwargs
-    ):
+    ) -> None:
 
         """
         Setting raw_fi to True will cause FUSE to pass the fuse_file_info

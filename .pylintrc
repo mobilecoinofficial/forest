@@ -2,12 +2,19 @@
 
 disable=
     attribute-defined-outside-init,
-    duplicate-code,
     invalid-name,
     missing-docstring,
     protected-access,
     too-few-public-methods,
-	logging-fstring-interpolation
+    too-many-instance-attributes,
+    logging-fstring-interpolation,
+    consider-using-with,
+    consider-using-from-import,
     # handled by black
-    format
+    format,
+    line-too-long,
+    fixme
 
+
+[VARIABLES]
+dummy-variables-rgx=(_|dummy|unused|i)

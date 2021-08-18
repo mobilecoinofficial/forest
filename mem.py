@@ -1,3 +1,4 @@
+# type: ignore
 # Copyright 2017-2021 Ilia Daniher
 # Copyright 2013-2018 Mark Stover
 #
@@ -60,7 +61,7 @@ class Memory(LoggingMixIn, Operations):
     def __unicode__(self):
         return str(self)
 
-    def __init__(self, livelock=None, logqueue=None):
+    def __init__(self, livelock=None, logqueue=None) -> None:
         self.filesystem = {}
         self.fd = 0
         now = time.time()
@@ -81,7 +82,7 @@ class Memory(LoggingMixIn, Operations):
             ),
         )
 
-    def init(self, path):
+    def init(self, path) -> None:
         if self.livelock is not None:
             self.livelock.release()
 
@@ -168,7 +169,7 @@ class Memory(LoggingMixIn, Operations):
         dirobj.properties.st_nlink += 1
 
     def open(self, path, flags):
-        print("opening", get_caller())
+        logging.debug("opening", get_caller())
         self.fd += 1
         return self.fd
 
