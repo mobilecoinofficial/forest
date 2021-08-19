@@ -27,13 +27,15 @@ def FuckAiohttp(record: logging.LogRecord) -> bool:
 
 
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=os.getenv("LOGLEVEL", "DEBUG"),
     format="{levelname} {module}:{lineno}: {message}",
     style="{",
 )
 logger = logging.getLogger()
 logging.getLogger().handlers[0].addFilter(FuckAiohttp)
-
+handler = logging.FileHandler("debug.log")
+handler.setLevel("DEBUG")
+logger.addHandler(handler)
 
 def load_secrets(env: Optional[str] = None) -> None:
     if not env:

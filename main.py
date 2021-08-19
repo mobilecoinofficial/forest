@@ -646,6 +646,7 @@ app.add_routes(
     [
         web.get("/", noGet),
         web.post("/inbound", inbound_sms_handler),
+        web.post("/user/{phonenumber}", send_message_handler),
     ]
 )
 

@@ -1,4 +1,6 @@
+#!/bin/python3.9
 import asyncio
+import sys
 import json
 import logging
 import os
@@ -196,6 +198,11 @@ class SignalDatastore:
         return await self.account_interface.mark_account_freed(self.number)
 
 
+class LocalStore(SignalDatastore):
+    def __init__(self, arg=""):
+        self.filepath = ""
+
+
 async def getFreeSignalDatastore() -> SignalDatastore:
     interface = get_account_interface()
     await interface.free_accounts_not_updated_in_the_last_hour()
@@ -298,9 +305,9 @@ async def start_memfs_monitor(app: web.Application) -> None:
     app["mem_task"] = asyncio.create_task(upload_after_signalcli_writes())
 
 
-# if __name__ == "__main__":
-#     try:
-#         store = SignalDatastore(sys.argv[1])
-#         asyncio.await(store.upload())
-#     except IndexError:
-#         pass
+if __name__ == "__main__":
+    try:
+        store = SignalDatastore(sys.argv[1])
+        asyncio.run(store.upload())
+    except IndexError:
+        pass
