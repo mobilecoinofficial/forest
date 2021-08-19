@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import shutil
+import time
 from io import BytesIO
 from pathlib import Path
 from subprocess import PIPE, Popen
@@ -17,12 +18,6 @@ import mem
 import utils
 from pghelp import PGExpressions, PGInterface
 
-# diff:
-# - id has a +
-# new datastore, registered column
-
-# maybe we'd like nicknames for accounts?
-
 if utils.get_secret("MIGRATE"):
     get_datastore = "SELECT account, datastore FROM {self.table} WHERE id=$1"
 else:
@@ -33,7 +28,7 @@ AccountPGExpressions = PGExpressions(
     # rename="ALTAR TABLE IF EXISTS prod_users RENAME TO {self.table}",
     migrate="ALTER TABLE IF EXISTS {self.table} ADD IF NOT EXISTS datastore BYTEA, \
         ADD IF NOT EXISTS registered BOOL; ",
-    create_table="CREATE TABLE IF NOT EXIsTS {self.table} \
+    create_table="CREATE TABLE IF NOT EXISTS {self.table} \
             (id TEXT PRIMARY KEY, \
             datastore BYTEA, \
             last_update_ms BIGINT, \
@@ -192,9 +187,8 @@ class SignalDatastore:
         if not data:
             return
         kb = round(len(data) / 1024, 1)
-        result = await self.account_interface.upload(self.number, data)
-        logging.info("upload query result %s", result)
-        logging.info("saved %s kb of tarballed datastore to supabase", kb)
+        await self.account_interface.upload(self.number, data)
+        logging.debug("saved %s kb of tarballed datastore to supabase", kb)
         return
 
     async def mark_freed(self) -> list:
@@ -238,7 +232,7 @@ async def start_memfs(app: web.Application) -> None:
         os.chdir(utils.ROOT_DIR)
         return
     if not os.path.exists("/dev/fuse"):
-        # you *must* have fuse already loaded locally
+        # you *must* have fuse already loaded if running locally
         proc = Popen(
             ["/usr/sbin/insmod", "/app/fuse.ko"],
             stdout=PIPE,
@@ -274,14 +268,15 @@ async def start_memfs(app: web.Application) -> None:
 # input, operation, path, arguments, caller
 # ["->", "fsync", "/+14703226669", "(1, 2)", "/app/signal-cli", ["/app/signal-cli", "--config", "/app", "--username=+14703226669", "--output=json", "stdio", ""], 0, 0, 523]
 # ["<-", "fsync", "0"]
-async def start_queue_monitor(app: web.Application) -> None:
+async def start_memfs_monitor(app: web.Application) -> None:
     """
     monitor the memfs activity queue for file saves, sync with supabase
     """
 
-    async def background_sync_handler() -> None:
+    async def upload_after_signalcli_writes() -> None:
         queue = app["mem_queue"]
         logging.info("monitoring memfs")
+        counter = 0
         while True:
             queue_item = await queue.coro_get()
             # iff fsync triggered by signal-cli
@@ -294,7 +289,18 @@ async def start_queue_monitor(app: web.Application) -> None:
                 # 14703226669
                 maybe_session = app.get("session")
                 if maybe_session:
-                    logging.info("automatically syncing")
+                    counter += 1
+                    if time.time() % (60 * 3) == 0:
+                        logging.info("background syncs in the past ~3mo: %s", counter)
+                        counter = 0
                     await maybe_session.datastore.upload()
 
-    app["mem_task"] = asyncio.create_task(background_sync_handler())
+    app["mem_task"] = asyncio.create_task(upload_after_signalcli_writes())
+
+
+# if __name__ == "__main__":
+#     try:
+#         store = SignalDatastore(sys.argv[1])
+#         asyncio.await(store.upload())
+#     except IndexError:
+#         pass

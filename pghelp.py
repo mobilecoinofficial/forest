@@ -36,14 +36,14 @@ def get_logger(name: str) -> logging.Logger:
     return logger
 
 
-pools = []
+pools: list[asyncpg.Pool] = []
 
 
-async def close_pools():
+async def close_pools() -> None:
     for pool in pools:
         try:
             await pool.close()
-        except (PostgresError, InternalClientError) as e:
+        except (asyncpg.PostgresError, asyncpg.InternalClientError) as e:
             logging.error(e)
 
 

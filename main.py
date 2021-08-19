@@ -1,15 +1,14 @@
 #!/usr/bin/python3.9
 import asyncio
 import asyncio.subprocess as subprocess  # https://github.com/PyCQA/pylint/issues/1469
-from asyncio.subprocess import PIPE
 import json
 import logging
+import os
 import random
 import signal
 import sys
-import os
-import urllib.parse
 from asyncio import Queue
+from asyncio.subprocess import PIPE
 from typing import Any, AsyncIterator, Optional, Union
 
 import aiohttp
@@ -17,11 +16,11 @@ import phonenumbers as pn
 import termcolor
 from aiohttp import web
 
-import utils
 import datastore
+import pghelp
+import utils
 from forest_tables import GroupRoutingManager, PaymentsManager, RoutingManager
 from utils import get_secret
-import pghelp
 
 JSON = dict[str, Any]
 
@@ -43,6 +42,7 @@ class Message:
         if self.group:
             logging.info("saw group: %s", self.group)
         self.quoted_text = msg.get("quote", {}).get("text")
+        self.payment = msg.get("payment")
         self.command: Optional[str] = None
         self.tokens: Optional[list[str]] = None
         if self.text and self.text.startswith("/"):
@@ -302,6 +302,7 @@ class Session:
         await self.teli.set_sms_url(number, utils.URL + "/inbound")
         await self.routing_manager.set_destination(number, msg.source)
         if await self.routing_manager.get_destination(number):
+            self.scratch["payments"][msg.source] = False
             return f"you are now the proud owner of {number}"
         return "db error?"
 
@@ -372,7 +373,7 @@ class Session:
                     await self.send_reaction("📤", message)
                 else:
                     logging.warning("couldn't find the route for this group...")
-            elif message.quoted_text:
+            elif message.quoted_text and numbers:
                 try:
                     quoted = dict(
                         line.split(":\t", 1) for line in message.quoted_text.split("\n")
@@ -399,6 +400,12 @@ class Session:
                 # need to abstract this into a decorator or something
                 # like def do_register(self, msg): asyncio.cerate_task(self.register(message))
                 asyncio.create_task(self.do_register(message))
+            elif message.payment:
+                self.scratch["payments"][message.source] = True
+                await self.send_message(
+                    message.source,
+                    "Thank you for paying! You can now buy a phone number with /order <area code>",
+                )
             elif message.command:
                 if hasattr(self, "do_" + message.command):
                     command_response = await getattr(self, "do_" + message.command)(
@@ -508,9 +515,11 @@ async def start_session(our_app: web.Application) -> None:
             "SELECT id, destination FROM routing"
         )
         for row in rows if rows else []:
-            if (dest := row.get("destination")):
+            if (dest := row.get("destination")) :
                 new_dest = utils.signal_format(dest)
-                await new_session.routing_manager.set_destination(row.get("id"), new_dest)
+                await new_session.routing_manager.set_destination(
+                    row.get("id"), new_dest
+                )
         await new_session.datastore.account_interface.migrate()
         await group_routing_manager.execute("DROP TABLE IF EXISTS group_routing")
         await group_routing_manager.create_table()
@@ -575,7 +584,7 @@ async def noGet(request: web.Request) -> web.Response:
 
 async def inbound_sms_handler(request: web.Request) -> web.Response:
     session = request.app.get("session")
-    msg_data: dict[str, str] = dict(await request.post())
+    msg_data: dict[str, str] = dict(await request.post()) # type: ignore
     if not session:
         # no live worker sessions
         # if we can't get a signal delivery receipt/bad session, we could
@@ -613,19 +622,18 @@ async def inbound_sms_handler(request: web.Request) -> web.Response:
         msg_data[
             "note"
         ] = "fallback, signal destination not found for this sms destination"
-        msg_data["user-Agent"] = request.headers.get("User-Agent")
+        if (agent := request.headers.get("User-Agent")):
+            msg_data["user-agent"] = agent
         # send the admin the full post body, not just the user-friendly part
         await session.send_message(recipient, msg_data)
     return web.Response(text="TY!")
 
 
-async def send_message_handler(request):
+async def send_message_handler(request) -> None:
     account = request.match_info.get("phonenumber")
     session = request.app.get("session")
     msg_data = await request.text()
-    recipient = msg_obj.get("recipient", utils.get_secret("ADMIN"))
-    if session and (await session.routing_manager.get_id(recipient)):
-        await session.send_message(recipient, msg_data)
+    await session.send_message(account, msg_data)
     return web.json_response({"status": "sent"})
 
 
@@ -633,7 +641,7 @@ app = web.Application()
 
 app.on_startup.append(start_session)
 app.on_startup.append(datastore.start_memfs)
-app.on_startup.append(datastore.start_queue_monitor)
+app.on_startup.append(datastore.start_memfs_monitor)
 app.add_routes(
     [
         web.get("/", noGet),
