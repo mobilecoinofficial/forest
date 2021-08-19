@@ -6,6 +6,8 @@ kill_signal = "SIGINT" # hm.
 kill_timeout = 5
 
 [env]
+BOT_NUMBER="+447888866969"
+
 # dev
 [experimental]
   allowed_public_ports = []
