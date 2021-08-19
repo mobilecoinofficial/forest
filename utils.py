@@ -10,12 +10,6 @@ import aiohttp
 import phonenumbers as pn
 from aiohttp import web
 
-HOSTNAME = open("/etc/hostname").read().strip()  #  FLY_ALLOC_ID
-APP_NAME = os.getenv("FLY_APP_NAME")
-URL = f"https://{APP_NAME}.fly.dev"
-LOCAL = APP_NAME is None
-ROOT_DIR = "/tmp/local-signal" if LOCAL else "/app"
-
 
 def FuckAiohttp(record: logging.LogRecord) -> bool:
     str_msg = str(getattr(record, "msg", ""))
@@ -37,6 +31,21 @@ handler = logging.FileHandler("debug.log")
 handler.setLevel("DEBUG")
 logger.addHandler(handler)
 
+logging.TRACE = logging.DEBUG - 10
+logging.addLevelName(logging.TRACE, "TRACE")
+
+
+class TraceLogger(logging.getLoggerClass()):
+    def trace(self, msg, *args, **kwargs) -> None:
+        self.log(logging.TRACE, msg, *args, **kwargs)
+
+
+logging.setLoggerClass(TraceLogger)
+tracelog = logging.FileHandler("trace.log")
+tracelog.setLevel(logging.TRACE)
+logger.addHandler(tracelog)
+
+
 def load_secrets(env: Optional[str] = None) -> None:
     if not env:
         env = os.environ.get("ENV", "dev")
@@ -55,6 +64,16 @@ def get_secret(key: str, env: Optional[str] = None) -> str:
     except KeyError:
         load_secrets(env)
         return os.environ.get(key) or ""  # fixme
+
+
+HOSTNAME = open("/etc/hostname").read().strip()  #  FLY_ALLOC_ID
+APP_NAME = os.getenv("FLY_APP_NAME")
+URL = f"https://{APP_NAME}.fly.dev"
+LOCAL = APP_NAME is None
+print("download: ", get_secret("NO_DOWNLOAD"))
+ROOT_DIR = (
+    "." if get_secret("NO_DOWNLOAD") else "/tmp/local-signal" if LOCAL else "/app"
+)
 
 
 def teli_format(raw_number: str) -> str:

@@ -57,6 +57,7 @@ AccountPGExpressions = PGExpressions(
     free_accounts_not_updated_in_the_last_hour="UPDATE {self.table} \
             SET last_claim_ms = 0, active_node_name = NULL \
             WHERE last_update_ms < ((extract(epoch from now())-3600) * 1000);",
+    get_timestamp="select last_update_ms from {self.table} where id=$1",
 )
 
 # migration strategy:
@@ -150,6 +151,7 @@ class SignalDatastore:
             self.filepath in fnames,
         )
         tarball.extractall(utils.ROOT_DIR)
+        # open("last_downloaded_checksum", "w").write(zlib.crc32(buffer.seek(0).read()))
         await self.account_interface.mark_account_claimed(self.number, utils.HOSTNAME)
         logging.debug("marked account as claimed, asserting that this is the case")
         assert await self.is_claimed()
@@ -189,6 +191,10 @@ class SignalDatastore:
         if not data:
             return
         kb = round(len(data) / 1024, 1)
+        # upload and return registered timestamp. write timestamp. when uploading, check that the last_updated_ts in postgres matches the file
+        # if it doesn't, you've probably diverged, but someone may have put an invalid ratchet more recently by mistake (e.g. restarting triggering upload despite crashing)
+        #
+        # open("last_uploaded_checksum", "w").write(zlib.crc32(buffer.seek(0).read()))
         await self.account_interface.upload(self.number, data)
         logging.debug("saved %s kb of tarballed datastore to supabase", kb)
         return
@@ -226,6 +232,8 @@ async def start_memfs(app: web.Application) -> None:
     logging.info("starting memfs")
     app["mem_queue"] = mem_queue = aioprocessing.AioQueue()
     if utils.LOCAL:
+        if utils.ROOT_DIR == ".":
+            logging.warning("not deleting current dir, so not starting memfs")
         try:
             shutil.rmtree(utils.ROOT_DIR)
         except (FileNotFoundError, OSError) as e:
