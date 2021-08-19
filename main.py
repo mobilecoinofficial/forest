@@ -169,7 +169,7 @@ k   Represents a signal-cli session
     async def do_register(self, message: Message) -> bool:
         """register for a phone number"""
         new_user = message.source
-        usdt_price = 15.00
+        usdt_price = 4.0  # 15.00
         # invpico = 100000000000 # doesn't work in mixin
         invnano = 100000000
         try:
@@ -191,7 +191,7 @@ k   Represents a signal-cli session
         mob_rate -= random.random() / 1000
         mob_price = usdt_price / mob_rate
         nmob_price = int(mob_price * invnano)
-        mob_price_exact = nmob_price / invnano
+        mob_price_exact = round(nmob_price / invnano, 3)
         continue_message = f"The current price for a SMS number is {mob_price_exact}MOB/month. If you would like to continue, please send exactly..."
         # dunno if we want to generate new wallets? what happens if a user overpays?
         await self.send_message(
@@ -199,7 +199,7 @@ k   Represents a signal-cli session
             [
                 continue_message,
                 f"{mob_price_exact}",
-                "to",
+                "on Signal Pay, or to",
                 "nXz8gbcAfHQQUwTHuQnyKdALe5oXKppDn9oBRms93MCxXkiwMPnsVRp19Vrmb1GX6HdQv7ms83StXhwXDuJzN9N7h3mzFnKsL6w8nYJP4q",
                 "Upon payment, you will be able to select the area code for your new phone number!",
             ],
@@ -430,8 +430,14 @@ k   Represents a signal-cli session
         # things that don't work: loop.add_signal_handler(async_shutdown) - TypeError
         # signal.signal(sync_signal_handler) - can't interact with loop
         loop.add_signal_handler(signal.SIGINT, self.sync_signal_handler)
+
+        # the thing we want here is to check for a data/ dir in the current directory
+        # if so, also upload it but don't download it now (unless..?)
+        # if not, download it and stay synced
+
         logging.debug("added signal handler, downloading...")
-        await self.datastore.download()
+        if not utils.get_secret("NO_DOWNLOAD"):
+            await self.datastore.download()
         command = f"{utils.ROOT_DIR}/signal-cli --config {utils.ROOT_DIR} --output=json stdio".split()
         logging.info(command)
         self.proc = await asyncio.create_subprocess_exec(
@@ -515,6 +521,10 @@ async def start_session(our_app: web.Application) -> None:
             "SELECT id, destination FROM routing"
         )
         for row in rows if rows else []:
+            if not utils.LOCAL:
+                await new_session.teli.set_sms_url(
+                    row.get("id"), utils.URL + "/inbound"
+                )
             if (dest := row.get("destination")) :
                 new_dest = utils.signal_format(dest)
                 await new_session.routing_manager.set_destination(
@@ -534,6 +544,8 @@ async def listen_to_signalcli(
     while True:
         line = await stream.readline()
         # if utils.get_secret("I_AM_NOT_A_FEDERAL_AGENT"):
+        logging.info("signal: %s", line.decode().strip())
+        # TODO: don't print receiptMessage
         # color non-json. pretty-print errors
         # sensibly color web traffic, too?
         # fly / db / asyncio and other lib warnings / java / signal logic and networking
@@ -582,7 +594,7 @@ async def noGet(request: web.Request) -> web.Response:
 
 async def inbound_sms_handler(request: web.Request) -> web.Response:
     session = request.app.get("session")
-    msg_data: dict[str, str] = dict(await request.post()) # type: ignore
+    msg_data: dict[str, str] = dict(await request.post())  # type: ignore
     if not session:
         # no live worker sessions
         # if we can't get a signal delivery receipt/bad session, we could
@@ -620,7 +632,7 @@ async def inbound_sms_handler(request: web.Request) -> web.Response:
         msg_data[
             "note"
         ] = "fallback, signal destination not found for this sms destination"
-        if (agent := request.headers.get("User-Agent")):
+        if (agent := request.headers.get("User-Agent")) :
             msg_data["user-agent"] = agent
         # send the admin the full post body, not just the user-friendly part
         await session.send_message(recipient, msg_data)
@@ -638,8 +650,9 @@ async def send_message_handler(request) -> None:
 app = web.Application()
 
 app.on_startup.append(start_session)
-app.on_startup.append(datastore.start_memfs)
-app.on_startup.append(datastore.start_memfs_monitor)
+if not utils.get_secret("NO_MEMFS"):
+    app.on_startup.append(datastore.start_memfs)
+    app.on_startup.append(datastore.start_memfs_monitor)
 app.add_routes(
     [
         web.get("/", noGet),
