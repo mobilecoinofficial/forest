@@ -10,7 +10,8 @@ from io import BytesIO
 from pathlib import Path
 from subprocess import PIPE, Popen
 from tarfile import TarFile
-from typing import Any, Optional
+from typing import Any, Optional, cast
+import argparse
 
 import aioprocessing
 from aiohttp import web
@@ -24,6 +25,11 @@ if utils.get_secret("MIGRATE"):
     get_datastore = "SELECT account, datastore FROM {self.table} WHERE id=$1"
 else:
     get_datastore = "SELECT datastore FROM {self.table} WHERE id=$1"
+
+
+class DatastoreError(Exception):
+    pass
+
 
 AccountPGExpressions = PGExpressions(
     table="signal_accounts",
@@ -59,9 +65,6 @@ AccountPGExpressions = PGExpressions(
             WHERE last_update_ms < ((extract(epoch from now())-3600) * 1000);",
     get_timestamp="select last_update_ms from {self.table} where id=$1",
 )
-
-# migration strategy:
-# backwards compat with non-tar datastore
 
 
 def get_account_interface() -> PGInterface:
@@ -204,9 +207,9 @@ class SignalDatastore:
         return await self.account_interface.mark_account_freed(self.number)
 
 
-class LocalStore(SignalDatastore):
-    def __init__(self, arg=""):
-        self.filepath = ""
+# class LocalStore(SignalDatastore):
+#     def __init__(self, arg=""):
+#         self.filepath = ""
 
 
 async def getFreeSignalDatastore() -> SignalDatastore:
@@ -311,6 +314,39 @@ async def start_memfs_monitor(app: web.Application) -> None:
                     await maybe_session.datastore.upload()
 
     app["mem_task"] = asyncio.create_task(upload_after_signalcli_writes())
+
+
+async def standalone() -> None:
+    app = cast(web.Application, {})
+    asyncio.create_task(start_memfs(app))
+    await start_memfs_monitor(app)
+    try:
+        datastore = SignalDatastore(sys.argv[1])
+        await datastore.download()
+    except (IndexError, DatastoreError):
+        datastore = await getFreeSignalDatastore()
+        await datastore.download()
+    try:
+        while 1:
+            time.sleep(3600)
+    except KeyboardInterrupt:
+        await datastore.upload()
+        await datastore.mark_freed()
+
+
+# maybe a config about where we're running
+# MEMFS, DOWNLOAD, ROOT_DIR, HOSTNAME, etc
+# is HCL overkill?
+
+parser = argparse.ArgumentParser(description="manage the signal datastore")
+subparser = parser.add_subparsers(dest="subparser")  # ?
+upload_parser = subparser.add_parser("upload")
+upload_parser.add_argument("--path")
+upload_parser.add_argument("--number")
+download_parser = subparser.add_parser("download")
+download_parser.add_argument("--number")
+migrate_parser = subparser.add_parser("migrate")
+migrate_parser.add_argument("--create")
 
 
 if __name__ == "__main__":

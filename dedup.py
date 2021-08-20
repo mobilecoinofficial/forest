@@ -1,5 +1,8 @@
+# type: ignore
+# if you're running this script, .execute will return lists, not Optional[list]
 import asyncio
-import forest_tables, utils
+import forest_tables
+import utils
 
 utils.load_secrets("dev")
 dev = forest_tables.RoutingManager(database=utils.get_secret("DATABASE_URL"))
@@ -8,8 +11,7 @@ staging = forest_tables.RoutingManager(database=utils.get_secret("DATABASE_URL")
 utils.load_secrets("prod")
 prod = forest_tables.RoutingManager(database=utils.get_secret("DATABASE_URL"))
 
-
-async def dedup():
+async def dedup() -> None:
     dup_stage = [
         record.get("id")
         for record in (await staging.execute("select id from routing"))

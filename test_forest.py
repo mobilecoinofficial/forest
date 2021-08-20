@@ -1,5 +1,6 @@
 #!/usr/bin/python3 -i
-from typing import Optional, Any
+# pylint: disable=redefined-outer-name
+from typing import Iterator, Optional, Any
 from collections import defaultdict
 from subprocess import Popen, PIPE
 import pathlib
@@ -56,7 +57,7 @@ class Signal:
         self.received_messages: dict[int, dict[str, Message]] = defaultdict(dict)
         self.sent_messages: dict[int, dict[str, Message]] = defaultdict(dict)
 
-    def __enter__(self) -> "WhispererBase":
+    def __enter__(self) -> "Signal":
         self.proc = Popen(SIGNAL_CLI, stdin=PIPE, stdout=PIPE)
         logging.info("started signal-cli process")
         return self
@@ -65,7 +66,7 @@ class Signal:
         self.proc.kill()
         logging.info("killed signal-cli process")
 
-    def send(self, message: str, **kwargs) -> None:
+    def send(self, message: str, **kwargs: Any) -> None:
         command = {
             "command": "send",
             "recipient": [COUNTERPARTY],
@@ -90,7 +91,7 @@ class Signal:
                     pass
         except KeyboardInterrupt:
             print("ignoring interrupt")
-            pass
+        raise Exception("couldn't receive messages")
 
     def communicate(self, message: str) -> Message:
         self.send(message)
@@ -98,21 +99,28 @@ class Signal:
 
 
 @pytest.fixture
-def signal():
+def signal() -> Iterator[Signal]:
     _signal = Signal()
     with _signal:
         yield _signal
 
 
-def test_printerfact(signal):
+def test_printerfact(signal: Signal) -> None:
     signal.send("TERMINATE", endsession=True)
     assert "printer" in signal.communicate("/printerfact").text.lower()
 
+def send_sms(their_number, msg):
+    # use forestbot staging?
+    raise NotImplementedError
 
-def test_groups(signal, our_number, their_number):
+def test_groups(signal: Signal, our_number: str, their_number: str) -> None:
     signal.send("TERMINATE", endsession=True)
     # ensure number?
     group = signal.communicate(f"/mkgroup {their_number}")
-    assert signal.recv().emoji == "\N{Busts In Silhouette}"
+    assert group # idk
+    reaction = signal.recv().reaction
+    assert reaction
+    assert reaction.emoji == "\N{Busts In Silhouette}"
     assert "Invited you to a group" in signal.recv().text
+    send_sms(our_number, "foo")
     # requires sending to a group...

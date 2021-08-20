@@ -1,3 +1,4 @@
+# pylint: skip-file
 import asyncio
 import logging
 import os
@@ -9,7 +10,7 @@ try:
     import asyncpg
 
     DUMMY = False
-except:
+except ImportError:
     from dummy_asyncpg import asyncpg
 
     DUMMY = True
@@ -18,7 +19,7 @@ except:
 Loop = Optional[asyncio.events.AbstractEventLoop]
 
 AUTOCREATE = "true" in os.getenv("AUTOCREATE_TABLES", "false").lower()
-MAX_RESP_LOG_LEN = int(os.getenv("MAX_RESP_LOG_LEN", 256))
+MAX_RESP_LOG_LEN = int(os.getenv("MAX_RESP_LOG_LEN", "256"))
 LOG_LEVEL_DEBUG = bool(os.getenv("DEBUG", None))
 
 
