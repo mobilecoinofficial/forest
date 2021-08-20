@@ -292,7 +292,7 @@ class Bot(Signal):
         async for message in self.signalcli_output_iter():
             response = await self.handle_message(message)
             if response:
-                self.respond(message, response)
+                await self.respond(message, response)
 
     async def handle_message(self, message: Message) -> Response:
         if message.command:
