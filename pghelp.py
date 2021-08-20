@@ -126,6 +126,7 @@ class PGInterface:
                 #     AND pid <> pg_backend_pid();"""
                 # )
                 # return self.execute(qstring, *args, timeout=timeout)
+                # _execute takes query, args, limit, timeout
                 result = await connection._execute(
                     qstring, args, 0, timeout, return_status=True
                 )
@@ -205,7 +206,7 @@ class PGInterface:
                     and "$1" not in statement
                 ):
                     args = ()
-                resp = executer(rebuilt_statement, args)
+                resp = executer(rebuilt_statement, *args)
                 short_strresp = self.truncate(f"{resp}")
                 short_args = self.truncate(str(args))
                 self.logger.debug(

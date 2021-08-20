@@ -29,6 +29,9 @@ JSON = dict[str, Any]
 Response = Union[str, list, dict[str, str], None]
 
 
+
+
+
 class Message:
     """Represents a Message received from signal-cli, optionally containing a command with arguments."""
 
@@ -195,6 +198,11 @@ class Signal:
                 logging.info("no process")
         await self.datastore.mark_freed()
         await pghelp.close_pools()
+        # this doesn't work.
+        if datastore.memfs_process:
+            executor = datastore.memfs_process._get_executor()
+            logging.info(executor)
+            executor.shutdown(wait=False, cancel_futures=True)
         logging.info("=============exited===================")
         sys.exit(0)
         logging.info(
@@ -666,6 +674,7 @@ async def send_message_handler(request: web.Request) -> web.Response:
 
 
 app = web.Application()
+
 
 app.on_startup.append(
     start_session

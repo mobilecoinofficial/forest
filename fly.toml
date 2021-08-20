@@ -6,7 +6,7 @@ kill_signal = "SIGINT" # hm.
 kill_timeout = 5
 
 [env]
-BOT_NUMBER="+447888866969"
+# BOT_NUMBER="+447888866969"
 LOGLEVEL="INFO"
 # dev
 [experimental]
