@@ -1,9 +1,8 @@
-# pylint: skip-file
 import asyncio
 import logging
 import os
 import copy
-from typing import Any, Awaitable, Callable, Union, Optional
+from typing import Any, Callable, Union, Optional
 
 
 try:
@@ -58,10 +57,9 @@ class PGExpressions(dict):
         if "create_table" not in self:
             self.logger.warning(f"'create_table' not defined for {self.table}")
 
-    def get(self, key: str, default: Any = None) -> str:
+    def get_query(self, key: str) -> str:
         self.logger.debug(f"self.get invoked for {key}")
-        res = dict.__getitem__(self, key).replace("{self.table}", self.table)
-        return res
+        return dict.__getitem__(self, key).replace("{self.table}", self.table)
 
 
 class PGInterface:
@@ -109,15 +107,14 @@ class PGInterface:
         pools.append(self.pool)
 
     async def execute(
-        self, qstring: str, *args: str, timeout: int = 180
+        self,
+        qstring: str,
+        *args: str,
     ) -> Optional[list[asyncpg.Record]]:
         """Invoke the asyncpg connection's `execute` given a provided query string and set of arguments"""
+        timeout: int = 180
         if not self.pool and not isinstance(self.database, dict):
             await self.connect_pg()
-        if not args or args == ((),):
-            args = ()
-        elif args and len(args[0]):
-            args = args[0]  # type: ignore # not sure why this is necessary
         if self.pool:
             async with self.pool.acquire() as connection:
                 # try:
@@ -146,6 +143,7 @@ class PGInterface:
         if self.pool:
             ret = self.loop.run_until_complete(self.pool.close())
             return ret
+        return None
 
     def truncate(self, thing: str) -> str:
         if len(thing) > self.MAX_RESP_LOG_LEN:
@@ -172,10 +170,10 @@ class PGInterface:
         else:
             executer = self.execute
             qstring = key
-        statement = self.queries.get(qstring)
-        if not statement:
-            raise ValueError(f"No statement of name {qstring} or {key} found!")
-
+        try:
+            statement = self.queries.get_query(qstring)
+        except KeyError as e:
+            raise ValueError(f"No statement of name {qstring} or {key} found!") from e
         if not self.pool and isinstance(self.database, dict):
             canned_response = self.database.get(qstring, [[None]]).pop(0)
             if qstring in self.database and not self.database.get(qstring, []):
@@ -195,12 +193,12 @@ class PGInterface:
                 return resp
 
             return return_canned
-        elif "$1" in statement or "{" in statement and "}" in statement:
+        if "$1" in statement or "{" in statement and "}" in statement:
 
             def executer_with_args(*args: Any) -> Any:
                 """Closure over 'statement' in local state for application to arguments.
                 Allows deferred execution of f-strs, allowing PGExpresssions to operate on `args`."""
-                rebuilt_statement = eval(f'f"{statement}"')
+                rebuilt_statement = eval(f'f"{statement}"')  # pylint: disable=eval-used
                 if (
                     rebuilt_statement != statement
                     and "args" in statement
@@ -216,10 +214,9 @@ class PGInterface:
                 return resp
 
             return executer_with_args
-        else:
 
-            def executer_without_args() -> Any:
-                """Closure over local state for executer without arguments."""
-                return executer(statement)
+        def executer_without_args() -> Any:
+            """Closure over local state for executer without arguments."""
+            return executer(statement)
 
-            return executer_without_args
+        return executer_without_args

@@ -109,7 +109,7 @@ def test_printerfact(signal: Signal) -> None:
     signal.send("TERMINATE", endsession=True)
     assert "printer" in signal.communicate("/printerfact").text.lower()
 
-def send_sms(their_number, msg):
+def send_sms(their_number: str, msg: str) -> None:
     # use forestbot staging?
     raise NotImplementedError
 
