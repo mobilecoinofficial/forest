@@ -2,16 +2,21 @@ import time
 import mobilecoin
 import forest_tables
 
+
 mobilecoind: mobilecoin.Client = mobilecoin.Client("http://localhost:9090/wallet", ssl=False)  # type: ignore
-account_id = list(mobilecoind.get_all_accounts().keys())[0]  # pylint: disable=no-member
 
-
+def get_accounts() -> None:
+    assert hasattr(mobilecoind, "get_all_accounts")
+    raise NotImplementedError
+    # account_id = list(mobilecoind.get_all_accounts().keys())[0]  # pylint: disable=no-member # type: ignore
 def parse_receipt() -> None:
     pass
 
 
 def get_transactions() -> dict[str, dict[str, str]]:
-    return mobilecoind.get_all_transaction_logs_for_account(account_id)  # type: ignore # pylint: disable=no-member
+    raise NotImplementedError
+    # mobilecoin api changed, this needs to make full-service reqs
+    # return mobilecoind.get_all_transaction_logs_for_account(account_id)  # type: ignore # pylint: disable=no-member
 
 
 def local_main() -> None:
