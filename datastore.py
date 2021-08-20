@@ -225,6 +225,8 @@ async def getFreeSignalDatastore() -> SignalDatastore:
     return SignalDatastore(number)
 
 
+memfs_process = None
+
 async def start_memfs(app: web.Application) -> None:
     """
     mount a filesystem in userspace to store data
@@ -278,6 +280,7 @@ async def start_memfs(app: web.Application) -> None:
         memfs = aioprocessing.AioProcess(target=memfs_proc)
         memfs.start()  # pylint: disable=no-member
         app["memfs"] = memfs
+        memfs_process = memfs
 
     logging.info("awaiting launch func")
     await launch()
@@ -316,12 +319,12 @@ async def start_memfs_monitor(app: web.Application) -> None:
     app["mem_task"] = asyncio.create_task(upload_after_signalcli_writes())
 
 
-async def standalone() -> None:
+async def standalone(number: str) -> None:
     app = cast(web.Application, {})
     asyncio.create_task(start_memfs(app))
     await start_memfs_monitor(app)
     try:
-        datastore = SignalDatastore(sys.argv[1])
+        datastore = SignalDatastore(number)
         await datastore.download()
     except (IndexError, DatastoreError):
         datastore = await getFreeSignalDatastore()
@@ -340,6 +343,8 @@ async def standalone() -> None:
 
 parser = argparse.ArgumentParser(description="manage the signal datastore")
 subparser = parser.add_subparsers(dest="subparser")  # ?
+sync_parser = subparser.add_parser("sync")
+sync_parser.add_argument("--number")
 upload_parser = subparser.add_parser("upload")
 upload_parser.add_argument("--path")
 upload_parser.add_argument("--number")
@@ -350,8 +355,17 @@ migrate_parser.add_argument("--create")
 
 
 if __name__ == "__main__":
-    try:
-        store = SignalDatastore(sys.argv[1])
+    args = parser.parse_args()
+    if args.subparser == "sync":
+        asyncio.run(standalone(args.number))
+    elif args.subparser == "upload":
+        if args.number:
+            store = SignalDatastore(args.number)
+        elif args.path:
+            os.chdir(path)
+            number = os.listdir("data")[0]
+            store = SignalDatastore(number)
+        else:
+            print("Need either a path or a number")
+            sys.exit(1)
         asyncio.run(store.upload())
-    except IndexError:
-        pass
