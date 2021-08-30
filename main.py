@@ -29,9 +29,6 @@ JSON = dict[str, Any]
 Response = Union[str, list, dict[str, str], None]
 
 
-
-
-
 class Message:
     """Represents a Message received from signal-cli, optionally containing a command with arguments."""
 
@@ -140,6 +137,16 @@ class Signal:
             command = await self.signalcli_input_queue.get()
             yield command
 
+    async def on_startup(self) -> None:
+        profile = {
+            "command": "updateProfile",
+            "given-name": "localbot" if utils.LOCAL else "forestbot",
+            "family-name": utils.get_secret("ENV"),  # maybe not
+            "avatar": "avatar.png",
+        }
+        await self.signalcli_input_queue.put(profile)
+        logging.info(profile)
+
     async def launch_and_connect(self) -> None:
         logging.debug("in launch_and_connect")
         loop = asyncio.get_running_loop()
@@ -165,6 +172,7 @@ class Signal:
             self.bot_number,
             self.proc.pid,
         )
+        await self.on_startup()
         assert self.proc.stdout and self.proc.stdin
         asyncio.create_task(
             self.listen_to_signalcli(
@@ -172,14 +180,6 @@ class Signal:
                 self.signalcli_output_queue,
             )
         )
-        profile = {
-            "command": "updateProfile",
-            "given-name": "localbot" if utils.LOCAL else "forestbot",
-            "family-name": utils.get_secret("ENV"),  # maybe not
-            "avatar": "avatar.png",
-        }
-        await self.signalcli_input_queue.put(profile)
-        logging.info(profile)
         async for msg in self.signalcli_input_iter():
             logging.info("input to signal: %s", msg)
             self.proc.stdin.write(json.dumps(msg).encode() + b"\n")
@@ -235,52 +235,58 @@ class Signal:
         queue: Queue[Message],
     ) -> None:
         while True:
-            line = await stream.readline()
-            # if utils.get_secret("I_AM_NOT_A_FEDERAL_AGENT"):
-            logging.info("signal: %s", line.decode().strip())
-            # TODO: don't print receiptMessage
-            # color non-json. pretty-print errors
-            # sensibly color web traffic, too?
-            # fly / db / asyncio and other lib warnings / java / signal logic and networking
+            line = (await stream.readline()).decode().strip()
             if not line:
                 break
-            try:
-                blob = json.loads(line)
-            except json.JSONDecodeError:
-                logging.info("signal: %s", line.decode())
-                continue
-            if not isinstance(blob, dict):  # e.g. a timestamp
-                continue
-            if "error" in blob:
-                if "traceback" in blob:
-                    exception, *tb = blob["traceback"].split("\n")
-                    logging.error(termcolor.colored(exception, "red"))
-                    for line in tb:
-                        logging.error(line)
-                else:
-                    logging.error(termcolor.colored(blob["error"], "red"))
-                continue
-            if "group" in blob:
-                # maybe this info should just be in Message and handled in Session
-                # SMS with {number} via {number}
-                their, our = blob["name"].removeprefix("SMS with ").split(" via ")
-                # TODO: this needs to use number[0]
-                await GroupRoutingManager().set_sms_route_for_group(
-                    teli.teli_format(their),
-                    teli.teli_format(our),
-                    blob["group"],
-                )
-                # cmd = {
-                #     "command": "updateGroup",
-                #     "group": blob["group"],
-                #     "admin": message.source,
-                # }
-                logging.info("made a new group route from %s", blob)
-                continue
-            msg = Message(blob)
-            if msg.text:
-                logging.info("signal: %s", line.decode())
-            await queue.put(msg)
+            await self.handle_raw_signalcli_output(line, queue)
+
+    async def handle_raw_signalcli_output(
+        self, line: str, queue: Queue[Message]
+    ) -> None:
+        # if utils.get_secret("I_AM_NOT_A_FEDERAL_AGENT"):
+        # logging.info("signal: %s", line)
+        # TODO: don't print receiptMessage
+        # color non-json. pretty-print errors
+        # sensibly color web traffic, too?
+        # fly / db / asyncio and other lib warnings / java / signal logic and networking
+        try:
+            blob = json.loads(line)
+        except json.JSONDecodeError:
+            logging.info("signal: %s", line)
+            return
+        if not isinstance(blob, dict):  # e.g. a timestamp
+            return
+        if "error" in blob:
+            if "traceback" in blob:
+                exception, *tb = blob["traceback"].split("\n")
+                logging.error(termcolor.colored(exception, "red"))
+                for _line in tb:
+                    logging.error(_line)
+            else:
+                logging.error(termcolor.colored(blob["error"], "red"))
+            return
+        if "group" in blob:
+            # maybe this info should just be in Message and handled in Session
+            # SMS with {number} via {number}
+            their, our = blob["name"].removeprefix("SMS with ").split(" via ")
+            # TODO: this needs to use number[0]
+            await GroupRoutingManager().set_sms_route_for_group(
+                teli.teli_format(their),
+                teli.teli_format(our),
+                blob["group"],
+            )
+            # cmd = {
+            #     "command": "updateGroup",
+            #     "group": blob["group"],
+            #     "admin": message.source,
+            # }
+            logging.info("made a new group route from %s", blob)
+            return
+        msg = Message(blob)
+        if msg.text:
+            logging.info("signal: %s", line)
+        await queue.put(msg)
+        return
 
 
 class Bot(Signal):
@@ -325,6 +331,48 @@ class Bot(Signal):
                 "did you include the country code?",
             )
             return None
+
+
+class GroupBot(Bot):
+    last_group = None
+
+    async def handle_message(self, message: Message) -> Response:
+        if message.group:
+            self.last_group = message.group
+            cmd = {"command": "listGroups"}
+            logging.info(cmd)
+            await self.signalcli_input_queue.put(cmd)
+        return await super().handle_message(message)
+
+    async def handle_raw_signalcli_output(self, line: str, queue: Queue[Message]) -> None:
+        logging.info(line)
+        try:
+            blob = json.loads(line)
+        except json.JSONDecodeError:
+            return await super().handle_raw_signalcli_output(line, queue)
+        if not (isinstance(blob, list) and self.last_group):
+            return await super().handle_raw_signalcli_output(line, queue)
+        try:
+            group_info = next(group for group in blob if group.get("id") == self.last_group)
+            logging.info(blob)
+        except StopIteration:
+            return await super().handle_raw_signalcli_output(line, queue)
+        kick = [
+            member for member in group_info.get("members", []) if member != self.bot_number
+        ]
+        if not kick:
+            return await super().handle_raw_signalcli_output(line, queue)
+        cmd = {"command": "updateGroup", "remove-member": kick, "group": self.last_group}
+        self.last_group = None
+        await self.signalcli_input_queue.put(cmd)
+        for person in kick:
+            await self.send_message(
+                person,
+                [
+                    "here are the backsamples and associated costs",
+                    "video: tit.mp4, cost: 0.5 MOB",
+                ],
+            )
 
 
 class Forest(Bot):
@@ -582,7 +630,7 @@ async def start_session(our_app: web.Application) -> None:
         number = utils.signal_format(sys.argv[1])
     except IndexError:
         number = utils.get_secret("BOT_NUMBER")
-    our_app["session"] = new_session = Forest(number)
+    our_app["session"] = new_session = GroupBot(number)
     if utils.get_secret("MIGRATE"):
         logging.info("migrating db...")
         await new_session.routing_manager.migrate()
