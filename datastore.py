@@ -362,7 +362,7 @@ if __name__ == "__main__":
         if args.number:
             store = SignalDatastore(args.number)
         elif args.path:
-            os.chdir(path)
+            os.chdir(args.path)
             number = os.listdir("data")[0]
             store = SignalDatastore(number)
         else:
