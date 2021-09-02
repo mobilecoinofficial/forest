@@ -227,6 +227,7 @@ async def getFreeSignalDatastore() -> SignalDatastore:
 
 memfs_process = None
 
+
 async def start_memfs(app: web.Application) -> None:
     """
     mount a filesystem in userspace to store data
@@ -363,8 +364,8 @@ if __name__ == "__main__":
             store = SignalDatastore(args.number)
         elif args.path:
             os.chdir(args.path)
-            number = os.listdir("data")[0]
-            store = SignalDatastore(number)
+            number_from_file = os.listdir("data")[0]
+            store = SignalDatastore(number_from_file)
         else:
             print("Need either a path or a number")
             sys.exit(1)

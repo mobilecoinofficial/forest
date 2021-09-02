@@ -109,15 +109,17 @@ def test_printerfact(signal: Signal) -> None:
     signal.send("TERMINATE", endsession=True)
     assert "printer" in signal.communicate("/printerfact").text.lower()
 
+
 def send_sms(their_number: str, msg: str) -> None:
     # use forestbot staging?
     raise NotImplementedError
+
 
 def test_groups(signal: Signal, our_number: str, their_number: str) -> None:
     signal.send("TERMINATE", endsession=True)
     # ensure number?
     group = signal.communicate(f"/mkgroup {their_number}")
-    assert group # idk
+    assert group  # idk
     reaction = signal.recv().reaction
     assert reaction
     assert reaction.emoji == "\N{Busts In Silhouette}"

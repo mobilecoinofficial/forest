@@ -5,10 +5,13 @@ import forest_tables
 
 mobilecoind: mobilecoin.Client = mobilecoin.Client("http://localhost:9090/wallet", ssl=False)  # type: ignore
 
+
 def get_accounts() -> None:
     assert hasattr(mobilecoind, "get_all_accounts")
     raise NotImplementedError
     # account_id = list(mobilecoind.get_all_accounts().keys())[0]  # pylint: disable=no-member # type: ignore
+
+
 def parse_receipt() -> None:
     pass
 

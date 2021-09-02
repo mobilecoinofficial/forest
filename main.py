@@ -66,8 +66,8 @@ class Message:
 
 class Signal:
     """
-k   Represents a signal-cli session
-    Creates database connections for managing signal keys and payments.
+    k   Represents a signal-cli session
+        Creates database connections for managing signal keys and payments.
     """
 
     def __init__(self, bot_number: str) -> None:
@@ -332,6 +332,7 @@ class Bot(Signal):
             )
             return None
 
+
 class Forest(Bot):
     def __init__(self, *args: str) -> None:
         self.teli = teli.Teli()
@@ -587,7 +588,7 @@ async def start_session(our_app: web.Application) -> None:
         number = utils.signal_format(sys.argv[1])
     except IndexError:
         number = utils.get_secret("BOT_NUMBER")
-    our_app["session"] = new_session = ForestBot(number)
+    our_app["session"] = new_session = Forest(number)
     if utils.get_secret("MIGRATE"):
         logging.info("migrating db...")
         await new_session.routing_manager.migrate()

@@ -11,6 +11,7 @@ staging = forest_tables.RoutingManager(database=utils.get_secret("DATABASE_URL")
 utils.load_secrets("prod")
 prod = forest_tables.RoutingManager(database=utils.get_secret("DATABASE_URL"))
 
+
 async def dedup() -> None:
     dup_stage = [
         record.get("id")

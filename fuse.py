@@ -1015,4 +1015,4 @@ class LoggingMixIn:
             raise
         finally:
             if hasattr(self, "logqueue") and self.logqueue:
-               self.logqueue.put(["<-", op, repr(ret)])
+                self.logqueue.put(["<-", op, repr(ret)])
