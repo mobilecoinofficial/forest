@@ -1,14 +1,13 @@
 # fly.toml file generated for forest-dev on 2021-06-16T23:53:35-04:00
 
-app = "forest-dev"
+app = "through-the-trees-staging"
 #"forest-dev" # 
 kill_signal = "SIGINT" # hm.
 kill_timeout = 5
 
 [env]
-# BOT_NUMBER="+447888866969"
 LOGLEVEL="INFO"
-# dev
+
 [experimental]
   allowed_public_ports = []
   auto_rollback = false
