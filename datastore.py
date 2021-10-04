@@ -313,7 +313,7 @@ async def start_memfs_monitor(app: web.Application) -> None:
                 if maybe_session:
                     counter += 1
                     if time.time() % (60 * 3) == 0:
-                        logging.info("background syncs in the past ~3mo: %s", counter)
+                        logging.info("background syncs in the past ~3min: %s", counter)
                         counter = 0
                     await maybe_session.datastore.upload()
 
@@ -364,9 +364,11 @@ if __name__ == "__main__":
             store = SignalDatastore(args.number)
         elif args.path:
             os.chdir(args.path)
-            number_from_file = os.listdir("data")[0]
-            store = SignalDatastore(number_from_file)
+            number = os.listdir("data")[0]
+            store = SignalDatastore(number)
         else:
             print("Need either a path or a number")
             sys.exit(1)
         asyncio.run(store.upload())
+    else:
+        print("not implemented")

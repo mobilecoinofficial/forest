@@ -15,6 +15,7 @@ import aiohttp
 import phonenumbers as pn
 import termcolor
 from aiohttp import web
+from phonenumbers import NumberParseException
 
 # framework
 import datastore
@@ -66,8 +67,8 @@ class Message:
 
 class Signal:
     """
-    k   Represents a signal-cli session
-        Creates database connections for managing signal keys and payments.
+    Represents a signal-cli session
+    Creates database connections for managing signal keys and payments.
     """
 
     def __init__(self, bot_number: str) -> None:
@@ -101,7 +102,11 @@ class Signal:
         if group:
             json_command["group"] = group
         elif recipient:
-            assert recipient == utils.signal_format(recipient)
+            try:
+                assert recipient == utils.signal_format(recipient)
+            except (AssertionError, NumberParseException) as e:
+                logging.error(e)
+                return
             json_command["recipient"] = [str(recipient)]
         await self.signalcli_input_queue.put(json_command)
         return
@@ -397,7 +402,7 @@ class Forest(Bot):
                     destination=quoted["source"],
                     message_text=message.text,
                 )
-                self.send_reaction(message, "\N{Outbox Tray}")
+                await self.send_reaction(message, "\N{Outbox Tray}")
                 return response
             await self.send_reaction(message, "\N{Cross Mark}")
             return "Couldn't send that reply"
@@ -675,7 +680,9 @@ async def send_message_handler(request: web.Request) -> web.Response:
     if not session:
         return web.Response(status=504, text="Sorry, no live workers.")
     msg_data = await request.text()
-    await session.send_message(account, msg_data)
+    await session.send_message(
+        account, msg_data, endsession=request.query.get("endsession")
+    )
     return web.json_response({"status": "sent"})
 
 
