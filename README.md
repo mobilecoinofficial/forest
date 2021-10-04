@@ -1,6 +1,9 @@
 
 You can use `./datastore.py upload --number` or `./datastore.py sync --number` to mess with the DB. your secrets file should be named {prod,staging,dev}_secrets. you can use `ENV=prod ./datastore ...` to select said file accordingly.
 
+If things seem wrong, you can use `fly suspend`, the above to sync, use signal-cli locally to receive/send --endsession/trust identities/whatever, then `fly resume`
+
+
 
 To update secrets:
 `cat secrets | flyctl secrets import`
@@ -13,4 +16,7 @@ Deploys generally should be `--strategy immediate` to not risk the old instance 
 
 > flyctl deploy [<workingdirectory>] [flags]
 >  --strategy string      The strategy for replacing running instances. Options are canary, rolling, bluegreen, or immediate. Default is canary
+
+
+
 
