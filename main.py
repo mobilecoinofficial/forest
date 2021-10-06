@@ -172,6 +172,7 @@ class Signal:
         self.proc = await asyncio.create_subprocess_exec(
             *command, stdin=PIPE, stdout=PIPE
         )
+        # while 1: await self.proc.wait(); self.proc = await asyncio.create_subprocess_exec ...
         logging.info(
             "started signal-cli @ %s with PID %s",
             self.bot_number,
