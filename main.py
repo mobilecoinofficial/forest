@@ -692,7 +692,6 @@ async def send_message_handler(request: web.Request) -> web.Response:
 
 app = web.Application()
 
-
 app.on_startup.append(
     start_session
 )  # cut this out. sessions can be attached to the app after the fact
@@ -704,6 +703,7 @@ app.add_routes(
         web.get("/", noGet),
         web.post("/inbound", inbound_sms_handler),
         web.post("/user/{phonenumber}", send_message_handler),
+        web.get("/ping", lambda req: web.Response(text="pong")
     ]
 )
 
