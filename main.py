@@ -414,6 +414,8 @@ class Forest(Bot):
             asyncio.create_task(self.do_register(message))
         elif message.payment:
             self.scratch["payments"][message.source] = True
+            payment_monitor.b64_receipt_to_full_service_receipt(message.payment)
+
             return "Thank you for paying! You can now buy a phone number with /order <area code>"
         return await Bot.handle_message(self, message)
 
