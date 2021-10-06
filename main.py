@@ -322,6 +322,9 @@ class Bot(Signal):
             fact = await resp.text()
         return fact.strip()
 
+    async def do_ping(self, _: Message) -> str:
+        return "pong"
+
     async def check_target_number(self, msg: Message) -> Optional[str]:
         logging.debug("checking %s", msg.arg1)
         try:
