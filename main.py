@@ -203,7 +203,7 @@ class Signal:
                 logging.info("no process")
         await self.datastore.mark_freed()
         await pghelp.close_pools()
-        # this doesn't work.
+        # this doesn't work. see https://github.com/forestcontact/forest-draft/issues/10
         if datastore.memfs_process:
             executor = datastore.memfs_process._get_executor()
             logging.info(executor)

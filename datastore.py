@@ -182,7 +182,7 @@ class SignalDatastore:
             )
             tarball.add("data")
         fnames = [member.name for member in tarball.getmembers()]
-        logging.debug(fnames[:2])
+        logging.trace(fnames[:2])
         tarball.close()
         buffer.seek(0)
         data = buffer.read()
@@ -199,7 +199,7 @@ class SignalDatastore:
         #
         # open("last_uploaded_checksum", "w").write(zlib.crc32(buffer.seek(0).read()))
         await self.account_interface.upload(self.number, data)
-        logging.debug("saved %s kb of tarballed datastore to supabase", kb)
+        logging.trace("saved %s kb of tarballed datastore to supabase", kb)
         return
 
     async def mark_freed(self) -> list:
@@ -235,8 +235,6 @@ async def start_memfs(app: web.Application) -> None:
     this means we can log signal-cli's interactions with fs,
     and store them in mem_queue
     """
-    logging.info("starting memfs")
-    app["mem_queue"] = mem_queue = aioprocessing.AioQueue()
     if utils.LOCAL:
         if utils.ROOT_DIR == ".":
             logging.warning("not deleting current dir, so not starting memfs")
@@ -251,7 +249,10 @@ async def start_memfs(app: web.Application) -> None:
         os.symlink(Path("avatar.png").absolute(), utils.ROOT_DIR + "/avatar.png")
         logging.info("chdir to %s", utils.ROOT_DIR)
         os.chdir(utils.ROOT_DIR)
+        logging.info("not starting memfs because running locally")
         return
+    logging.info("starting memfs")
+    app["mem_queue"] = mem_queue = aioprocessing.AioQueue()
     if not os.path.exists("/dev/fuse"):
         # you *must* have fuse already loaded if running locally
         proc = Popen(
@@ -296,7 +297,10 @@ async def start_memfs_monitor(app: web.Application) -> None:
     """
 
     async def upload_after_signalcli_writes() -> None:
-        queue = app["mem_queue"]
+        queue = app.get("mem_queue")
+        if not queue:
+            logging.info("no mem_queue, nothing to monitor")
+            return 
         logging.info("monitoring memfs")
         counter = 0
         while True:
@@ -354,10 +358,19 @@ download_parser.add_argument("--number")
 migrate_parser = subparser.add_parser("migrate")
 migrate_parser.add_argument("--create")
 
+async def do_free(args):
+    await get_account_interface().mark_account_freed(args.number)
+
+free_parser = subparser.add_parser("free", help="mark account freed")
+free_parser.add_argument("--number")
+free_parser.set_defaults(func=do_free)
+
 
 if __name__ == "__main__":
     args = parser.parse_args()
-    if args.subparser == "sync":
+    if hasattr(args, "func"):
+        asyncio.run(args.func(args))
+    elif args.subparser == "sync":
         asyncio.run(standalone(args.number))
     elif args.subparser == "upload":
         if args.number:
@@ -370,5 +383,6 @@ if __name__ == "__main__":
             print("Need either a path or a number")
             sys.exit(1)
         asyncio.run(store.upload())
+
     else:
         print("not implemented")

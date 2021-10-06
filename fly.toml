@@ -1,6 +1,6 @@
 # fly.toml file generated for forest-dev on 2021-06-16T23:53:35-04:00
 
-app = "through-the-trees-staging"
+app = "forest-dev"
 #"forest-dev" # 
 kill_signal = "SIGINT" # hm.
 kill_timeout = 5
