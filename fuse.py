@@ -1,4 +1,5 @@
 # type: ignore
+# pylint: skip-file
 # Copyright (c) 2021 Ilia Daniher <itdaniher@gmail.com> (hacker)
 # Copyright (c) 2017 Ian Daniher <itdaniher@gmail.com> (hacker)
 # Copyright (c) 2012 Terence Honles <terence@honles.com> (maintainer)

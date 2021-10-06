@@ -3,16 +3,27 @@ import mobilecoin
 import forest_tables
 
 
-mobilecoind = mobilecoin.Client()
-account_id = list(mobilecoind.get_all_accounts().keys())[0]
+mobilecoind: mobilecoin.Client = mobilecoin.Client("http://localhost:9090/wallet", ssl=False)  # type: ignore
 
 
-def get_transactions():
-    return mobilecoind.get_all_transaction_logs_for_account(account_id)
+def get_accounts() -> None:
+    assert hasattr(mobilecoind, "get_all_accounts")
+    raise NotImplementedError
+    # account_id = list(mobilecoind.get_all_accounts().keys())[0]  # pylint: disable=no-member # type: ignore
 
 
-def local_main():
-    last_transactions = {}
+def parse_receipt() -> None:
+    pass
+
+
+def get_transactions() -> dict[str, dict[str, str]]:
+    raise NotImplementedError
+    # mobilecoin api changed, this needs to make full-service reqs
+    # return mobilecoind.get_all_transaction_logs_for_account(account_id)  # type: ignore # pylint: disable=no-member
+
+
+def local_main() -> None:
+    last_transactions: dict[str, dict[str, str]] = {}
     payments_manager_connection = forest_tables.PaymentsManager()
     payments_manager_connection.sync_create_table()
 
@@ -20,7 +31,7 @@ def local_main():
         latest_transactions = get_transactions()
         for transaction in latest_transactions:
             if transaction not in last_transactions:
-                unobserved_tx = latest_transactions.get(transaction)
+                unobserved_tx = latest_transactions.get(transaction, {})
                 short_tx = {}
                 for k, v in unobserved_tx.items():
                     if isinstance(v, list) and len(v) == 1:
