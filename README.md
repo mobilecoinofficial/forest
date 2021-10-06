@@ -9,7 +9,7 @@ To update secrets:
 `cat secrets | flyctl secrets import`
 
 
-you'll need to grab [https://github.com/forestcontact/signal-cli, `./gradlew build`, and add a symlink to the working directory, and register an account -- you can use https://github.com/forestcontact/go_ham/blob/main/register.py or https://github.com/forestcontact/message-in-a-bottle as a starting point
+you'll need to grab [https://github.com/forestcontact/signal-cli], `./gradlew build`, and add a symlink to the working directory, and register an account -- you can use https://github.com/forestcontact/go_ham/blob/main/register.py or https://github.com/forestcontact/message-in-a-bottle as a starting point
 
 
 Deploys generally should be `--strategy immediate` to not risk the old instance receiving messages and advancing the ratchet after the new instance has already downloaded the state.
@@ -19,4 +19,8 @@ Deploys generally should be `--strategy immediate` to not risk the old instance 
 
 
 
+TODO: elaborate on
 
+- things we hold evident
+- design considerations
+- experiments tried
