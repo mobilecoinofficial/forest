@@ -1,6 +1,7 @@
 import time
 import mobilecoin
 import forest_tables
+import aiohttp
 import base64
 
 
@@ -13,6 +14,16 @@ def get_accounts() -> None:
     # account_id = list(mobilecoind.get_all_accounts().keys())[0]  # pylint: disable=no-member # type: ignore
 
 
+async def mob(data: dict) -> dict:
+    better_data = {"jsonrpc": "2.0", "id": 1, **data}
+    with aiohttp.ClientSession as session:
+        req = session.post(
+            "http://localhost:9090/wallet",
+            data=json.dumps(better_data),
+            headers={"Content-Type": "application/json"},
+        )
+        async with req as resp:
+            return await resp.json()
 
 
 def b64_receipt_to_full_service_receipt(b64_string):
@@ -33,8 +44,31 @@ def b64_receipt_to_full_service_receipt(b64_string):
     }
     return full_service_receipt
 
-    return tx["result"]["txo"]["value_pmob"]
 
+async def import_account() -> None:
+    params = {
+          "mnemonic": utils.get_secret("mnemonic"),
+          "key_derivation_version": "2",
+          "name": "falloopa",
+          "next_subaddress_index": 2,
+          "first_block_index": "3500",
+    }
+    await mob({"method": "import_account",        "params": params})
+
+async def get_address() -> str:
+    res = mob({"method": "get_all_accounts"})
+    acc_id = res["result"]["account_ids"][0]
+    return res["result"]["account_map"][acc_id]["main_address"]
+
+
+async def get_receipt_amount(receipt_str: str) -> int:
+    full_service_receipt = b64_receipt_to_full_service_receipt(receipt_str)
+    params = {
+        "address": utils.get_secret("address"),
+        "receiver_receipt": full_service_receipt,
+    }
+    tx = await mob({"method": "check_receiver_receipt_status", "params": params})
+    return tx["result"]["txo"]["value_pmob"]
 
 
 def get_transactions() -> dict[str, dict[str, str]]:

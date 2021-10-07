@@ -7,11 +7,14 @@ import os
 import random
 import signal
 import sys
+import time
 from asyncio import Queue
 from asyncio.subprocess import PIPE
+from functools import lru_cache
 from typing import Any, AsyncIterator, Optional, Union
 
 import aiohttp
+import payment_monitor
 import phonenumbers as pn
 import termcolor
 from aiohttp import web
@@ -20,14 +23,20 @@ from phonenumbers import NumberParseException
 # framework
 import datastore
 import pghelp
-import utils
-
 # biz logic
 import teli
+import utils
 from forest_tables import GroupRoutingManager, PaymentsManager, RoutingManager
 
 JSON = dict[str, Any]
 Response = Union[str, list, dict[str, str], None]
+
+
+
+# h/t https://stackoverflow.com/questions/31771286/python-in-memory-cache-with-time-to-live
+def get_ttl_hash(seconds: int=3600) -> int:
+    """Return the same value withing `seconds` time period"""
+    return round(time.time() / seconds)
 
 
 class Message:
@@ -353,9 +362,7 @@ class Forest(Bot):
     async def send_sms(
         self, source: str, destination: str, message_text: str
     ) -> dict[str, str]:
-        """
-        Send SMS via teliapi.net call and returns the response
-        """
+        """Send SMS via teliapi.net call and returns the response"""
         payload = {
             "source": source,
             "destination": destination,
@@ -413,10 +420,19 @@ class Forest(Bot):
         if message.command == "register":
             asyncio.create_task(self.do_register(message))
         elif message.payment:
-            self.scratch["payments"][message.source] = True
-            payment_monitor.b64_receipt_to_full_service_receipt(message.payment)
-
-            return "Thank you for paying! You can now buy a phone number with /order <area code>"
+            if message.source not in self.scratch["payments"]:
+                self.scratch["payments"][message.source] = 0
+            amount = payment_monitor.get_receipt_amount(message.payment["receipt"])
+            self.scratch["payments"][message.source] += amount
+            self.respond(message, f"Thank you for sending {amount} MOB")
+            diff = self.scratch["payments"][message.source] - await self.get_price(
+                ttl_hash=get_ttl_hash
+            )
+            if diff < 0:
+                return "Please send another {abs(diff)} MOB to buy a phone number"
+            if diff == 0:
+                return "Thank you for paying! You can now buy a phone number with /order <area code>"
+            return "Thank you for paying! You've overpayed by {diff}. Contact an administrator for a refund"
         return await Bot.handle_message(self, message)
 
     async def do_help(self, _: Message) -> str:
@@ -452,8 +468,12 @@ class Forest(Bot):
             'try "/register" and following the instructions.'
         )
 
-    async def do_register(self, message: Message) -> bool:
-        """register for a phone number"""
+    @lru_cache(maxsize=2)
+    async def get_price(
+        self, ttl_hash: Optional[int] = None, perturb: bool = False
+    ) -> float:
+        del ttl_hash  # to emphasize we don't use it and to shut pylint up
+        # this needs to cached per-hour or something
         usdt_price = 4.0  # 15.00
         try:
             url = "https://big.one/api/xn/v1/asset_pairs/8e900cb1-6331-4fe7-853c-d678ba136b2f"
@@ -469,13 +489,20 @@ class Forest(Bot):
             logging.error(e)
             # big.one goes down sometimes, if it does... make up a price
             mob_rate = 14
-        # perturb each price slightly
-        mob_rate -= random.random() / 1000
+        if perturb:
+            # perturb each price slightly
+            mob_rate -= random.random() / 1000
         # invpico = 100000000000 # doesn't work in mixin
         invnano = 100000000
         nmob_price = int(usdt_price / mob_rate * invnano)
         mob_price_exact = round(nmob_price / invnano, 3)
         # dunno if we want to generate new wallets? what happens if a user overpays?
+        return mob_price_exact
+
+    async def do_register(self, message: Message) -> bool:
+        """register for a phone number"""
+        mob_price_exact = await self.get_price(ttl_hash=get_ttl_hash())
+        nmob_price = mob_price_exact * 100000000
         responses = [
             f"The current price for a SMS number is {mob_price_exact}MOB/month. If you would like to continue, please send exactly...",
             f"{mob_price_exact}",
@@ -516,7 +543,10 @@ class Forest(Bot):
         """usage: /order <area code>"""
         if not (msg.arg1 and len(msg.arg1) == 3 and msg.arg1.isnumeric()):
             return """usage: /order <area code>"""
-        if msg.source not in self.scratch["payments"]:
+        diff = self.scratch["payments"].get(msg.source, 0) < await self.get_price(
+            ttl_hash=get_ttl_hash()
+        )
+        if diff < 0:
             # this needs to check if there are *unfulfilled* payments
             return "make a payment with /register first"
         await self.routing_manager.sweep_expired_destinations()
@@ -544,7 +574,9 @@ class Forest(Bot):
         await self.teli.set_sms_url(number, utils.URL + "/inbound")
         await self.routing_manager.set_destination(number, msg.source)
         if await self.routing_manager.get_destination(number):
-            self.scratch["payments"][msg.source] = False
+            self.scratch["payments"][msg.source] -= await self.get_price(
+                ttl_hash=get_ttl_hash()
+            )
             return f"you are now the proud owner of {number}"
         return "db error?"
 
@@ -600,6 +632,10 @@ async def start_session(our_app: web.Application) -> None:
     except IndexError:
         number = utils.get_secret("BOT_NUMBER")
     our_app["session"] = new_session = Forest(number)
+    try:
+        payment_monitor.get_address()
+    except IndexError:
+        payment_monitor.import_account()
     if utils.get_secret("MIGRATE"):
         logging.info("migrating db...")
         await new_session.routing_manager.migrate()

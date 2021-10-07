@@ -1,0 +1,16 @@
+# fly.toml file generated for full-service on 2021-10-07T15:09:35-04:00
+
+app = "full-service"
+
+kill_signal = "SIGINT"
+kill_timeout = 5
+processes = []
+
+[env]
+    RUST_LOG = "info"
+    mc_connection = "info"
+    mc_ledger_sync = "info"
+
+[mounts]
+source="ledger"
+destination="/data"

@@ -358,7 +358,7 @@ download_parser.add_argument("--number")
 migrate_parser = subparser.add_parser("migrate")
 migrate_parser.add_argument("--create")
 
-async def do_free(args):
+async def do_free(args: argparse.Namespace) -> None:
     await get_account_interface().mark_account_freed(args.number)
 
 free_parser = subparser.add_parser("free", help="mark account freed")
