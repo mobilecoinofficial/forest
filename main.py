@@ -14,7 +14,6 @@ from functools import lru_cache
 from typing import Any, AsyncIterator, Optional, Union
 
 import aiohttp
-import payment_monitor
 import phonenumbers as pn
 import termcolor
 from aiohttp import web
@@ -23,8 +22,10 @@ from phonenumbers import NumberParseException
 # framework
 import datastore
 import pghelp
+
 # biz logic
 import teli
+import payments_monitor
 import utils
 from forest_tables import GroupRoutingManager, PaymentsManager, RoutingManager
 
@@ -32,9 +33,8 @@ JSON = dict[str, Any]
 Response = Union[str, list, dict[str, str], None]
 
 
-
 # h/t https://stackoverflow.com/questions/31771286/python-in-memory-cache-with-time-to-live
-def get_ttl_hash(seconds: int=3600) -> int:
+def get_ttl_hash(seconds: int = 3600) -> int:
     """Return the same value withing `seconds` time period"""
     return round(time.time() / seconds)
 
@@ -214,8 +214,8 @@ class Signal:
         await self.datastore.mark_freed()
         await pghelp.close_pools()
         # this doesn't work. see https://github.com/forestcontact/forest-draft/issues/10
-        if datastore.memfs_process:
-            executor = datastore.memfs_process._get_executor()
+        if datastore._memfs_process:
+            executor = datastore._memfs_process._get_executor()
             logging.info(executor)
             executor.shutdown(wait=False, cancel_futures=True)
         logging.info("=============exited===================")
@@ -422,7 +422,7 @@ class Forest(Bot):
         elif message.payment:
             if message.source not in self.scratch["payments"]:
                 self.scratch["payments"][message.source] = 0
-            amount = payment_monitor.get_receipt_amount(message.payment["receipt"])
+            amount = payments_monitor.get_receipt_amount(message.payment["receipt"])
             self.scratch["payments"][message.source] += amount
             self.respond(message, f"Thank you for sending {amount} MOB")
             diff = self.scratch["payments"][message.source] - await self.get_price(
@@ -633,9 +633,9 @@ async def start_session(our_app: web.Application) -> None:
         number = utils.get_secret("BOT_NUMBER")
     our_app["session"] = new_session = Forest(number)
     try:
-        payment_monitor.get_address()
+        payments_monitor.get_address()
     except IndexError:
-        payment_monitor.import_account()
+        payments_monitor.import_account()
     if utils.get_secret("MIGRATE"):
         logging.info("migrating db...")
         await new_session.routing_manager.migrate()

@@ -1,9 +1,10 @@
+import base64
+import json
 import time
+import aiohttp
 import mobilecoin
 import forest_tables
-import aiohttp
-import base64
-
+import utils
 
 mobilecoind: mobilecoin.Client = mobilecoin.Client("http://localhost:9090/wallet", ssl=False)  # type: ignore
 
@@ -16,7 +17,7 @@ def get_accounts() -> None:
 
 async def mob(data: dict) -> dict:
     better_data = {"jsonrpc": "2.0", "id": 1, **data}
-    with aiohttp.ClientSession as session:
+    async with aiohttp.ClientSession() as session:
         req = session.post(
             "http://localhost:9090/wallet",
             data=json.dumps(better_data),
@@ -26,10 +27,10 @@ async def mob(data: dict) -> dict:
             return await resp.json()
 
 
-def b64_receipt_to_full_service_receipt(b64_string):
+def b64_receipt_to_full_service_receipt(b64_string: str) -> dict:
     """Convert a b64-encoded protobuf Receipt into a full-service receipt object"""
     receipt_bytes = base64.b64decode(b64_string)
-    receipt = mobilecoin.Receipt.ParseFromString(receipt_bytes)
+    receipt = mobilecoin.Receipt.FromString(receipt_bytes) # type: ignore
 
     full_service_receipt = {
         "object": "receiver_receipt",
@@ -47,16 +48,17 @@ def b64_receipt_to_full_service_receipt(b64_string):
 
 async def import_account() -> None:
     params = {
-          "mnemonic": utils.get_secret("mnemonic"),
-          "key_derivation_version": "2",
-          "name": "falloopa",
-          "next_subaddress_index": 2,
-          "first_block_index": "3500",
+        "mnemonic": utils.get_secret("MNEMONIC"),
+        "key_derivation_version": "2",
+        "name": "falloopa",
+        "next_subaddress_index": 2,
+        "first_block_index": "3500",
     }
-    await mob({"method": "import_account",        "params": params})
+    await mob({"method": "import_account", "params": params})
+
 
 async def get_address() -> str:
-    res = mob({"method": "get_all_accounts"})
+    res = await mob({"method": "get_all_accounts"})
     acc_id = res["result"]["account_ids"][0]
     return res["result"]["account_map"][acc_id]["main_address"]
 

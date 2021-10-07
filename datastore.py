@@ -182,7 +182,7 @@ class SignalDatastore:
             )
             tarball.add("data")
         fnames = [member.name for member in tarball.getmembers()]
-        logging.trace(fnames[:2])
+        logging.debug(fnames[:2])
         tarball.close()
         buffer.seek(0)
         data = buffer.read()
@@ -199,7 +199,7 @@ class SignalDatastore:
         #
         # open("last_uploaded_checksum", "w").write(zlib.crc32(buffer.seek(0).read()))
         await self.account_interface.upload(self.number, data)
-        logging.trace("saved %s kb of tarballed datastore to supabase", kb)
+        logging.debug("saved %s kb of tarballed datastore to supabase", kb)
         return
 
     async def mark_freed(self) -> list:
@@ -225,7 +225,7 @@ async def getFreeSignalDatastore() -> SignalDatastore:
     return SignalDatastore(number)
 
 
-memfs_process = None
+_memfs_process = None
 
 
 async def start_memfs(app: web.Application) -> None:
@@ -282,7 +282,7 @@ async def start_memfs(app: web.Application) -> None:
         memfs = aioprocessing.AioProcess(target=memfs_proc)
         memfs.start()  # pylint: disable=no-member
         app["memfs"] = memfs
-        memfs_process = memfs
+        _memfs_process = memfs
 
     logging.info("awaiting launch func")
     await launch()
@@ -300,7 +300,7 @@ async def start_memfs_monitor(app: web.Application) -> None:
         queue = app.get("mem_queue")
         if not queue:
             logging.info("no mem_queue, nothing to monitor")
-            return 
+            return
         logging.info("monitoring memfs")
         counter = 0
         while True:
@@ -346,7 +346,9 @@ async def standalone(number: str) -> None:
 # MEMFS, DOWNLOAD, ROOT_DIR, HOSTNAME, etc
 # is HCL overkill?
 
-parser = argparse.ArgumentParser(description="manage the signal datastore")
+parser = argparse.ArgumentParser(
+    description="manage the signal datastore. use ENV=... ./datastore.py to use something other than dev"
+)
 subparser = parser.add_subparsers(dest="subparser")  # ?
 sync_parser = subparser.add_parser("sync")
 sync_parser.add_argument("--number")
@@ -358,8 +360,10 @@ download_parser.add_argument("--number")
 migrate_parser = subparser.add_parser("migrate")
 migrate_parser.add_argument("--create")
 
-async def do_free(args: argparse.Namespace) -> None:
-    await get_account_interface().mark_account_freed(args.number)
+
+async def do_free(ns: argparse.Namespace) -> None:
+    await get_account_interface().mark_account_freed(ns.number)
+
 
 free_parser = subparser.add_parser("free", help="mark account freed")
 free_parser.add_argument("--number")
@@ -377,8 +381,8 @@ if __name__ == "__main__":
             store = SignalDatastore(args.number)
         elif args.path:
             os.chdir(args.path)
-            number = os.listdir("data")[0]
-            store = SignalDatastore(number)
+            num = os.listdir("data")[0]
+            store = SignalDatastore(num)
         else:
             print("Need either a path or a number")
             sys.exit(1)

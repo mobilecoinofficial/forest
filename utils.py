@@ -49,16 +49,19 @@ logger.addHandler(handler)
 # "false" being truthy is annoying
 
 
-def load_secrets(env: Optional[str] = None) -> None:
+def load_secrets(env: Optional[str] = None, overwrite: bool = False) -> None:
     if not env:
         env = os.environ.get("ENV", "dev")
     try:
         logging.info("loading secrets from %s_secrets", env)
         secrets = [line.strip().split("=", 1) for line in open(f"{env}_secrets")]
         can_be_a_dict = cast(list[tuple[str, str]], secrets)
-        new_env = (
-            dict(can_be_a_dict) | os.environ
-        )  # mask loaded secrets with existing env
+        if overwrite:
+            new_env = dict(can_be_a_dict)
+        else:
+            new_env = (
+                dict(can_be_a_dict) | os.environ
+            )  # mask loaded secrets with existing env
         os.environ.update(new_env)
     except FileNotFoundError:
         pass
@@ -76,7 +79,6 @@ HOSTNAME = open("/etc/hostname").read().strip()  #  FLY_ALLOC_ID
 APP_NAME = os.getenv("FLY_APP_NAME")
 URL = f"https://{APP_NAME}.fly.dev"
 LOCAL = APP_NAME is None
-print("download: ", get_secret("NO_DOWNLOAD"))
 ROOT_DIR = (
     "." if get_secret("NO_DOWNLOAD") else "/tmp/local-signal" if LOCAL else "/app"
 )
