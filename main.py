@@ -633,9 +633,9 @@ async def start_session(our_app: web.Application) -> None:
         number = utils.get_secret("BOT_NUMBER")
     our_app["session"] = new_session = Forest(number)
     try:
-        payments_monitor.get_address()
+        await payments_monitor.get_address()
     except IndexError:
-        payments_monitor.import_account()
+        await payments_monitor.import_account()
     if utils.get_secret("MIGRATE"):
         logging.info("migrating db...")
         await new_session.routing_manager.migrate()
