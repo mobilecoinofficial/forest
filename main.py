@@ -545,12 +545,14 @@ class Forest(Bot):
         """usage: /order <area code>"""
         if not (msg.arg1 and len(msg.arg1) == 3 and msg.arg1.isnumeric()):
             return """usage: /order <area code>"""
-        diff = self.scratch["payments"].get(msg.source, 0) < await self.get_price(
-            ttl_hash=get_ttl_hash()
-        )
+        price = await self.get_price(
+                    ttl_hash=get_ttl_hash()
+                            )
+        diff = self.scratch["payments"].get(msg.source, 0) - price
         if diff < 0:
             # this needs to check if there are *unfulfilled* payments
             return "make a payment with /register first"
+        self.scratch["payments"][msg.source] -= price
         await self.routing_manager.sweep_expired_destinations()
         available_numbers = [
             num
