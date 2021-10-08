@@ -535,7 +535,10 @@ class Forest(Bot):
 
     async def do_pay(self, message: Message) -> str:
         if message.arg1 == "shibboleth":
-            self.scratch["payments"][message.source] = True
+            new_balance = self.scratch["payments"].get(message.source, 0) + await self.get_price(
+                ttl_hash=get_ttl_hash()
+            )
+            self.scratch["payments"][message.source] += new_balance
             return "...thank you for your payment"
         if message.arg1 == "sibboleth":
             return "sending attack drones to your location"
