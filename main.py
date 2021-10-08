@@ -211,7 +211,7 @@ class Signal:
                     await self.proc.wait()
                     await self.datastore.upload()
             except ProcessLookupError:
-                logging.info("no process")
+                logging.info("no signal-cli process")
         await self.datastore.mark_freed()
         await pghelp.close_pools()
         # this doesn't work. see https://github.com/forestcontact/forest-draft/issues/10
@@ -337,8 +337,9 @@ class Bot(Signal):
         return "pong"
 
     async def check_target_number(self, msg: Message) -> Optional[str]:
-        logging.debug("checking %s", msg.arg1)
         try:
+            logging.debug("checking %s", msg.arg1)
+            assert msg.arg1
             parsed = pn.parse(msg.arg1, "US")  # fixme: use PhoneNumberMatcher
             assert pn.is_valid_number(parsed)
             number = pn.format_number(parsed, pn.PhoneNumberFormat.E164)
@@ -421,20 +422,23 @@ class Forest(Bot):
         if message.command == "register":
             asyncio.create_task(self.do_register(message))
         elif message.payment:
-            if message.source not in self.scratch["payments"]:
-                self.scratch["payments"][message.source] = 0
-            amount = payments_monitor.get_receipt_amount(message.payment["receipt"])
-            self.scratch["payments"][message.source] += amount
-            self.respond(message, f"Thank you for sending {amount} MOB")
-            diff = self.scratch["payments"][message.source] - await self.get_price(
-                ttl_hash=get_ttl_hash
-            )
-            if diff < 0:
-                return "Please send another {abs(diff)} MOB to buy a phone number"
-            if diff == 0:
-                return "Thank you for paying! You can now buy a phone number with /order <area code>"
-            return "Thank you for paying! You've overpayed by {diff}. Contact an administrator for a refund"
+            return await self.handle_payment(message)
         return await Bot.handle_message(self, message)
+
+    async def handle_payment(self, message: Message) -> str:
+        if message.source not in self.scratch["payments"]:
+            self.scratch["payments"][message.source] = 0
+        amount = await payments_monitor.get_receipt_amount(message.payment["receipt"])
+        self.scratch["payments"][message.source] += amount
+        self.respond(message, f"Thank you for sending {amount} MOB")
+        diff = self.scratch["payments"][message.source] - await self.get_price(
+            ttl_hash=get_ttl_hash
+        )
+        if diff < 0:
+            return "Please send another {abs(diff)} MOB to buy a phone number"
+        if diff == 0:
+            return "Thank you for paying! You can now buy a phone number with /order <area code>"
+        return "Thank you for paying! You've overpayed by {diff}. Contact an administrator for a refund"
 
     async def do_help(self, _: Message) -> str:
         return (
@@ -534,9 +538,8 @@ class Forest(Bot):
 
     async def do_pay(self, message: Message) -> str:
         if message.arg1 == "shibboleth":
-            new_balance = self.scratch["payments"].get(message.source, 0) + await self.get_price(
-                ttl_hash=get_ttl_hash()
-            )
+            balance = self.scratch["payments"].get(message.source, 0)
+            new_balance = balance + await self.get_price(ttl_hash=get_ttl_hash())
             self.scratch["payments"][message.source] += new_balance
             return "...thank you for your payment"
         if message.arg1 == "sibboleth":

@@ -1,6 +1,5 @@
 #!/bin/python3.9
 import asyncio
-import sys
 import json
 import logging
 import os
@@ -245,7 +244,8 @@ async def start_memfs(app: web.Application) -> None:
         os.mkdir(utils.ROOT_DIR)
         os.mkdir(utils.ROOT_DIR + "/data")
         # we're going to be running in the repo
-        os.symlink(Path("signal-cli").absolute(), utils.ROOT_DIR + "/signal-cli")
+        sigcli_path = utils.get_secret("SIGNAL_CLI_PATH") or "signal-cli"
+        os.symlink(Path(sigcli_path).absolute(), utils.ROOT_DIR + "/signal-cli")
         os.symlink(Path("avatar.png").absolute(), utils.ROOT_DIR + "/avatar.png")
         logging.info("chdir to %s", utils.ROOT_DIR)
         os.chdir(utils.ROOT_DIR)
