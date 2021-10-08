@@ -1,4 +1,4 @@
-#pylint: skip-file
+# pylint: skip-file
 from main import *
 
 

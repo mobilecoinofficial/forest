@@ -30,7 +30,7 @@ async def mob(data: dict) -> dict:
 def b64_receipt_to_full_service_receipt(b64_string: str) -> dict:
     """Convert a b64-encoded protobuf Receipt into a full-service receipt object"""
     receipt_bytes = base64.b64decode(b64_string)
-    receipt = mobilecoin.Receipt.FromString(receipt_bytes) # type: ignore
+    receipt = mobilecoin.Receipt.FromString(receipt_bytes)  # type: ignore
 
     full_service_receipt = {
         "object": "receiver_receipt",
