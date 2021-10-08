@@ -1,5 +1,4 @@
 FROM ghcr.io/graalvm/graalvm-ce:latest as sigbuilder
-ENV cache_bursts=1
 ENV GRAALVM_HOME=/opt/graalvm-ce-java11-21.2.0/ 
 SHELL ["/usr/bin/bash", "-c"]
 WORKDIR /app

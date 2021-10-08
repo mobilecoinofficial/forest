@@ -97,6 +97,12 @@ def local_main() -> None:
                         v = v[:16]
                     short_tx[k] = v
                 print(short_tx)
+                #invoice = await invoice_manager.get_invoice_by_amount(value_pmob)
+                #if invoice:
+                #    credit = await pmob_to_usd(value_pmob)
+                #    await transaction_manager.put_transaction(invoice.user, credit)
+                # otherwise check if it's related to signal pay
+                # otherwise, complain about this unsolicited payment to an admin or something
                 payments_manager_connection.sync_put_payment(
                     short_tx["transaction_log_id"],
                     short_tx["account_id"],
