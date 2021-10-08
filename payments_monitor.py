@@ -19,7 +19,7 @@ async def mob(data: dict) -> dict:
     better_data = {"jsonrpc": "2.0", "id": 1, **data}
     async with aiohttp.ClientSession() as session:
         req = session.post(
-            "http://full-service.internal/wallet",
+            "http://full-service.fly.dev/wallet",
             data=json.dumps(better_data),
             headers={"Content-Type": "application/json"},
         )

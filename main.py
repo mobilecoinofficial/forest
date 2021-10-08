@@ -152,6 +152,8 @@ class Signal:
             yield command
 
     async def on_startup(self) -> None:
+        if not utils.get_secret("PROFILE"):
+            return
         profile = {
             "command": "updateProfile",
             "given-name": "localbot" if utils.LOCAL else "forestbot",

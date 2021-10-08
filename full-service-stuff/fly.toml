@@ -14,6 +14,9 @@ kill_timeout = 5
   destination = "/data"
   source = "ledger"
 
+[experimental]
+  allowed_public_ports = []
+
 [[services]]
   http_checks = []
   internal_port = 9090
@@ -32,9 +35,3 @@ kill_timeout = 5
   [[services.ports]]
     handlers = ["tls", "http"]
     port = 443
-
-  [[services.tcp_checks]]
-    grace_period = "1s"
-    interval = "15s"
-    restart_limit = 6
-    timeout = "2s"
