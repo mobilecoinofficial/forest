@@ -377,15 +377,13 @@ if __name__ == "__main__":
     elif args.subparser == "sync":
         asyncio.run(standalone(args.number))
     elif args.subparser == "upload":
-        if args.number:
-            store = SignalDatastore(args.number)
-        elif args.path:
+        if args.path:
             os.chdir(args.path)
-            num = os.listdir("data")[0]
-            store = SignalDatastore(num)
+        if args.number:
+            num = args.number
         else:
-            print("Need either a path or a number")
-            sys.exit(1)
+            num = os.listdir("data")[0]
+        store = SignalDatastore(num)
         asyncio.run(store.upload())
 
     else:

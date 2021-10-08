@@ -151,9 +151,7 @@ class Signal:
             command = await self.signalcli_input_queue.get()
             yield command
 
-    async def on_startup(self) -> None:
-        if not utils.get_secret("PROFILE"):
-            return
+    async def set_profile(self) -> None:
         profile = {
             "command": "updateProfile",
             "given-name": "localbot" if utils.LOCAL else "forestbot",
@@ -189,7 +187,8 @@ class Signal:
             self.bot_number,
             self.proc.pid,
         )
-        await self.on_startup()
+        if utils.get_secret("PROFILE"):
+            await self.set_profile()
         assert self.proc.stdout and self.proc.stdin
         asyncio.create_task(
             self.listen_to_signalcli(
