@@ -1,16 +1,20 @@
+Requires python3.9
+
+Use pipenv install to install deps
+
+you'll need to grab [https://github.com/forestcontact/signal-cli], check out the stdio-generalized `./gradlew installDist`, and add a symlink from signal-cli/build/install/signal-cli/bin/signal-cli to the working directory.
+
+you also need to register an account -- you can use https://github.com/forestcontact/go_ham/blob/main/register.py or https://github.com/forestcontact/message-in-a-bottle as a starting point. you can also grab one from the DB if you have access to secrets.
 
 You can use `./datastore.py upload --number` or `./datastore.py sync --number` to mess with the DB. your secrets file should be named {prod,staging,dev}_secrets. you can use `ENV=prod ./datastore ...` to select said file accordingly.
 
 If things seem wrong, you can use `fly suspend`, the above to sync, use signal-cli locally to receive/send --endsession/trust identities/whatever, then `fly resume`
 
 
+We use fly.io for hosting. You'll need flyctl.
 
-To update secrets:
+To update secrets in fly:
 `cat secrets | flyctl secrets import`
-
-
-you'll need to grab [https://github.com/forestcontact/signal-cli], `./gradlew build`, and add a symlink to the working directory, and register an account -- you can use https://github.com/forestcontact/go_ham/blob/main/register.py or https://github.com/forestcontact/message-in-a-bottle as a starting point
-
 
 Deploys generally should be `--strategy immediate` to not risk the old instance receiving messages and advancing the ratchet after the new instance has already downloaded the state.
 
