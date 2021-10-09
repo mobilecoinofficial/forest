@@ -228,7 +228,7 @@ async def start_memfs(app: web.Application) -> None:
     if utils.LOCAL:
         if utils.ROOT_DIR == ".":
             logging.warning("not deleting current dir, so not starting memfs")
-            return 
+            return
         try:
             shutil.rmtree(utils.ROOT_DIR)
         except (FileNotFoundError, OSError) as e:

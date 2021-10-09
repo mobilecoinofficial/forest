@@ -86,8 +86,8 @@ def local_main() -> None:
                         v = v[:16]
                     short_tx[k] = v
                 print(short_tx)
-                #invoice = await invoice_manager.get_invoice_by_amount(value_pmob)
-                #if invoice:
+                # invoice = await invoice_manager.get_invoice_by_amount(value_pmob)
+                # if invoice:
                 #    credit = await pmob_to_usd(value_pmob)
                 #    await transaction_manager.put_transaction(invoice.user, credit)
                 # otherwise check if it's related to signal pay

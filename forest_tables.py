@@ -1,14 +1,7 @@
 from pghelp import PGExpressions, PGInterface, Loop
 import utils
 
-
-USER_DATABASE = ROUTING_DATABASE = utils.get_secret("DATABASE_URL")
-
-# backwards compat: ignore absence of status
-
-
-# additions over mainline: routing + status
-
+DATABASE_URL = utils.get_secret("DATABASE_URL")
 
 RoutingPGExpressions = PGExpressions(
     table="routing",
@@ -62,12 +55,38 @@ PaymentsPGExpressions = PGExpressions(
                                     VALUES($1, $2, $3, $4, extract(epoch from now()) * 1000, (extract(epoch from now())+3600) * 1000) ON CONFLICT DO NOTHING",
 )
 
+LedgerPGExpressions = PGExpressions(
+    table="ledger",
+    create_table="CREATE TABLE IF NOT EXISTS {self.table} ( \
+        tx_id SERIAL PRIMARY KEY, \
+        user CHARECTER VARYING(16), \
+        amount_usd_cents BIGINT NOT NULL, \
+        amount_pmob BIGINT, \
+        memo CHARACTER VARYING(32), \
+        invoice CHARECTER VARYING(34), \
+        timestamp TIMESTAMP);",
+    put_usd_tx="INSERT INTO {self_table} (user, amount_usd_cents, memo, invoice, timestamp) \
+        VALUES($1, $2, $3, $4, current_timestamp());",
+    put_pmob_tx="INSERT INTO {self.table} (user, amount_usd_cent, amount_pmob, memo, invoice, timestamp) \
+        VALUES($1, $2, $3, $4, $5, current_timestmap());",
+)
+
+
+class LedgerManager(PGInterface):
+    def __init__(
+        self,
+        queries: PGExpressions = LedgerPGExpressions,
+        database: str = DATABASE_URL,
+        loop: Loop = None,
+    ) -> None:
+        super().__init__(queries, database, loop)
+
 
 class RoutingManager(PGInterface):
     def __init__(
         self,
         queries: PGExpressions = RoutingPGExpressions,
-        database: str = USER_DATABASE,
+        database: str = DATABASE_URL,
         loop: Loop = None,
     ) -> None:
         super().__init__(queries, database, loop)
@@ -77,7 +96,7 @@ class GroupRoutingManager(PGInterface):
     def __init__(
         self,
         queries: PGExpressions = GroupRoutingPGExpressions,
-        database: str = USER_DATABASE,
+        database: str = DATABASE_URL,
         loop: Loop = None,
     ) -> None:
         super().__init__(queries, database, loop)
@@ -89,7 +108,7 @@ class PaymentsManager(PGInterface):
     def __init__(
         self,
         queries: PGExpressions = PaymentsPGExpressions,
-        database: str = USER_DATABASE,
+        database: str = DATABASE_URL,
         loop: Loop = None,
     ) -> None:
         super().__init__(queries, database, loop)

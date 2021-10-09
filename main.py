@@ -33,8 +33,6 @@ JSON = dict[str, Any]
 Response = Union[str, list, dict[str, str], None]
 
 
-
-
 class Message:
     """Represents a Message received from signal-cli, optionally containing a command with arguments."""
 
@@ -157,8 +155,8 @@ class Signal:
         await self.signalcli_input_queue.put(profile)
         logging.info(profile)
 
-    async def launch_and_connect(self) -> None:
-        logging.debug("in launch_and_connect")
+    async def start_process(self) -> None:
+        logging.debug("in start_process")
         loop = asyncio.get_running_loop()
         logging.debug("got running loop")
         # things that don't work: loop.add_signal_handler(async_shutdown) - TypeError
@@ -186,16 +184,27 @@ class Signal:
         if utils.get_secret("PROFILE"):
             await self.set_profile()
         assert self.proc.stdout and self.proc.stdin
-        asyncio.create_task(
-            self.listen_to_signalcli(
-                self.proc.stdout,
-                self.signalcli_output_queue,
-            )
-        )
+        asyncio.create_task(self.handle_signalcli_raw_output(self.proc.stdout))
         async for msg in self.signalcli_input_iter():
             logging.info("input to signal: %s", msg)
             self.proc.stdin.write(json.dumps(msg).encode() + b"\n")
         await self.proc.wait()
+
+    sigints = 0
+
+    def sync_signal_handler(self, *_: Any) -> None:
+        logging.info("handling sigint. sigints: %s", self.sigints)
+        self.sigints += 1
+        try:
+            loop = asyncio.get_running_loop()
+            logging.info("got running loop, scheduling async_shutdown")
+            asyncio.run_coroutine_threadsafe(self.async_shutdown(), loop)
+        except RuntimeError:
+            asyncio.run(self.async_shutdown())
+        if self.sigints >= 3:
+            sys.exit(1)
+            raise KeyboardInterrupt
+            logging.info("this should never get called")  # pylint: disable=unreachable
 
     async def async_shutdown(self, *_: Any, wait: bool = False) -> None:
         logging.info("starting async_shutdown")
@@ -215,7 +224,7 @@ class Signal:
             executor = datastore._memfs_process._get_executor()
             logging.info(executor)
             executor.shutdown(wait=False, cancel_futures=True)
-        logging.info("=============exited===================")
+        logging.info("exited".center(60, "="))
         sys.exit(0)
         logging.info(
             "called sys.exit but still running, os.kill sigint to %s",
@@ -225,36 +234,17 @@ class Signal:
         logging.info("still running after os.kill, trying os._exit")
         os._exit(1)
 
-    sigints = 0
-
-    def sync_signal_handler(self, *_: Any) -> None:
-        logging.info("handling sigint. sigints: %s", self.sigints)
-        self.sigints += 1
-        try:
-            loop = asyncio.get_running_loop()
-            logging.info("got running loop, scheduling async_shutdown")
-            asyncio.run_coroutine_threadsafe(self.async_shutdown(), loop)
-        except RuntimeError:
-            asyncio.run(self.async_shutdown())
-        if self.sigints >= 3:
-            sys.exit(1)
-            raise KeyboardInterrupt
-            logging.info("this should never get called")  # pylint: disable=unreachable
-
-    async def listen_to_signalcli(
+    async def handle_signalcli_raw_output(
         self,
         stream: asyncio.StreamReader,
-        queue: Queue[Message],
     ) -> None:
         while True:
             line = (await stream.readline()).decode().strip()
             if not line:
                 break
-            await self.handle_raw_signalcli_output(line, queue)
+            await self.handle_signalcli_raw_line(line)
 
-    async def handle_raw_signalcli_output(
-        self, line: str, queue: Queue[Message]
-    ) -> None:
+    async def handle_signalcli_raw_line(self, line: str) -> None:
         # if utils.get_secret("I_AM_NOT_A_FEDERAL_AGENT"):
         # logging.info("signal: %s", line)
         # TODO: don't print receiptMessage
@@ -297,7 +287,7 @@ class Signal:
         msg = Message(blob)
         if msg.full_text:
             logging.info("signal: %s", line)
-        await queue.put(msg)
+        await self.signalcli_output_queue.put(msg)
         return
 
 
@@ -352,7 +342,7 @@ class Bot(Signal):
 class Forest(Bot):
     def __init__(self, *args: str) -> None:
         self.teli = teli.Teli()
-        self.balances: dict[str, float] = defaultdict(lambda: 0.)
+        self.balances: dict[str, float] = defaultdict(lambda: 0.0)
         self.payments_manager = PaymentsManager()
         self.routing_manager = RoutingManager()
         super().__init__(*args)
@@ -421,6 +411,57 @@ class Forest(Bot):
             return await self.handle_payment(message)
         return await Bot.handle_message(self, message)
 
+    async def do_help(self, _: Message) -> str:
+        # TODO: https://github.com/forestcontact/forest-draft/issues/14
+        return (
+            "Welcome to the Forest.contact Pre-Release!\n"
+            "To get started, try /register, or /status! "
+            "If you've already registered, try to send a message via /send."
+            ""
+        )
+
+    async def do_send(self, message: Message) -> Union[str, dict]:
+        numbers = await self.get_user_numbers(message)
+        if not numbers:
+            return "You don't have any numbers. Register with /register"
+        sms_dest = await self.check_target_number(message)
+        if not sms_dest:
+            return "Couldn't parse that number"
+        response = await self.send_sms(
+            source=numbers[0],
+            destination=sms_dest,
+            message_text=message.text,
+        )
+        await self.send_reaction(message, "\N{Outbox Tray}")
+        # sms_uuid = response.get("data")
+        # TODO: store message.source and sms_uuid in a queue, enable https://apidocs.teleapi.net/api/sms/delivery-notifications
+        #    such that delivery notifs get redirected as responses to send command
+        return response
+
+    do_msg = do_send
+
+    async def do_mkgroup(self, message: Message) -> str:
+        numbers = await self.get_user_numbers(message)
+        target_number = await self.check_target_number(message)
+        if not numbers:
+            return "no"
+        if not target_number:
+            return ""
+        cmd = {
+            "output": "json",
+            "command": "updateGroup",
+            "member": [message.source],
+            "admin": [message.source],
+            "name": f"SMS with {target_number} via {numbers[0]}",
+        }
+        await self.signalcli_input_queue.put(cmd)
+        await self.send_reaction(message, "\N{Busts In Silhouette}")
+        return "invited you to a group"
+
+    do_query = do_mkgroup
+    if not utils.get_secret("GROUPS"):
+        del do_mkgroup, do_query
+
     async def handle_payment(self, message: Message) -> str:
         logging.info(message.payment)
         amount = await payments_monitor.get_receipt_amount(message.payment["receipt"])
@@ -434,14 +475,6 @@ class Forest(Bot):
         if diff == 0:
             return "Thank you for paying! You can now buy a phone number with /order <area code>"
         return "Thank you for paying! You've overpayed by {diff}. Contact an administrator for a refund"
-
-    async def do_help(self, _: Message) -> str:
-        return (
-            "Welcome to the Forest.contact Pre-Release!\n"
-            "To get started, try /register, or /status! "
-            "If you've already registered, try to send a message via /send."
-            ""
-        )
 
     async def do_status(self, message: Message) -> Union[list[str], str]:
         numbers: list[str] = [
@@ -469,8 +502,9 @@ class Forest(Bot):
         )
 
     rate_cache: tuple[int, Optional[float]] = (0, None)
+
     async def get_rate(self) -> float:
-        hour = round(time.time() / 3600) # same value within each hour
+        hour = round(time.time() / 3600)  # same value within each hour
         if self.rate_cache[0] == hour and self.rate_cache[1] is not None:
             return self.rate_cache[1]
         try:
@@ -533,6 +567,9 @@ class Forest(Bot):
             await asyncio.sleep(10)
         return False
 
+    async def do_balance(self, message: Message) -> str:
+        return f"Your balance is {self.balances[message.source]} MOB"
+
     async def do_pay(self, message: Message) -> str:
         if message.arg1 == "shibboleth":
             balance = self.balances.get(message.source, 0)
@@ -584,86 +621,22 @@ class Forest(Bot):
     if not utils.get_secret("ORDER"):
         del do_order, do_pay
 
-    async def do_balance(self, message: Message) -> str:
-        return f"Your balance is {self.balances[message.source]} MOB"
 
-    async def do_send(self, message: Message) -> Union[str, dict]:
-        numbers = await self.get_user_numbers(message)
-        if not numbers:
-            return "You don't have any numbers. Register with /register"
-        sms_dest = await self.check_target_number(message)
-        if not sms_dest:
-            return "Couldn't parse that number"
-        response = await self.send_sms(
-            source=numbers[0],
-            destination=sms_dest,
-            message_text=message.text,
-        )
-        await self.send_reaction(message, "\N{Outbox Tray}")
-        # sms_uuid = response.get("data")
-        # TODO: store message.source and sms_uuid in a queue, enable https://apidocs.teleapi.net/api/sms/delivery-notifications
-        #    such that delivery notifs get redirected as responses to send command
-        return response
-
-    do_msg = do_send
-
-    async def do_mkgroup(self, message: Message) -> str:
-        numbers = await self.get_user_numbers(message)
-        target_number = await self.check_target_number(message)
-        if not numbers:
-            return "no"
-        if not target_number:
-            return ""
-        cmd = {
-            "output": "json",
-            "command": "updateGroup",
-            "member": [message.source],
-            "admin": [message.source],
-            "name": f"SMS with {target_number} via {numbers[0]}",
-        }
-        await self.signalcli_input_queue.put(cmd)
-        await self.send_reaction(message, "\N{Busts In Silhouette}")
-        return "invited you to a group"
-
-    do_query = do_mkgroup
-    if not utils.get_secret("GROUPS"):
-        del do_mkgroup, do_query
-
-
-async def start_session(our_app: web.Application) -> None:
-    try:
-        number = utils.signal_format(sys.argv[1])
-    except IndexError:
-        number = utils.get_secret("BOT_NUMBER")
-    our_app["session"] = new_session = Forest(number)
-    try:
-        await payments_monitor.get_address()
-    except IndexError:
-        await payments_monitor.import_account()
-    if utils.get_secret("MIGRATE"):
-        logging.info("migrating db...")
-        await new_session.routing_manager.migrate()
-        rows = await new_session.routing_manager.execute(
-            "SELECT id, destination FROM routing"
-        )
-        for row in rows if rows else []:
-            if not utils.LOCAL:
-                await new_session.teli.set_sms_url(
-                    row.get("id"), utils.URL + "/inbound"
-                )
-            if (dest := row.get("destination")) :
-                new_dest = utils.signal_format(dest)
-                await new_session.routing_manager.set_destination(
-                    row.get("id"), new_dest
-                )
-        await new_session.datastore.account_interface.migrate()
-        await group_routing_manager.execute("DROP TABLE IF EXISTS group_routing")
-        await group_routing_manager.create_table()
-    asyncio.create_task(new_session.launch_and_connect())
-    asyncio.create_task(new_session.handle_messages())
-
-
-# class Server: # or Inbound?
+async def migrate(bot: Forest) -> None:
+    logging.info("migrating db...")
+    await bot.routing_manager.migrate()
+    rows = await bot.routing_manager.execute(
+        "SELECT id, destination FROM routing"
+    )
+    for row in rows if rows else []:
+        if not utils.LOCAL:
+            await bot.teli.set_sms_url(row.get("id"), utils.URL + "/inbound")
+        if (dest := row.get("destination")) :
+            new_dest = utils.signal_format(dest)
+            await bot.routing_manager.set_destination(row.get("id"), new_dest)
+    await bot.datastore.account_interface.migrate()
+    await group_routing_manager.execute("DROP TABLE IF EXISTS group_routing")
+    await group_routing_manager.create_table()
 
 
 async def noGet(request: web.Request) -> web.Response:
@@ -671,7 +644,7 @@ async def noGet(request: web.Request) -> web.Response:
 
 
 async def inbound_sms_handler(request: web.Request) -> web.Response:
-    session = request.app.get("session")
+    session = request.app.get("bot")
     msg_data: dict[str, str] = dict(await request.post())  # type: ignore
     if not session:
         # no live worker sessions
@@ -722,7 +695,7 @@ async def inbound_sms_handler(request: web.Request) -> web.Response:
 
 async def send_message_handler(request: web.Request) -> web.Response:
     account = request.match_info.get("phonenumber")
-    session = request.app.get("session")
+    session = request.app.get("bot")
     if not session:
         return web.Response(status=504, text="Sorry, no live workers.")
     msg_data = await request.text()
@@ -735,9 +708,23 @@ async def send_message_handler(request: web.Request) -> web.Response:
 app = web.Application()
 
 
-app.on_startup.append(
-    start_session
-)  # cut this out. sessions can be attached to the app after the fact
+async def start_bot(our_app: web.Application) -> None:
+    try:
+        number = utils.signal_format(sys.argv[1])
+    except IndexError:
+        number = utils.get_secret("BOT_NUMBER")
+    our_app["bot"] = bot = Forest(number)
+    try:
+        await payments_monitor.get_address()
+    except IndexError:
+        await payments_monitor.import_account()
+    if utils.get_secret("MIGRATE"):
+        await migrate(bot)
+    asyncio.create_task(bot.start_process())
+    asyncio.create_task(bot.handle_messages())
+
+
+app.on_startup.append(start_bot)
 if not utils.get_secret("NO_MEMFS"):
     app.on_startup.append(datastore.start_memfs)
     app.on_startup.append(datastore.start_memfs_monitor)
@@ -749,10 +736,10 @@ app.add_routes(
     ]
 )
 
-app["session"] = None
+app["bot"] = None
 
 
 if __name__ == "__main__":
-    logging.info("=========================new run=======================")
+    logging.info("new run".center(60, "="))
     group_routing_manager = GroupRoutingManager()
     web.run_app(app, port=8080, host="0.0.0.0")
