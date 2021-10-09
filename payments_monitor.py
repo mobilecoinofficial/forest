@@ -1,10 +1,12 @@
-import base64
+from typing import Optional
 import json
+import logging
 import time
 import aiohttp
 import mobilecoin
 import forest_tables
 import utils
+import mc_util
 
 mobilecoind: mobilecoin.Client = mobilecoin.Client("http://localhost:9090/wallet", ssl=False)  # type: ignore
 
@@ -27,50 +29,37 @@ async def mob(data: dict) -> dict:
             return await resp.json()
 
 
-def b64_receipt_to_full_service_receipt(b64_string: str) -> dict:
-    """Convert a b64-encoded protobuf Receipt into a full-service receipt object"""
-    receipt_bytes = base64.b64decode(b64_string)
-    receipt = mobilecoin.Receipt.FromString(receipt_bytes)  # type: ignore
-
-    full_service_receipt = {
-        "object": "receiver_receipt",
-        "public_key": receipt.public_key.SerializeToString().hex(),
-        "confirmation": receipt.confirmation.SerializeToString().hex(),
-        "tombstone_block": str(int(receipt.tombstone_block)),
-        "amount": {
-            "object": "amount",
-            "commitment": receipt.amount.commitment.data.hex(),
-            "masked_value": str(int(receipt.amount.masked_value)),
-        },
-    }
-    return full_service_receipt
-
-
-async def import_account() -> None:
+async def import_account() -> dict:
     params = {
         "mnemonic": utils.get_secret("MNEMONIC"),
         "key_derivation_version": "2",
         "name": "falloopa",
-        "next_subaddress_index": 2,
+        "next_subaddress_index": "2",
         "first_block_index": "3500",
     }
-    await mob({"method": "import_account", "params": params})
+    return await mob({"method": "import_account", "params": params})
 
 
+# cache?
 async def get_address() -> str:
     res = await mob({"method": "get_all_accounts"})
     acc_id = res["result"]["account_ids"][0]
     return res["result"]["account_map"][acc_id]["main_address"]
 
 
-async def get_receipt_amount(receipt_str: str) -> int:
-    full_service_receipt = b64_receipt_to_full_service_receipt(receipt_str)
+async def get_receipt_amount(receipt_str: str) -> Optional[float]:
+    full_service_receipt = mc_util.b64_receipt_to_full_service_receipt(receipt_str)
+    logging.debug(full_service_receipt)
     params = {
-        "address": utils.get_secret("address"),
+        "address": await get_address(),
         "receiver_receipt": full_service_receipt,
     }
     tx = await mob({"method": "check_receiver_receipt_status", "params": params})
-    return tx["result"]["txo"]["value_pmob"]
+    logging.debug(tx)
+    if "error" in tx:
+        return None
+    pmob = int(tx["result"]["txo"]["value_pmob"])
+    return mc_util.pmob2mob(pmob)
 
 
 def get_transactions() -> dict[str, dict[str, str]]:

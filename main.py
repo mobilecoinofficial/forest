@@ -8,9 +8,9 @@ import random
 import signal
 import sys
 import time
+from collections import defaultdict
 from asyncio import Queue
 from asyncio.subprocess import PIPE
-from functools import lru_cache
 from typing import Any, AsyncIterator, Optional, Union
 
 import aiohttp
@@ -33,10 +33,6 @@ JSON = dict[str, Any]
 Response = Union[str, list, dict[str, str], None]
 
 
-# h/t https://stackoverflow.com/questions/31771286/python-in-memory-cache-with-time-to-live
-def get_ttl_hash(seconds: int = 3600) -> int:
-    """Return the same value withing `seconds` time period"""
-    return round(time.time() / seconds)
 
 
 class Message:
@@ -299,7 +295,7 @@ class Signal:
             logging.info("made a new group route from %s", blob)
             return
         msg = Message(blob)
-        if msg.text:
+        if msg.full_text:
             logging.info("signal: %s", line)
         await queue.put(msg)
         return
@@ -356,7 +352,7 @@ class Bot(Signal):
 class Forest(Bot):
     def __init__(self, *args: str) -> None:
         self.teli = teli.Teli()
-        self.scratch: dict[str, dict[str, Any]] = {"payments": {}}
+        self.balances: dict[str, float] = defaultdict(lambda: 0.)
         self.payments_manager = PaymentsManager()
         self.routing_manager = RoutingManager()
         super().__init__(*args)
@@ -426,16 +422,15 @@ class Forest(Bot):
         return await Bot.handle_message(self, message)
 
     async def handle_payment(self, message: Message) -> str:
-        if message.source not in self.scratch["payments"]:
-            self.scratch["payments"][message.source] = 0
+        logging.info(message.payment)
         amount = await payments_monitor.get_receipt_amount(message.payment["receipt"])
-        self.scratch["payments"][message.source] += amount
-        self.respond(message, f"Thank you for sending {amount} MOB")
-        diff = self.scratch["payments"][message.source] - await self.get_price(
-            ttl_hash=get_ttl_hash
-        )
+        if amount is None:
+            return "That looked like a payment, but we couldn't parse it"
+        self.balances[message.source] += amount
+        await self.respond(message, f"Thank you for sending {amount} MOB")
+        diff = self.balances[message.source] - await self.get_mob_price()
         if diff < 0:
-            return "Please send another {abs(diff)} MOB to buy a phone number"
+            return f"Please send another {abs(diff)} MOB to buy a phone number"
         if diff == 0:
             return "Thank you for paying! You can now buy a phone number with /order <area code>"
         return "Thank you for paying! You've overpayed by {diff}. Contact an administrator for a refund"
@@ -454,7 +449,7 @@ class Forest(Bot):
             for registered in await self.routing_manager.get_id(message.source)
         ]
         # paid but not registered
-        if self.scratch["payments"].get(message.source) and not numbers:
+        if self.balances[message.source] > 0 and not numbers:
             return [
                 "Welcome to the beta! Thank you for your payment. Please contact support to finish setting up your account by requesting to join this group. We will reach out within 12 hours.",
                 "https://signal.group/#CjQKINbHvfKoeUx_pPjipkXVspTj5HiTiUjoNQeNgmGvCmDnEhCTYgZZ0puiT-hUG0hUUwlS",
@@ -473,13 +468,11 @@ class Forest(Bot):
             'try "/register" and following the instructions.'
         )
 
-    @lru_cache(maxsize=2)
-    async def get_price(
-        self, ttl_hash: Optional[int] = None, perturb: bool = False
-    ) -> float:
-        del ttl_hash  # to emphasize we don't use it and to shut pylint up
-        # this needs to cached per-hour or something
-        usdt_price = 4.0  # 15.00
+    rate_cache: tuple[int, Optional[float]] = (0, None)
+    async def get_rate(self) -> float:
+        hour = round(time.time() / 3600) # same value within each hour
+        if self.rate_cache[0] == hour and self.rate_cache[1] is not None:
+            return self.rate_cache[1]
         try:
             url = "https://big.one/api/xn/v1/asset_pairs/8e900cb1-6331-4fe7-853c-d678ba136b2f"
             last_val = await self.client_session.get(url)
@@ -494,6 +487,12 @@ class Forest(Bot):
             logging.error(e)
             # big.one goes down sometimes, if it does... make up a price
             mob_rate = 14
+        self.rate_cache = (hour, mob_rate)
+        return mob_rate
+
+    async def get_mob_price(self, perturb: bool = False) -> float:
+        mob_rate = await self.get_rate()
+        usdt_price = 4.0  # 15.00
         if perturb:
             # perturb each price slightly
             mob_rate -= random.random() / 1000
@@ -506,7 +505,7 @@ class Forest(Bot):
 
     async def do_register(self, message: Message) -> bool:
         """register for a phone number"""
-        mob_price_exact = await self.get_price(ttl_hash=get_ttl_hash())
+        mob_price_exact = await self.get_mob_price()
         nmob_price = mob_price_exact * 100000000
         responses = [
             f"The current price for a SMS number is {mob_price_exact}MOB/month. If you would like to continue, please send exactly...",
@@ -529,18 +528,16 @@ class Forest(Bot):
                         'Please finish setting up your account at your convenience with the "/status" command.',
                     ],
                 )
-                self.scratch["payments"][message.source] = payment_done.get(
-                    "transaction_log_id"
-                )
+                self.balances[message.source] += payment_done.get("value_pmob")
                 return True
             await asyncio.sleep(10)
         return False
 
     async def do_pay(self, message: Message) -> str:
         if message.arg1 == "shibboleth":
-            balance = self.scratch["payments"].get(message.source, 0)
-            new_balance = balance + await self.get_price(ttl_hash=get_ttl_hash())
-            self.scratch["payments"][message.source] += new_balance
+            balance = self.balances.get(message.source, 0)
+            new_balance = balance + await self.get_mob_price()
+            self.balances[message.source] += new_balance
             return "...thank you for your payment"
         if message.arg1 == "sibboleth":
             return "sending attack drones to your location"
@@ -550,12 +547,11 @@ class Forest(Bot):
         """usage: /order <area code>"""
         if not (msg.arg1 and len(msg.arg1) == 3 and msg.arg1.isnumeric()):
             return """usage: /order <area code>"""
-        price = await self.get_price(ttl_hash=get_ttl_hash())
-        diff = self.scratch["payments"].get(msg.source, 0) - price
+        price = await self.get_mob_price()
+        diff = self.balances[msg.source] - price
         if diff < 0:
             # this needs to check if there are *unfulfilled* payments
             return "make a payment with /register first"
-        self.scratch["payments"][msg.source] -= price
         await self.routing_manager.sweep_expired_destinations()
         available_numbers = [
             num
@@ -581,14 +577,15 @@ class Forest(Bot):
         await self.teli.set_sms_url(number, utils.URL + "/inbound")
         await self.routing_manager.set_destination(number, msg.source)
         if await self.routing_manager.get_destination(number):
-            self.scratch["payments"][msg.source] -= await self.get_price(
-                ttl_hash=get_ttl_hash()
-            )
+            self.balances[msg.source] -= price
             return f"you are now the proud owner of {number}"
         return "db error?"
 
     if not utils.get_secret("ORDER"):
         del do_order, do_pay
+
+    async def do_balance(self, message: Message) -> str:
+        return f"Your balance is {self.balances[message.source]} MOB"
 
     async def do_send(self, message: Message) -> Union[str, dict]:
         numbers = await self.get_user_numbers(message)
