@@ -4,9 +4,37 @@ import logging
 import time
 import aiohttp
 import mobilecoin
-import forest_tables
 import utils
 import mc_util
+from pghelp import PGExpressions, PGInterface, Loop
+
+DATABASE_URL = utils.get_secret("DATABASE_URL")
+LedgerPGExpressions = PGExpressions(
+    table="ledger",
+    create_table="CREATE TABLE IF NOT EXISTS {self.table} ( \
+        tx_id SERIAL PRIMARY KEY, \
+        user CHARECTER VARYING(16), \
+        amount_usd_cents BIGINT NOT NULL, \
+        amount_pmob BIGINT, \
+        memo CHARACTER VARYING(32), \
+        invoice CHARECTER VARYING(34), \
+        timestamp TIMESTAMP);",
+    put_usd_tx="INSERT INTO {self_table} (user, amount_usd_cents, memo, invoice, timestamp) \
+        VALUES($1, $2, $3, $4, current_timestamp());",
+    put_pmob_tx="INSERT INTO {self.table} (user, amount_usd_cent, amount_pmob, memo, invoice, timestamp) \
+        VALUES($1, $2, $3, $4, $5, current_timestmap());",
+)
+
+
+class LedgerManager(PGInterface):
+    def __init__(
+        self,
+        queries: PGExpressions = LedgerPGExpressions,
+        database: str = DATABASE_URL,
+        loop: Loop = None,
+    ) -> None:
+        super().__init__(queries, database, loop)
+
 
 mobilecoind: mobilecoin.Client = mobilecoin.Client("http://localhost:9090/wallet", ssl=False)  # type: ignore
 
@@ -70,7 +98,7 @@ def get_transactions() -> dict[str, dict[str, str]]:
 
 def local_main() -> None:
     last_transactions: dict[str, dict[str, str]] = {}
-    payments_manager_connection = forest_tables.PaymentsManager()
+    payments_manager_connection = PaymentsManager()
     payments_manager_connection.sync_create_table()
 
     while True:

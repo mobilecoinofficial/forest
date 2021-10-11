@@ -1,3 +1,6 @@
+[MASTER]
+init-hook="import sys; sys.path.extend(['..', '../forest']); print(sys.path)"
+
 [MESSAGES CONTROL]
 
 disable=

@@ -8,7 +8,7 @@ import aiohttp
 import phonenumbers as pn
 from aiohttp import web
 
-from utils import get_secret, get_url
+from forest.utils import get_secret, get_url
 
 
 def teli_format(raw_number: str) -> str:

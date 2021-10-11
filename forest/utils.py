@@ -36,13 +36,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger()
 logging.getLogger().handlers[0].addFilter(FuckAiohttp)
-tracelog = logging.FileHandler("trace.log")
-tracelog.setLevel(TRACE)
-logger.addHandler(tracelog)
-handler = logging.FileHandler("debug.log")
-handler.setLevel("DEBUG")
-logger.addHandler(handler)
-
 
 # edge cases:
 # accessing an unset secret loads other variables and potentially overwrites existing ones
@@ -83,9 +76,20 @@ ROOT_DIR = (
     "." if get_secret("NO_DOWNLOAD") else "/tmp/local-signal" if LOCAL else "/app"
 )
 
+if get_secret("LOGFILES"):
+    tracelog = logging.FileHandler("trace.log")
+    tracelog.setLevel(TRACE)
+    logger.addHandler(tracelog)
+    handler = logging.FileHandler("debug.log")
+    handler.setLevel("DEBUG")
+    logger.addHandler(handler)
 
-def signal_format(raw_number: str) -> str:
-    return pn.format_number(pn.parse(raw_number, "US"), pn.PhoneNumberFormat.E164)
+
+def signal_format(raw_number: str) -> Optional[str]:
+    try:
+        return pn.format_number(pn.parse(raw_number, "US"), pn.PhoneNumberFormat.E164)
+    except NumberParseException:
+        return None
 
 
 @asynccontextmanager
