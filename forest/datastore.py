@@ -340,10 +340,45 @@ async def standalone(number: str) -> None:
 # MEMFS, DOWNLOAD, ROOT_DIR, HOSTNAME, etc
 # is HCL overkill?
 
+
 parser = argparse.ArgumentParser(
     description="manage the signal datastore. use ENV=... ./datastore.py to use something other than dev"
 )
 subparser = parser.add_subparsers(dest="subparser")  # ?
+
+
+def argument(*names_or_flags, **kwargs):
+    return names_or_flags, kwargs
+
+
+def subcommand(*subparser_args, parent=subparser):
+    def decorator(func):
+        parser = parent.add_parser(func.__name__, description=func.__doc__)
+        for args, kwargs in subparser_args:
+            parser.add_argument(*args, **kwargs)
+        parser.set_defaults(func=func)
+
+    return decorator
+
+
+@subcommand()
+async def list_accounts(_args):
+    "list available accounts in table format"
+    cols = ["id", "last_update_ms", "last_claim_ms", "active_node_name"]
+    query =         f"select {' ,'.join(cols)} from signal_accounts"
+    accounts = await get_account_interface().execute(query)
+    table = [cols] + [
+        [str(value) for value in account.values()] for account in accounts
+    ]
+    str_widths = [
+        max(len(row[index]) for row in table)
+        for index in range(len(cols))
+    ]
+    row_format = " ".join("{:<" + str(width) + "}" for width in str_widths)
+    for row in table:
+        print((row_format.format(*row).rstrip()))
+
+
 sync_parser = subparser.add_parser("sync")
 sync_parser.add_argument("--number")
 upload_parser = subparser.add_parser("upload")

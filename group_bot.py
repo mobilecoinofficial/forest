@@ -3,7 +3,7 @@ import logging
 import sys
 import asyncio
 import utils
-from main import Bot, Message, Response
+from forest.main import Bot, Message, Response
 
 
 class GroupBot(Bot):
