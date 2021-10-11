@@ -4,11 +4,8 @@ import asyncio.subprocess as subprocess  # https://github.com/PyCQA/pylint/issue
 import json
 import logging
 import os
-import random
 import signal
 import sys
-import time
-from collections import defaultdict
 from asyncio import Queue
 from asyncio.subprocess import PIPE
 from typing import Any, AsyncIterator, Optional, Union
@@ -20,10 +17,9 @@ from aiohttp import web
 from phonenumbers import NumberParseException
 
 # framework
-import datastore
-import pghelp
-import payments_monitor
-import utils
+from forest import datastore
+from forest import pghelp
+from forest import utils
 
 JSON = dict[str, Any]
 Response = Union[str, list, dict[str, str], None]
@@ -70,7 +66,13 @@ class Signal:
     Creates database connections for managing signal keys and payments.
     """
 
-    def __init__(self, bot_number: str) -> None:
+    def __init__(self, bot_number: Optional[str] = None) -> None:
+        if not bot_number:
+            try:
+                bot_number = utils.signal_format(sys.argv[1])
+                assert bot_number is not None
+            except IndexError:
+                bot_number = utils.get_secret("BOT_NUMBER")
         logging.debug("bot number: %s", bot_number)
         self.bot_number = bot_number
         self.datastore = datastore.SignalDatastore(bot_number)
@@ -78,14 +80,14 @@ class Signal:
         self.signalcli_output_queue: Queue[Message] = Queue()
         self.signalcli_input_queue: Queue[dict] = Queue()
 
-    async def send_message(
+    async def send_message( # pylint: disable=too-many-arguments
         self,
         recipient: Optional[str],
         msg: Response,
         group: Optional[str] = None,
         endsession: bool = False,
-        attachments: list[str] = []
-    ) -> None:
+        attachments: Optional[list[str]] = None,
+    ) -> None: 
         """Builds send command with specified recipient and msg, writes to signal-cli."""
         if isinstance(msg, list):
             for m in msg:
@@ -155,7 +157,6 @@ class Signal:
         logging.info(profile)
 
     async def start_process(self) -> None:
-        print("proc")
         logging.debug("in start_process")
         loop = asyncio.get_running_loop()
         logging.debug("got running loop")
@@ -268,23 +269,6 @@ class Signal:
             else:
                 logging.error(termcolor.colored(blob["error"], "red"))
             return
-        if "group" in blob:
-            # maybe this info should just be in Message and handled in Session
-            # SMS with {number} via {number}
-            their, our = blob["name"].removeprefix("SMS with ").split(" via ")
-            # TODO: this needs to use number[0]
-            await GroupRoutingManager().set_sms_route_for_group(
-                teli.teli_format(their),
-                teli.teli_format(our),
-                blob["group"],
-            )
-            # cmd = {
-            #     "command": "updateGroup",
-            #     "group": blob["group"],
-            #     "admin": message.source,
-            # }
-            logging.info("made a new group route from %s", blob)
-            return
         msg = Message(blob)
         if msg.full_text:
             logging.info("signal: %s", line)
@@ -339,10 +323,24 @@ class Bot(Signal):
             )
             return None
 
+    async def start_wrapper(self, _: web.Application) -> None:
+        asyncio.create_task(self.start_process())
+        asyncio.create_task(self.handle_messages())
+
+    def start_bot(self, our_app: web.Application) -> None:
+        logging.info("new run".center(60, "="))
+        # TODO: handle the aiohttp-less case?
+        our_app["bot"] = self
+        our_app.on_startup.append(self.start_wrapper)
+        if not utils.get_secret("NO_MEMFS"):
+            our_app.on_startup.append(datastore.start_memfs)
+            our_app.on_startup.append(datastore.start_memfs_monitor)
+        web.run_app(our_app, port=8080, host="0.0.0.0")
 
 
 async def noGet(request: web.Request) -> web.Response:
     raise web.HTTPFound(location="https://signal.org/")
+
 
 async def send_message_handler(request: web.Request) -> web.Response:
     account = request.match_info.get("phonenumber")
@@ -358,27 +356,6 @@ async def send_message_handler(request: web.Request) -> web.Response:
 
 app = web.Application()
 
-
-async def start_bot(our_app: web.Application) -> None:
-    try:
-        number = utils.signal_format(sys.argv[1])
-    except IndexError:
-        number = utils.get_secret("BOT_NUMBER")
-    our_app["bot"] = bot = Forest(number)
-    try:
-        await payments_monitor.get_address()
-    except IndexError:
-        await payments_monitor.import_account()
-    if utils.get_secret("MIGRATE"):
-        await migrate(bot)
-    asyncio.create_task(bot.start_process())
-    asyncio.create_task(bot.handle_messages())
-
-
-app.on_startup.append(start_bot)
-if not utils.get_secret("NO_MEMFS"):
-    app.on_startup.append(datastore.start_memfs)
-    app.on_startup.append(datastore.start_memfs_monitor)
 app.add_routes(
     [
         web.get("/", noGet),
@@ -386,9 +363,6 @@ app.add_routes(
     ]
 )
 
-app["bot"] = None
-
 
 if __name__ == "__main__":
-    logging.info("new run".center(60, "="))
-    web.run_app(app, port=8080, host="0.0.0.0")
+    Bot().start_bot(app)
