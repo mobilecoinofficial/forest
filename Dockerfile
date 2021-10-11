@@ -34,5 +34,6 @@ COPY --from=sigbuilder /app/signal-cli/build/native-image/signal-cli /app/signal
 # for signal-cli's unpacking of native deps
 COPY --from=sigbuilder /lib64/libz.so.1 /lib64
 COPY --from=libbuilder /app/venv/lib/python3.9/site-packages /app/
-COPY ./mc_util/ ./payments_monitor.py ./utils.py ./teli.py ./avatar.png ./datastore.py ./forest_tables.py ./fuse.py  ./mem.py  ./pghelp.py ./main.py /app/ 
-ENTRYPOINT ["/usr/bin/python3.9", "/app/main.py"]
+COPY ./forest/ /app/forest/
+COPY  ./teli.py ./forest_tables.py ./contactbot.py ./avatar.png /app/ 
+ENTRYPOINT ["/usr/bin/python3.9", "/app/contactbot.py"]
