@@ -1,8 +1,8 @@
+#!/usr/bin/python3.9
 import asyncio
 import json
 import logging
 import random
-import sys
 import time
 from collections import defaultdict
 from typing import Optional, Union
@@ -11,8 +11,8 @@ import aiohttp
 from aiohttp import web
 
 import teli
-from forest import datastore, payments_monitor, utils
-from forest.main import Bot, Message, Response
+from forest import payments_monitor, utils
+from forest.main import Bot, Message, Response, send_message_handler
 from forest_tables import GroupRoutingManager, PaymentsManager, RoutingManager
 
 
@@ -52,6 +52,23 @@ class Forest(Bot):
         return []
 
     async def handle_message(self, message: Message) -> Response:
+        # hacky
+        if "group" in message.blob:
+            # SMS with {number} via {number}
+            their, our = message.blob["name"].removeprefix("SMS with ").split(" via ")
+            # TODO: this needs to use number[0]
+            await GroupRoutingManager().set_sms_route_for_group(
+                teli.teli_format(their),
+                teli.teli_format(our),
+                message.blob["group"],
+            )
+            # cmd = {
+            #     "command": "updateGroup",
+            #     "group": message.blob["group"],
+            #     "admin": message.source,
+            # }
+            logging.info("made a new group route from %s", message.blob)
+            return None
         numbers = await self.get_user_numbers(message)
         if numbers and message.group and message.text:
             group = await group_routing_manager.get_sms_route_for_group(message.group)
@@ -298,20 +315,28 @@ class Forest(Bot):
     if not utils.get_secret("ORDER"):
         del do_order, do_pay
 
+    async def start_process(self) -> None:
+        try:
+            await payments_monitor.get_address()
+        except IndexError:
+            await payments_monitor.import_account()
+        if utils.get_secret("MIGRATE"):
+            await self.migrate()
+        await super().start_process()
 
-async def migrate(bot: Forest) -> None:
-    logging.info("migrating db...")
-    await bot.routing_manager.migrate()
-    rows = await bot.routing_manager.execute("SELECT id, destination FROM routing")
-    for row in rows if rows else []:
-        if not utils.LOCAL:
-            await bot.teli.set_sms_url(row.get("id"), utils.URL + "/inbound")
-        if (dest := row.get("destination")) :
-            new_dest = utils.signal_format(dest)
-            await bot.routing_manager.set_destination(row.get("id"), new_dest)
-    await bot.datastore.account_interface.migrate()
-    await group_routing_manager.execute("DROP TABLE IF EXISTS group_routing")
-    await group_routing_manager.create_table()
+    async def migrate(self) -> None:
+        logging.info("migrating db...")
+        await self.routing_manager.migrate()
+        rows = await self.routing_manager.execute("SELECT id, destination FROM routing")
+        for row in rows if rows else []:
+            if not utils.LOCAL:
+                await self.teli.set_sms_url(row.get("id"), utils.URL + "/inbound")
+            if (dest := row.get("destination")) :
+                new_dest = utils.signal_format(dest)
+                await self.routing_manager.set_destination(row.get("id"), new_dest)
+        await self.datastore.account_interface.migrate()
+        await group_routing_manager.execute("DROP TABLE IF EXISTS group_routing")
+        await group_routing_manager.create_table()
 
 
 async def noGet(request: web.Request) -> web.Response:
@@ -365,41 +390,7 @@ async def inbound_sms_handler(request: web.Request) -> web.Response:
     return web.Response(text="TY!")
 
 
-async def send_message_handler(request: web.Request) -> web.Response:
-    account = request.match_info.get("phonenumber")
-    session = request.app.get("bot")
-    if not session:
-        return web.Response(status=504, text="Sorry, no live workers.")
-    msg_data = await request.text()
-    await session.send_message(
-        account, msg_data, endsession=request.query.get("endsession")
-    )
-    return web.json_response({"status": "sent"})
-
-
 app = web.Application()
-
-
-async def start_bot(our_app: web.Application) -> None:
-    try:
-        number = utils.signal_format(sys.argv[1])
-    except IndexError:
-        number = utils.get_secret("BOT_NUMBER")
-    our_app["bot"] = bot = Forest(number)
-    try:
-        await payments_monitor.get_address()
-    except IndexError:
-        await payments_monitor.import_account()
-    if utils.get_secret("MIGRATE"):
-        await migrate(bot)
-    asyncio.create_task(bot.start_process())
-    asyncio.create_task(bot.handle_messages())
-
-
-app.on_startup.append(start_bot)
-if not utils.get_secret("NO_MEMFS"):
-    app.on_startup.append(datastore.start_memfs)
-    app.on_startup.append(datastore.start_memfs_monitor)
 app.add_routes(
     [
         web.get("/", noGet),
@@ -408,10 +399,6 @@ app.add_routes(
     ]
 )
 
-app["bot"] = None
-
-
 if __name__ == "__main__":
-    logging.info("new run".center(60, "="))
     group_routing_manager = GroupRoutingManager()
-    web.run_app(app, port=8080, host="0.0.0.0")
+    Forest().start_bot(app)

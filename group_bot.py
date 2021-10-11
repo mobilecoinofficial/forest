@@ -1,8 +1,5 @@
 import json
 import logging
-import sys
-import asyncio
-import utils
 from forest.main import Bot, Message, Response
 
 
@@ -54,12 +51,3 @@ class GroupBot(Bot):
                     "video: tit.mp4, cost: 0.5 MOB",
                 ],
             )
-
-async def start_session() -> None:
-    try:
-        number = utils.signal_format(sys.argv[1])
-    except IndexError:
-        number = utils.get_secret("BOT_NUMBER")
-    new_session = GroupBot(number)
-    asyncio.create_task(new_session.start_process())
-    asyncio.create_task(new_session.handle_messages())

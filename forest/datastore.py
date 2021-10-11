@@ -9,16 +9,16 @@ from io import BytesIO
 from pathlib import Path
 from subprocess import PIPE, Popen
 from tarfile import TarFile
-from typing import Any, Optional, cast
+from typing import Any, Optional, cast, Callable
 import argparse
 
 import aioprocessing
 from aiohttp import web
 
-import fuse
-import mem
-import utils
-from pghelp import PGExpressions, PGInterface
+from forest import utils
+from forest import fuse
+from forest import mem
+from forest.pghelp import PGExpressions, PGInterface
 
 if utils.get_secret("MIGRATE"):
     get_datastore = "SELECT account, datastore FROM {self.table} WHERE id=$1"
@@ -79,7 +79,11 @@ class SignalDatastore:
 
     def __init__(self, number: str):
         self.account_interface = get_account_interface()
-        self.number = utils.signal_format(number)
+        formatted_number = utils.signal_format(number)
+        if isinstance(formatted_number, str):
+            self.number: str = formatted_number
+        else:
+            raise Exception("not a valid number")
         logging.info("SignalDatastore number is %s", self.number)
         self.filepath = "data/" + number
         # await self.account_interface.create_table()
@@ -95,7 +99,7 @@ class SignalDatastore:
         record = await self.account_interface.get_claim(self.number)
         if not record:
             logging.warning("checking claim without plus instead")
-            record = await self.account_interface.get_claim(self.number[1::])
+            record = await self.account_interface.get_claim(self.number[1:])
             if record:
                 return record[0].get("active_node_name")
             raise Exception(f"no record in db for {self.number}")
@@ -347,36 +351,38 @@ parser = argparse.ArgumentParser(
 subparser = parser.add_subparsers(dest="subparser")  # ?
 
 
-def argument(*names_or_flags, **kwargs):
+def argument(*names_or_flags: Any, **kwargs: Any) -> tuple:
     return names_or_flags, kwargs
 
 
-def subcommand(*subparser_args, parent=subparser):
-    def decorator(func):
-        parser = parent.add_parser(func.__name__, description=func.__doc__)
-        for args, kwargs in subparser_args:
-            parser.add_argument(*args, **kwargs)
-        parser.set_defaults(func=func)
+def subcommand(
+    *subparser_args: Any, parent: argparse._SubParsersAction = subparser
+) -> Callable:
+    def decorator(func: Callable) -> None:
+        our_parser = parent.add_parser(func.__name__, description=func.__doc__)
+        for parser_args, parser_kwargs in subparser_args:
+            our_parser.add_argument(*parser_args, **parser_kwargs)
+        our_parser.set_defaults(func=func)
 
     return decorator
 
 
 @subcommand()
-async def list_accounts(_args):
+async def list_accounts(_args: argparse.Namespace) -> None:
     "list available accounts in table format"
     cols = ["id", "last_update_ms", "last_claim_ms", "active_node_name"]
-    query =         f"select {' ,'.join(cols)} from signal_accounts"
+    query = f"select {' ,'.join(cols)} from signal_accounts"
     accounts = await get_account_interface().execute(query)
+    if not isinstance(accounts, list):
+        return
     table = [cols] + [
         [str(value) for value in account.values()] for account in accounts
     ]
-    str_widths = [
-        max(len(row[index]) for row in table)
-        for index in range(len(cols))
-    ]
+    str_widths = [max(len(row[index]) for row in table) for index in range(len(cols))]
     row_format = " ".join("{:<" + str(width) + "}" for width in str_widths)
     for row in table:
         print((row_format.format(*row).rstrip()))
+    return
 
 
 sync_parser = subparser.add_parser("sync")
