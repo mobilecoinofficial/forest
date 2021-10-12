@@ -2,7 +2,6 @@ from typing import Optional
 import json
 import logging
 import aiohttp
-import mobilecoin
 from forest import utils
 from forest import mc_util
 from forest.pghelp import PGExpressions, PGInterface, Loop
@@ -33,9 +32,6 @@ class LedgerManager(PGInterface):
         loop: Loop = None,
     ) -> None:
         super().__init__(queries, database, loop)
-
-
-
 
 async def mob(data: dict) -> dict:
     better_data = {"jsonrpc": "2.0", "id": 1, **data}

@@ -26,7 +26,7 @@ def pmob2mob(x: Num) -> float:
 def b64_receipt_to_full_service_receipt(b64_string: str) -> dict:
     """Convert a b64-encoded protobuf Receipt into a full-service receipt object"""
     receipt_bytes = base64.b64decode(b64_string)
-    receipt = Mobilecoin.Receipt.FromString(receipt_bytes)  # type: ignore # pylint: disable=no-member
+    receipt = mobilecoin.Receipt.FromString(receipt_bytes)  # type: ignore # pylint: disable=no-member
 
     full_service_receipt = {
         "object": "receiver_receipt",
