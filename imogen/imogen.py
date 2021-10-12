@@ -11,7 +11,7 @@ import aioredis
 import aiohttp
 from aiohttp import web
 from forest import utils
-from forest.main import Bot, Message, app
+from forest.core import Bot, Message, app
 
 logging.info(os.getenv("AWS_CREDENTIALS"))
 aws_cred = utils.get_secret("AWS_CREDENTIALS")

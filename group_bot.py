@@ -1,6 +1,6 @@
 import json
 import logging
-from forest.main import Bot, Message, Response
+from forest.core import Bot, Message, Response
 
 
 class GroupBot(Bot):
