@@ -106,7 +106,10 @@ class Forest(Bot):
                 return response
             await self.send_reaction(message, "\N{Cross Mark}")
             return "Couldn't send that reply"
-        if  message.payment:
+        if message.command == "register":
+            asyncio.create_task(self.register(message))
+            return None
+        if message.payment:
             return await self.handle_payment(message)
         return await Bot.handle_message(self, message)
 
@@ -247,7 +250,7 @@ class Forest(Bot):
         # dunno if we want to generate new wallets? what happens if a user overpays?
         return mob_price_exact
 
-    async def do_register(self, message: Message) -> bool:
+    async def register(self, message: Message) -> bool:
         """register for a phone number"""
         mob_price_exact = await self.get_mob_price()
         nmob_price = mob_price_exact * 100000000

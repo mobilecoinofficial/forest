@@ -16,12 +16,12 @@ from forest.core import Bot, Message, app
 logging.info(os.getenv("AWS_CREDENTIALS"))
 aws_cred = utils.get_secret("AWS_CREDENTIALS")
 if aws_cred:
-    dir = Path("/root/.aws")
-    dir.mkdir(parents=True, exist_ok=True)
-    with (dir / "credentials").open("w") as creds:
+    aws_dir= Path("/root/.aws")
+    aws_dir.mkdir(parents=True, exist_ok=True)
+    with (aws_dir / "credentials").open("w") as creds:
         creds.write(base64.b64decode(utils.get_secret("AWS_CREDENTIALS")).decode())
     logging.info("wrote creds")
-    with (dir / "config").open("w") as config:
+    with (aws_dir / "config").open("w") as config:
         config.write("[profile default]\nregion = us-east-1")
     logging.info("writing config")
 else:

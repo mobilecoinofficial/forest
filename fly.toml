@@ -10,7 +10,6 @@ LOGLEVEL="INFO"
   auto_rollback = false
 
 [[services]]
-  http_checks = []
   internal_port = 8080
   protocol = "tcp"
   script_checks = []
