@@ -80,14 +80,14 @@ class Signal:
         self.signalcli_output_queue: Queue[Message] = Queue()
         self.signalcli_input_queue: Queue[dict] = Queue()
 
-    async def send_message( # pylint: disable=too-many-arguments
+    async def send_message(  # pylint: disable=too-many-arguments
         self,
         recipient: Optional[str],
         msg: Response,
         group: Optional[str] = None,
         endsession: bool = False,
         attachments: Optional[list[str]] = None,
-    ) -> None: 
+    ) -> None:
         """Builds send command with specified recipient and msg, writes to signal-cli."""
         if isinstance(msg, list):
             for m in msg:
@@ -252,7 +252,6 @@ class Signal:
         # color non-json. pretty-print errors
         # sensibly color web traffic, too?
         # fly / db / asyncio and other lib warnings / java / signal logic and networking
-        logging.info("signal: %s", line)
         try:
             blob = json.loads(line)
         except json.JSONDecodeError:
@@ -278,8 +277,11 @@ class Signal:
 
 class Bot(Signal):
     def __init__(self, *args: str) -> None:
+        """Creates AND STARTS a bot that routes commands to do_x handlers"""
         self.client_session = aiohttp.ClientSession()
         super().__init__(*args)
+        asyncio.create_task(self.start_process())
+        asyncio.create_task(self.handle_messages())
 
     async def handle_messages(self) -> None:
         async for message in self.signalcli_output_iter():
@@ -323,20 +325,6 @@ class Bot(Signal):
             )
             return None
 
-    async def start_wrapper(self, _: web.Application) -> None:
-        asyncio.create_task(self.start_process())
-        asyncio.create_task(self.handle_messages())
-
-    def start_bot(self, our_app: web.Application) -> None:
-        logging.info("new run".center(60, "="))
-        # TODO: handle the aiohttp-less case?
-        our_app["bot"] = self
-        our_app.on_startup.append(self.start_wrapper)
-        if not utils.get_secret("NO_MEMFS"):
-            our_app.on_startup.append(datastore.start_memfs)
-            our_app.on_startup.append(datastore.start_memfs_monitor)
-        web.run_app(our_app, port=8080, host="0.0.0.0")
-
 
 async def noGet(request: web.Request) -> web.Response:
     raise web.HTTPFound(location="https://signal.org/")
@@ -363,6 +351,15 @@ app.add_routes(
     ]
 )
 
+if not utils.get_secret("NO_MEMFS"):
+    app.on_startup.append(datastore.start_memfs)
+    app.on_startup.append(datastore.start_memfs_monitor)
+
 
 if __name__ == "__main__":
-    Bot().start_bot(app)
+
+    @app.on_startup.append
+    async def start_wrapper(out_app: web.Application) -> None:
+        out_app["bot"] = bot = Bot()
+
+    web.run_app(app, port=8080, host="0.0.0.0")
