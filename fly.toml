@@ -33,3 +33,12 @@ LOGLEVEL="INFO"
     interval = "15s"
     restart_limit = 6
     timeout = "2s"
+
+  [[services.http_checks]]
+    interval = 10000
+    grace_period = "5s"
+    method = "get"
+    path = "/ping"
+    protocol = "http"
+    timeout = 2000
+    tls_skip_verify = false
