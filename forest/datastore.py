@@ -226,7 +226,7 @@ async def start_memfs(app: web.Application) -> None:
     mount a filesystem in userspace to store data
     the fs contents are stored in memory, so that our keys never touch a disk
     this means we can log signal-cli's interactions with fs,
-    and store them in mem_queue. 
+    and store them in mem_queue.
     if running locally, chdir to /tmp/local-signal with symlinks instead
     """
     # refactor this whole mess into some sort of more general "figure out where we are before downloading"
@@ -336,21 +336,32 @@ subparser = parser.add_subparsers(dest="subparser")  # ?
 
 # h/t https://gist.github.com/mivade/384c2c41c3a29c637cb6c603d4197f9f
 
-def argument(*names_or_flags: Any, **kwargs: Any) -> tuple:
-    return names_or_flags, kwargs
+def argument(*name_or_flags: Any, **kwargs: Any) -> tuple:
+    """Convenience function to properly format arguments to pass to the
+    subcommand decorator.
+    """
+    return (list(name_or_flags), kwargs)
 
 
-def subcommand(
-    *subparser_args: Any, parent: argparse._SubParsersAction = subparser
-) -> Callable:
-    def decorator(func: Callable) -> None:
-        our_parser = parent.add_parser(func.__name__, description=func.__doc__)
-        for parser_args, parser_kwargs in subparser_args:
-            our_parser.add_argument(*parser_args, **parser_kwargs)
-        our_parser.set_defaults(func=func)
-
+def subcommand(args: Any = [], parent: argparse._SubParsersAction = subparser):
+    """Decorator to define a new subcommand in a sanity-preserving way.
+    The function will be stored in the ``func`` variable when the parser
+    parses arguments so that it can be called directly like so::
+        args = cli.parse_args()
+        args.func(args)
+    Usage example::
+        @subcommand([argument("-d", help="Enable debug mode", action="store_true")])
+        def subcommand(args):
+            print(args)
+    Then on the command line::
+        $ python cli.py subcommand -d
+    """
+    def decorator(func):
+        parser = parent.add_parser(func.__name__, description=func.__doc__)
+        for arg in args:
+            parser.add_argument(*arg[0], **arg[1])
+        parser.set_defaults(func=func)
     return decorator
-
 
 @subcommand()
 async def list_accounts(_args: argparse.Namespace) -> None:
@@ -369,18 +380,20 @@ async def list_accounts(_args: argparse.Namespace) -> None:
         print((row_format.format(*row).rstrip()))
     return
 
+
 @subcommand([argument("--number")])
 async def do_free(ns: argparse.Namespace) -> None:
     "mark account freed"
     await get_account_interface().mark_account_freed(ns.number)
 
+
 @subcommand([argument("--number")])
-async def sync(number: str) -> None:
+async def sync(ns: argparse.Namespace) -> None:
     app = cast(web.Application, {})
     asyncio.create_task(start_memfs(app))
     await start_memfs_monitor(app)
     try:
-        datastore = SignalDatastore(number)
+        datastore = SignalDatastore(ns.number)
         await datastore.download()
     except (IndexError, DatastoreError):
         datastore = await getFreeSignalDatastore()
@@ -396,10 +409,10 @@ async def sync(number: str) -> None:
 upload_parser = subparser.add_parser("upload")
 upload_parser.add_argument("--path")
 upload_parser.add_argument("--number")
-#download_parser = subparser.add_parser("download")
-#download_parser.add_argument("--number")
-#migrate_parser = subparser.add_parser("migrate")
-#migrate_parser.add_argument("--create")
+# download_parser = subparser.add_parser("download")
+# download_parser.add_argument("--number")
+# migrate_parser = subparser.add_parser("migrate")
+# migrate_parser.add_argument("--create")
 
 
 if __name__ == "__main__":
