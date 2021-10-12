@@ -12,7 +12,7 @@ from aiohttp import web
 
 import teli
 from forest import payments_monitor, utils
-from forest.main import Bot, Message, Response, send_message_handler
+from forest.main import Bot, Message, Response, app
 from forest_tables import GroupRoutingManager, PaymentsManager, RoutingManager
 
 
@@ -339,10 +339,6 @@ class Forest(Bot):
         await group_routing_manager.create_table()
 
 
-async def noGet(request: web.Request) -> web.Response:
-    raise web.HTTPFound(location="https://signal.org/")
-
-
 async def inbound_sms_handler(request: web.Request) -> web.Response:
     session = request.app.get("bot")
     msg_data: dict[str, str] = dict(await request.post())  # type: ignore
@@ -390,15 +386,13 @@ async def inbound_sms_handler(request: web.Request) -> web.Response:
     return web.Response(text="TY!")
 
 
-app = web.Application()
-app.add_routes(
-    [
-        web.get("/", noGet),
-        web.post("/inbound", inbound_sms_handler),
-        web.post("/user/{phonenumber}", send_message_handler),
-    ]
-)
+app.add_routes([web.post("/inbound", inbound_sms_handler)])
 
 if __name__ == "__main__":
+
+    @app.on_startup.append
+    async def start_wrapper(out_app: web.Application) -> None:
+        out_app["bot"] = Forest()
+
     group_routing_manager = GroupRoutingManager()
-    Forest().start_bot(app)
+    web.run_app(app, port=8080, host="0.0.0.0")
