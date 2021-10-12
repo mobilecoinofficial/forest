@@ -35,13 +35,6 @@ class LedgerManager(PGInterface):
         super().__init__(queries, database, loop)
 
 
-mobilecoind: mobilecoin.Client = mobilecoin.Client("http://localhost:9090/wallet", ssl=False)  # type: ignore
-
-
-def get_accounts() -> None:
-    assert hasattr(mobilecoind, "get_all_accounts")
-    raise NotImplementedError
-    # account_id = list(mobilecoind.get_all_accounts().keys())[0]  # pylint: disable=no-member # type: ignore
 
 
 async def mob(data: dict) -> dict:
@@ -89,10 +82,18 @@ async def get_receipt_amount(receipt_str: str) -> Optional[float]:
     return mc_util.pmob2mob(pmob)
 
 
-def get_transactions() -> dict[str, dict[str, str]]:
-    raise NotImplementedError
-    # mobilecoin api changed, this needs to make full-service reqs
-    # return mobilecoind.get_all_transaction_logs_for_account(account_id)  # type: ignore # pylint: disable=no-member
+# mobilecoind: mobilecoin.Client = mobilecoin.Client("http://localhost:9090/wallet", ssl=False)  # type: ignore
+
+
+# def get_accounts() -> None:
+#     assert hasattr(mobilecoind, "get_all_accounts")
+#     raise NotImplementedError
+#     # account_id = list(mobilecoind.get_all_accounts().keys())[0]  # pylint: disable=no-member # type: ignore
+
+# def get_transactions() -> dict[str, dict[str, str]]:
+#     raise NotImplementedError
+#     # mobilecoin api changed, this needs to make full-service reqs
+#     # return mobilecoind.get_all_transaction_logs_for_account(account_id)  # type: ignore # pylint: disable=no-member
 
 
 # def local_main() -> None:

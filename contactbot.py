@@ -12,7 +12,7 @@ from aiohttp import web
 
 import teli
 from forest import payments_monitor, utils
-from forest.main import Bot, Message, Response, app
+from forest.core import Bot, Message, Response, app
 from forest_tables import GroupRoutingManager, PaymentsManager, RoutingManager
 
 
@@ -27,7 +27,7 @@ class Forest(Bot):
     async def send_sms(
         self, source: str, destination: str, message_text: str
     ) -> dict[str, str]:
-        """Send SMS via teliapi.net call and returns the response"""
+        """Send SMS via teleapi.net call and returns the response"""
         payload = {
             "source": source,
             "destination": destination,
@@ -42,17 +42,24 @@ class Forest(Bot):
             k: v
             for k, v in response_json_all.items()
             if k in ("status", "segment_count")
-        }  # hide how the sausage is made
+        }
+        # hide how the sausage is made
         return response_json
 
     async def get_user_numbers(self, message: Message) -> list[str]:
+        """List the teli numbers a user owns"""
         if message.source:
             maybe_routable = await self.routing_manager.get_id(message.source)
             return [registered.get("id") for registered in maybe_routable]
         return []
 
     async def handle_message(self, message: Message) -> Response:
-        # hacky
+        """Handle an invidiual Message from Signal.
+        If it's a group creation blob, make a new routing rule from it.
+        If it's a group message, route it to the relevant conversation.
+        If it's a payment, deal with that separately.
+        Otherwise, use the default Bot routing to do_x methods
+        """
         if "group" in message.blob:
             # SMS with {number} via {number}
             their, our = message.blob["name"].removeprefix("SMS with ").split(" via ")
@@ -113,6 +120,8 @@ class Forest(Bot):
         )
 
     async def do_send(self, message: Message) -> Union[str, dict]:
+        """Send an SMS message. Usage: /send <destination> <message>
+        """
         numbers = await self.get_user_numbers(message)
         if not numbers:
             return "You don't have any numbers. Register with /register"
@@ -133,6 +142,11 @@ class Forest(Bot):
     do_msg = do_send
 
     async def do_mkgroup(self, message: Message) -> str:
+        """Create a group for your SMS messages with a given recipient.
+        Messages from that recipient will be posted in that group instead of sent to you.
+        Messages sent in that group will be sent to that recipient.
+        You can add other Signal users; they'll be able to use your number as well
+        """
         numbers = await self.get_user_numbers(message)
         target_number = await self.check_target_number(message)
         if not numbers:
@@ -155,6 +169,8 @@ class Forest(Bot):
         del do_mkgroup, do_query
 
     async def handle_payment(self, message: Message) -> str:
+        """Decode the receipt, then update balances"""
+        # TODO: use the ledger table
         logging.info(message.payment)
         amount = await payments_monitor.get_receipt_amount(message.payment["receipt"])
         if amount is None:
@@ -169,6 +185,7 @@ class Forest(Bot):
         return "Thank you for paying! You've overpayed by {diff}. Contact an administrator for a refund"
 
     async def do_status(self, message: Message) -> Union[list[str], str]:
+        """List numbers if you have them. Usage: /status"""
         numbers: list[str] = [
             registered.get("id")
             for registered in await self.routing_manager.get_id(message.source)
@@ -196,6 +213,7 @@ class Forest(Bot):
     rate_cache: tuple[int, Optional[float]] = (0, None)
 
     async def get_rate(self) -> float:
+        """Get the current USD/MOB price and cache it for an hour"""
         hour = round(time.time() / 3600)  # same value within each hour
         if self.rate_cache[0] == hour and self.rate_cache[1] is not None:
             return self.rate_cache[1]
@@ -220,7 +238,7 @@ class Forest(Bot):
         mob_rate = await self.get_rate()
         usdt_price = 4.0  # 15.00
         if perturb:
-            # perturb each price slightly
+            # perturb each price slightly to have a unique payment
             mob_rate -= random.random() / 1000
         # invpico = 100000000000 # doesn't work in mixin
         invnano = 100000000
@@ -260,6 +278,7 @@ class Forest(Bot):
         return False
 
     async def do_balance(self, message: Message) -> str:
+        """Check your balance"""
         return f"Your balance is {self.balances[message.source]} MOB"
 
     async def do_pay(self, message: Message) -> str:
@@ -273,14 +292,14 @@ class Forest(Bot):
         return "no"
 
     async def do_order(self, msg: Message) -> str:
-        """usage: /order <area code>"""
+        """Usage: /order <area code>"""
         if not (msg.arg1 and len(msg.arg1) == 3 and msg.arg1.isnumeric()):
-            return """usage: /order <area code>"""
+            return """Usage: /order <area code>"""
         price = await self.get_mob_price()
         diff = self.balances[msg.source] - price
         if diff < 0:
             # this needs to check if there are *unfulfilled* payments
-            return "make a payment with /register first"
+            return "Make a payment with Signal Pay or /register first"
         await self.routing_manager.sweep_expired_destinations()
         available_numbers = [
             num
@@ -289,31 +308,32 @@ class Forest(Bot):
         ]
         if available_numbers:
             number = available_numbers[0]
-            await self.send_message(msg.source, f"found {number} for you...")
+            await self.send_message(msg.source, f"Found {number} for you...")
         else:
             numbers = await self.teli.search_numbers(area_code=msg.arg1, limit=1)
             if not numbers:
-                return "sorry, no numbers for that area code"
+                return "Sorry, no numbers for that area code"
             number = numbers[0]
-            await self.send_message(msg.source, f"found {number}")
+            await self.send_message(msg.source, f"Found {number}")
             await self.routing_manager.intend_to_buy(number)
             buy_info = await self.teli.buy_number(number)
-            await self.send_message(msg.source, f"bought {number}")
+            await self.send_message(msg.source, f"Bought {number}")
             if "error" in buy_info:
                 await self.routing_manager.delete(number)
-                return f"something went wrong: {buy_info}"
+                return f"Something went wrong: {buy_info}"
             await self.routing_manager.mark_bought(number)
         await self.teli.set_sms_url(number, utils.URL + "/inbound")
         await self.routing_manager.set_destination(number, msg.source)
         if await self.routing_manager.get_destination(number):
             self.balances[msg.source] -= price
-            return f"you are now the proud owner of {number}"
-        return "db error?"
+            return f"You are now the proud owner of {number}"
+        return "Database error?"
 
     if not utils.get_secret("ORDER"):
         del do_order, do_pay
 
     async def start_process(self) -> None:
+        """Make sure full-service has a wallet before starting signal"""
         try:
             await payments_monitor.get_address()
         except IndexError:
@@ -323,6 +343,10 @@ class Forest(Bot):
         await super().start_process()
 
     async def migrate(self) -> None:
+        """Add a status column to routing, make sure all destinations are E164,
+        make sure teli is using the right URL for all of our numbers,
+        recreate the group_routing table, and add a datastore column to signal_accounts
+        """
         logging.info("migrating db...")
         await self.routing_manager.migrate()
         rows = await self.routing_manager.execute("SELECT id, destination FROM routing")
@@ -338,6 +362,9 @@ class Forest(Bot):
 
 
 async def inbound_sms_handler(request: web.Request) -> web.Response:
+    """Handles SMS messages received by our numbers.
+    Try groups, then try users, otherwise fall back to an admin
+    """
     session = request.app.get("bot")
     msg_data: dict[str, str] = dict(await request.post())  # type: ignore
     if not session:
