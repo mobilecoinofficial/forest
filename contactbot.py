@@ -99,9 +99,7 @@ class Forest(Bot):
                 return response
             await self.send_reaction(message, "\N{Cross Mark}")
             return "Couldn't send that reply"
-        if message.command == "register":
-            asyncio.create_task(self.do_register(message))
-        elif message.payment:
+        if  message.payment:
             return await self.handle_payment(message)
         return await Bot.handle_message(self, message)
 
