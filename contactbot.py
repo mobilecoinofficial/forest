@@ -254,11 +254,12 @@ class Forest(Bot):
         """register for a phone number"""
         mob_price_exact = await self.get_mob_price()
         nmob_price = mob_price_exact * 100000000
+        address = await payments_monitor.get_address()
         responses = [
             f"The current price for a SMS number is {mob_price_exact}MOB/month. If you would like to continue, please send exactly...",
             f"{mob_price_exact}",
             "on Signal Pay, or to",
-            "nXz8gbcAfHQQUwTHuQnyKdALe5oXKppDn9oBRms93MCxXkiwMPnsVRp19Vrmb1GX6HdQv7ms83StXhwXDuJzN9N7h3mzFnKsL6w8nYJP4q",
+            address,
             "Upon payment, you will be able to select the area code for your new phone number!",
         ]
         await self.send_message(message.source, responses)
