@@ -7,4 +7,4 @@ set -o xtrace
   --peer mc://node2.prod.mobilecoinww.com/ \
   --tx-source-url https://ledger.mobilecoinww.com/node1.prod.mobilecoinww.com/ \
   --tx-source-url https://ledger.mobilecoinww.com/node2.prod.mobilecoinww.com/ \
-  --listen-host 0.0.0.0
+  --listen-host ::
