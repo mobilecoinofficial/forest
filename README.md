@@ -26,7 +26,7 @@ Deploys generally should be `--strategy immediate` to not risk the old instance 
 >  --strategy string      The strategy for replacing running instances. Options are canary, rolling, bluegreen, or immediate. Default is canary
 
 
-Code style: mypy and pylint should not have errors when you push.
+Code style: mypy and pylint should not have errors when you push. run black. prefer verbose, easier to read names over conciser ones.
 
 TODO: elaborate on
 
