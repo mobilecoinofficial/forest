@@ -1,3 +1,4 @@
+#!/usr/bin/python3.9
 import asyncio
 import logging
 import sys

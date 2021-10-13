@@ -123,8 +123,7 @@ class Forest(Bot):
         )
 
     async def do_send(self, message: Message) -> Union[str, dict]:
-        """Send an SMS message. Usage: /send <destination> <message>
-        """
+        """Send an SMS message. Usage: /send <destination> <message>"""
         numbers = await self.get_user_numbers(message)
         if not numbers:
             return "You don't have any numbers. Register with /register"
