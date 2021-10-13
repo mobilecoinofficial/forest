@@ -13,19 +13,21 @@ from aiohttp import web
 from forest import utils
 from forest.core import Bot, Message, app
 
-logging.info(os.getenv("AWS_CREDENTIALS"))
-aws_cred = utils.get_secret("AWS_CREDENTIALS")
-if aws_cred:
-    aws_dir= Path("/root/.aws")
-    aws_dir.mkdir(parents=True, exist_ok=True)
-    with (aws_dir / "credentials").open("w") as creds:
-        creds.write(base64.b64decode(utils.get_secret("AWS_CREDENTIALS")).decode())
-    logging.info("wrote creds")
-    with (aws_dir / "config").open("w") as config:
-        config.write("[profile default]\nregion = us-east-1")
-    logging.info("writing config")
-else:
-    logging.info("couldn't find creds")
+if not utils.LOCAL:
+    aws_cred = utils.get_secret("AWS_CREDENTIALS")
+    if aws_cred:
+        aws_dir = Path("/root/.aws")
+        aws_dir.mkdir(parents=True, exist_ok=True)
+        with (aws_dir / "credentials").open("w") as creds:
+            creds.write(base64.b64decode(utils.get_secret("AWS_CREDENTIALS")).decode())
+        logging.info("wrote creds")
+        with (aws_dir / "config").open("w") as config:
+            config.write("[profile default]\nregion = us-east-1")
+        logging.info("writing config")
+    else:
+        logging.info("couldn't find creds")
+    ssh_key = utils.get_secret("SSH_KEY")
+    open("id_rsa", "w").write(base64.b64decode(ssh_key).decode())
 url = (
     utils.get_secret("FLY_REDIS_CACHE_URL")
     or "redis://:ImVqcG9uMTdqMjc2MWRncjQi8a6c817565c7926c7c7e971b4782cf96a705bb20@forest-dev.redis.fly.io:10079"
@@ -38,7 +40,8 @@ instance_id = "aws ec2 describe-instances --region us-east-1 | jq -r .Reservatio
 status = "aws ec2 describe-instances --region us-east-1| jq -r '..|.State?|.Name?|select(.!=null)'"
 start = "aws ec2 start-instances --region us-east-1 --instance-ids {}"
 stop = "aws ec2 stop-instances --region us-east-1 --instance-ids {}"
-
+get_ip = "aws ec2 describe-instances --region us-east-1|jq -r .Reservations[].Instances[].PublicIpAddress"
+start_worker = "ssh -i id_rsa ubuntu@{} ~/ml/read_redis.py {}"
 
 async def get_output(cmd: str) -> str:
     proc = await asyncio.create_subprocess_shell(cmd, stdout=-1)
@@ -80,8 +83,10 @@ class Imogen(Bot):
         # check if worker is up
         state = await get_output(status)
         if state == "stopped":
+            # if not, turn it on
             await get_output(start.format(self.worker_instance_id))
-        # if not, turn it on
+            ip = await get_output(get_ip)
+            await get_output(start_worker.format(ip, url))
         timed = await redis.llen("prompt_queue")
         return f"you are #{timed} in line"
 
@@ -126,18 +131,21 @@ async def store_image_handler(request: web.Request) -> web.Response:
                 break
             size += len(chunk)
             f.write(chunk)
+    destination = request.query.get("destination")
+    recipient = utils.signal_format(destination)
+    group = None if recipient else destination
     message = request.query.get("message", "")
-    args = f"-u +12406171657 send -a {path} -m {message} {account}"
-    logging.info(args)
-    await asyncio.create_subprocess_shell(
-        "/home/sylv/forest/auxin/target/debug/auxin-cli" + args
-    )
+    if recipient:
+        await bot.send_message(recipient, message, attachments=[str(path)])
+    else:
+        await bot.send_message(None, message, attachments=[str(path)], group=group)
     return web.Response(
-        text="{} sized of {} successfully stored" "".format(filename, size)
+        text="{} sized of {} sent" "".format(filename, size)
     )
 
 
 app.add_routes([web.post("/attachment/{phonenumber}", store_image_handler)])
+app.add_routes([web.post("/admin", admin_handler)])
 
 
 if __name__ == "__main__":

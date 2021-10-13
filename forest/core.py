@@ -104,7 +104,7 @@ class Signal:
         if endsession:
             json_command["endsession"] = True
         if attachments:
-            json_command["attachments"] = attachments
+            json_command["attachment"] = attachments
         if group:
             json_command["group"] = group
         elif recipient:
