@@ -33,13 +33,14 @@ class DatastoreError(Exception):
 AccountPGExpressions = PGExpressions(
     table="signal_accounts",
     # rename="ALTAR TABLE IF EXISTS prod_users RENAME TO {self.table}",
-    migrate="ALTER TABLE IF EXISTS {self.table} ADD IF NOT EXISTS datastore BYTEA",
+    migrate="ALTER TABLE IF EXISTS {self.table} ADD IF NOT EXISTS datastore BYTEA, notes TEXT",
     create_table="CREATE TABLE IF NOT EXISTS {self.table} \
             (id TEXT PRIMARY KEY, \
             datastore BYTEA, \
             last_update_ms BIGINT, \
             last_claim_ms BIGINT, \
-            active_node_name TEXT);",
+            active_node_name TEXT, \
+            notes TEXT);",
     is_registered="SELECT datastore is not null as registered FROM {self.table} WHERE id=$1",
     get_datastore=get_datastore,
     get_claim="SELECT active_node_name FROM {self.table} WHERE id=$1",
@@ -336,6 +337,7 @@ subparser = parser.add_subparsers(dest="subparser")  # ?
 
 # h/t https://gist.github.com/mivade/384c2c41c3a29c637cb6c603d4197f9f
 
+
 def argument(*name_or_flags: Any, **kwargs: Any) -> tuple:
     """Convenience function to properly format arguments to pass to the
     subcommand decorator.
@@ -343,7 +345,9 @@ def argument(*name_or_flags: Any, **kwargs: Any) -> tuple:
     return (list(name_or_flags), kwargs)
 
 
-def subcommand(args: Any = [], parent: argparse._SubParsersAction = subparser):
+def subcommand(
+    args: Any = [], parent: argparse._SubParsersAction = subparser
+) -> Callable:
     """Decorator to define a new subcommand in a sanity-preserving way.
     The function will be stored in the ``func`` variable when the parser
     parses arguments so that it can be called directly like so::
@@ -356,12 +360,15 @@ def subcommand(args: Any = [], parent: argparse._SubParsersAction = subparser):
     Then on the command line::
         $ python cli.py subcommand -d
     """
-    def decorator(func):
+
+    def decorator(func: Callable) -> None:
         parser = parent.add_parser(func.__name__, description=func.__doc__)
         for arg in args:
             parser.add_argument(*arg[0], **arg[1])
         parser.set_defaults(func=func)
+
     return decorator
+
 
 @subcommand()
 async def list_accounts(_args: argparse.Namespace) -> None:

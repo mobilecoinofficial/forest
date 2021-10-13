@@ -1,4 +1,4 @@
-# fly.toml file generated for imogen on 2021-10-09T18:37:04-04:00
+# fly.toml file generated for imogen on 2021-10-13T00:08:41-04:00
 
 app = "imogen"
 
@@ -14,7 +14,7 @@ processes = []
 
 [[services]]
   http_checks = []
-  internal_port = 6379
+  internal_port = 8080
   processes = ["app"]
   protocol = "tcp"
   script_checks = []
@@ -32,3 +32,8 @@ processes = []
     handlers = ["tls", "http"]
     port = 443
 
+  [[services.tcp_checks]]
+    grace_period = "1s"
+    interval = "15s"
+    restart_limit = 6
+    timeout = "2s"
