@@ -41,12 +41,22 @@ status = "aws ec2 describe-instances --region us-east-1| jq -r '..|.State?|.Name
 start = "aws ec2 start-instances --region us-east-1 --instance-ids {}"
 stop = "aws ec2 stop-instances --region us-east-1 --instance-ids {}"
 get_ip = "aws ec2 describe-instances --region us-east-1|jq -r .Reservations[].Instances[].PublicIpAddress"
-start_worker = "ssh -i id_rsa ubuntu@{} ~/ml/read_redis.py {}"
+start_worker = "ssh -i id_rsa -o ConnectTimeout=2 ubuntu@{} ~/ml/read_redis.py {}"
+
 
 async def get_output(cmd: str) -> str:
     proc = await asyncio.create_subprocess_shell(cmd, stdout=-1)
     stdout, _ = await proc.communicate()
     return stdout.decode().strip()
+
+
+async def really_start_worker() -> None:
+    ip = await get_output(get_ip)
+    while 1:
+        await asyncio.create_subprocess_shell(
+            start_worker.format(ip, url), stdout=-1, stderr=-1
+        )
+        # don't *block* since output runs forever, but check if failed...
 
 
 class Imogen(Bot):
@@ -84,9 +94,8 @@ class Imogen(Bot):
         state = await get_output(status)
         if state == "stopped":
             # if not, turn it on
-            await get_output(start.format(self.worker_instance_id))
-            ip = await get_output(get_ip)
-            await get_output(start_worker.format(ip, url))
+            logging.info(await get_output(start.format(self.worker_instance_id)))
+            asyncio.create_task(really_start_worker())
         timed = await redis.llen("prompt_queue")
         return f"you are #{timed} in line"
 
@@ -108,7 +117,6 @@ async def admin_handler(request: web.Request) -> web.Response:
 
 
 async def store_image_handler(request: web.Request) -> web.Response:
-    account = request.match_info.get("phonenumber")
     bot = request.app.get("bot")
     if not bot:
         return web.Response(status=504, text="Sorry, no live workers.")
@@ -131,7 +139,7 @@ async def store_image_handler(request: web.Request) -> web.Response:
                 break
             size += len(chunk)
             f.write(chunk)
-    destination = request.query.get("destination")
+    destination = request.query.get("destination", "")
     recipient = utils.signal_format(destination)
     group = None if recipient else destination
     message = request.query.get("message", "")
@@ -139,9 +147,7 @@ async def store_image_handler(request: web.Request) -> web.Response:
         await bot.send_message(recipient, message, attachments=[str(path)])
     else:
         await bot.send_message(None, message, attachments=[str(path)], group=group)
-    return web.Response(
-        text="{} sized of {} sent" "".format(filename, size)
-    )
+    return web.Response(text="{} sized of {} sent" "".format(filename, size))
 
 
 app.add_routes([web.post("/attachment/{phonenumber}", store_image_handler)])
