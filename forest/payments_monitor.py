@@ -11,16 +11,18 @@ LedgerPGExpressions = PGExpressions(
     table="ledger",
     create_table="CREATE TABLE IF NOT EXISTS {self.table} ( \
         tx_id SERIAL PRIMARY KEY, \
-        user CHARECTER VARYING(16), \
+        account CHARACTER VARYING(16), \
         amount_usd_cents BIGINT NOT NULL, \
         amount_pmob BIGINT, \
         memo CHARACTER VARYING(32), \
-        invoice CHARECTER VARYING(34), \
-        timestamp TIMESTAMP);",
-    put_usd_tx="INSERT INTO {self_table} (user, amount_usd_cents, memo, invoice, timestamp) \
-        VALUES($1, $2, $3, $4, current_timestamp());",
-    put_pmob_tx="INSERT INTO {self.table} (user, amount_usd_cent, amount_pmob, memo, invoice, timestamp) \
-        VALUES($1, $2, $3, $4, $5, current_timestmap());",
+        invoice CHARACTER VARYING(34), \
+        ts TIMESTAMP);",
+    put_usd_tx="INSERT INTO {self.table} (account, amount_usd_cents, memo, ts) \
+        VALUES($1, $2, $3, CURRENT_TIMESTAMP);",
+    put_pmob_tx="INSERT INTO {self.table} (account, amount_usd_cent, amount_pmob, memo, ts) \
+        VALUES($1, $2, $3, $4, CURRENT_TIMESTAMP);",
+    get_usd_balance="SELECT COALESCE(SUM(amount_usd_cents)/100, 0.0) AS balance \
+        FROM {self.table} WHERE account=$1",
 )
 
 
@@ -32,6 +34,7 @@ class LedgerManager(PGInterface):
         loop: Loop = None,
     ) -> None:
         super().__init__(queries, database, loop)
+
 
 async def mob(data: dict) -> dict:
     better_data = {"jsonrpc": "2.0", "id": 1, **data}
@@ -63,7 +66,7 @@ async def get_address() -> str:
     return res["result"]["account_map"][acc_id]["main_address"]
 
 
-async def get_receipt_amount(receipt_str: str) -> Optional[float]:
+async def get_receipt_amount_pmob(receipt_str: str) -> Optional[float]:
     full_service_receipt = mc_util.b64_receipt_to_full_service_receipt(receipt_str)
     logging.debug(full_service_receipt)
     params = {
@@ -75,7 +78,7 @@ async def get_receipt_amount(receipt_str: str) -> Optional[float]:
     if "error" in tx:
         return None
     pmob = int(tx["result"]["txo"]["value_pmob"])
-    return mc_util.pmob2mob(pmob)
+    return pmob
 
 
 # mobilecoind: mobilecoin.Client = mobilecoin.Client("http://localhost:9090/wallet", ssl=False)  # type: ignore
