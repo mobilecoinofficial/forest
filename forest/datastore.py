@@ -346,7 +346,7 @@ def argument(*name_or_flags: Any, **kwargs: Any) -> tuple:
 
 
 def subcommand(
-    args: Any = [], parent: argparse._SubParsersAction = subparser
+    _args: Optional[list] = None, parent: argparse._SubParsersAction = subparser
 ) -> Callable:
     """Decorator to define a new subcommand in a sanity-preserving way.
     The function will be stored in the ``func`` variable when the parser
@@ -360,12 +360,11 @@ def subcommand(
     Then on the command line::
         $ python cli.py subcommand -d
     """
-
     def decorator(func: Callable) -> None:
-        parser = parent.add_parser(func.__name__, description=func.__doc__)
-        for arg in args:
-            parser.add_argument(*arg[0], **arg[1])
-        parser.set_defaults(func=func)
+        _parser = parent.add_parser(func.__name__, description=func.__doc__)
+        for arg in (_args if _args else []):
+            _parser.add_argument(*arg[0], **arg[1])
+        _parser.set_defaults(func=func)
 
     return decorator
 
