@@ -16,7 +16,7 @@ import time
 import sys
 import logging
 
-from fuse import FUSE, FuseOSError, Operations, get_caller, LoggingMixIn
+from forest.fuse import FUSE, FuseOSError, Operations, get_caller, LoggingMixIn
 
 BLOCK_SIZE = 4096
 

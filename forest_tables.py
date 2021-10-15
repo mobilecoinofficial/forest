@@ -1,14 +1,7 @@
-from pghelp import PGExpressions, PGInterface, Loop
-import utils
+from forest.pghelp import PGExpressions, PGInterface, Loop
+from forest import utils
 
-
-USER_DATABASE = ROUTING_DATABASE = utils.get_secret("DATABASE_URL")
-
-# backwards compat: ignore absence of status
-
-
-# additions over mainline: routing + status
-
+DATABASE_URL = utils.get_secret("DATABASE_URL")
 
 RoutingPGExpressions = PGExpressions(
     table="routing",
@@ -67,7 +60,7 @@ class RoutingManager(PGInterface):
     def __init__(
         self,
         queries: PGExpressions = RoutingPGExpressions,
-        database: str = USER_DATABASE,
+        database: str = DATABASE_URL,
         loop: Loop = None,
     ) -> None:
         super().__init__(queries, database, loop)
@@ -77,7 +70,7 @@ class GroupRoutingManager(PGInterface):
     def __init__(
         self,
         queries: PGExpressions = GroupRoutingPGExpressions,
-        database: str = USER_DATABASE,
+        database: str = DATABASE_URL,
         loop: Loop = None,
     ) -> None:
         super().__init__(queries, database, loop)
@@ -89,7 +82,7 @@ class PaymentsManager(PGInterface):
     def __init__(
         self,
         queries: PGExpressions = PaymentsPGExpressions,
-        database: str = USER_DATABASE,
+        database: str = DATABASE_URL,
         loop: Loop = None,
     ) -> None:
         super().__init__(queries, database, loop)

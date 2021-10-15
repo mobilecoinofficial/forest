@@ -9,6 +9,8 @@ pyqrcode = "*"
 pynacl = "*"
 asyncpg = "*"
 aiohttp = {extras = [ "speedups",], version = "*"}
+mobilecoin = "*"
+base58 = "*"
 # sylv additions
 phonenumbers = "*"
 termcolor = "*"

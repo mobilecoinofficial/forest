@@ -1,3 +1,4 @@
+#!/usr/bin/python3.9
 import asyncio
 import logging
 import sys
@@ -8,7 +9,7 @@ import aiohttp
 import phonenumbers as pn
 from aiohttp import web
 
-from utils import get_secret, get_url
+from forest.utils import get_secret, get_url
 
 
 def teli_format(raw_number: str) -> str:
@@ -130,6 +131,9 @@ class Teli:
         return [info["number"] for info in dids]
 
     async def buy_number(self, number: str, sms_post_url: Optional[str] = None) -> dict:
+        """
+        This spends money. It purchases a specific mobile phone number and sets the sms_post_url.
+        """
         params = {
             "token": get_secret("TELI_KEY"),
             "number": number,
@@ -145,6 +149,9 @@ class Teli:
 
 
 async def print_sms(raw_number: str, port: int = 8080) -> None:
+    """
+    Receives SMSes via HTTP and log to the standard output until keyboard interrupt.
+    """
     logging.info(port)
     receiver = ReceiveSMS()
     async with get_url(port) as url, receiver.receive():
