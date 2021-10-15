@@ -71,6 +71,8 @@ class PGInterface:
     def __init__(
         self, query_strings: PGExpressions, database: str = "", loop: Loop = None
     ) -> None:
+        """Accepts a PGExpressions argument containing postgresql expressions, a database string, and an optional event loop."""
+
         self.loop = loop or asyncio.get_event_loop()
         self.database: Union[str, dict] = copy.deepcopy(
             database
@@ -87,6 +89,7 @@ class PGInterface:
         )
 
     def finish_init(self) -> None:
+        """Optionally triggers creating tables and checks existence."""
         if not self.pool:
             self.logger.warning("RUNNING IN FAKE MODE")
         if self.pool and self.table and not self.sync_exists():
@@ -147,6 +150,7 @@ class PGInterface:
         return None
 
     def truncate(self, thing: str) -> str:
+        """Logging helper. Truncates and formats."""
         if len(thing) > self.MAX_RESP_LOG_LEN:
             return (
                 f"{thing[:self.MAX_RESP_LOG_LEN]}..."

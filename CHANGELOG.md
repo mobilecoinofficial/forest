@@ -1,9 +1,14 @@
 TODO:
 - use jsonRpc (requires graal fix)
-- fix payments graal
-- actually split up your-forest-bot
-- find receipt; bundle full-service 
+- finish splitting up your-forest-bot
 
+
+## 0.5
+
+- restructure into a forest/ package
+- Bot.__init__ schedules `create_process` and `handle_messages`
+- payment reciepts
+- balances
 
 ## 0.4
 

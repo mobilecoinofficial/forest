@@ -1,6 +1,5 @@
 #!/bin/python3.9
 import asyncio
-import sys
 import json
 import logging
 import os
@@ -10,16 +9,16 @@ from io import BytesIO
 from pathlib import Path
 from subprocess import PIPE, Popen
 from tarfile import TarFile
-from typing import Any, Optional, cast
+from typing import Any, Optional, Callable, cast
 import argparse
 
 import aioprocessing
 from aiohttp import web
 
-import fuse
-import mem
-import utils
-from pghelp import PGExpressions, PGInterface
+from forest import utils
+from forest import fuse
+from forest import mem
+from forest.pghelp import PGExpressions, PGInterface
 
 if utils.get_secret("MIGRATE"):
     get_datastore = "SELECT account, datastore FROM {self.table} WHERE id=$1"
@@ -34,15 +33,14 @@ class DatastoreError(Exception):
 AccountPGExpressions = PGExpressions(
     table="signal_accounts",
     # rename="ALTAR TABLE IF EXISTS prod_users RENAME TO {self.table}",
-    migrate="ALTER TABLE IF EXISTS {self.table} ADD IF NOT EXISTS datastore BYTEA, \
-        ADD IF NOT EXISTS registered BOOL; ",
+    migrate="ALTER TABLE IF EXISTS {self.table} ADD IF NOT EXISTS datastore BYTEA, notes TEXT",
     create_table="CREATE TABLE IF NOT EXISTS {self.table} \
             (id TEXT PRIMARY KEY, \
             datastore BYTEA, \
             last_update_ms BIGINT, \
             last_claim_ms BIGINT, \
             active_node_name TEXT, \
-            registered BOOL);",
+            notes TEXT);",
     is_registered="SELECT datastore is not null as registered FROM {self.table} WHERE id=$1",
     get_datastore=get_datastore,
     get_claim="SELECT active_node_name FROM {self.table} WHERE id=$1",
@@ -81,7 +79,11 @@ class SignalDatastore:
 
     def __init__(self, number: str):
         self.account_interface = get_account_interface()
-        self.number = utils.signal_format(number)
+        formatted_number = utils.signal_format(number)
+        if isinstance(formatted_number, str):
+            self.number: str = formatted_number
+        else:
+            raise Exception("not a valid number")
         logging.info("SignalDatastore number is %s", self.number)
         self.filepath = "data/" + number
         # await self.account_interface.create_table()
@@ -93,17 +95,11 @@ class SignalDatastore:
             logging.error(e)
             return False
 
-    async def is_registered_in_db(self) -> bool:
-        record = await self.account_interface.is_registered(self.number)
-        if not record:
-            return False
-        return bool(record[0].get("registered"))
-
     async def is_claimed(self) -> Optional[str]:
         record = await self.account_interface.get_claim(self.number)
         if not record:
             logging.warning("checking claim without plus instead")
-            record = await self.account_interface.get_claim(self.number[1::])
+            record = await self.account_interface.get_claim(self.number[1:])
             if record:
                 return record[0].get("active_node_name")
             raise Exception(f"no record in db for {self.number}")
@@ -119,7 +115,7 @@ class SignalDatastore:
             if not claim:
                 logging.info("no account claim!")
                 break
-            # maybe still keep the terminate route?
+            # you can also try to kill the other process
             logging.info(
                 "this account is claimed by %s, waiting",
                 claim,
@@ -136,6 +132,7 @@ class SignalDatastore:
             )
         logging.info("got datastore from pg")
         if json_data := record[0].get("account"):
+            # legacy json-only field
             loaded_data = json.loads(json_data)
             if "username" in loaded_data:
                 try:
@@ -161,6 +158,7 @@ class SignalDatastore:
         return
 
     def tarball_data(self) -> Optional[bytes]:
+        """Tarball our data files"""
         if not self.is_registered_locally():
             logging.error("datastore not registered. not uploading")
             return None
@@ -182,7 +180,7 @@ class SignalDatastore:
             )
             tarball.add("data")
         fnames = [member.name for member in tarball.getmembers()]
-        logging.trace(fnames[:2])
+        logging.debug(fnames[:2])
         tarball.close()
         buffer.seek(0)
         data = buffer.read()
@@ -194,22 +192,18 @@ class SignalDatastore:
         if not data:
             return
         kb = round(len(data) / 1024, 1)
-        # upload and return registered timestamp. write timestamp. when uploading, check that the last_updated_ts in postgres matches the file
+        # maybe something like:
+        # upload and return registered timestamp. write timestamp locally. when uploading, check that the last_updated_ts in postgres matches the file
         # if it doesn't, you've probably diverged, but someone may have put an invalid ratchet more recently by mistake (e.g. restarting triggering upload despite crashing)
-        #
+        # or:
         # open("last_uploaded_checksum", "w").write(zlib.crc32(buffer.seek(0).read()))
         await self.account_interface.upload(self.number, data)
-        logging.trace("saved %s kb of tarballed datastore to supabase", kb)
+        logging.debug("saved %s kb of tarballed datastore to supabase", kb)
         return
 
     async def mark_freed(self) -> list:
         """Marks account as freed in PG database."""
         return await self.account_interface.mark_account_freed(self.number)
-
-
-# class LocalStore(SignalDatastore):
-#     def __init__(self, arg=""):
-#         self.filepath = ""
 
 
 async def getFreeSignalDatastore() -> SignalDatastore:
@@ -225,7 +219,7 @@ async def getFreeSignalDatastore() -> SignalDatastore:
     return SignalDatastore(number)
 
 
-memfs_process = None
+_memfs_process = None
 
 
 async def start_memfs(app: web.Application) -> None:
@@ -233,11 +227,14 @@ async def start_memfs(app: web.Application) -> None:
     mount a filesystem in userspace to store data
     the fs contents are stored in memory, so that our keys never touch a disk
     this means we can log signal-cli's interactions with fs,
-    and store them in mem_queue
+    and store them in mem_queue.
+    if running locally, chdir to /tmp/local-signal with symlinks instead
     """
+    # refactor this whole mess into some sort of more general "figure out where we are before downloading"
     if utils.LOCAL:
         if utils.ROOT_DIR == ".":
             logging.warning("not deleting current dir, so not starting memfs")
+            return
         try:
             shutil.rmtree(utils.ROOT_DIR)
         except (FileNotFoundError, OSError) as e:
@@ -245,7 +242,10 @@ async def start_memfs(app: web.Application) -> None:
         os.mkdir(utils.ROOT_DIR)
         os.mkdir(utils.ROOT_DIR + "/data")
         # we're going to be running in the repo
-        os.symlink(Path("signal-cli").absolute(), utils.ROOT_DIR + "/signal-cli")
+        sigcli = utils.get_secret("SIGNAL_CLI_PATH") or "signal-cli"
+        sigcli_path = Path(sigcli).absolute()
+        logging.info("symlinking %s to %s", sigcli_path, utils.ROOT_DIR)
+        os.symlink(sigcli_path, utils.ROOT_DIR + "/signal-cli")
         os.symlink(Path("avatar.png").absolute(), utils.ROOT_DIR + "/avatar.png")
         logging.info("chdir to %s", utils.ROOT_DIR)
         os.chdir(utils.ROOT_DIR)
@@ -268,7 +268,7 @@ async def start_memfs(app: web.Application) -> None:
             )
 
     def memfs_proc(path: str = "data") -> Any:
-        logging.info("in memfs_proc")
+        """Start the memfs process"""
         pid = os.getpid()
         open("/dev/stdout", "w").write(
             f"Starting memfs with PID: {pid} on dir: {path}\n"
@@ -282,7 +282,7 @@ async def start_memfs(app: web.Application) -> None:
         memfs = aioprocessing.AioProcess(target=memfs_proc)
         memfs.start()  # pylint: disable=no-member
         app["memfs"] = memfs
-        memfs_process = memfs
+        _memfs_process = memfs
 
     logging.info("awaiting launch func")
     await launch()
@@ -300,7 +300,7 @@ async def start_memfs_monitor(app: web.Application) -> None:
         queue = app.get("mem_queue")
         if not queue:
             logging.info("no mem_queue, nothing to monitor")
-            return 
+            return
         logging.info("monitoring memfs")
         counter = 0
         while True:
@@ -324,12 +324,82 @@ async def start_memfs_monitor(app: web.Application) -> None:
     app["mem_task"] = asyncio.create_task(upload_after_signalcli_writes())
 
 
-async def standalone(number: str) -> None:
+# this stuff desperately needs to be cleaned up and probably moved to scripts
+# maybe a config about where we're running
+# MEMFS, DOWNLOAD, ROOT_DIR, HOSTNAME, etc
+# is HCL overkill?
+
+
+parser = argparse.ArgumentParser(
+    description="manage the signal datastore. use ENV=... to use something other than dev"
+)
+subparser = parser.add_subparsers(dest="subparser")  # ?
+
+# h/t https://gist.github.com/mivade/384c2c41c3a29c637cb6c603d4197f9f
+
+
+def argument(*name_or_flags: Any, **kwargs: Any) -> tuple:
+    """Convenience function to properly format arguments to pass to the
+    subcommand decorator.
+    """
+    return (list(name_or_flags), kwargs)
+
+
+def subcommand(
+    _args: Optional[list] = None, parent: argparse._SubParsersAction = subparser
+) -> Callable:
+    """Decorator to define a new subcommand in a sanity-preserving way.
+    The function will be stored in the ``func`` variable when the parser
+    parses arguments so that it can be called directly like so::
+        args = cli.parse_args()
+        args.func(args)
+    Usage example::
+        @subcommand([argument("-d", help="Enable debug mode", action="store_true")])
+        def subcommand(args):
+            print(args)
+    Then on the command line::
+        $ python cli.py subcommand -d
+    """
+    def decorator(func: Callable) -> None:
+        _parser = parent.add_parser(func.__name__, description=func.__doc__)
+        for arg in (_args if _args else []):
+            _parser.add_argument(*arg[0], **arg[1])
+        _parser.set_defaults(func=func)
+
+    return decorator
+
+
+@subcommand()
+async def list_accounts(_args: argparse.Namespace) -> None:
+    "list available accounts in table format"
+    cols = ["id", "last_update_ms", "last_claim_ms", "active_node_name"]
+    query = f"select {' ,'.join(cols)} from signal_accounts"
+    accounts = await get_account_interface().execute(query)
+    if not isinstance(accounts, list):
+        return
+    table = [cols] + [
+        [str(value) for value in account.values()] for account in accounts
+    ]
+    str_widths = [max(len(row[index]) for row in table) for index in range(len(cols))]
+    row_format = " ".join("{:<" + str(width) + "}" for width in str_widths)
+    for row in table:
+        print((row_format.format(*row).rstrip()))
+    return
+
+
+@subcommand([argument("--number")])
+async def do_free(ns: argparse.Namespace) -> None:
+    "mark account freed"
+    await get_account_interface().mark_account_freed(ns.number)
+
+
+@subcommand([argument("--number")])
+async def sync(ns: argparse.Namespace) -> None:
     app = cast(web.Application, {})
     asyncio.create_task(start_memfs(app))
     await start_memfs_monitor(app)
     try:
-        datastore = SignalDatastore(number)
+        datastore = SignalDatastore(ns.number)
         await datastore.download()
     except (IndexError, DatastoreError):
         datastore = await getFreeSignalDatastore()
@@ -342,47 +412,27 @@ async def standalone(number: str) -> None:
         await datastore.mark_freed()
 
 
-# maybe a config about where we're running
-# MEMFS, DOWNLOAD, ROOT_DIR, HOSTNAME, etc
-# is HCL overkill?
-
-parser = argparse.ArgumentParser(description="manage the signal datastore")
-subparser = parser.add_subparsers(dest="subparser")  # ?
-sync_parser = subparser.add_parser("sync")
-sync_parser.add_argument("--number")
 upload_parser = subparser.add_parser("upload")
 upload_parser.add_argument("--path")
 upload_parser.add_argument("--number")
-download_parser = subparser.add_parser("download")
-download_parser.add_argument("--number")
-migrate_parser = subparser.add_parser("migrate")
-migrate_parser.add_argument("--create")
-
-async def do_free(args):
-    await get_account_interface().mark_account_freed(args.number)
-
-free_parser = subparser.add_parser("free", help="mark account freed")
-free_parser.add_argument("--number")
-free_parser.set_defaults(func=do_free)
+# download_parser = subparser.add_parser("download")
+# download_parser.add_argument("--number")
+# migrate_parser = subparser.add_parser("migrate")
+# migrate_parser.add_argument("--create")
 
 
 if __name__ == "__main__":
     args = parser.parse_args()
     if hasattr(args, "func"):
         asyncio.run(args.func(args))
-    elif args.subparser == "sync":
-        asyncio.run(standalone(args.number))
     elif args.subparser == "upload":
-        if args.number:
-            store = SignalDatastore(args.number)
-        elif args.path:
+        if args.path:
             os.chdir(args.path)
-            number = os.listdir("data")[0]
-            store = SignalDatastore(number)
+        if args.number:
+            num = args.number
         else:
-            print("Need either a path or a number")
-            sys.exit(1)
+            num = os.listdir("data")[0]
+        store = SignalDatastore(num)
         asyncio.run(store.upload())
-
     else:
         print("not implemented")
