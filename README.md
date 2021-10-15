@@ -1,12 +1,16 @@
 Requires python3.9
 
-Use pipenv install to install deps
+Use pipenv install to install deps. Install notes for Ubuntu Hirsuite in INSTALL.md
 
 you'll need to grab [https://github.com/forestcontact/signal-cli], check out the stdio-generalized `./gradlew installDist`, and add a symlink from signal-cli/build/install/signal-cli/bin/signal-cli to the working directory.
 
 you also need to register an account -- you can use https://github.com/forestcontact/go_ham/blob/main/register.py or https://github.com/forestcontact/message-in-a-bottle as a starting point. you can also grab one from the DB if you have access to secrets.
 
-You can use `./datastore.py upload --number` or `./datastore.py sync --number` to mess with the DB. your secrets file should be named {prod,staging,dev}_secrets. you can use `ENV=prod ./datastore ...` to select said file accordingly.
+you'll need to grab [https://github.com/forestcontact/signal-cli], check out the stdio-generalized `./gradlew installDist`, and add a symlink from signal-cli/build/install/signal-cli/bin/signal-cli to the working directory.
+
+you also need to register an account -- you can use https://github.com/forestcontact/go_ham/blob/main/register.py or https://github.com/forestcontact/message-in-a-bottle as a starting point. you can also grab one from the DB if you have access to secrets.
+
+You can use `python3.9 -m forest.datastore upload --number` or `python3.9 -m forest.datastore sync --number` to mess with the DB. your secrets file should be named {prod,staging,dev}_secrets. you can use `ENV=prod python3.9 -m forest.datastore ...` to select said file accordingly.
 
 If things seem wrong, you can use `fly suspend`, the above to sync, use signal-cli locally to receive/send --endsession/trust identities/whatever, then `fly resume`
 
@@ -22,6 +26,7 @@ Deploys generally should be `--strategy immediate` to not risk the old instance 
 >  --strategy string      The strategy for replacing running instances. Options are canary, rolling, bluegreen, or immediate. Default is canary
 
 
+Code style: mypy and pylint should not have errors when you push. run black. prefer verbose, easier to read names over conciser ones.
 
 TODO: elaborate on
 

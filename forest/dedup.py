@@ -2,7 +2,7 @@
 # if you're running this script, .execute will return lists, not Optional[list]
 import asyncio
 import forest_tables
-import utils
+from forest import utils
 
 utils.load_secrets("dev")
 dev = forest_tables.RoutingManager(database=utils.get_secret("DATABASE_URL"))

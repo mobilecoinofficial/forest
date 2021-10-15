@@ -3,8 +3,8 @@ import os
 from asyncio.subprocess import PIPE, create_subprocess_exec
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Optional, cast
-
 import phonenumbers as pn
+from phonenumbers import NumberParseException
 
 
 def FuckAiohttp(record: logging.LogRecord) -> bool:
@@ -36,29 +36,25 @@ logging.basicConfig(
 )
 logger = logging.getLogger()
 logging.getLogger().handlers[0].addFilter(FuckAiohttp)
-tracelog = logging.FileHandler("trace.log")
-tracelog.setLevel(TRACE)
-logger.addHandler(tracelog)
-handler = logging.FileHandler("debug.log")
-handler.setLevel("DEBUG")
-logger.addHandler(handler)
-
 
 # edge cases:
 # accessing an unset secret loads other variables and potentially overwrites existing ones
 # "false" being truthy is annoying
 
 
-def load_secrets(env: Optional[str] = None) -> None:
+def load_secrets(env: Optional[str] = None, overwrite: bool = False) -> None:
     if not env:
         env = os.environ.get("ENV", "dev")
     try:
         logging.info("loading secrets from %s_secrets", env)
         secrets = [line.strip().split("=", 1) for line in open(f"{env}_secrets")]
         can_be_a_dict = cast(list[tuple[str, str]], secrets)
-        new_env = (
-            dict(can_be_a_dict) | os.environ
-        )  # mask loaded secrets with existing env
+        if overwrite:
+            new_env = dict(can_be_a_dict)
+        else:
+            new_env = (
+                dict(can_be_a_dict) | os.environ
+            )  # mask loaded secrets with existing env
         os.environ.update(new_env)
     except FileNotFoundError:
         pass
@@ -76,14 +72,24 @@ HOSTNAME = open("/etc/hostname").read().strip()  #  FLY_ALLOC_ID
 APP_NAME = os.getenv("FLY_APP_NAME")
 URL = f"https://{APP_NAME}.fly.dev"
 LOCAL = APP_NAME is None
-print("download: ", get_secret("NO_DOWNLOAD"))
 ROOT_DIR = (
     "." if get_secret("NO_DOWNLOAD") else "/tmp/local-signal" if LOCAL else "/app"
 )
 
+if get_secret("LOGFILES"):
+    tracelog = logging.FileHandler("trace.log")
+    tracelog.setLevel(TRACE)
+    logger.addHandler(tracelog)
+    handler = logging.FileHandler("debug.log")
+    handler.setLevel("DEBUG")
+    logger.addHandler(handler)
 
-def signal_format(raw_number: str) -> str:
-    return pn.format_number(pn.parse(raw_number, "US"), pn.PhoneNumberFormat.E164)
+
+def signal_format(raw_number: str) -> Optional[str]:
+    try:
+        return pn.format_number(pn.parse(raw_number, "US"), pn.PhoneNumberFormat.E164)
+    except NumberParseException:
+        return None
 
 
 @asynccontextmanager
