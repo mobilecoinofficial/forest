@@ -50,13 +50,13 @@ async def get_output(cmd: str) -> str:
     return stdout.decode().strip()
 
 
-async def really_start_worker() -> None:
-    ip = await get_output(get_ip)
-    while 1:
-        await asyncio.create_subprocess_shell(
-            start_worker.format(ip, url), stdout=-1, stderr=-1
-        )
-        # don't *block* since output runs forever, but check if failed...
+# async def really_start_worker() -> None:
+#     ip = await get_output(get_ip)
+#     while 1:
+#         await asyncio.create_subprocess_shell(
+#             start_worker.format(ip, url), stdout=-1, stderr=-1
+#         )
+#         # don't *block* since output runs forever, but check if failed...
 
 
 class Imogen(Bot):
@@ -78,6 +78,9 @@ class Imogen(Bot):
         os.symlink(".", "state")
         logging.info(profile)
 
+    async def do_help(self, _: Message) -> str:
+        return "commands: /imagine <prompt, /status, /stop"
+
     async def do_status(self, _: Message) -> str:
         state = await get_output(status)
         queue_size = await redis.llen("prompt_queue")
@@ -92,16 +95,19 @@ class Imogen(Bot):
         )
         # check if worker is up
         state = await get_output(status)
+        logging.info("worker state: %s", state)
         if state == "stopped":
             # if not, turn it on
             logging.info(await get_output(start.format(self.worker_instance_id)))
-            asyncio.create_task(really_start_worker())
+            #asyncio.create_task(really_start_worker())
         timed = await redis.llen("prompt_queue")
         return f"you are #{timed} in line"
 
     async def do_stop(self, _: Message) -> str:
         return await get_output(stop.format(self.worker_instance_id))
 
+    async def do_start(self, _: Message) -> str:
+        return await get_output(start.format(self.worker_instance_id))
     # eh
     # async def async_shutdown(self):
     #    await redis.disconnect()
@@ -126,7 +132,7 @@ async def store_image_handler(request: web.Request) -> web.Response:
     field = await reader.next()
     if not isinstance(field, aiohttp.BodyPartReader):
         return web.Response(text="bad form")
-    print(field.name)
+    logging.info(field.name)
     # assert field.name == "image"
     filename = field.filename or f"attachment-{time.time()}"
     # You cannot rely on Content-Length if transfer is chunked.
@@ -150,7 +156,7 @@ async def store_image_handler(request: web.Request) -> web.Response:
     return web.Response(text="{} sized of {} sent" "".format(filename, size))
 
 
-app.add_routes([web.post("/attachment/{phonenumber}", store_image_handler)])
+app.add_routes([web.post("/attachment", store_image_handler)])
 app.add_routes([web.post("/admin", admin_handler)])
 
 
