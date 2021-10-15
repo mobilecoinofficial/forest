@@ -304,10 +304,11 @@ class Bot(Signal):
         if message.command:
             if hasattr(self, "do_" + message.command):
                 return await getattr(self, "do_" + message.command)(message)
-            return f"Sorry! Command {message.command} not recognized! Try /help."
+            suggest_help = " Try /help." if hasattr(self, "do_help") else ""
+            return f"Sorry! Command {message.command} not recognized!" +  suggest_help
         if message.text == "TERMINATE":
             return "signal session reset"
-        if message.text:
+        if message.text and not message.group:
             return "That didn't look like a valid command"
         return None
 
