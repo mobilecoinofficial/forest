@@ -12,7 +12,7 @@ import aiohttp
 from aiohttp import web
 from forest import utils
 from forest.core import Bot, Message, app
-
+import datetime
 if not utils.LOCAL:
     aws_cred = utils.get_secret("AWS_CREDENTIALS")
     if aws_cred:
@@ -42,6 +42,12 @@ start = "aws ec2 start-instances --region us-east-1 --instance-ids {}"
 stop = "aws ec2 stop-instances --region us-east-1 --instance-ids {}"
 get_ip = "aws ec2 describe-instances --region us-east-1|jq -r .Reservations[].Instances[].PublicIpAddress"
 start_worker = "ssh -i id_rsa -o ConnectTimeout=2 ubuntu@{} ~/ml/read_redis.py {}"
+
+
+get_cost = (
+    "aws ce get-cost-and-usage --time-period Start={},End={} --granularity DAILY --metrics BlendedCost | "
+    "jq -r .ResultsByTime[0].Total.BlendedCost.Amount"
+)
 
 
 async def get_output(cmd: str) -> str:
@@ -78,8 +84,17 @@ class Imogen(Bot):
         os.symlink(".", "state")
         logging.info(profile)
 
+    async def do_get_cost(self, _: Message) -> str:
+        today = datetime.date.today()
+        tomorrow = today + datetime.timedelta(1)
+        out = await get_output(get_cost.format(today, tomorrow))
+        try:
+            return round(float(out), 2)
+        except ValueError:
+            return out
+
     async def do_help(self, _: Message) -> str:
-        return "commands: /imagine <prompt, /status, /stop"
+        return "commands: /imagine <prompt>, /status, /stop"
 
     async def do_status(self, _: Message) -> str:
         state = await get_output(status)
@@ -99,7 +114,7 @@ class Imogen(Bot):
         if state == "stopped":
             # if not, turn it on
             logging.info(await get_output(start.format(self.worker_instance_id)))
-            #asyncio.create_task(really_start_worker())
+            # asyncio.create_task(really_start_worker())
         timed = await redis.llen("prompt_queue")
         return f"you are #{timed} in line"
 
@@ -108,6 +123,16 @@ class Imogen(Bot):
 
     async def do_start(self, _: Message) -> str:
         return await get_output(start.format(self.worker_instance_id))
+
+    async def do_list_queue(self, _: Message) -> str:
+        try:
+            return "; ".join(
+                json.loads(item)["prompt"]
+                for item in await redis.lrange("prompt_queue", 0, -1)
+            )
+        except json.JSONDecodeError:
+            return "json decode error?"
+
     # eh
     # async def async_shutdown(self):
     #    await redis.disconnect()
