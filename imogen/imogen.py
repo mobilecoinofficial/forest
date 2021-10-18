@@ -13,6 +13,7 @@ from aiohttp import web
 from forest import utils
 from forest.core import Bot, Message, app
 import datetime
+
 if not utils.LOCAL:
     aws_cred = utils.get_secret("AWS_CREDENTIALS")
     if aws_cred:
@@ -49,11 +50,16 @@ get_cost = (
     "jq -r .ResultsByTime[0].Total.BlendedCost.Amount"
 )
 
+get_all_cost = (
+    "aws ce get-cost-and-usage --time-period Start=2021-10-01,End={end} --granularity DAILY --metrics BlendedCost | "
+    "jq '.ResultsByTime[] | {(.TimePeriod.Start): .Total.BlendedCost.Amount}' | jq -s add"
+)
+
 
 async def get_output(cmd: str) -> str:
-    proc = await asyncio.create_subprocess_shell(cmd, stdout=-1)
-    stdout, _ = await proc.communicate()
-    return stdout.decode().strip()
+    proc = await asyncio.create_subprocess_shell(cmd, stdout=-1, stderr=-1)
+    stdout, stderr = await proc.communicate()
+    return stdout.decode().strip() or stderr.decode.strip()
 
 
 # async def really_start_worker() -> None:
@@ -81,7 +87,6 @@ class Imogen(Bot):
             "family-name": "",
         }
         await self.signalcli_input_queue.put(profile)
-        os.symlink(".", "state")
         logging.info(profile)
 
     async def do_get_cost(self, _: Message) -> str:
@@ -93,15 +98,30 @@ class Imogen(Bot):
         except ValueError:
             return out
 
-    async def do_help(self, _: Message) -> str:
-        return "commands: /imagine <prompt>, /status, /stop"
+    async def do_get_all_cost(self, _: Message) -> str:
+        tomorrow = datetime.date.today() + datetime.timedelta(1)
+        out = await get_output(get_all_cost.replace("{end}", str(tomorrow)))
+        return json.loads(out)
+
+    async def do_help(self, message: Message) -> str:
+        if message.arg1:
+            if hasattr(self, "do_" + message.arg1):
+                cmd = getattr(self, "do_" + message.arg1)
+                if cmd.__doc__:
+                    return cmd.__doc__
+                return f"Sorry, {message.arg1} isn't documented"
+        return "commands: " + ", ".join(
+            k.removeprefix("do_") for k in dir(self) if k.startswith("do_")
+        )
 
     async def do_status(self, _: Message) -> str:
+        "shows the GPU instance state (not the program) and queue size"
         state = await get_output(status)
         queue_size = await redis.llen("prompt_queue")
         return f"worker state: {state}, queue size: {queue_size}"
 
     async def do_imagine(self, msg: Message) -> str:
+        """/imagine <prompt>"""
         logging.info(msg.full_text)
         logging.info(msg.text)
         await redis.rpush(
