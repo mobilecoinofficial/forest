@@ -109,8 +109,6 @@ class Forest(Bot):
         # if message.command == "register":
         #    asyncio.create_task(self.register(message))
         #    return None
-        if message.payment:
-            return await self.handle_payment(message)
         return await Bot.handle_message(self, message)
 
     async def do_help(self, _: Message) -> str:
@@ -170,27 +168,7 @@ class Forest(Bot):
     if not utils.get_secret("GROUPS"):
         del do_mkgroup, do_query
 
-    async def handle_payment(self, message: Message) -> str:
-        """Decode the receipt, then update balances"""
-        # TODO: use the ledger table
-        logging.info(message.payment)
-        amount_pmob = await payments_monitor.get_receipt_amount_pmob(
-            message.payment["receipt"]
-        )
-        if amount_pmob is None:
-            return "That looked like a payment, but we couldn't parse it"
-        amount_mob = mc_util.pmob2mob(amount_pmob)
-        amount_usd_cents = round(amount_mob * await self.get_rate() * 100)
-        self.ledger_manager.put_mob_tx(
-            message.source,
-            amount_usd_cents,
-            amount_pmob,
-            message.payment.get("note"),
-        )
-        await self.respond(
-            message,
-            f"Thank you for sending {amount_mob} MOB ({amount_usd_cents/100} USD)",
-        )
+    async def payment_response(self) -> str:
         diff = await self.get_balance(message.source) - self.usd_price
         if diff < 0:
             return f"Please send another {abs(diff)} USD to buy a phone number"
@@ -224,29 +202,6 @@ class Forest(Bot):
             'try "/register" and following the instructions.'
         )
 
-    rate_cache: tuple[int, Optional[float]] = (0, None)
-
-    async def get_rate(self) -> float:
-        """Get the current USD/MOB price and cache it for an hour"""
-        hour = round(time.time() / 3600)  # same value within each hour
-        if self.rate_cache[0] == hour and self.rate_cache[1] is not None:
-            return self.rate_cache[1]
-        try:
-            url = "https://big.one/api/xn/v1/asset_pairs/8e900cb1-6331-4fe7-853c-d678ba136b2f"
-            last_val = await self.client_session.get(url)
-            resp_json = await last_val.json()
-            mob_rate = float(resp_json.get("data").get("ticker").get("close"))
-        except (
-            aiohttp.ClientError,
-            KeyError,
-            TypeError,
-            json.JSONDecodeError,
-        ) as e:
-            logging.error(e)
-            # big.one goes down sometimes, if it does... make up a price
-            mob_rate = 14
-        self.rate_cache = (hour, mob_rate)
-        return mob_rate
 
     usd_price = 5.0
 
