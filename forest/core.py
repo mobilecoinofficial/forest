@@ -310,6 +310,8 @@ class Bot(Signal):
             return "signal session reset"
         if message.text and not message.group:
             return "That didn't look like a valid command"
+        if message.payment:
+            return await self.handle_payment(message)
         return None
 
     async def do_printerfact(self, _: Message) -> str:
@@ -338,6 +340,30 @@ class Bot(Signal):
             )
             return None
 
+    async def handle_payment(self, message: Message) -> str:
+        """Decode the receipt, then update balances"""
+        logging.info(message.payment)
+        amount_pmob = await payments_monitor.get_receipt_amount_pmob(
+            message.payment["receipt"]
+        )
+        if amount_pmob is None:
+            return "That looked like a payment, but we couldn't parse it"
+        amount_mob = mc_util.pmob2mob(amount_pmob)
+        amount_usd_cents = round(amount_mob * await self.get_rate() * 100)
+        self.ledger_manager.put_mob_tx(
+            message.source,
+            amount_usd_cents,
+            amount_pmob,
+            message.payment.get("note"),
+        )
+        await self.respond(
+            message,
+            f"Thank you for sending {amount_mob} MOB ({amount_usd_cents/100} USD)",
+        )
+        return await self.payment_response()
+
+    async def payment_response(self) -> str:
+        return "This bot doesn't have a response for payments."
 
 async def noGet(request: web.Request) -> web.Response:
     raise web.HTTPFound(location="https://signal.org/")
