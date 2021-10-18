@@ -1,3 +1,4 @@
+import asyncio
 from typing import Optional
 import json
 import logging
@@ -50,18 +51,43 @@ class LedgerManager(PGInterface):
     ) -> None:
         super().__init__(queries, database, loop)
 
+class Mobster:
+    def __init__(self) -> None:
+        self.session = aiohttp.ClientSession()
 
-async def mob(data: dict) -> dict:
-    better_data = {"jsonrpc": "2.0", "id": 1, **data}
-    async with aiohttp.ClientSession() as session:
-        req = session.post(
+    async def req(self, data: dict) -> dict:
+        better_data = {"jsonrpc": "2.0", "id": 1, **data}
+        mob_req = session.post(
             "http://full-service.fly.dev/wallet",
             data=json.dumps(better_data),
             headers={"Content-Type": "application/json"},
         )
-        async with req as resp:
+        async with mob_req as resp:
             return await resp.json()
 
+    rate_cache: tuple[int, Optional[float]] = (0, None)
+
+    async def get_rate(self) -> float:
+        """Get the current USD/MOB price and cache it for an hour"""
+        hour = round(time.time() / 3600)  # same value within each hour
+        if self.rate_cache[0] == hour and self.rate_cache[1] is not None:
+            return self.rate_cache[1]
+        try:
+            url = "https://big.one/api/xn/v1/asset_pairs/8e900cb1-6331-4fe7-853c-d678ba136b2f"
+            last_val = await self.client_session.get(url)
+            resp_json = await last_val.json()
+            mob_rate = float(resp_json.get("data").get("ticker").get("close"))
+        except (
+            aiohttp.ClientError,
+            KeyError,
+            TypeError,
+            json.JSONDecodeError,
+        ) as e:
+            logging.error(e)
+            # big.one goes down sometimes, if it does... make up a price
+            mob_rate = 14
+        self.rate_cache = (hour, mob_rate)
+        return mob_rate
 
 async def import_account() -> dict:
     params = {
@@ -135,14 +161,8 @@ async def local_main() -> None:
                    await ledger_manager.put_transaction(invoice.user, credit)
                 # otherwise check if it's related to signal pay
                 # otherwise, complain about this unsolicited payment to an admin or something
-                payments_manager_connection.sync_put_payment(
-                    short_tx["transaction_log_id"],
-                    short_tx["account_id"],
-                    int(short_tx["value_pmob"]),
-                    int(short_tx["finalized_block_index"]),
-                )
         last_transactions = latest_transactions.copy()
-        time.sleep(10)
+        await asyncio.sleep(10)
 
 
 if __name__ == "__main__":
