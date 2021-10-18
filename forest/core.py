@@ -317,11 +317,10 @@ class Bot(Signal):
             fact = await resp.text()
         return fact.strip()
 
-    async def do_ping(self, m: Message) -> str:
-        if m.text:
-            return f"pong {m.text}"
-        else:
-            return "pong"
+    async def do_ping(self, message: Message) -> str:
+        if message.text:
+            return f"pong {message.text}"
+        return "pong"
 
     async def check_target_number(self, msg: Message) -> Optional[str]:
         try:
