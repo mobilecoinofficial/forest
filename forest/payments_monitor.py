@@ -33,7 +33,7 @@ InvoicePGEExpressions = PGExpressions(
         unique_pmob BIGINT, \
         memo CHARECTER VARYING(32) \
         unique(unique_pmob)",
-    create_invoice="INSERT INTO {self.table} (account, unique_pmob, memo) VALUES($1, $2, $3)"
+    create_invoice="INSERT INTO {self.table} (account, unique_pmob, memo) VALUES($1, $2, $3)",
     get_invoice_by_amount="SELECT invoice_id, account FROM {self.table} WHERE unique_pmob=$1"
 )
 class InvoiceManager(PGInterface):
@@ -97,7 +97,7 @@ async def get_receipt_amount_pmob(receipt_str: str) -> Optional[float]:
 
 
 def get_account() -> str:
-    account_id = await mob({"method": "get_all_accounts"})["result"]["account_ids"][0]
+    return await mob({"method": "get_all_accounts"})["result"]["account_ids"][0]
 
 
 def get_transactions(account_id: str) -> dict[str, dict[str, str]]:
@@ -111,13 +111,13 @@ def get_transactions(account_id: str) -> dict[str, dict[str, str]]:
     )["result"]["transaction_log_map"]
 
 
-def local_main() -> None:
+async def local_main() -> None:
     last_transactions: dict[str, dict[str, str]] = {}
-    payments_manager_connection = PaymentsManager()
-    payments_manager_connection.sync_create_table()
+    ledger_manager = LedgerManager()
     invoice_manager = InvoiceManager()
+    account_id = await get_account()
     while True:
-        latest_transactions = get_transactions()
+        latest_transactions = get_transactions(account_id)
         for transaction in latest_transactions:
             if transaction not in last_transactions:
                 unobserved_tx = latest_transactions.get(transaction, {})
@@ -131,9 +131,8 @@ def local_main() -> None:
                 logging.info(short_tx)
                 invoice = await invoice_manager.get_invoice_by_amount(value_pmob)
                 if invoice:
-
-                    credit = await pmob_to_usd(value_pmob)
-                   await transaction_manager.put_transaction(invoice.user, credit)
+                   credit = await pmob_to_usd(value_pmob)
+                   await ledger_manager.put_transaction(invoice.user, credit)
                 # otherwise check if it's related to signal pay
                 # otherwise, complain about this unsolicited payment to an admin or something
                 payments_manager_connection.sync_put_payment(
@@ -147,4 +146,4 @@ def local_main() -> None:
 
 
 if __name__ == "__main__":
-    local_main()
+    asyncio.run(local_main())

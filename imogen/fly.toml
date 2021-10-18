@@ -1,13 +1,13 @@
-# fly.toml file generated for imogen on 2021-10-13T00:08:41-04:00
+# fly.toml file generated for imogen-uk on 2021-10-18T14:56:02-04:00
 
-app = "imogen"
+app = "imogen-uk"
 
 kill_signal = "SIGINT"
 kill_timeout = 5
 processes = []
 
 [env]
-PROFILE="true"
+BOT_NUMBER = "+447888874208"
 
 [experimental]
   allowed_public_ports = []
@@ -36,5 +36,5 @@ PROFILE="true"
   [[services.tcp_checks]]
     grace_period = "1s"
     interval = "15s"
-    restart_limit = 6
+    restart_limit = 0
     timeout = "2s"

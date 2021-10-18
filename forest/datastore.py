@@ -1,4 +1,5 @@
 #!/bin/python3.9
+import argparse
 import asyncio
 import json
 import logging
@@ -10,7 +11,6 @@ from pathlib import Path
 from subprocess import PIPE, Popen
 from tarfile import TarFile
 from typing import Any, Optional, Callable, cast
-import argparse
 
 import aioprocessing
 from aiohttp import web
