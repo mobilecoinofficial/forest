@@ -378,8 +378,11 @@ async def list_accounts(_args: argparse.Namespace) -> None:
     # sorry
     if "notes" in [
         item.get("column_name")
-        for item in await interface.execute(
-            "select column_name from information_schema.columns where table_name='signal_accounts';"
+        for item in (
+            await interface.execute(
+                "select column_name from information_schema.columns where table_name='signal_accounts';"
+            )
+            or [] # don't error if the query fails
         )
     ]:
         cols.append("notes")

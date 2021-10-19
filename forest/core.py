@@ -309,7 +309,7 @@ class Bot(Signal):
             if hasattr(self, "do_" + message.command):
                 return await getattr(self, "do_" + message.command)(message)
             suggest_help = " Try /help." if hasattr(self, "do_help") else ""
-            return f"Sorry! Command {message.command} not recognized!" +  suggest_help
+            return f"Sorry! Command {message.command} not recognized!" + suggest_help
         if message.text == "TERMINATE":
             return "signal session reset"
         if message.text and not message.group:
@@ -364,10 +364,11 @@ class Bot(Signal):
             message,
             f"Thank you for sending {amount_mob} MOB ({amount_usd_cents/100} USD)",
         )
-        return await self.payment_response()
+        return await self.payment_response(message)
 
-    async def payment_response(self) -> str:
+    async def payment_response(self, _: Message) -> str:
         return "This bot doesn't have a response for payments."
+
 
 async def noGet(request: web.Request) -> web.Response:
     raise web.HTTPFound(location="https://signal.org/")
