@@ -136,7 +136,7 @@ class Mobster:
             "account_ids"
         ][0]
 
-    def get_transactions(self, account_id: str) -> dict[str, dict[str, str]]:
+    async def get_transactions(self, account_id: str) -> dict[str, dict[str, str]]:
         return (
             await self.req(
                 {
@@ -154,7 +154,7 @@ async def local_main() -> None:
     mobster = Mobster()
     account_id = await mobster.get_account()
     while True:
-        latest_transactions = mobster.get_transactions(account_id)
+        latest_transactions = await mobster.get_transactions(account_id)
         for transaction in latest_transactions:
             if transaction not in last_transactions:
                 unobserved_tx = latest_transactions.get(transaction, {})

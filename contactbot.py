@@ -1,17 +1,13 @@
 #!/usr/bin/python3.9
-import asyncio
-import json
 import logging
 import random
-import time
-from typing import Optional, Union
+from typing import Union
 
-import aiohttp
 from aiohttp import web
 
 import teli
 from forest_tables import GroupRoutingManager, PaymentsManager, RoutingManager
-from forest import payments_monitor, utils, mc_util
+from forest import utils
 from forest.core import Bot, Message, Response, app
 from forest.payments_monitor import LedgerManager
 
@@ -168,7 +164,7 @@ class Forest(Bot):
     if not utils.get_secret("GROUPS"):
         del do_mkgroup, do_query
 
-    async def payment_response(self) -> str:
+    async def payment_response(self, message: Message) -> str:
         diff = await self.get_balance(message.source) - self.usd_price
         if diff < 0:
             return f"Please send another {abs(diff)} USD to buy a phone number"
@@ -205,7 +201,7 @@ class Forest(Bot):
     usd_price = 5.0
 
     async def get_mob_price(self, perturb: bool = False) -> float:
-        mob_rate = await self.get_rate()
+        mob_rate = await self.mobster.get_rate()
         if perturb:
             # perturb each price slightly to have a unique payment
             mob_rate -= random.random() / 1000
@@ -311,9 +307,9 @@ class Forest(Bot):
     async def start_process(self) -> None:
         """Make sure full-service has a wallet before starting signal"""
         try:
-            await payments_monitor.get_address()
+            await self.mobster.get_address()
         except IndexError:
-            await payments_monitor.import_account()
+            await self.mobster.import_account()
         if utils.get_secret("MIGRATE"):
             await self.migrate()
         await super().start_process()

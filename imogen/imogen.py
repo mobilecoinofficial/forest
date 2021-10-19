@@ -1,18 +1,17 @@
 #!/usr/bin/python3.9
 import asyncio
-import json
-import time
-import logging
-import os
 import base64
-from typing import Optional
+import datetime
+import json
+import logging
+import time
 from pathlib import Path
-import aioredis
+from typing import Optional
 import aiohttp
+import aioredis
 from aiohttp import web
 from forest import utils
 from forest.core import Bot, Message, app
-import datetime
 
 if not utils.LOCAL:
     aws_cred = utils.get_secret("AWS_CREDENTIALS")
@@ -59,7 +58,7 @@ get_all_cost = (
 async def get_output(cmd: str) -> str:
     proc = await asyncio.create_subprocess_shell(cmd, stdout=-1, stderr=-1)
     stdout, stderr = await proc.communicate()
-    return stdout.decode().strip() or stderr.decode.strip()
+    return stdout.decode().strip() or stderr.decode().strip()
 
 
 # async def really_start_worker() -> None:
@@ -94,7 +93,7 @@ class Imogen(Bot):
         tomorrow = today + datetime.timedelta(1)
         out = await get_output(get_cost.format(today, tomorrow))
         try:
-            return round(float(out), 2)
+            return str(round(float(out), 2))
         except ValueError:
             return out
 
