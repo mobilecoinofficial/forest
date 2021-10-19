@@ -1,11 +1,13 @@
 import asyncio
-from typing import Optional
 import json
 import logging
+import time
+from typing import Optional
+
 import aiohttp
-from forest import utils
-from forest import mc_util
-from forest.pghelp import PGExpressions, PGInterface, Loop
+
+from forest import mc_util, utils
+from forest.pghelp import Loop, PGExpressions, PGInterface
 
 DATABASE_URL = utils.get_secret("DATABASE_URL")
 LedgerPGExpressions = PGExpressions(
@@ -35,10 +37,12 @@ InvoicePGEExpressions = PGExpressions(
         memo CHARECTER VARYING(32) \
         unique(unique_pmob)",
     create_invoice="INSERT INTO {self.table} (account, unique_pmob, memo) VALUES($1, $2, $3)",
-    get_invoice_by_amount="SELECT invoice_id, account FROM {self.table} WHERE unique_pmob=$1"
+    get_invoice_by_amount="SELECT invoice_id, account FROM {self.table} WHERE unique_pmob=$1",
 )
+
+
 class InvoiceManager(PGInterface):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__(InvoicePGEExpressions, DATABASE_URL, None)
 
 
@@ -51,13 +55,16 @@ class LedgerManager(PGInterface):
     ) -> None:
         super().__init__(queries, database, loop)
 
+
 class Mobster:
+    """Class to keep track of a aiohttp session and cached rate"""
+
     def __init__(self) -> None:
         self.session = aiohttp.ClientSession()
 
     async def req(self, data: dict) -> dict:
         better_data = {"jsonrpc": "2.0", "id": 1, **data}
-        mob_req = session.post(
+        mob_req = self.session.post(
             "http://full-service.fly.dev/wallet",
             data=json.dumps(better_data),
             headers={"Content-Type": "application/json"},
@@ -74,7 +81,7 @@ class Mobster:
             return self.rate_cache[1]
         try:
             url = "https://big.one/api/xn/v1/asset_pairs/8e900cb1-6331-4fe7-853c-d678ba136b2f"
-            last_val = await self.client_session.get(url)
+            last_val = await self.session.get(url)
             resp_json = await last_val.json()
             mob_rate = float(resp_json.get("data").get("ticker").get("close"))
         except (
@@ -89,61 +96,65 @@ class Mobster:
         self.rate_cache = (hour, mob_rate)
         return mob_rate
 
-async def import_account() -> dict:
-    params = {
-        "mnemonic": utils.get_secret("MNEMONIC"),
-        "key_derivation_version": "2",
-        "name": "falloopa",
-        "next_subaddress_index": "2",
-        "first_block_index": "3500",
-    }
-    return await mob({"method": "import_account", "params": params})
+    async def pmob2usd(self, pmob: int) -> float:
+        return mc_util.pmob2mob(pmob) * await self.get_rate()
 
+    async def import_account(self) -> dict:
+        params = {
+            "mnemonic": utils.get_secret("MNEMONIC"),
+            "key_derivation_version": "2",
+            "name": "falloopa",
+            "next_subaddress_index": "2",
+            "first_block_index": "3500",
+        }
+        return await self.req({"method": "import_account", "params": params})
 
-# cache?
-async def get_address() -> str:
-    res = await mob({"method": "get_all_accounts"})
-    acc_id = res["result"]["account_ids"][0]
-    return res["result"]["account_map"][acc_id]["main_address"]
+    # cache?
+    async def get_address(self) -> str:
+        res = await self.req({"method": "get_all_accounts"})
+        acc_id = res["result"]["account_ids"][0]
+        return res["result"]["account_map"][acc_id]["main_address"]
 
-
-async def get_receipt_amount_pmob(receipt_str: str) -> Optional[float]:
-    full_service_receipt = mc_util.b64_receipt_to_full_service_receipt(receipt_str)
-    logging.debug(full_service_receipt)
-    params = {
-        "address": await get_address(),
-        "receiver_receipt": full_service_receipt,
-    }
-    tx = await mob({"method": "check_receiver_receipt_status", "params": params})
-    logging.debug(tx)
-    if "error" in tx:
-        return None
-    pmob = int(tx["result"]["txo"]["value_pmob"])
-    return pmob
-
-
-def get_account() -> str:
-    return await mob({"method": "get_all_accounts"})["result"]["account_ids"][0]
-
-
-def get_transactions(account_id: str) -> dict[str, dict[str, str]]:
-    return (
-        await mob(
-            {
-                "method": "get_all_transaction_logs_for_account",
-                "params": {"account_id": account_id},
-            }
+    async def get_receipt_amount_pmob(self, receipt_str: str) -> Optional[float]:
+        full_service_receipt = mc_util.b64_receipt_to_full_service_receipt(receipt_str)
+        logging.debug(full_service_receipt)
+        params = {
+            "address": await self.get_address(),
+            "receiver_receipt": full_service_receipt,
+        }
+        tx = await self.req(
+            {"method": "check_receiver_receipt_status", "params": params}
         )
-    )["result"]["transaction_log_map"]
+        logging.debug(tx)
+        if "error" in tx:
+            return None
+        pmob = int(tx["result"]["txo"]["value_pmob"])
+        return pmob
+
+    async def get_account(self) -> str:
+        return (await self.req({"method": "get_all_accounts"}))["result"][
+            "account_ids"
+        ][0]
+
+    def get_transactions(self, account_id: str) -> dict[str, dict[str, str]]:
+        return (
+            await self.req(
+                {
+                    "method": "get_all_transaction_logs_for_account",
+                    "params": {"account_id": account_id},
+                }
+            )
+        )["result"]["transaction_log_map"]
 
 
 async def local_main() -> None:
     last_transactions: dict[str, dict[str, str]] = {}
     ledger_manager = LedgerManager()
     invoice_manager = InvoiceManager()
-    account_id = await get_account()
+    mobster = Mobster()
+    account_id = await mobster.get_account()
     while True:
-        latest_transactions = get_transactions(account_id)
+        latest_transactions = mobster.get_transactions(account_id)
         for transaction in latest_transactions:
             if transaction not in last_transactions:
                 unobserved_tx = latest_transactions.get(transaction, {})
@@ -155,10 +166,11 @@ async def local_main() -> None:
                         v = v[:16]
                     short_tx[k] = v
                 logging.info(short_tx)
+                value_pmob = int(short_tx["value_pmob"])
                 invoice = await invoice_manager.get_invoice_by_amount(value_pmob)
                 if invoice:
-                   credit = await pmob_to_usd(value_pmob)
-                   await ledger_manager.put_transaction(invoice.user, credit)
+                    credit = await mobster.pmob2usd(value_pmob)
+                    await ledger_manager.put_transaction(invoice.user, credit)
                 # otherwise check if it's related to signal pay
                 # otherwise, complain about this unsolicited payment to an admin or something
         last_transactions = latest_transactions.copy()
