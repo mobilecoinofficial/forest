@@ -18,9 +18,9 @@ from phonenumbers import NumberParseException
 
 # framework
 from forest import datastore
+from forest import autosave
 from forest import pghelp
 from forest import utils
-
 JSON = dict[str, Any]
 Response = Union[str, list, dict[str, str], None]
 
@@ -232,8 +232,8 @@ class Signal:
         await self.datastore.mark_freed()
         await pghelp.close_pools()
         # this doesn't work. see https://github.com/forestcontact/forest-draft/issues/10
-        if datastore._memfs_process:
-            executor = datastore._memfs_process._get_executor()
+        if autosave._memfs_process:
+            executor = autosave._memfs_process._get_executor()
             logging.info(executor)
             executor.shutdown(wait=False, cancel_futures=True)
         logging.info("exited".center(60, "="))
@@ -365,8 +365,8 @@ app.add_routes(
 )
 
 if not utils.get_secret("NO_MEMFS"):
-    app.on_startup.append(datastore.start_memfs)
-    app.on_startup.append(datastore.start_memfs_monitor)
+    app.on_startup.append(autosave.start_memfs)
+    app.on_startup.append(autosave.start_memfs_monitor)
 
 
 if __name__ == "__main__":
