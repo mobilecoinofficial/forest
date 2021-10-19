@@ -202,7 +202,6 @@ class Forest(Bot):
             'try "/register" and following the instructions.'
         )
 
-
     usd_price = 5.0
 
     async def get_mob_price(self, perturb: bool = False) -> float:

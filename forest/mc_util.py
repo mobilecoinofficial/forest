@@ -2,10 +2,8 @@ from typing import Union
 from decimal import Decimal
 import base64
 import mobilecoin
-import base58
 
 # adapted from https://github.com/mobilecoinofficial/full-service/tree/main/python-utils/mc_util
-
 
 PMOB = Decimal("1e12")
 

@@ -20,6 +20,8 @@ from phonenumbers import NumberParseException
 from forest import datastore
 from forest import pghelp
 from forest import utils
+from forest import mc_util
+from forest import payments_monitor
 
 JSON = dict[str, Any]
 Response = Union[str, list, dict[str, str], None]
@@ -290,6 +292,8 @@ class Bot(Signal):
     def __init__(self, *args: str) -> None:
         """Creates AND STARTS a bot that routes commands to do_x handlers"""
         self.client_session = aiohttp.ClientSession()
+        self.mobster = payments_monitor.Mobster()
+        self.ledger_manager = payments_monitor.LedgerManager()
         super().__init__(*args)
         asyncio.create_task(self.start_process())
         asyncio.create_task(self.handle_messages())
@@ -343,13 +347,13 @@ class Bot(Signal):
     async def handle_payment(self, message: Message) -> str:
         """Decode the receipt, then update balances"""
         logging.info(message.payment)
-        amount_pmob = await payments_monitor.get_receipt_amount_pmob(
+        amount_pmob = await self.mobster.get_receipt_amount_pmob(
             message.payment["receipt"]
         )
         if amount_pmob is None:
             return "That looked like a payment, but we couldn't parse it"
         amount_mob = mc_util.pmob2mob(amount_pmob)
-        amount_usd_cents = round(amount_mob * await self.get_rate() * 100)
+        amount_usd_cents = round(amount_mob * await self.mobster.get_rate() * 100)
         self.ledger_manager.put_mob_tx(
             message.source,
             amount_usd_cents,
