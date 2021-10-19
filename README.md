@@ -10,8 +10,7 @@ you also need to register an account -- you can use https://github.com/forestcon
 
 you can use `python3.9 -m forest.datastore upload --number` or `python3.9 -m forest.datastore sync --number` to mess with the DB. your secrets file should be named {prod,staging,dev}_secrets. 
 
-you can use `ENV=prod python3.9 -m forest.datastore ...` to select said file accordingly.
-^ old? "ENV=x" alone in the pipenv seems to do the right thing.
+you can use `ENV=prod python3.9 -m forest.datastore` to select said file accordingly. <- deprecated? "ENV=x" alone in the pipenv seems to do the right thing.
 
 ## Running Forestbot Locally
 
