@@ -8,12 +8,15 @@ you'll need to grab [https://github.com/forestcontact/signal-cli], check out the
 
 you also need to register an account -- you can use https://github.com/forestcontact/go_ham/blob/main/register.py or https://github.com/forestcontact/message-in-a-bottle as a starting point. you can also grab one from the DB if you have access to secrets.
 
-You can use `python3.9 -m forest.datastore upload --number` or `python3.9 -m forest.datastore sync --number` to mess with the DB. your secrets file should be named {prod,staging,dev}_secrets. you can use `ENV=prod python3.9 -m forest.datastore ...` to select said file accordingly.
+You can use `python3.9 -m forest.datastore upload --number` or `python3.9 -m forest.datastore sync --number` to mess with the DB. your secrets file should be named {prod,staging,dev}_secrets. 
 
+you can use `ENV=prod python3.9 -m forest.datastore ...` to select said file accordingly.
+^ old? "ENV=x" alone in the pipenv seems to do the right thing.
 
 ## Running Forestbot Locally
 
-To run locally for a testing enviornment, you can run `ENV=dev` and `docker build .` Alternatively to docker, you can use `contactbot.py`
+To run locally for a testing enviornment, you can run `ENV=dev` and `docker build .` Alternatively to docker, you can use `contactbot.py`.
+For this, you'll need your signal-cli symlinked to the forest-draft directory. `ln -s ~/signal-cli/build/install/signal-cli/bin/signal-cli .`
 
 If you have secrets, `python3.9 -m forest.datastore list_accounts` should show your available accounts. 
 
