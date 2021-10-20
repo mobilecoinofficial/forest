@@ -7,6 +7,7 @@ import random
 import asyncpg
 import aiohttp
 
+import forest
 from forest import mc_util, utils
 from forest.pghelp import Loop, PGExpressions, PGInterface
 
@@ -60,7 +61,8 @@ class LedgerManager(PGInterface):
 class Mobster:
     """Class to keep track of a aiohttp session and cached rate"""
 
-    def __init__(self) -> None:
+    def __init__(self, bot: "forest.core.Bot") -> None:
+        self.bot = bot
         self.session = aiohttp.ClientSession()
         self.ledger_manager = LedgerManager()
         self.invoice_manager = InvoiceManager()
@@ -201,7 +203,6 @@ class Mobster:
                             value_pmob,
                             short_tx["transaction_log_id"],
                         )
-                        self.bot.handle
                     # otherwise check if it's related to signal pay
                     # otherwise, complain about this unsolicited payment to an admin or something
             last_transactions = latest_transactions.copy()

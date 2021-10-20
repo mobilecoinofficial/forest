@@ -101,6 +101,7 @@ class Imogen(Bot):
         tomorrow = datetime.date.today() + datetime.timedelta(1)
         out = await get_output(get_all_cost.replace("{end}", str(tomorrow)))
         return json.loads(out)
+    do_get_costs = do_get_all_costs = do_get_all_cost
 
     async def do_help(self, message: Message) -> str:
         if message.arg1:
@@ -151,7 +152,7 @@ class Imogen(Bot):
             )
         except json.JSONDecodeError:
             return "json decode error?"
-
+    do_list_prompts = do_listqueue = do_queue = do_list_queue
     # eh
     # async def async_shutdown(self):
     #    await redis.disconnect()
