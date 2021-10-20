@@ -3,7 +3,8 @@ import json
 import logging
 import time
 from typing import Optional
-
+import random
+import asyncpg
 import aiohttp
 
 from forest import mc_util, utils
@@ -34,8 +35,8 @@ InvoicePGEExpressions = PGExpressions(
         invoice_id SERIAL PRIMARY KEY, \
         account CHARACTER VARYING(16), \
         unique_pmob BIGINT, \
-        memo CHARECTER VARYING(32) \
-        unique(unique_pmob)",
+        memo CHARACTER VARYING(32), \
+        unique(unique_pmob))",
     create_invoice="INSERT INTO {self.table} (account, unique_pmob, memo) VALUES($1, $2, $3)",
     get_invoice_by_amount="SELECT invoice_id, account FROM {self.table} WHERE unique_pmob=$1",
 )
@@ -61,6 +62,8 @@ class Mobster:
 
     def __init__(self) -> None:
         self.session = aiohttp.ClientSession()
+        self.ledger_manager = LedgerManager()
+        self.invoice_manager = InvoiceManager()
 
     async def req(self, data: dict) -> dict:
         better_data = {"jsonrpc": "2.0", "id": 1, **data}
@@ -98,6 +101,27 @@ class Mobster:
 
     async def pmob2usd(self, pmob: int) -> float:
         return mc_util.pmob2mob(pmob) * await self.get_rate()
+
+    async def usd2mob(self, usd: float, perturb: bool = False) -> float:
+        invnano = 100000000
+        # invpico = 100000000000 # doesn't work in mixin
+        mob_rate = await self.get_rate()
+        if perturb:
+            # perturb each price slightly to have a unique payment
+            mob_rate -= random.random() / 1000
+        mob_amount = usd / mob_rate
+        if perturb:
+            return round(mob_amount, 8)
+        return round(mob_amount, 3) # maybe ceil?
+
+    async def create_invoice(self, amount_usd: float, account: str, memo: str) -> float:
+        while 1:
+            try:
+                mob_price_exact = await self.usd2mob(amount_usd, perturb=True)
+                self.invoice_manager.create_invoice(account, mc_util.mob2pmob(mob_price_exact), memo)
+                return mob_price_exact
+            except asyncpg.UniqueViolationError:
+                pass
 
     async def import_account(self) -> dict:
         params = {
@@ -146,36 +170,34 @@ class Mobster:
             )
         )["result"]["transaction_log_map"]
 
-
-async def local_main() -> None:
-    last_transactions: dict[str, dict[str, str]] = {}
-    ledger_manager = LedgerManager()
-    invoice_manager = InvoiceManager()
-    mobster = Mobster()
-    account_id = await mobster.get_account()
-    while True:
-        latest_transactions = await mobster.get_transactions(account_id)
-        for transaction in latest_transactions:
-            if transaction not in last_transactions:
-                unobserved_tx = latest_transactions.get(transaction, {})
-                short_tx = {}
-                for k, v in unobserved_tx.items():
-                    if isinstance(v, list) and len(v) == 1:
-                        v = v[0]
-                    if isinstance(v, str) and k != "value_pmob":
-                        v = v[:16]
-                    short_tx[k] = v
-                logging.info(short_tx)
-                value_pmob = int(short_tx["value_pmob"])
-                invoice = await invoice_manager.get_invoice_by_amount(value_pmob)
-                if invoice:
-                    credit = await mobster.pmob2usd(value_pmob)
-                    await ledger_manager.put_transaction(invoice.user, credit)
-                # otherwise check if it's related to signal pay
-                # otherwise, complain about this unsolicited payment to an admin or something
-        last_transactions = latest_transactions.copy()
-        await asyncio.sleep(10)
+    async def monitor_wallet(self) -> None:
+        last_transactions: dict[str, dict[str, str]] = {}
+        account_id = await self.get_account()
+        while True:
+            latest_transactions = await self.get_transactions(account_id)
+            for transaction in latest_transactions:
+                if transaction not in last_transactions:
+                    unobserved_tx = latest_transactions.get(transaction, {})
+                    short_tx = {}
+                    for k, v in unobserved_tx.items():
+                        if isinstance(v, list) and len(v) == 1:
+                            v = v[0]
+                        if isinstance(v, str) and k != "value_pmob":
+                            v = v[:16]
+                        short_tx[k] = v
+                    logging.info(short_tx)
+                    value_pmob = int(short_tx["value_pmob"])
+                    invoice = await self.invoice_manager.get_invoice_by_amount(
+                        value_pmob
+                    )
+                    if invoice:
+                        credit = await self.pmob2usd(value_pmob)
+                        await self.ledger_manager.put_transaction(invoice.user, credit)
+                    # otherwise check if it's related to signal pay
+                    # otherwise, complain about this unsolicited payment to an admin or something
+            last_transactions = latest_transactions.copy()
+            await asyncio.sleep(10)
 
 
 if __name__ == "__main__":
-    asyncio.run(local_main())
+    asyncio.run(Mobster().monitor_wallet())
