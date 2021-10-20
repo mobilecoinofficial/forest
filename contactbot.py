@@ -193,14 +193,14 @@ class Forest(Bot):
             'try "/register" and following the instructions.'
         )
 
-    usd_price = 1.0
+    usd_price = 0.5
 
     async def do_register(self, message: Message) -> Response:
         """register for a phone number"""
         if int(message.source[1:3]) in (44, 49, 33, 41):
             # keep in sync with https://github.com/signalapp/Signal-Android/blob/master/app/build.gradle#L174
             return "Please send {await self.mobster.usd2mob(self.usd_price)} via Signal Pay"
-        mob_price_exact = self.mobster.create_invoice(
+        mob_price_exact = await self.mobster.create_invoice(
             self.usd_price, message.source, "/register"
         )
         address = await self.mobster.get_address()

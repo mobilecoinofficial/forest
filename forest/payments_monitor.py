@@ -23,7 +23,7 @@ LedgerPGExpressions = PGExpressions(
         ts TIMESTAMP);",
     put_usd_tx="INSERT INTO {self.table} (account, amount_usd_cents, memo, ts) \
         VALUES($1, $2, $3, CURRENT_TIMESTAMP);",
-    put_pmob_tx="INSERT INTO {self.table} (account, amount_usd_cent, amount_pmob, memo, ts) \
+    put_pmob_tx="INSERT INTO {self.table} (account, amount_usd_cents, amount_pmob, memo, ts) \
         VALUES($1, $2, $3, $4, CURRENT_TIMESTAMP);",
     get_usd_balance="SELECT COALESCE(SUM(amount_usd_cents)/100, 0.0) AS balance \
         FROM {self.table} WHERE account=$1",
@@ -112,13 +112,15 @@ class Mobster:
         mob_amount = usd / mob_rate
         if perturb:
             return round(mob_amount, 8)
-        return round(mob_amount, 3) # maybe ceil?
+        return round(mob_amount, 3)  # maybe ceil?
 
     async def create_invoice(self, amount_usd: float, account: str, memo: str) -> float:
         while 1:
             try:
                 mob_price_exact = await self.usd2mob(amount_usd, perturb=True)
-                self.invoice_manager.create_invoice(account, mc_util.mob2pmob(mob_price_exact), memo)
+                await self.invoice_manager.create_invoice(
+                    account, mc_util.mob2pmob(mob_price_exact), memo
+                )
                 return mob_price_exact
             except asyncpg.UniqueViolationError:
                 pass
@@ -192,12 +194,17 @@ class Mobster:
                     )
                     if invoice:
                         credit = await self.pmob2usd(value_pmob)
-                        await self.ledger_manager.put_transaction(invoice.user, credit)
+                        # (account, amount_usd_cent, amount_pmob, memo)
+                        await self.ledger_manager.put_pmob_tx(
+                            invoice[0].get("account"),
+                            int(credit * 100),
+                            value_pmob,
+                            short_tx["transaction_log_id"],
+                        )
+                        self.bot.handle
                     # otherwise check if it's related to signal pay
                     # otherwise, complain about this unsolicited payment to an admin or something
             last_transactions = latest_transactions.copy()
             await asyncio.sleep(10)
 
 
-if __name__ == "__main__":
-    asyncio.run(Mobster().monitor_wallet())

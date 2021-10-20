@@ -181,11 +181,13 @@ class Signal:
         logging.debug("added signal handler, downloading...")
         if not utils.get_secret("NO_DOWNLOAD"):
             await self.datastore.download()
+
         command = f"{utils.ROOT_DIR}/signal-cli --config {utils.ROOT_DIR} --output=json stdio".split()
         logging.info(command)
         self.proc = await asyncio.create_subprocess_exec(
             *command, stdin=PIPE, stdout=PIPE
         )
+
         # this should restart signal-cli if it crashes
         # while 1: await self.proc.wait(); self.proc = await asyncio.create_subprocess_exec ...
         logging.info(
@@ -257,6 +259,7 @@ class Signal:
             if not line:
                 break
             await self.handle_signalcli_raw_line(line)
+        logging.info("stopped reading to signalcli stdout")
 
     async def handle_signalcli_raw_line(self, line: str) -> None:
         # if utils.get_secret("I_AM_NOT_A_FEDERAL_AGENT"):
