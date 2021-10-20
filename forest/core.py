@@ -293,11 +293,10 @@ class Bot(Signal):
         """Creates AND STARTS a bot that routes commands to do_x handlers"""
         self.client_session = aiohttp.ClientSession()
         self.mobster = payments_monitor.Mobster()
-        self.ledger_manager = payments_monitor.LedgerManager()
         super().__init__(*args)
         asyncio.create_task(self.start_process())
         asyncio.create_task(self.handle_messages())
-
+        asyncio.create_task(self.mobster.monitor_wallet())
     async def handle_messages(self) -> None:
         async for message in self.signalcli_output_iter():
             response = await self.handle_message(message)
@@ -354,7 +353,7 @@ class Bot(Signal):
             return "That looked like a payment, but we couldn't parse it"
         amount_mob = mc_util.pmob2mob(amount_pmob)
         amount_usd_cents = round(amount_mob * await self.mobster.get_rate() * 100)
-        self.ledger_manager.put_mob_tx(
+        self.mobster.ledger_manager.put_mob_tx(
             message.source,
             amount_usd_cents,
             amount_pmob,

@@ -1,15 +1,11 @@
 #!/usr/bin/python3.9
 import logging
-import random
 from typing import Union
-
 from aiohttp import web
-
 import teli
 from forest_tables import GroupRoutingManager, PaymentsManager, RoutingManager
 from forest import utils
 from forest.core import Bot, Message, Response, app
-from forest.payments_monitor import LedgerManager
 
 
 class Forest(Bot):
@@ -17,7 +13,6 @@ class Forest(Bot):
         self.teli = teli.Teli()
         self.payments_manager = PaymentsManager()
         self.routing_manager = RoutingManager()
-        self.ledger_manager = LedgerManager()
         super().__init__(*args)
 
     async def send_sms(
@@ -54,7 +49,7 @@ class Forest(Bot):
         If it's a group creation blob, make a new routing rule from it.
         If it's a group message, route it to the relevant conversation.
         If it's a payment, deal with that separately.
-        Otherwise, use the default Bot routing to do_x methods
+        Otherwise, use the default Bot do_x method dispatch
         """
         if "group" in message.blob:
             # SMS with {number} via {number}
@@ -198,52 +193,27 @@ class Forest(Bot):
             'try "/register" and following the instructions.'
         )
 
-    usd_price = 5.0
+    usd_price = 1.0
 
-    async def get_mob_price(self, perturb: bool = False) -> float:
-        mob_rate = await self.mobster.get_rate()
-        if perturb:
-            # perturb each price slightly to have a unique payment
-            mob_rate -= random.random() / 1000
-        # invpico = 100000000000 # doesn't work in mixin
-        invnano = 100000000
-        nmob_price = int(self.usd_price / mob_rate * invnano)
-        mob_price_exact = round(nmob_price / invnano, 3)
-        # dunno if we want to generate new wallets? what happens if a user overpays?
-        return mob_price_exact
+    async def do_register(self, message: Message) -> Response:
+        """register for a phone number"""
+        if int(message.source[1:3]) in (44, 49, 33, 41):
+            # keep in sync with https://github.com/signalapp/Signal-Android/blob/master/app/build.gradle#L174
+            return "Please send {await self.mobster.usd2mob(self.usd_price)} via Signal Pay"
+        mob_price_exact = self.mobster.create_invoice(
+            self.usd_price, message.source, "/register"
+        )
+        address = await self.mobster.get_address()
+        return [
+            f"The current price for a SMS number is {mob_price_exact}MOB/month. If you would like to continue, please send exactly...",
+            f"{mob_price_exact}",
+            "to",
+            address,
+            "Upon payment, you will be able to select the area code for your new phone number!",
+        ]
 
-    # async def register(self, message: Message) -> bool:
-    #     """register for a phone number"""
-    #     mob_price_exact = await self.get_mob_price()
-    #     nmob_price = mob_price_exact * 100000000
-    #     address = await payments_monitor.get_address()
-    #     responses = [
-    #         f"The current price for a SMS number is {mob_price_exact}MOB/month. If you would like to continue, please send exactly...",
-    #         f"{mob_price_exact}",
-    #         "on Signal Pay, or to",
-    #         address,
-    #         "Upon payment, you will be able to select the area code for your new phone number!",
-    #     ]
-    #     await self.send_message(message.source, responses)
-    #     # check for payments every 10s for 1hr
-    #     for _ in range(360):
-    #         payment_done = await self.payments_manager.get_payment(nmob_price * 1000)
-    #         if payment_done:
-    #             payment_done = payment_done[0]
-    #             await self.send_message(
-    #                 message.source,
-    #                 [
-    #                     "Thank you for your payment! Please save this transaction ID for your records and include it with any customer service requests. Without this payment ID, it will be harder to verify your purchase.",
-    #                     f"{payment_done.get('transaction_log_id')}",
-    #                     'Please finish setting up your account at your convenience with the "/status" command.',
-    #                 ],
-    #             )
-    #             self.balances[message.source] += payment_done.get("value_pmob")
-    #             return True
-    #         await asyncio.sleep(10)
-    #     return False
     async def get_balance(self, account: str) -> float:
-        res = await self.ledger_manager.get_usd_balance(account)
+        res = await self.mobster.ledger_manager.get_usd_balance(account)
         return float(round(res[0].get("balance"), 2))
 
     async def do_balance(self, message: Message) -> str:
@@ -253,7 +223,7 @@ class Forest(Bot):
 
     async def do_pay(self, message: Message) -> str:
         if message.arg1 == "shibboleth":
-            await self.ledger_manager.put_usd_tx(
+            await self.mobster.ledger_manager.put_usd_tx(
                 message.source, int(self.usd_price * 100), "shibboleth"
             )
             return "...thank you for your payment. You can buy a phone number with /order <area code>"
@@ -265,10 +235,8 @@ class Forest(Bot):
         """Usage: /order <area code>"""
         if not (msg.arg1 and len(msg.arg1) == 3 and msg.arg1.isnumeric()):
             return """Usage: /order <area code>"""
-        price = await self.get_mob_price()
-        diff = await self.get_balance(msg.source) - price
+        diff = await self.get_balance(msg.source) - self.usd_price
         if diff < 0:
-            # this needs to check if there are *unfulfilled* payments
             return "Make a payment with Signal Pay or /register first"
         await self.routing_manager.sweep_expired_destinations()
         available_numbers = [
@@ -295,7 +263,7 @@ class Forest(Bot):
         await self.teli.set_sms_url(number, utils.URL + "/inbound")
         await self.routing_manager.set_destination(number, msg.source)
         if await self.routing_manager.get_destination(number):
-            await self.ledger_manager.put_usd_tx(
+            await self.mobster.ledger_manager.put_usd_tx(
                 msg.source, -int(self.usd_price * 100), number
             )
             return f"You are now the proud owner of {number}"
