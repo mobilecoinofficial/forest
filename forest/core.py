@@ -6,7 +6,7 @@ import logging
 import os
 import signal
 import sys
-from asyncio import Queue
+from asyncio import Queue, StreamReader, StreamWriter
 from asyncio.subprocess import PIPE
 from typing import Any, AsyncIterator, Optional, Union
 
@@ -140,6 +140,7 @@ class Signal:
             react["recipient"] = [target_msg.source]
         await self.signalcli_input_queue.put(react)
 
+    # i'm tempted to refactor these into handle_messages and write_commands respectively
     async def signalcli_output_iter(self) -> AsyncIterator[Message]:
         """Provides an asynchronous iterator over messages on the queue."""
         while True:
@@ -167,65 +168,34 @@ class Signal:
         Add SIGINT handlers. Download datastore. Maybe set profile.
         Start signal-cli, then write our commands to stdin
         """
-        logging.debug("in start_process")
-        loop = asyncio.get_running_loop()
-        logging.debug("got running loop")
         # things that don't work: loop.add_signal_handler(async_shutdown) - TypeError
         # signal.signal(sync_signal_handler) - can't interact with loop
+        loop = asyncio.get_running_loop()
         loop.add_signal_handler(signal.SIGINT, self.sync_signal_handler)
-
-        # the thing we want here is to check for a data/ dir in the current directory
-        # if so, also upload it but don't download it now (unless..?)
-        # if not, download it and stay synced
-
         logging.debug("added signal handler, downloading...")
         if not utils.get_secret("NO_DOWNLOAD"):
             await self.datastore.download()
-
-        command = f"{utils.ROOT_DIR}/signal-cli --config {utils.ROOT_DIR} --output=json stdio".split()
-        logging.info(command)
-        self.proc = await asyncio.create_subprocess_exec(
-            *command, stdin=PIPE, stdout=PIPE
-        )
-
-        # this should restart signal-cli if it crashes
-        # while 1: await self.proc.wait(); self.proc = await asyncio.create_subprocess_exec ...
-        logging.info(
-            "started signal-cli @ %s with PID %s",
-            self.bot_number,
-            self.proc.pid,
-        )
         if utils.get_secret("PROFILE"):
             await self.set_profile()
-        assert self.proc.stdout and self.proc.stdin
-        asyncio.create_task(self.handle_signalcli_raw_output(self.proc.stdout))
-
-        async for msg in self.signalcli_input_iter():
-            logging.info("input to signal: %s", msg)
-            self.proc.stdin.write(json.dumps(msg).encode() + b"\n")
-        await self.proc.wait()
-
-    # async def restart_process(self):
-    #     while sigints == 0:
-    #         returncode = await self.proc.wait()
-    #         logging.warning("signal-cli exited: %s", returncode)
-    #         if returncode != 0:
-    #             command = f"{utils.ROOT_DIR}/signal-cli --config {utils.ROOT_DIR} --output=json stdio".split()
-    #             logging.info(command)
-    #             self.proc = await asyncio.create_subprocess_exec(
-    #                 *command, stdin=PIPE, stdout=PIPE
-    #             )
-    #             logging.info(
-    #                 "restarted signal-cli @ %s with PID %s",
-    #                 self.bot_number,
-    #                 self.proc.pid,
-    #             )
-    #             assert self.proc.stdout and self.proc.stdin
-    #             asyncio.create_task(self.handle_signalcli_raw_output(self.proc.stdout))
-
-    #             #async for msg in self.signalcli_input_iter():
-    #             #    logging.info("input to signal: %s", msg)
-    #             #    self.proc.stdin.write(json.dumps(msg).encode() + b"\n")
+        while self.sigints == 0:
+            command = f"{utils.ROOT_DIR}/signal-cli --config {utils.ROOT_DIR} --output=json stdio".split()
+            logging.info(command)
+            self.proc = await asyncio.create_subprocess_exec(
+                *command, stdin=PIPE, stdout=PIPE
+            )
+            logging.info(
+                "started signal-cli @ %s with PID %s",
+                self.bot_number,
+                self.proc.pid,
+            )
+            assert self.proc.stdout and self.proc.stdin
+            asyncio.create_task(self.handle_signalcli_raw_output(self.proc.stdout))
+            asyncio.create_task(self.write_commands(self.proc.stdin))
+            returncode = await self.proc.wait()
+            logging.warning("signal-cli exited: %s", returncode)
+            if returncode == 0:
+                logging.info("signal-cli apparently exited cleanly, not restarting")
+                break
 
     sigints = 0
 
@@ -273,16 +243,18 @@ class Signal:
         logging.info("still running after os.kill, trying os._exit")
         os._exit(1)
 
-    async def handle_signalcli_raw_output(
-        self,
-        stream: asyncio.StreamReader,
-    ) -> None:
+    async def write_commands(self, pipe: StreamWriter) -> None:
+        async for msg in self.signalcli_input_iter():
+            logging.info("input to signal: %s", msg)
+            pipe.write(json.dumps(msg).encode() + b"\n")
+
+    async def handle_signalcli_raw_output(self, stream: StreamReader) -> None:
         while True:
             line = (await stream.readline()).decode().strip()
             if not line:
                 break
             await self.handle_signalcli_raw_line(line)
-        logging.info("stopped reading to signalcli stdout")
+        logging.info("stopped reading signal-cli stdout")
 
     async def handle_signalcli_raw_line(self, line: str) -> None:
         # if utils.get_secret("I_AM_NOT_A_FEDERAL_AGENT"):
@@ -318,11 +290,12 @@ class Bot(Signal):
     def __init__(self, *args: str) -> None:
         """Creates AND STARTS a bot that routes commands to do_x handlers"""
         self.client_session = aiohttp.ClientSession()
-        self.mobster = payments_monitor.Mobster(self)
+        self.mobster = payments_monitor.Mobster()
         super().__init__(*args)
         asyncio.create_task(self.start_process())
         asyncio.create_task(self.handle_messages())
-        asyncio.create_task(self.mobster.monitor_wallet())
+        if not utils.get_secret("NO_MONITOR_WALLET"):
+            asyncio.create_task(self.mobster.monitor_wallet())
 
     async def handle_messages(self) -> None:
         async for message in self.signalcli_output_iter():
@@ -392,7 +365,7 @@ class Bot(Signal):
         )
         return await self.payment_response(message)
 
-    async def payment_response(self, _: OptionalMessage) -> str:
+    async def payment_response(self, _: Message) -> str:
         return "This bot doesn't have a response for payments."
 
 

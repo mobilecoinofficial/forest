@@ -33,3 +33,21 @@ TODO: elaborate on
 - things we hold evident
 - design considerations
 - experiments tried
+
+# Options and secrets
+
+- BOT_NUMBER: signal account being used
+- ADMIN: primarily fallback recipient for invalid webhooks
+- DATABASE_URL: postgres db
+- TELI_KEY: token to authenticate with teli
+
+## Flags
+- `ENV`: which {ENV}_secrets to use and optionally set as profile family name 
+- `NO_DOWNLOAD`: don't download a datastore, use pwd 
+- `NO_MEMFS`: don't autosave. if not `NO_DOWNLOAD`, also create an equivalent tmpdir at /tmp/local-signal and symlink signal-cli process and avatar
+- `NO_MONITOR_WALLET`: don't monitor transactions from full-service
+- `SIGNAL_CLI_PATH`: executable to use. useful for running graalvm tracing agent
+- `MIGRATE`: run db migrations and set teli sms webhooks
+- `LOGFILES`: create a debug.log 
+- `ORDER`: allow users to buy phonenumbers
+- `GROUPS`: use group routes
