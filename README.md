@@ -26,7 +26,7 @@ If you have secrets, `python3.9 -m forest.datastore list_accounts` should show y
 
 We use fly.io for hosting. You'll need flyctl: `curl -L https://fly.io/install.sh | sh`. Ask for an invite to our fly organization, or add a payment method to your personal fly account. Use `fly auth` to login.
 
-Create a fly app with `fly apps create`. Use a unique-ish name.
+Create a fly app with `fly launch`. Use a unique-ish name. This is supposed to create a fly.toml. Don't deploy just yet, we still need to add secrets.
 
 Before deploying for the first time, and afterwords to update secrets, run `cat dev_secrets | flyctl secrets import`. If you're managing multiple environments like prod and staging, make multiple secrets files with their own `BOT_NUMBER`, `DATABASE_URL`, etc. Name those files `staging_secrets`, `prod_secrets`, etc. Afterwords, if you want to run stuff locally using a different set of secrets, use e.g. `ENV=prod python3.9 contactbot.py`
 
@@ -34,7 +34,8 @@ Finally, run `fly deploy`. This will build the docker image, upload it to the fl
 
 > flyctl deploy [<workingdirectory>] [flags]
 >  --strategy string      The strategy for replacing running instances. Options are canary, rolling, bluegreen, or immediate. Default is canary
-  
+
+
 If things seem wrong, you can use `fly suspend`, the above to sync, use signal-cli locally to receive/send --endsession/trust identities/whatever, then `fly resume`
 
 
