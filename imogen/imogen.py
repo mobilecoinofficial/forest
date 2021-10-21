@@ -103,16 +103,6 @@ class Imogen(Bot):
         return json.loads(out)
     do_get_costs = do_get_all_costs = do_get_all_cost
 
-    async def do_help(self, message: Message) -> str:
-        if message.arg1:
-            if hasattr(self, "do_" + message.arg1):
-                cmd = getattr(self, "do_" + message.arg1)
-                if cmd.__doc__:
-                    return cmd.__doc__
-                return f"Sorry, {message.arg1} isn't documented"
-        return "commands: " + ", ".join(
-            k.removeprefix("do_") for k in dir(self) if k.startswith("do_")
-        )
 
     async def do_status(self, _: Message) -> str:
         "shows the GPU instance state (not the program) and queue size"
