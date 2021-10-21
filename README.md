@@ -35,13 +35,15 @@ Finally, run `fly deploy`. This will build the docker image, upload it to the fl
 > flyctl deploy [<workingdirectory>] [flags]
 >  --strategy string      The strategy for replacing running instances. Options are canary, rolling, bluegreen, or immediate. Default is canary
 
+`fly logs` will give you forestbot's output.
 
 If things seem wrong, you can use `fly suspend`, the above to sync, use signal-cli locally to receive/send --endsession/trust identities/whatever, then `fly resume`
 
+## Other stuff
 
 Code style: `mypy *py` and `pylint *py` should not have errors when you push. run `black`. prefer verbose, easier to read names over conciser ones.
 
-# Options and secrets
+## Options and secrets
 
 - BOT_NUMBER: signal account being used
 - ADMIN: primarily fallback recipient for invalid webhooks
