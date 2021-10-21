@@ -28,7 +28,7 @@ We use fly.io for hosting. You'll need flyctl: `curl -L https://fly.io/install.s
 
 Create a fly app with `fly apps create`. Use a unique-ish name.
 
-Before deploying for the first time, and afterwords to update secrets, run `cat dev_secrets | flyctl secrets import`. If you're managing multiple environments like prod and staging, make multiple secrets files with their own `BOT_NUMBER`, `DATABASE_URL`, etc. Name those files `staging_secrets`, `dev_secrets`, etc. Afterwords, if you want to run stuff locally using a different set of secrets, use e.g. `ENV=prod python3.9 contactbot.py`
+Before deploying for the first time, and afterwords to update secrets, run `cat dev_secrets | flyctl secrets import`. If you're managing multiple environments like prod and staging, make multiple secrets files with their own `BOT_NUMBER`, `DATABASE_URL`, etc. Name those files `staging_secrets`, `prod_secrets`, etc. Afterwords, if you want to run stuff locally using a different set of secrets, use e.g. `ENV=prod python3.9 contactbot.py`
 
 Finally, run `fly deploy`. This will build the docker image, upload it to the fly registry, and actually deploy it to fly. After the first time, deploys generally should be `--strategy immediate` to not risk the old instance receiving messages and advancing the ratchet after the new instance has already downloaded the state.
 
