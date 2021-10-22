@@ -1,14 +1,14 @@
 #!/usr/bin/python3.9
 import asyncio
-import json
-import time
-import logging
-import os
 import base64
-from typing import Optional
+import datetime
+import json
+import logging
+import time
 from pathlib import Path
-import aioredis
+from typing import Optional
 import aiohttp
+import aioredis
 from aiohttp import web
 from forest import utils
 from forest.core import Bot, Message, app
@@ -44,19 +44,30 @@ get_ip = "aws ec2 describe-instances --region us-east-1|jq -r .Reservations[].In
 start_worker = "ssh -i id_rsa -o ConnectTimeout=2 ubuntu@{} ~/ml/read_redis.py {}"
 
 
+get_cost = (
+    "aws ce get-cost-and-usage --time-period Start={},End={} --granularity DAILY --metrics BlendedCost | "
+    "jq -r .ResultsByTime[0].Total.BlendedCost.Amount"
+)
+
+get_all_cost = (
+    "aws ce get-cost-and-usage --time-period Start=2021-10-01,End={end} --granularity DAILY --metrics BlendedCost | "
+    "jq '.ResultsByTime[] | {(.TimePeriod.Start): .Total.BlendedCost.Amount}' | jq -s add"
+)
+
+
 async def get_output(cmd: str) -> str:
-    proc = await asyncio.create_subprocess_shell(cmd, stdout=-1)
-    stdout, _ = await proc.communicate()
-    return stdout.decode().strip()
+    proc = await asyncio.create_subprocess_shell(cmd, stdout=-1, stderr=-1)
+    stdout, stderr = await proc.communicate()
+    return stdout.decode().strip() or stderr.decode().strip()
 
 
-async def really_start_worker() -> None:
-    ip = await get_output(get_ip)
-    while 1:
-        await asyncio.create_subprocess_shell(
-            start_worker.format(ip, url), stdout=-1, stderr=-1
-        )
-        # don't *block* since output runs forever, but check if failed...
+# async def really_start_worker() -> None:
+#     ip = await get_output(get_ip)
+#     while 1:
+#         await asyncio.create_subprocess_shell(
+#             start_worker.format(ip, url), stdout=-1, stderr=-1
+#         )
+#         # don't *block* since output runs forever, but check if failed...
 
 
 class Imogen(Bot):
@@ -75,15 +86,34 @@ class Imogen(Bot):
             "family-name": "",
         }
         await self.signalcli_input_queue.put(profile)
-        os.symlink(".", "state")
         logging.info(profile)
 
+    async def do_get_cost(self, _: Message) -> str:
+        today = datetime.date.today()
+        tomorrow = today + datetime.timedelta(1)
+        out = await get_output(get_cost.format(today, tomorrow))
+        try:
+            return str(round(float(out), 2))
+        except ValueError:
+            return out
+
+    async def do_get_all_cost(self, _: Message) -> str:
+        tomorrow = datetime.date.today() + datetime.timedelta(1)
+        out = await get_output(get_all_cost.replace("{end}", str(tomorrow)))
+        return json.loads(out)
+    do_get_costs = do_get_all_costs = do_get_all_cost
+
+
     async def do_status(self, _: Message) -> str:
+        "shows the GPU instance state (not the program) and queue size"
         state = await get_output(status)
         queue_size = await redis.llen("prompt_queue")
         return f"worker state: {state}, queue size: {queue_size}"
 
+    image_rate_cents = 5
+
     async def do_imagine(self, msg: Message) -> str:
+        """/imagine <prompt>"""
         logging.info(msg.full_text)
         logging.info(msg.text)
         await redis.rpush(
@@ -92,15 +122,33 @@ class Imogen(Bot):
         )
         # check if worker is up
         state = await get_output(status)
+        logging.info("worker state: %s", state)
+        #await self.mobster.put_usd_tx(msg.sender, self.image_rate_cents, msg.text[:32])
         if state == "stopped":
             # if not, turn it on
             logging.info(await get_output(start.format(self.worker_instance_id)))
-            asyncio.create_task(really_start_worker())
+            # asyncio.create_task(really_start_worker())
         timed = await redis.llen("prompt_queue")
         return f"you are #{timed} in line"
 
     async def do_stop(self, _: Message) -> str:
         return await get_output(stop.format(self.worker_instance_id))
+
+    async def do_start(self, _: Message) -> str:
+        return await get_output(start.format(self.worker_instance_id))
+
+    async def do_list_queue(self, _: Message) -> str:
+        try:
+            return "; ".join(
+                json.loads(item)["prompt"]
+                for item in await redis.lrange("prompt_queue", 0, -1)
+            )
+        except json.JSONDecodeError:
+            return "json decode error?"
+
+    do_list_prompts = do_listqueue = do_queue = do_list_queue
+    async def payment_response(self, _: Message) -> None:
+        return None
 
     # eh
     # async def async_shutdown(self):
@@ -126,7 +174,7 @@ async def store_image_handler(request: web.Request) -> web.Response:
     field = await reader.next()
     if not isinstance(field, aiohttp.BodyPartReader):
         return web.Response(text="bad form")
-    print(field.name)
+    logging.info(field.name)
     # assert field.name == "image"
     filename = field.filename or f"attachment-{time.time()}"
     # You cannot rely on Content-Length if transfer is chunked.
@@ -150,7 +198,7 @@ async def store_image_handler(request: web.Request) -> web.Response:
     return web.Response(text="{} sized of {} sent" "".format(filename, size))
 
 
-app.add_routes([web.post("/attachment/{phonenumber}", store_image_handler)])
+app.add_routes([web.post("/attachment", store_image_handler)])
 app.add_routes([web.post("/admin", admin_handler)])
 
 
