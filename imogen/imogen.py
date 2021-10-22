@@ -110,6 +110,8 @@ class Imogen(Bot):
         queue_size = await redis.llen("prompt_queue")
         return f"worker state: {state}, queue size: {queue_size}"
 
+    image_rate_cents = 5
+
     async def do_imagine(self, msg: Message) -> str:
         """/imagine <prompt>"""
         logging.info(msg.full_text)
@@ -121,6 +123,7 @@ class Imogen(Bot):
         # check if worker is up
         state = await get_output(status)
         logging.info("worker state: %s", state)
+        #await self.mobster.put_usd_tx(msg.sender, self.image_rate_cents, msg.text[:32])
         if state == "stopped":
             # if not, turn it on
             logging.info(await get_output(start.format(self.worker_instance_id)))
@@ -142,7 +145,11 @@ class Imogen(Bot):
             )
         except json.JSONDecodeError:
             return "json decode error?"
+
     do_list_prompts = do_listqueue = do_queue = do_list_queue
+    async def payment_response(self, _: Message) -> None:
+        return None
+
     # eh
     # async def async_shutdown(self):
     #    await redis.disconnect()
