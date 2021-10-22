@@ -377,8 +377,8 @@ async def list_accounts(_args: argparse.Namespace) -> None:
     interface = get_account_interface()
     # sorry
     if "notes" in [
-        item.get("column_name")
-        for item in (
+        column.get("column_name")
+        for column in (
             await interface.execute(
                 "select column_name from information_schema.columns where table_name='signal_accounts';"
             )

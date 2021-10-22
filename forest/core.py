@@ -1,4 +1,7 @@
 #!/usr/bin/python3.9
+"""
+The core chatbot framework: Message, Signal, Bot, and app
+"""
 import asyncio
 import asyncio.subprocess as subprocess  # https://github.com/PyCQA/pylint/issues/1469
 import json
@@ -28,7 +31,8 @@ Response = Union[str, list, dict[str, str], None]
 
 
 class Message:
-    """Represents a Message received from signal-cli, optionally containing a command with arguments."""
+    """Represents a Message received from signal-cli, optionally
+    containing a command with arguments, group, quote, or payment"""
 
     def __init__(self, blob: dict) -> None:
         self.blob = blob
@@ -64,9 +68,11 @@ class Message:
 
 class Signal:
     """
-    Represents a signal-cli session. Downloads the datastore, runs and restarts signal-cli,
-    tries to gracefully kill signal-cli and upload before exiting, reads signal-cli's output
-    into signalcli_output_queue, provides functions for sending commands to signal-cli, and
+    Represents a signal-cli session.
+    Lifecycle: Downloads the datastore, runs and restarts signal-cli,
+    tries to gracefully kill signal-cli and upload before exiting.
+    I/O: reads signal-cli's output into signalcli_output_queue,
+    has methods for sending commands to signal-cli, and
     actually writes those json blobs to signal-cli's stdin.
     """
 
@@ -198,10 +204,14 @@ class Signal:
 
     # i'm tempted to refactor these into handle_messages
     async def signalcli_output_iter(self) -> AsyncIterator[Message]:
-        """Provides an asynchronous iterator over messages on the queue."""
+        """Provides an asynchronous iterator over messages on the queue.
+        See Bot for how messages and consumed and dispatched"""
         while True:
             message = await self.signalcli_output_queue.get()
             yield message
+
+
+    # Next, we see how the input queue is populated and consumed. 
 
     async def set_profile(self) -> None:
         """Set signal profile. Note that this will overwrite any mobilecoin address"""
@@ -219,7 +229,7 @@ class Signal:
         self,
         recipient: Optional[str],
         msg: Response,
-        group: Optional[str] = None,
+        group: Optional[str] = None, # maybe combine this with recipient?
         endsession: bool = False,
         attachments: Optional[list[str]] = None,
     ) -> None:
@@ -279,6 +289,7 @@ class Signal:
             command = await self.signalcli_input_queue.get()
             yield command
 
+    # maybe merge with the above?
     async def write_commands(self, pipe: StreamWriter) -> None:
         """Encode and write pending signal-cli commands"""
         async for msg in self.signalcli_input_iter():
@@ -287,7 +298,7 @@ class Signal:
 
 
 class Bot(Signal):
-    """Handles command dispatch and basic commands.
+    """Handles messages and command dispatch, as well as basic commands.
     Must be instantiated within a running async loop.
     Subclass this with your own commands.
     """
@@ -393,11 +404,11 @@ class Bot(Signal):
         )
         return await self.payment_response(message)
 
-    async def payment_response(self, _: Message) -> str:
+    async def payment_response(self, _: Message) -> Response:
         return "This bot doesn't have a response for payments."
 
 
-async def noGet(request: web.Request) -> web.Response:
+async def no_get(request: web.Request) -> web.Response:
     raise web.HTTPFound(location="https://signal.org/")
 
 
@@ -420,7 +431,7 @@ app = web.Application()
 
 app.add_routes(
     [
-        web.get("/", noGet),
+        web.get("/", no_get),
         web.post("/user/{phonenumber}", send_message_handler),
     ]
 )
