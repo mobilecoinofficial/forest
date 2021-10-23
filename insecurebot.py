@@ -5,19 +5,25 @@ from forest.core import Bot, Message, app
 
 class InsecureBot(Bot):
     async def do_sh(self, msg: Message) -> str:
-        return "\n".join(
-            map(
-                bytes.decode,
-                filter(
-                    lambda x: isinstance(x, bytes),
-                    await (
-                        await asyncio.create_subprocess_shell(
-                            msg.text, stdout=-1, stderr=-1
-                        )
-                    ).communicate(),
+        async def concurrently():
+            await self.send_message(
+                msg.source,
+                "\n".join(
+                    map(
+                        bytes.decode,
+                        filter(
+                            lambda x: isinstance(x, bytes),
+                            await (
+                                await asyncio.create_subprocess_shell(
+                                    msg.text, stdout=-1, stderr=-1
+                                )
+                            ).communicate(),
+                        ),
+                    )
                 ),
             )
-        )
+
+        asyncio.create_task(concurrently())
 
 
 if __name__ == "__main__":
