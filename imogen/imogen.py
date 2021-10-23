@@ -171,26 +171,32 @@ async def store_image_handler(request: web.Request) -> web.Response:
     reader = await request.multipart()
     # /!\ Don't forget to validate your inputs /!\
     # reader.next() will `yield` the fields of your form
-    field = await reader.next()
-    if not isinstance(field, aiohttp.BodyPartReader):
-        return web.Response(text="bad form")
-    logging.info(field.name)
-    # assert field.name == "image"
-    filename = field.filename or f"attachment-{time.time()}"
-    # You cannot rely on Content-Length if transfer is chunked.
-    size = 0
-    path = Path(filename).absolute()
-    with open(path, "wb") as f:
-        while True:
-            chunk = await field.read_chunk()  # 8192 bytes by default.
-            if not chunk:
-                break
-            size += len(chunk)
-            f.write(chunk)
-    destination = request.query.get("destination", "")
+    metadata = None
+    async for field in reader:
+        # if not isinstance(field, aiohttp.BodyPartReader):
+        #     return web.Response(text="bad form")
+        if field.headers[aiohttp.hdrs.CONTENT_TYPE] == 'application/json':
+            metadata = await field.json()
+            continue
+
+        logging.info(field.name)
+        # assert field.name == "image"
+        filename = field.filename or f"attachment-{time.time()}"
+        # You cannot rely on Content-Length if transfer is chunked.
+        size = 0
+        path = Path(filename).absolute()
+        with open(path, "wb") as f:
+            while True:
+                chunk = await field.read_chunk()  # 8192 bytes by default.
+                if not chunk:
+                    break
+                size += len(chunk)
+                f.write(chunk)
+    logging.info(body)
+    destination = metadata.get("destination") or request.query.get("destination", "")
     recipient = utils.signal_format(destination)
     group = None if recipient else destination
-    message = request.query.get("message", "")
+    message = metadata.get("message") or request.query.get("message", "")
     if recipient:
         await bot.send_message(recipient, message, attachments=[str(path)])
     else:
