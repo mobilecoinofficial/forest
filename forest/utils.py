@@ -21,7 +21,7 @@ logging.addLevelName(TRACE, "TRACE")
 
 logger_class = logging.getLoggerClass()
 
-
+# doesn't work / not used
 class TraceLogger(logger_class):  # type: ignore
     def trace(self, msg: str, *args: Any, **kwargs: Any) -> None:
         self.log(TRACE, msg, *args, **kwargs)
@@ -63,11 +63,13 @@ def load_secrets(env: Optional[str] = None, overwrite: bool = False) -> None:
 
 def get_secret(key: str, env: Optional[str] = None) -> str:
     try:
-        return os.environ[key]
+        secret = os.environ[key] 
     except KeyError:
         load_secrets(env)
-        return os.environ.get(key) or ""  # fixme
-
+        secret = os.environ.get(key) or ""  # fixme
+    if secret.lower() in ("0", "false", "no"):
+        return ""
+    return secret
 
 HOSTNAME = open("/etc/hostname").read().strip()  #  FLY_ALLOC_ID
 APP_NAME = os.getenv("FLY_APP_NAME")
