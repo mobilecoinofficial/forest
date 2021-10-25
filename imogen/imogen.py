@@ -4,14 +4,16 @@ import base64
 import datetime
 import json
 import logging
+import urllib
 import time
 from pathlib import Path
 from typing import Optional
+import base58
 import aiohttp
 import aioredis
 from aiohttp import web
 from forest import utils
-from forest.core import Bot, Message, app
+from forest.core import Bot, Message, Response, app
 
 if not utils.LOCAL:
     aws_cred = utils.get_secret("AWS_CREDENTIALS")
@@ -101,8 +103,8 @@ class Imogen(Bot):
         tomorrow = datetime.date.today() + datetime.timedelta(1)
         out = await get_output(get_all_cost.replace("{end}", str(tomorrow)))
         return json.loads(out)
-    do_get_costs = do_get_all_costs = do_get_all_cost
 
+    do_get_costs = do_get_all_costs = do_get_all_cost
 
     async def do_status(self, _: Message) -> str:
         "shows the GPU instance state (not the program) and queue size"
@@ -116,14 +118,17 @@ class Imogen(Bot):
         """/imagine <prompt>"""
         logging.info(msg.full_text)
         logging.info(msg.text)
+        if msg.group:
+            destination = base58.b58encode(msg.group).decode()
+        else:
+            destination = msg.source
         await redis.rpush(
-            "prompt_queue",
-            json.dumps({"prompt": msg.text, "callback": msg.group or msg.source}),
+            "prompt_queue", json.dumps({"prompt": msg.text, "callback": destination})
         )
         # check if worker is up
         state = await get_output(status)
         logging.info("worker state: %s", state)
-        #await self.mobster.put_usd_tx(msg.sender, self.image_rate_cents, msg.text[:32])
+        # await self.mobster.put_usd_tx(msg.sender, self.image_rate_cents, msg.text[:32])
         if state == "stopped":
             # if not, turn it on
             logging.info(await get_output(start.format(self.worker_instance_id)))
@@ -147,6 +152,15 @@ class Imogen(Bot):
             return "json decode error?"
 
     do_list_prompts = do_listqueue = do_queue = do_list_queue
+
+    async def do_dump_queue(self, _: Message) -> Response:
+        prompts = []
+        while 1:
+            if not (item := await redis.lpop("prompt_queue")):
+                break
+            prompts.append(str(json.loads(item)["prompt"]))
+        return prompts
+
     async def payment_response(self, _: Message) -> None:
         return None
 
@@ -171,37 +185,54 @@ async def store_image_handler(request: web.Request) -> web.Response:
     reader = await request.multipart()
     # /!\ Don't forget to validate your inputs /!\
     # reader.next() will `yield` the fields of your form
-    metadata = None
+    maybe_metadata = None
     async for field in reader:
+        logging.info(field)
+        logging.info("multipart field name: %s", field.name)
+        # try:
+        #     meybe_metadata = await field.json()
+        #     continue
+        # except (ValueError, json.JSONDecodeError):
+        #     logging.info("field is not json")
+        #     pass
         # if not isinstance(field, aiohttp.BodyPartReader):
         #     return web.Response(text="bad form")
-        if field.headers[aiohttp.hdrs.CONTENT_TYPE] == 'application/json':
-            metadata = await field.json()
-            continue
-
-        logging.info(field.name)
         # assert field.name == "image"
         filename = field.filename or f"attachment-{time.time()}"
         # You cannot rely on Content-Length if transfer is chunked.
         size = 0
         path = Path(filename).absolute()
         with open(path, "wb") as f:
+            logging.info("writing file")
             while True:
                 chunk = await field.read_chunk()  # 8192 bytes by default.
+                logging.info("read chunk")
                 if not chunk:
                     break
                 size += len(chunk)
                 f.write(chunk)
-    logging.info(body)
-    destination = metadata.get("destination") or request.query.get("destination", "")
-    recipient = utils.signal_format(destination)
-    group = None if recipient else destination
-    message = metadata.get("message") or request.query.get("message", "")
+    metadata: dict = maybe_metadata or {}
+    message = metadata.get("message") or urllib.parse.unquote(
+        request.query.get("message", "")
+    )
+    destination = metadata.get("destination") or urllib.parse.unquote(
+        request.query.get("destination", "")
+    )
+
+    recipient = utils.signal_format(str(destination))
+    if destination and not recipient:
+        try:
+            group = base58.b58decode(destination).decode()
+        except ValueError:
+            # like THtg80Gi2jvgOEFhQjT2Cm+6plNGXTSBJg2HSnhJyH4=
+            group = destination
     if recipient:
         await bot.send_message(recipient, message, attachments=[str(path)])
     else:
         await bot.send_message(None, message, attachments=[str(path)], group=group)
-    return web.Response(text="{} sized of {} sent" "".format(filename, size))
+    info = f"{filename} sized of {size} sent"
+    logging.info(info)
+    return web.Response(text=info)
 
 
 app.add_routes([web.post("/attachment", store_image_handler)])
