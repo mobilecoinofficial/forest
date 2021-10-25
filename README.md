@@ -35,34 +35,36 @@ Finally, run `fly deploy`. This will build the docker image, upload it to the fl
 > flyctl deploy [<workingdirectory>] [flags]
 >  --strategy string      The strategy for replacing running instances. Options are canary, rolling, bluegreen, or immediate. Default is canary
 
+`fly logs` will give you forestbot's output.
 
 If things seem wrong, you can use `fly suspend`, the above to sync, use signal-cli locally to receive/send --endsession/trust identities/whatever, then `fly resume`
 
 
-Code style: `mypy *py` and `pylint *py` should not have errors when you push. run `black`. prefer verbose, easier to read names over conciser ones.
-
 # Options and secrets
 
-- BOT_NUMBER: signal account being used
-- ADMIN: primarily fallback recipient for invalid webhooks
-- DATABASE_URL: postgres db
-- TELI_KEY: token to authenticate with teli
-
-## Flags
 - `ENV`: which {ENV}_secrets to use and optionally set as profile family name 
+- `BOT_NUMBER`: signal account being used
+- `ADMIN`: primarily fallback recipient for invalid webhooks; may also be used to send error messages
+- `DATABASE_URL`: Postgres DB
+- `TELI_KEY`: token to authenticate with teli
+ 
+## Flags
 - `NO_DOWNLOAD`: don't download a datastore, use pwd 
 - `NO_MEMFS`: don't autosave. if not `NO_DOWNLOAD`, also create an equivalent tmpdir at /tmp/local-signal and symlink signal-cli process and avatar
-- `NO_MONITOR_WALLET`: don't monitor transactions from full-service
+- `MONITOR_WALLET`: monitor transactions from full-service. has bugs 
 - `SIGNAL_CLI_PATH`: executable to use. useful for running graalvm tracing agent
 - `MIGRATE`: run db migrations and set teli sms webhooks
 - `LOGFILES`: create a debug.log 
 - `ORDER`: allow users to buy phonenumbers
 - `GROUPS`: use group routes
 
----
+## Other stuff
+
+Code style: `mypy *py` and `pylint *py` should not have errors when you push. run `black`. prefer verbose, easier to read names over conciser ones.
 
 TODO: elaborate on
 
 - things we hold evident
 - design considerations
 - experiments tried
+

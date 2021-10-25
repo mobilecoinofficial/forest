@@ -1,6 +1,13 @@
 TODO:
-- use jsonRpc (requires graal fix)
-- finish splitting up your-forest-bot
+- use jsonRpc (requires graal payments against mainline)
+- migrate the forest module into your-signal-bot or something like it
+
+## 0.5.1 
+
+- payments code is moved into Bot and a new Mobster class that also handles the full-service http sesh, mob price, and financial tables 
+- invoice table maps unique amounts to users. registration payment monitoring code uncommented and mostly fixed, but rereads (with spam) the transaction log and re-credits 
+- /help: closes issue #14, though there are obvious improvements (see TODOs)
+- restarts signal-cli when it exits to mitigate memory leaks
 
 
 ## 0.5
