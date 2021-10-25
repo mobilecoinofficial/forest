@@ -43,6 +43,7 @@ class Message:
         self.source: str = envelope.get("source")
         self.name: str = envelope.get("sourceName") or self.source
         self.timestamp = envelope.get("timestamp")
+        self.typing = envelope.get("typingMessage", {}).get("action")
 
         # msg data
         msg = envelope.get("dataMessage", {})
@@ -334,10 +335,13 @@ class Bot(Signal):
             return f"Sorry! Command {message.command} not recognized!" + suggest_help
         if message.text == "TERMINATE":
             return "signal session reset"
-        if message.text and not message.group:
-            return "That didn't look like a valid command"
         if message.payment:
             return await self.handle_payment(message)
+        return await self.default(message)
+
+    async def default(self, message: Message) -> Response:
+        if message.text and not message.group:
+            return "That didn't look like a valid command"
         return None
 
     async def do_help(self, message: Message) -> str:
@@ -382,7 +386,7 @@ class Bot(Signal):
             )
             return None
 
-    async def handle_payment(self, message: Message) -> str:
+    async def handle_payment(self, message: Message) -> Response:
         """Decode the receipt, then update balances"""
         logging.info(message.payment)
         amount_pmob = await self.mobster.get_receipt_amount_pmob(
