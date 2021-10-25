@@ -1,4 +1,7 @@
 #!/usr/bin/python3.9
+"""
+The core chatbot framework: Message, Signal, Bot, and app
+"""
 import asyncio
 import asyncio.subprocess as subprocess  # https://github.com/PyCQA/pylint/issues/1469
 import json
@@ -6,7 +9,7 @@ import logging
 import os
 import signal
 import sys
-from asyncio import Queue
+from asyncio import Queue, StreamReader, StreamWriter
 from asyncio.subprocess import PIPE
 from typing import Any, AsyncIterator, Optional, Union
 
@@ -20,13 +23,16 @@ from phonenumbers import NumberParseException
 from forest import datastore
 from forest import pghelp
 from forest import utils
+from forest import mc_util
+from forest import payments_monitor
 
 JSON = dict[str, Any]
 Response = Union[str, list, dict[str, str], None]
 
 
 class Message:
-    """Represents a Message received from signal-cli, optionally containing a command with arguments."""
+    """Represents a Message received from signal-cli, optionally
+    containing a command with arguments, group, quote, or payment"""
 
     def __init__(self, blob: dict) -> None:
         self.blob = blob
@@ -50,7 +56,7 @@ class Message:
         self.tokens: Optional[list[str]] = None
         if self.text and self.text.startswith("/"):
             command, *self.tokens = self.text.split(" ")
-            self.command = command[1:]  # remove /
+            self.command = command[1:].lower()  # remove /
             self.arg1 = self.tokens[0] if self.tokens else None
             self.text = " ".join(self.tokens)
         # self.reactions: dict[str, str] = {}
@@ -62,8 +68,12 @@ class Message:
 
 class Signal:
     """
-    Represents a signal-cli session
-    Creates database connections for managing signal keys and payments.
+    Represents a signal-cli session.
+    Lifecycle: Downloads the datastore, runs and restarts signal-cli,
+    tries to gracefully kill signal-cli and upload before exiting.
+    I/O: reads signal-cli's output into signalcli_output_queue,
+    has methods for sending commands to signal-cli, and
+    actually writes those json blobs to signal-cli's stdin.
     """
 
     def __init__(self, bot_number: Optional[str] = None) -> None:
@@ -79,12 +89,147 @@ class Signal:
         self.proc: Optional[subprocess.Process] = None
         self.signalcli_output_queue: Queue[Message] = Queue()
         self.signalcli_input_queue: Queue[dict] = Queue()
+        self.exiting = False
+
+    async def start_process(self) -> None:
+        """
+        Add SIGINT handlers. Download datastore. Maybe set profile.
+        (Re)start signal-cli and launch reading and writing with it.
+        """
+        # things that don't work: loop.add_signal_handler(async_shutdown) - TypeError
+        # signal.signal(sync_signal_handler) - can't interact with loop
+        loop = asyncio.get_running_loop()
+        loop.add_signal_handler(signal.SIGINT, self.sync_signal_handler)
+        logging.debug("added signal handler, downloading...")
+        if not utils.get_secret("NO_DOWNLOAD"):
+            await self.datastore.download()
+        if utils.get_secret("PROFILE"):
+            await self.set_profile()
+        while self.sigints == 0 and not self.exiting:
+            command = f"{utils.ROOT_DIR}/signal-cli --config {utils.ROOT_DIR} --output=json stdio".split()
+            logging.info(command)
+            self.proc = await asyncio.create_subprocess_exec(
+                *command, stdin=PIPE, stdout=PIPE
+            )
+            logging.info(
+                "started signal-cli @ %s with PID %s",
+                self.bot_number,
+                self.proc.pid,
+            )
+            assert self.proc.stdout and self.proc.stdin
+            asyncio.create_task(self.handle_signalcli_raw_output(self.proc.stdout))
+            asyncio.create_task(self.write_commands(self.proc.stdin))
+            returncode = await self.proc.wait()
+            logging.warning("signal-cli exited: %s", returncode)
+            if returncode == 0:
+                logging.info("signal-cli apparently exited cleanly, not restarting")
+                break
+
+    sigints = 0
+
+    def sync_signal_handler(self, *_: Any) -> None:
+        """Try to start async_shutdown and/or just sys.exit"""
+        logging.info("handling sigint. sigints: %s", self.sigints)
+        self.sigints += 1
+        self.exiting = True
+        try:
+            loop = asyncio.get_running_loop()
+            logging.info("got running loop, scheduling async_shutdown")
+            asyncio.run_coroutine_threadsafe(self.async_shutdown(), loop)
+        except RuntimeError:
+            asyncio.run(self.async_shutdown())
+        if self.sigints >= 3:
+            sys.exit(1)
+
+    async def async_shutdown(self, *_: Any, wait: bool = False) -> None:
+        """Upload our datastore, close postgres connections pools, kill signal-cli, exit"""
+        logging.info("starting async_shutdown")
+        await self.datastore.upload()
+        if self.proc:
+            try:
+                self.proc.kill()
+                if wait:
+                    await self.proc.wait()
+                    await self.datastore.upload()
+            except ProcessLookupError:
+                logging.info("no signal-cli process")
+        await self.datastore.mark_freed()
+        await pghelp.close_pools()
+        # this still deadlocks. see https://github.com/forestcontact/forest-draft/issues/10
+        if datastore._memfs_process:
+            executor = datastore._memfs_process._get_executor()
+            logging.info(executor)
+            executor.shutdown(wait=False, cancel_futures=True)
+        logging.info("exited".center(60, "="))
+        sys.exit(0)
+        logging.info("called sys.exit but still running, trying os._exit")
+        os._exit(1)
+
+    async def handle_signalcli_raw_output(self, stream: StreamReader) -> None:
+        """Read signal-cli output but delegate handling it"""
+        while True:
+            line = (await stream.readline()).decode().strip()
+            if not line:
+                break
+            await self.handle_signalcli_raw_line(line)
+        logging.info("stopped reading signal-cli stdout")
+
+    async def handle_signalcli_raw_line(self, line: str) -> None:
+        """Try to parse a single line of signal-cli output. If it's a message, enqueue it"""
+        # TODO: maybe output and color non-json. pretty-print errors
+        # unrelatedly, try to sensibly color the other logging stuff like http logs
+        # fly / db / asyncio and other lib warnings / java / signal logic and networking
+        try:
+            blob = json.loads(line)
+        except json.JSONDecodeError:
+            logging.info("signal: %s", line)
+            return
+        if not isinstance(blob, dict):  # e.g. a timestamp
+            return
+        if "error" in blob:
+            if "traceback" in blob:
+                exception, *tb = blob["traceback"].split("\n")
+                logging.error(termcolor.colored(exception, "red"))
+                # maybe also send this to admin as a signal message
+                for _line in tb:
+                    logging.error(_line)
+            else:
+                logging.error(termcolor.colored(blob["error"], "red"))
+            return
+        msg = Message(blob)
+        if msg.full_text:  # and utils.get_secret("I_AM_NOT_A_FEDERAL_AGENT"):
+            logging.info("signal: %s", line)
+        await self.signalcli_output_queue.put(msg)
+        return
+
+    # i'm tempted to refactor these into handle_messages
+    async def signalcli_output_iter(self) -> AsyncIterator[Message]:
+        """Provides an asynchronous iterator over messages on the queue.
+        See Bot for how messages and consumed and dispatched"""
+        while True:
+            message = await self.signalcli_output_queue.get()
+            yield message
+
+
+    # Next, we see how the input queue is populated and consumed. 
+
+    async def set_profile(self) -> None:
+        """Set signal profile. Note that this will overwrite any mobilecoin address"""
+        env = utils.get_secret("ENV")
+        profile = {
+            "command": "updateProfile",
+            "given-name": "localbot" if utils.LOCAL else "forestbot",
+            "family-name": "" if env == "prod" else env,  # maybe not?
+            "avatar": "avatar.png",
+        }
+        await self.signalcli_input_queue.put(profile)
+        logging.info(profile)
 
     async def send_message(  # pylint: disable=too-many-arguments
         self,
         recipient: Optional[str],
         msg: Response,
-        group: Optional[str] = None,
+        group: Optional[str] = None, # maybe combine this with recipient?
         endsession: bool = False,
         attachments: Optional[list[str]] = None,
     ) -> None:
@@ -138,178 +283,75 @@ class Signal:
             react["recipient"] = [target_msg.source]
         await self.signalcli_input_queue.put(react)
 
-    async def signalcli_output_iter(self) -> AsyncIterator[Message]:
-        """Provides an asynchronous iterator over messages on the queue."""
-        while True:
-            message = await self.signalcli_output_queue.get()
-            yield message
-
     async def signalcli_input_iter(self) -> AsyncIterator[dict]:
         """Provides an asynchronous iterator over pending signal-cli commands"""
         while True:
             command = await self.signalcli_input_queue.get()
             yield command
 
-    async def set_profile(self) -> None:
-        profile = {
-            "command": "updateProfile",
-            "given-name": "localbot" if utils.LOCAL else "forestbot",
-            "family-name": utils.get_secret("ENV"),  # maybe not
-            "avatar": "avatar.png",
-        }
-        await self.signalcli_input_queue.put(profile)
-        logging.info(profile)
-
-    async def start_process(self) -> None:
-        """
-        Add SIGINT handlers. Download datastore. Maybe set profile.
-        Start signal-cli, then write our commands to stdin
-        """
-        logging.debug("in start_process")
-        loop = asyncio.get_running_loop()
-        logging.debug("got running loop")
-        # things that don't work: loop.add_signal_handler(async_shutdown) - TypeError
-        # signal.signal(sync_signal_handler) - can't interact with loop
-        loop.add_signal_handler(signal.SIGINT, self.sync_signal_handler)
-
-        # the thing we want here is to check for a data/ dir in the current directory
-        # if so, also upload it but don't download it now (unless..?)
-        # if not, download it and stay synced
-
-        logging.debug("added signal handler, downloading...")
-        if not utils.get_secret("NO_DOWNLOAD"):
-            await self.datastore.download()
-        command = f"{utils.ROOT_DIR}/signal-cli --config {utils.ROOT_DIR} --output=json stdio".split()
-        logging.info(command)
-        self.proc = await asyncio.create_subprocess_exec(
-            *command, stdin=PIPE, stdout=PIPE
-        )
-        # this should restart signal-cli if it crashes
-        # while 1: await self.proc.wait(); self.proc = await asyncio.create_subprocess_exec ...
-        logging.info(
-            "started signal-cli @ %s with PID %s",
-            self.bot_number,
-            self.proc.pid,
-        )
-        if utils.get_secret("PROFILE"):
-            await self.set_profile()
-        assert self.proc.stdout and self.proc.stdin
-        asyncio.create_task(self.handle_signalcli_raw_output(self.proc.stdout))
+    # maybe merge with the above?
+    async def write_commands(self, pipe: StreamWriter) -> None:
+        """Encode and write pending signal-cli commands"""
         async for msg in self.signalcli_input_iter():
             logging.info("input to signal: %s", msg)
-            self.proc.stdin.write(json.dumps(msg).encode() + b"\n")
-        await self.proc.wait()
-
-    sigints = 0
-
-    def sync_signal_handler(self, *_: Any) -> None:
-        """Try to start async_shutdown and/or just sys.exit"""
-        logging.info("handling sigint. sigints: %s", self.sigints)
-        self.sigints += 1
-        try:
-            loop = asyncio.get_running_loop()
-            logging.info("got running loop, scheduling async_shutdown")
-            asyncio.run_coroutine_threadsafe(self.async_shutdown(), loop)
-        except RuntimeError:
-            asyncio.run(self.async_shutdown())
-        if self.sigints >= 3:
-            sys.exit(1)
-            raise KeyboardInterrupt
-            logging.info("this should never get called")  # pylint: disable=unreachable
-
-    async def async_shutdown(self, *_: Any, wait: bool = False) -> None:
-        """Upload our datastore, close pools, kill signal-cli"""
-        logging.info("starting async_shutdown")
-        await self.datastore.upload()
-        if self.proc:
-            try:
-                self.proc.kill()
-                if wait:
-                    await self.proc.wait()
-                    await self.datastore.upload()
-            except ProcessLookupError:
-                logging.info("no signal-cli process")
-        await self.datastore.mark_freed()
-        await pghelp.close_pools()
-        # this doesn't work. see https://github.com/forestcontact/forest-draft/issues/10
-        if datastore._memfs_process:
-            executor = datastore._memfs_process._get_executor()
-            logging.info(executor)
-            executor.shutdown(wait=False, cancel_futures=True)
-        logging.info("exited".center(60, "="))
-        sys.exit(0)
-        logging.info(
-            "called sys.exit but still running, os.kill sigint to %s",
-            os.getpid(),
-        )
-        os.kill(os.getpid(), signal.SIGINT)
-        logging.info("still running after os.kill, trying os._exit")
-        os._exit(1)
-
-    async def handle_signalcli_raw_output(
-        self,
-        stream: asyncio.StreamReader,
-    ) -> None:
-        while True:
-            line = (await stream.readline()).decode().strip()
-            if not line:
-                break
-            await self.handle_signalcli_raw_line(line)
-
-    async def handle_signalcli_raw_line(self, line: str) -> None:
-        # if utils.get_secret("I_AM_NOT_A_FEDERAL_AGENT"):
-        # logging.info("signal: %s", line)
-        # TODO: don't print receiptMessage
-        # color non-json. pretty-print errors
-        # sensibly color web traffic, too?
-        # fly / db / asyncio and other lib warnings / java / signal logic and networking
-        try:
-            blob = json.loads(line)
-        except json.JSONDecodeError:
-            logging.info("signal: %s", line)
-            return
-        if not isinstance(blob, dict):  # e.g. a timestamp
-            return
-        if "error" in blob:
-            if "traceback" in blob:
-                exception, *tb = blob["traceback"].split("\n")
-                logging.error(termcolor.colored(exception, "red"))
-                for _line in tb:
-                    logging.error(_line)
-            else:
-                logging.error(termcolor.colored(blob["error"], "red"))
-            return
-        msg = Message(blob)
-        if msg.full_text:
-            logging.info("signal: %s", line)
-        await self.signalcli_output_queue.put(msg)
-        return
+            pipe.write(json.dumps(msg).encode() + b"\n")
 
 
 class Bot(Signal):
+    """Handles messages and command dispatch, as well as basic commands.
+    Must be instantiated within a running async loop.
+    Subclass this with your own commands.
+    """
+
     def __init__(self, *args: str) -> None:
         """Creates AND STARTS a bot that routes commands to do_x handlers"""
         self.client_session = aiohttp.ClientSession()
+        self.mobster = payments_monitor.Mobster()
         super().__init__(*args)
         asyncio.create_task(self.start_process())
         asyncio.create_task(self.handle_messages())
+        if utils.get_secret("MONITOR_WALLET"):
+            # currently spams and re-credits the same invoice each reboot
+            asyncio.create_task(self.mobster.monitor_wallet())
 
     async def handle_messages(self) -> None:
+        """Read messages from the queue and pass each message to handle_message
+        If that returns a non-empty string, send it as a response"""
         async for message in self.signalcli_output_iter():
+            # potentially stick a try-catch block here and send errors to admin
             response = await self.handle_message(message)
             if response:
                 await self.respond(message, response)
 
     async def handle_message(self, message: Message) -> Response:
+        """Method dispatch to do_x commands and goodies.
+        Overwrite this to add your own non-command logic,
+        but call super().handle_message(message) at the end"""
         if message.command:
             if hasattr(self, "do_" + message.command):
                 return await getattr(self, "do_" + message.command)(message)
-            return f"Sorry! Command {message.command} not recognized! Try /help."
+            suggest_help = " Try /help." if hasattr(self, "do_help") else ""
+            return f"Sorry! Command {message.command} not recognized!" + suggest_help
         if message.text == "TERMINATE":
             return "signal session reset"
-        if message.text:
+        if message.text and not message.group:
             return "That didn't look like a valid command"
+        if message.payment:
+            return await self.handle_payment(message)
         return None
+
+    async def do_help(self, message: Message) -> str:
+        """List available commands. /help <command> gives you that command's documentation, if available"""
+        if message.arg1:
+            if hasattr(self, "do_" + message.arg1):
+                cmd = getattr(self, "do_" + message.arg1)
+                if cmd.__doc__:
+                    return cmd.__doc__
+                return f"Sorry, {message.arg1} isn't documented"
+        # TODO: filter aliases and indicate which commands are undocumented
+        return "commands: " + ", ".join(
+            k.removeprefix("do_") for k in dir(self) if k.startswith("do_")
+        )
 
     async def do_printerfact(self, _: Message) -> str:
         "Learn a fact about printers"
@@ -318,11 +360,13 @@ class Bot(Signal):
         return fact.strip()
 
     async def do_ping(self, message: Message) -> str:
+        """pong"""
         if message.text:
             return f"pong {message.text}"
         return "pong"
 
     async def check_target_number(self, msg: Message) -> Optional[str]:
+        """Check if arg1 is a valid number. If it isn't, let the user know and return None"""
         try:
             logging.debug("checking %s", msg.arg1)
             assert msg.arg1
@@ -338,12 +382,40 @@ class Bot(Signal):
             )
             return None
 
+    async def handle_payment(self, message: Message) -> str:
+        """Decode the receipt, then update balances"""
+        logging.info(message.payment)
+        amount_pmob = await self.mobster.get_receipt_amount_pmob(
+            message.payment["receipt"]
+        )
+        if amount_pmob is None:
+            return "That looked like a payment, but we couldn't parse it"
+        amount_mob = mc_util.pmob2mob(amount_pmob)
+        amount_usd_cents = round(amount_mob * await self.mobster.get_rate() * 100)
+        self.mobster.ledger_manager.put_mob_tx(
+            message.source,
+            amount_usd_cents,
+            amount_pmob,
+            message.payment.get("note"),
+        )
+        await self.respond(
+            message,
+            f"Thank you for sending {amount_mob} MOB ({amount_usd_cents/100} USD)",
+        )
+        return await self.payment_response(message)
 
-async def noGet(request: web.Request) -> web.Response:
+    async def payment_response(self, _: Message) -> Response:
+        return "This bot doesn't have a response for payments."
+
+
+async def no_get(request: web.Request) -> web.Response:
     raise web.HTTPFound(location="https://signal.org/")
 
 
 async def send_message_handler(request: web.Request) -> web.Response:
+    """Allow webhooks to send messages to users.
+    Turn this off, authenticate, or obfuscate in prod to someone from using your bot to spam people
+    """
     account = request.match_info.get("phonenumber")
     session = request.app.get("bot")
     if not session:
@@ -359,7 +431,7 @@ app = web.Application()
 
 app.add_routes(
     [
-        web.get("/", noGet),
+        web.get("/", no_get),
         web.post("/user/{phonenumber}", send_message_handler),
     ]
 )
