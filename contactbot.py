@@ -1,19 +1,11 @@
 #!/usr/bin/python3.9
-import asyncio
-import json
 import logging
-import random
-import time
-from typing import Optional, Union
-
-import aiohttp
+from typing import Union
 from aiohttp import web
-
 import teli
 from forest_tables import GroupRoutingManager, PaymentsManager, RoutingManager
-from forest import payments_monitor, utils, mc_util
+from forest import utils
 from forest.core import Bot, Message, Response, app
-from forest.payments_monitor import LedgerManager
 
 
 class Forest(Bot):
@@ -21,7 +13,6 @@ class Forest(Bot):
         self.teli = teli.Teli()
         self.payments_manager = PaymentsManager()
         self.routing_manager = RoutingManager()
-        self.ledger_manager = LedgerManager()
         super().__init__(*args)
 
     async def send_sms(
@@ -58,7 +49,7 @@ class Forest(Bot):
         If it's a group creation blob, make a new routing rule from it.
         If it's a group message, route it to the relevant conversation.
         If it's a payment, deal with that separately.
-        Otherwise, use the default Bot routing to do_x methods
+        Otherwise, use the default Bot do_x method dispatch
         """
         if "group" in message.blob:
             # SMS with {number} via {number}
@@ -106,11 +97,6 @@ class Forest(Bot):
                 return response
             await self.send_reaction(message, "\N{Cross Mark}")
             return "Couldn't send that reply"
-        # if message.command == "register":
-        #    asyncio.create_task(self.register(message))
-        #    return None
-        if message.payment:
-            return await self.handle_payment(message)
         return await Bot.handle_message(self, message)
 
     async def do_help(self, _: Message) -> str:
@@ -170,27 +156,7 @@ class Forest(Bot):
     if not utils.get_secret("GROUPS"):
         del do_mkgroup, do_query
 
-    async def handle_payment(self, message: Message) -> str:
-        """Decode the receipt, then update balances"""
-        # TODO: use the ledger table
-        logging.info(message.payment)
-        amount_pmob = await payments_monitor.get_receipt_amount_pmob(
-            message.payment["receipt"]
-        )
-        if amount_pmob is None:
-            return "That looked like a payment, but we couldn't parse it"
-        amount_mob = mc_util.pmob2mob(amount_pmob)
-        amount_usd_cents = round(amount_mob * await self.get_rate() * 100)
-        self.ledger_manager.put_mob_tx(
-            message.source,
-            amount_usd_cents,
-            amount_pmob,
-            message.payment.get("note"),
-        )
-        await self.respond(
-            message,
-            f"Thank you for sending {amount_mob} MOB ({amount_usd_cents/100} USD)",
-        )
+    async def payment_response(self, message: Message) -> str:
         diff = await self.get_balance(message.source) - self.usd_price
         if diff < 0:
             return f"Please send another {abs(diff)} USD to buy a phone number"
@@ -224,76 +190,27 @@ class Forest(Bot):
             'try "/register" and following the instructions.'
         )
 
-    rate_cache: tuple[int, Optional[float]] = (0, None)
+    usd_price = 0.5
 
-    async def get_rate(self) -> float:
-        """Get the current USD/MOB price and cache it for an hour"""
-        hour = round(time.time() / 3600)  # same value within each hour
-        if self.rate_cache[0] == hour and self.rate_cache[1] is not None:
-            return self.rate_cache[1]
-        try:
-            url = "https://big.one/api/xn/v1/asset_pairs/8e900cb1-6331-4fe7-853c-d678ba136b2f"
-            last_val = await self.client_session.get(url)
-            resp_json = await last_val.json()
-            mob_rate = float(resp_json.get("data").get("ticker").get("close"))
-        except (
-            aiohttp.ClientError,
-            KeyError,
-            TypeError,
-            json.JSONDecodeError,
-        ) as e:
-            logging.error(e)
-            # big.one goes down sometimes, if it does... make up a price
-            mob_rate = 14
-        self.rate_cache = (hour, mob_rate)
-        return mob_rate
+    async def do_register(self, message: Message) -> Response:
+        """register for a phone number"""
+        if int(message.source[1:3]) in (44, 49, 33, 41):
+            # keep in sync with https://github.com/signalapp/Signal-Android/blob/master/app/build.gradle#L174
+            return "Please send {await self.mobster.usd2mob(self.usd_price)} via Signal Pay"
+        mob_price_exact = await self.mobster.create_invoice(
+            self.usd_price, message.source, "/register"
+        )
+        address = await self.mobster.get_address()
+        return [
+            f"The current price for a SMS number is {mob_price_exact}MOB/month. If you would like to continue, please send exactly...",
+            f"{mob_price_exact}",
+            "to",
+            address,
+            "Upon payment, you will be able to select the area code for your new phone number!",
+        ]
 
-    usd_price = 5.0
-
-    async def get_mob_price(self, perturb: bool = False) -> float:
-        mob_rate = await self.get_rate()
-        if perturb:
-            # perturb each price slightly to have a unique payment
-            mob_rate -= random.random() / 1000
-        # invpico = 100000000000 # doesn't work in mixin
-        invnano = 100000000
-        nmob_price = int(self.usd_price / mob_rate * invnano)
-        mob_price_exact = round(nmob_price / invnano, 3)
-        # dunno if we want to generate new wallets? what happens if a user overpays?
-        return mob_price_exact
-
-    # async def register(self, message: Message) -> bool:
-    #     """register for a phone number"""
-    #     mob_price_exact = await self.get_mob_price()
-    #     nmob_price = mob_price_exact * 100000000
-    #     address = await payments_monitor.get_address()
-    #     responses = [
-    #         f"The current price for a SMS number is {mob_price_exact}MOB/month. If you would like to continue, please send exactly...",
-    #         f"{mob_price_exact}",
-    #         "on Signal Pay, or to",
-    #         address,
-    #         "Upon payment, you will be able to select the area code for your new phone number!",
-    #     ]
-    #     await self.send_message(message.source, responses)
-    #     # check for payments every 10s for 1hr
-    #     for _ in range(360):
-    #         payment_done = await self.payments_manager.get_payment(nmob_price * 1000)
-    #         if payment_done:
-    #             payment_done = payment_done[0]
-    #             await self.send_message(
-    #                 message.source,
-    #                 [
-    #                     "Thank you for your payment! Please save this transaction ID for your records and include it with any customer service requests. Without this payment ID, it will be harder to verify your purchase.",
-    #                     f"{payment_done.get('transaction_log_id')}",
-    #                     'Please finish setting up your account at your convenience with the "/status" command.',
-    #                 ],
-    #             )
-    #             self.balances[message.source] += payment_done.get("value_pmob")
-    #             return True
-    #         await asyncio.sleep(10)
-    #     return False
     async def get_balance(self, account: str) -> float:
-        res = await self.ledger_manager.get_usd_balance(account)
+        res = await self.mobster.ledger_manager.get_usd_balance(account)
         return float(round(res[0].get("balance"), 2))
 
     async def do_balance(self, message: Message) -> str:
@@ -303,7 +220,7 @@ class Forest(Bot):
 
     async def do_pay(self, message: Message) -> str:
         if message.arg1 == "shibboleth":
-            await self.ledger_manager.put_usd_tx(
+            await self.mobster.ledger_manager.put_usd_tx(
                 message.source, int(self.usd_price * 100), "shibboleth"
             )
             return "...thank you for your payment. You can buy a phone number with /order <area code>"
@@ -315,10 +232,8 @@ class Forest(Bot):
         """Usage: /order <area code>"""
         if not (msg.arg1 and len(msg.arg1) == 3 and msg.arg1.isnumeric()):
             return """Usage: /order <area code>"""
-        price = await self.get_mob_price()
-        diff = await self.get_balance(msg.source) - price
+        diff = await self.get_balance(msg.source) - self.usd_price
         if diff < 0:
-            # this needs to check if there are *unfulfilled* payments
             return "Make a payment with Signal Pay or /register first"
         await self.routing_manager.sweep_expired_destinations()
         available_numbers = [
@@ -345,7 +260,7 @@ class Forest(Bot):
         await self.teli.set_sms_url(number, utils.URL + "/inbound")
         await self.routing_manager.set_destination(number, msg.source)
         if await self.routing_manager.get_destination(number):
-            await self.ledger_manager.put_usd_tx(
+            await self.mobster.ledger_manager.put_usd_tx(
                 msg.source, -int(self.usd_price * 100), number
             )
             return f"You are now the proud owner of {number}"
@@ -357,9 +272,9 @@ class Forest(Bot):
     async def start_process(self) -> None:
         """Make sure full-service has a wallet before starting signal"""
         try:
-            await payments_monitor.get_address()
+            await self.mobster.get_address()
         except IndexError:
-            await payments_monitor.import_account()
+            await self.mobster.import_account()
         if utils.get_secret("MIGRATE"):
             await self.migrate()
         await super().start_process()

@@ -1,4 +1,5 @@
 #!/bin/python3.9
+import argparse
 import asyncio
 import json
 import logging
@@ -10,7 +11,6 @@ from pathlib import Path
 from subprocess import PIPE, Popen
 from tarfile import TarFile
 from typing import Any, Optional, Callable, cast
-import argparse
 
 import aioprocessing
 from aiohttp import web
@@ -360,9 +360,10 @@ def subcommand(
     Then on the command line::
         $ python cli.py subcommand -d
     """
+
     def decorator(func: Callable) -> None:
         _parser = parent.add_parser(func.__name__, description=func.__doc__)
-        for arg in (_args if _args else []):
+        for arg in _args if _args else []:
             _parser.add_argument(*arg[0], **arg[1])
         _parser.set_defaults(func=func)
 
@@ -373,6 +374,18 @@ def subcommand(
 async def list_accounts(_args: argparse.Namespace) -> None:
     "list available accounts in table format"
     cols = ["id", "last_update_ms", "last_claim_ms", "active_node_name"]
+    interface = get_account_interface()
+    # sorry
+    if "notes" in [
+        column.get("column_name")
+        for column in (
+            await interface.execute(
+                "select column_name from information_schema.columns where table_name='signal_accounts';"
+            )
+            or [] # don't error if the query fails
+        )
+    ]:
+        cols.append("notes")
     query = f"select {' ,'.join(cols)} from signal_accounts"
     accounts = await get_account_interface().execute(query)
     if not isinstance(accounts, list):
@@ -388,10 +401,14 @@ async def list_accounts(_args: argparse.Namespace) -> None:
 
 
 @subcommand([argument("--number")])
-async def do_free(ns: argparse.Namespace) -> None:
+async def free(ns: argparse.Namespace) -> None:
     "mark account freed"
     await get_account_interface().mark_account_freed(ns.number)
 
+@subcommand([argument("--number"), argument("note", help="new note for number")])
+async def set_note(ns: argparse.Namespace) -> None:
+    "set the note field for a number"
+    await get_account_interface().execute(f"update signal_accounts set notes='{ns.note}' where id='{ns.number}'")
 
 @subcommand([argument("--number")])
 async def sync(ns: argparse.Namespace) -> None:
