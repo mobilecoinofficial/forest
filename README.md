@@ -42,7 +42,7 @@ If things seem wrong, you can use `fly suspend`, the above to sync, use signal-c
 
 # Options and secrets
 
-- `ENV`: which {ENV}_secrets to use and optionally set as profile family name 
+- `ENV`: if running locally, which {ENV}_secrets file to use. this is also optionally used as profile family name 
 - `BOT_NUMBER`: signal account being used
 - `ADMIN`: primarily fallback recipient for invalid webhooks; may also be used to send error messages
 - `DATABASE_URL`: Postgres DB
@@ -55,6 +55,7 @@ If things seem wrong, you can use `fly suspend`, the above to sync, use signal-c
 - `SIGNAL_CLI_PATH`: executable to use. useful for running graalvm tracing agent
 - `MIGRATE`: run db migrations and set teli sms webhooks
 - `LOGFILES`: create a debug.log 
+- `LOGLEVEL`: what log level to use for console logs
 - `ORDER`: allow users to buy phonenumbers
 - `GROUPS`: use group routes
 

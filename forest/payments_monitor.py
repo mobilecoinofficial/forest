@@ -143,7 +143,7 @@ class Mobster:
 
     async def get_receipt_amount_pmob(self, receipt_str: str) -> Optional[float]:
         full_service_receipt = mc_util.b64_receipt_to_full_service_receipt(receipt_str)
-        logging.debug(full_service_receipt)
+        logging.debug("fs receipt: %s", full_service_receipt)
         params = {
             "address": await self.get_address(),
             "receiver_receipt": full_service_receipt,
@@ -151,7 +151,7 @@ class Mobster:
         tx = await self.req(
             {"method": "check_receiver_receipt_status", "params": params}
         )
-        logging.debug(tx)
+        logging.debug("receipt tx: %s", tx)
         if "error" in tx:
             return None
         pmob = int(tx["result"]["txo"]["value_pmob"])

@@ -13,6 +13,6 @@ sudo apt-get install default-jre
 cd signal-cli 
 ./gradlew installDist
 ln -s ~/signal-cli/build/install/signal-cli/bin/signal-cli  ../forest-draft/
-cd forest-draft
+cd ../forest-draft
 python3.9 main.py
 ```
