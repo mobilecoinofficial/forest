@@ -210,8 +210,7 @@ class Signal:
             message = await self.signalcli_output_queue.get()
             yield message
 
-
-    # Next, we see how the input queue is populated and consumed. 
+    # Next, we see how the input queue is populated and consumed.
 
     async def set_profile(self) -> None:
         """Set signal profile. Note that this will overwrite any mobilecoin address"""
@@ -229,7 +228,7 @@ class Signal:
         self,
         recipient: Optional[str],
         msg: Response,
-        group: Optional[str] = None, # maybe combine this with recipient?
+        group: Optional[str] = None,  # maybe combine this with recipient?
         endsession: bool = False,
         attachments: Optional[list[str]] = None,
     ) -> None:
@@ -262,7 +261,7 @@ class Signal:
         await self.signalcli_input_queue.put(json_command)
         return
 
-    async def respond(self, target_msg: Message, msg: Union[str, list, dict]) -> None:
+    async def respond(self, target_msg: Message, msg: Response) -> None:
         """Respond to a message depending on whether it's a DM or group"""
         if target_msg.group:
             await self.send_message(None, msg, group=target_msg.group)
@@ -337,7 +336,7 @@ class Bot(Signal):
         if message.text and not message.group:
             return "That didn't look like a valid command"
         if message.payment:
-            return await self.handle_payment(message)
+            asyncio.create_task(self.handle_payment(message))
         return None
 
     async def do_help(self, message: Message) -> str:
@@ -382,14 +381,18 @@ class Bot(Signal):
             )
             return None
 
-    async def handle_payment(self, message: Message) -> Response:
-        """Decode the receipt, then update balances"""
+    async def handle_payment(self, message: Message) -> None:
+        """Decode the receipt, then update balances.
+        Blocks on transaction completion, run concurrently"""
         logging.info(message.payment)
         amount_pmob = await self.mobster.get_receipt_amount_pmob(
             message.payment["receipt"]
         )
         if amount_pmob is None:
-            return "That looked like a payment, but we couldn't parse it"
+            await self.respond(
+                message, "That looked like a payment, but we couldn't parse it"
+            )
+            return
         amount_mob = mc_util.pmob2mob(amount_pmob)
         amount_usd_cents = round(amount_mob * await self.mobster.get_rate() * 100)
         await self.mobster.ledger_manager.put_pmob_tx(
@@ -402,7 +405,7 @@ class Bot(Signal):
             message,
             f"Thank you for sending {float(amount_mob)} MOB ({amount_usd_cents/100} USD)",
         )
-        return await self.payment_response(message)
+        await self.respond(message, await self.payment_response(message))
 
     async def payment_response(self, _: Message) -> Response:
         return "This bot doesn't have a response for payments."
