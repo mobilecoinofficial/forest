@@ -148,14 +148,20 @@ class Mobster:
             "address": await self.get_address(),
             "receiver_receipt": full_service_receipt,
         }
-        tx = await self.req(
-            {"method": "check_receiver_receipt_status", "params": params}
-        )
-        logging.debug("receipt tx: %s", tx)
-        if "error" in tx:
-            return None
-        pmob = int(tx["result"]["txo"]["value_pmob"])
-        return pmob
+        while 1:
+            tx = await self.req(
+                {"method": "check_receiver_receipt_status", "params": params}
+            )
+            logging.debug("receipt tx: %s", tx)
+            #{'method': 'check_receiver_receipt_status', 'result':
+            #{'receipt_transaction_status': 'TransactionPending', 'txo': None}, 'jsonrpc': '2.0', 'id': 1}
+            if "error" in tx:
+                return None
+            if tx["result"]["receipt_transaction_status"] == "TransactionPending":
+                await asyncio.sleep(1)
+                continue
+            pmob = int(tx["result"]["txo"]["value_pmob"])
+            return pmob
 
     async def get_account(self) -> str:
         return (await self.req({"method": "get_all_accounts"}))["result"][
