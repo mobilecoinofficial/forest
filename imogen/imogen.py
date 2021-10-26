@@ -4,14 +4,16 @@ import base64
 import datetime
 import json
 import logging
+import urllib
 import time
 from pathlib import Path
 from typing import Optional
+import base58
 import aiohttp
 import aioredis
 from aiohttp import web
 from forest import utils
-from forest.core import Bot, Message, app
+from forest.core import Bot, Message, Response, app
 
 if not utils.LOCAL:
     aws_cred = utils.get_secret("AWS_CREDENTIALS")
@@ -41,7 +43,7 @@ status = "aws ec2 describe-instances --region us-east-1| jq -r '..|.State?|.Name
 start = "aws ec2 start-instances --region us-east-1 --instance-ids {}"
 stop = "aws ec2 stop-instances --region us-east-1 --instance-ids {}"
 get_ip = "aws ec2 describe-instances --region us-east-1|jq -r .Reservations[].Instances[].PublicIpAddress"
-start_worker = "ssh -i id_rsa -o ConnectTimeout=2 ubuntu@{} ~/ml/read_redis.py {}"
+#start_worker = "ssh -i id_rsa -o ConnectTimeout=2 ubuntu@{} ~/ml/read_redis.py {}"
 
 
 get_cost = (
@@ -59,15 +61,6 @@ async def get_output(cmd: str) -> str:
     proc = await asyncio.create_subprocess_shell(cmd, stdout=-1, stderr=-1)
     stdout, stderr = await proc.communicate()
     return stdout.decode().strip() or stderr.decode().strip()
-
-
-# async def really_start_worker() -> None:
-#     ip = await get_output(get_ip)
-#     while 1:
-#         await asyncio.create_subprocess_shell(
-#             start_worker.format(ip, url), stdout=-1, stderr=-1
-#         )
-#         # don't *block* since output runs forever, but check if failed...
 
 
 class Imogen(Bot):
@@ -116,9 +109,12 @@ class Imogen(Bot):
         """/imagine <prompt>"""
         logging.info(msg.full_text)
         logging.info(msg.text)
+        if msg.group:
+            destination = base58.b58encode(msg.group).decode()
+        else:
+            destination = msg.source
         await redis.rpush(
-            "prompt_queue",
-            json.dumps({"prompt": msg.text, "callback": msg.group or msg.source}),
+            "prompt_queue", json.dumps({"prompt": msg.text, "callback": destination})
         )
         # check if worker is up
         state = await get_output(status)
@@ -148,6 +144,14 @@ class Imogen(Bot):
 
     do_list_prompts = do_listqueue = do_queue = do_list_queue
 
+    async def do_dump_queue(self, _: Message) -> Response:
+        prompts = []
+        while 1:
+            if not (item := await redis.lpop("prompt_queue")):
+                break
+            prompts.append(str(json.loads(item)["prompt"]))
+        return prompts
+
     async def payment_response(self, _: Message) -> None:
         return None
 
@@ -170,33 +174,38 @@ async def store_image_handler(request: web.Request) -> web.Response:
     if not bot:
         return web.Response(status=504, text="Sorry, no live workers.")
     reader = await request.multipart()
-    # /!\ Don't forget to validate your inputs /!\
-    # reader.next() will `yield` the fields of your form
-    field = await reader.next()
-    if not isinstance(field, aiohttp.BodyPartReader):
-        return web.Response(text="bad form")
-    logging.info(field.name)
-    # assert field.name == "image"
-    filename = field.filename or f"attachment-{time.time()}"
-    # You cannot rely on Content-Length if transfer is chunked.
-    size = 0
-    path = Path(filename).absolute()
-    with open(path, "wb") as f:
-        while True:
-            chunk = await field.read_chunk()  # 8192 bytes by default.
-            if not chunk:
-                break
-            size += len(chunk)
-            f.write(chunk)
-    destination = request.query.get("destination", "")
-    recipient = utils.signal_format(destination)
-    group = None if recipient else destination
-    message = request.query.get("message", "")
+    async for field in reader:
+        logging.info(field)
+        logging.info("multipart field name: %s", field.name)
+        filename = field.filename or f"attachment-{time.time()}"
+        # You cannot rely on Content-Length if transfer is chunked.
+        size = 0
+        path = Path(filename).absolute()
+        with open(path, "wb") as f:
+            logging.info("writing file")
+            while True:
+                chunk = await field.read_chunk()  # 8192 bytes by default.
+                logging.info("read chunk")
+                if not chunk:
+                    break
+                size += len(chunk)
+                f.write(chunk)
+    message = urllib.parse.unquote(request.query.get("message", ""))
+    destination = urllib.parse.unquote(request.query.get("destination", ""))
+    recipient = utils.signal_format(str(destination))
+    if destination and not recipient:
+        try:
+            group = base58.b58decode(destination).decode()
+        except ValueError:
+            # like THtg80Gi2jvgOEFhQjT2Cm+6plNGXTSBJg2HSnhJyH4=
+            group = destination
     if recipient:
         await bot.send_message(recipient, message, attachments=[str(path)])
     else:
         await bot.send_message(None, message, attachments=[str(path)], group=group)
-    return web.Response(text="{} sized of {} sent" "".format(filename, size))
+    info = f"{filename} sized of {size} sent"
+    logging.info(info)
+    return web.Response(text=info)
 
 
 app.add_routes([web.post("/attachment", store_image_handler)])
