@@ -382,7 +382,7 @@ class Bot(Signal):
             )
             return None
 
-    async def handle_payment(self, message: Message) -> str:
+    async def handle_payment(self, message: Message) -> Response:
         """Decode the receipt, then update balances"""
         logging.info(message.payment)
         amount_pmob = await self.mobster.get_receipt_amount_pmob(
@@ -392,7 +392,7 @@ class Bot(Signal):
             return "That looked like a payment, but we couldn't parse it"
         amount_mob = mc_util.pmob2mob(amount_pmob)
         amount_usd_cents = round(amount_mob * await self.mobster.get_rate() * 100)
-        self.mobster.ledger_manager.put_mob_tx(
+        await self.mobster.ledger_manager.put_pmob_tx(
             message.source,
             amount_usd_cents,
             amount_pmob,
@@ -400,7 +400,7 @@ class Bot(Signal):
         )
         await self.respond(
             message,
-            f"Thank you for sending {amount_mob} MOB ({amount_usd_cents/100} USD)",
+            f"Thank you for sending {float(amount_mob)} MOB ({amount_usd_cents/100} USD)",
         )
         return await self.payment_response(message)
 
