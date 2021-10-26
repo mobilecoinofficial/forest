@@ -101,8 +101,8 @@ class Imogen(Bot):
         tomorrow = datetime.date.today() + datetime.timedelta(1)
         out = await get_output(get_all_cost.replace("{end}", str(tomorrow)))
         return json.loads(out)
-    do_get_costs = do_get_all_costs = do_get_all_cost
 
+    do_get_costs = do_get_all_costs = do_get_all_cost
 
     async def do_status(self, _: Message) -> str:
         "shows the GPU instance state (not the program) and queue size"
@@ -123,7 +123,7 @@ class Imogen(Bot):
         # check if worker is up
         state = await get_output(status)
         logging.info("worker state: %s", state)
-        #await self.mobster.put_usd_tx(msg.sender, self.image_rate_cents, msg.text[:32])
+        # await self.mobster.put_usd_tx(msg.sender, self.image_rate_cents, msg.text[:32])
         if state == "stopped":
             # if not, turn it on
             logging.info(await get_output(start.format(self.worker_instance_id)))
@@ -147,6 +147,7 @@ class Imogen(Bot):
             return "json decode error?"
 
     do_list_prompts = do_listqueue = do_queue = do_list_queue
+
     async def payment_response(self, _: Message) -> None:
         return None
 

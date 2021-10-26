@@ -153,8 +153,8 @@ class Mobster:
                 {"method": "check_receiver_receipt_status", "params": params}
             )
             logging.debug("receipt tx: %s", tx)
-            #{'method': 'check_receiver_receipt_status', 'result':
-            #{'receipt_transaction_status': 'TransactionPending', 'txo': None}, 'jsonrpc': '2.0', 'id': 1}
+            # {'method': 'check_receiver_receipt_status', 'result':
+            # {'receipt_transaction_status': 'TransactionPending', 'txo': None}, 'jsonrpc': '2.0', 'id': 1}
             if "error" in tx:
                 return None
             if tx["result"]["receipt_transaction_status"] == "TransactionPending":
@@ -211,5 +211,3 @@ class Mobster:
                     # otherwise, complain about this unsolicited payment to an admin or something
             last_transactions = latest_transactions.copy()
             await asyncio.sleep(10)
-
-
