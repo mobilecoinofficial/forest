@@ -382,7 +382,7 @@ async def list_accounts(_args: argparse.Namespace) -> None:
             await interface.execute(
                 "select column_name from information_schema.columns where table_name='signal_accounts';"
             )
-            or [] # don't error if the query fails
+            or []  # don't error if the query fails
         )
     ]:
         cols.append("notes")
@@ -405,10 +405,14 @@ async def free(ns: argparse.Namespace) -> None:
     "mark account freed"
     await get_account_interface().mark_account_freed(ns.number)
 
+
 @subcommand([argument("--number"), argument("note", help="new note for number")])
 async def set_note(ns: argparse.Namespace) -> None:
     "set the note field for a number"
-    await get_account_interface().execute(f"update signal_accounts set notes='{ns.note}' where id='{ns.number}'")
+    await get_account_interface().execute(
+        f"update signal_accounts set notes='{ns.note}' where id='{ns.number}'"
+    )
+
 
 @subcommand([argument("--number")])
 async def sync(ns: argparse.Namespace) -> None:

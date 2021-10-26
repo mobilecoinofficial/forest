@@ -43,7 +43,7 @@ logger.addHandler(console_handler)
 # "false" being truthy is annoying
 
 
-@functools.cache # don't load the same env more than once?
+@functools.cache  # don't load the same env more than once?
 def load_secrets(env: Optional[str] = None, overwrite: bool = False) -> None:
     if not env:
         env = os.environ.get("ENV", "dev")
