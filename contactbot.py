@@ -162,7 +162,7 @@ class Forest(Bot):
             return f"Please send another {abs(diff)} USD to buy a phone number"
         if diff == 0:
             return "Thank you for paying! You can now buy a phone number with /order <area code>"
-        return "Thank you for paying! You've overpayed by {diff} USD. Contact an administrator for a refund"
+        return f"Thank you for paying! You've overpayed by {diff} USD. Contact an administrator for a refund"
 
     async def do_status(self, message: Message) -> Union[list[str], str]:
         """List numbers if you have them. Usage: /status"""
