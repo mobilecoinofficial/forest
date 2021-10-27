@@ -266,6 +266,22 @@ class Forest(Bot):
             return f"You are now the proud owner of {number}"
         return "Database error?"
 
+    async def do_make_rule(self, msg: Message) -> Response:
+        """creates or updates a routing rule.
+        usage: /make_rule <teli number> <signal destination number>"""
+        if msg.source != utils.get_secret("ADMIN"):
+            return "Sorry, this command is only for admins"
+        teli_num, signal_num = msg.text.split(" ")
+        _id = teli.teli_format(teli_num)
+        destination = utils.signal_format(signal_num)
+        if not (_id and destination):
+            return "that doesn't look like valid numbers"
+        return await self.routing_manager.execute(
+            "insert into routing (id, destination, status) "
+            f"values ('{_id}', '{destination}', 'assigned') on conflict (id) do update "
+            f"set destination='{destination}', status='assigned' "
+        )
+
     if not utils.get_secret("ORDER"):
         del do_order, do_pay
 
