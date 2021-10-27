@@ -294,6 +294,9 @@ class Signal:
         """Encode and write pending signal-cli commands"""
         async for msg in self.signalcli_input_iter():
             logging.info("input to signal: %s", msg)
+            if pipe.is_closing():
+                logging.error("signal-cli stdin pipe is closed")
+                # maybe self.proc.kill()
             pipe.write(json.dumps(msg).encode() + b"\n")
 
 
@@ -340,8 +343,10 @@ class Bot(Signal):
         return await self.default(message)
 
     async def default(self, message: Message) -> Response:
-        if message.text and not message.group:
-            return "That didn't look like a valid command"
+        resp = "That didn't look like a valid command"
+        # if it messages an echoserver, don't get in a loop
+        if message.text and not (message.group or message.text == resp):
+            return resp
         return None
 
     async def do_help(self, message: Message) -> str:
