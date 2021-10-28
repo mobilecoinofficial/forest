@@ -2,6 +2,11 @@ TODO:
 - use jsonRpc (requires graal payments against mainline)
 - migrate the forest module into your-signal-bot or something like it
 
+## 0.5.2
+
+- autosave.py is a separate file. datastore can be invoked directly again. tmpdir setup moved to a different function from start_memfs
+- example dockerfile that only downloads a datastore and does nothing else that could theoretically be included in other stuff
+
 ## 0.5.1 
 
 - payments code is moved into Bot and a new Mobster class that also handles the full-service http sesh, mob price, and financial tables 
