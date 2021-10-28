@@ -57,18 +57,36 @@ class LedgerManager(PGInterface):
         super().__init__(queries, database, loop)
 
 
+# def auxin_addr_to_b58(auxin_output: str) -> str:
+# requires protobuf stuff
+#     mc_util.b64_public_address_to_b58_wrapper(
+#         base64.b64encode(
+#             bytes(
+#                 json.loads(auxin_output)
+#                 .get("Address")
+#                 .get("mobileCoinAddress")
+#                 .get("address")
+#             )
+#         )
+#     )
+
+
 class Mobster:
     """Class to keep track of a aiohttp session and cached rate"""
 
-    def __init__(self) -> None:
+    def __init__(self, url: str = "http://full-service.fly.dev/wallet") -> None:
         self.session = aiohttp.ClientSession()
         self.ledger_manager = LedgerManager()
         self.invoice_manager = InvoiceManager()
+        self.url = url
+
+    async def req_(self, method: str, **params: str) -> dict:
+        return await self.req({"method": method, "params": params})
 
     async def req(self, data: dict) -> dict:
         better_data = {"jsonrpc": "2.0", "id": 1, **data}
         mob_req = self.session.post(
-            "http://full-service.fly.dev/wallet",
+            self.url,
             data=json.dumps(better_data),
             headers={"Content-Type": "application/json"},
         )
@@ -143,24 +161,40 @@ class Mobster:
 
     async def get_receipt_amount_pmob(self, receipt_str: str) -> Optional[float]:
         full_service_receipt = mc_util.b64_receipt_to_full_service_receipt(receipt_str)
-        logging.debug(full_service_receipt)
+        logging.debug("fs receipt: %s", full_service_receipt)
         params = {
             "address": await self.get_address(),
             "receiver_receipt": full_service_receipt,
         }
-        tx = await self.req(
-            {"method": "check_receiver_receipt_status", "params": params}
-        )
-        logging.debug(tx)
-        if "error" in tx:
-            return None
-        pmob = int(tx["result"]["txo"]["value_pmob"])
-        return pmob
+        while 1:
+            tx = await self.req(
+                {"method": "check_receiver_receipt_status", "params": params}
+            )
+            logging.debug("receipt tx: %s", tx)
+            # {'method': 'check_receiver_receipt_status', 'result':
+            # {'receipt_transaction_status': 'TransactionPending', 'txo': None}, 'jsonrpc': '2.0', 'id': 1}
+            if "error" in tx:
+                return None
+            if tx["result"]["receipt_transaction_status"] == "TransactionPending":
+                await asyncio.sleep(1)
+                continue
+            pmob = int(tx["result"]["txo"]["value_pmob"])
+            return pmob
 
     async def get_account(self) -> str:
         return (await self.req({"method": "get_all_accounts"}))["result"][
             "account_ids"
         ][0]
+
+    async def get_balance(self) -> str:
+        return (
+            await self.req(
+                {
+                    "method": "get_balance_for_account",
+                    "params": {"account_id", await self.get_account()},
+                }
+            )
+        )["result"]["balance"]["unspent_pmob"]
 
     async def get_transactions(self, account_id: str) -> dict[str, dict[str, str]]:
         return (
@@ -205,5 +239,3 @@ class Mobster:
                     # otherwise, complain about this unsolicited payment to an admin or something
             last_transactions = latest_transactions.copy()
             await asyncio.sleep(10)
-
-
