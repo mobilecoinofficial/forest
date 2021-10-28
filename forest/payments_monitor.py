@@ -57,18 +57,36 @@ class LedgerManager(PGInterface):
         super().__init__(queries, database, loop)
 
 
+# def auxin_addr_to_b58(auxin_output: str) -> str:
+# requires protobuf stuff
+#     mc_util.b64_public_address_to_b58_wrapper(
+#         base64.b64encode(
+#             bytes(
+#                 json.loads(auxin_output)
+#                 .get("Address")
+#                 .get("mobileCoinAddress")
+#                 .get("address")
+#             )
+#         )
+#     )
+
+
 class Mobster:
     """Class to keep track of a aiohttp session and cached rate"""
 
-    def __init__(self) -> None:
+    def __init__(self, url: str = "http://full-service.fly.dev/wallet") -> None:
         self.session = aiohttp.ClientSession()
         self.ledger_manager = LedgerManager()
         self.invoice_manager = InvoiceManager()
+        self.url = url
+
+    async def req_(self, method: str, **params: str) -> dict:
+        return await self.req({"method": method, "params": params})
 
     async def req(self, data: dict) -> dict:
         better_data = {"jsonrpc": "2.0", "id": 1, **data}
         mob_req = self.session.post(
-            "http://full-service.fly.dev/wallet",
+            self.url,
             data=json.dumps(better_data),
             headers={"Content-Type": "application/json"},
         )
@@ -167,6 +185,16 @@ class Mobster:
         return (await self.req({"method": "get_all_accounts"}))["result"][
             "account_ids"
         ][0]
+
+    async def get_balance(self) -> str:
+        return (
+            await self.req(
+                {
+                    "method": "get_balance_for_account",
+                    "params": {"account_id", await self.get_account()},
+                }
+            )
+        )["result"]["balance"]["unspent_pmob"]
 
     async def get_transactions(self, account_id: str) -> dict[str, dict[str, str]]:
         return (
