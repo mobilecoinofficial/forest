@@ -107,7 +107,7 @@ class Signal:
         if utils.get_secret("PROFILE"):
             await self.set_profile()
         while self.sigints == 0 and not self.exiting:
-            command = f"{utils.ROOT_DIR}/signal-cli --config {utils.ROOT_DIR} --output=json stdio".split()
+            command = f"{utils.ROOT_DIR}/signal-cli --config {utils.ROOT_DIR} --output=json --user {self.bot_number} stdio".split()
             logging.info(command)
             self.proc = await asyncio.create_subprocess_exec(
                 *command, stdin=PIPE, stdout=PIPE
@@ -308,6 +308,7 @@ class Bot(Signal):
         """Creates AND STARTS a bot that routes commands to do_x handlers"""
         self.client_session = aiohttp.ClientSession()
         self.mobster = payments_monitor.Mobster()
+        self.pongs = {}
         super().__init__(*args)
         asyncio.create_task(self.start_process())
         asyncio.create_task(self.handle_messages())
@@ -428,7 +429,7 @@ async def pong_handler(request: web.Request) -> web.Response:
     pong = session.pongs.pop(pong, "")
     if pong == "":
         return web.Response(status=404, text="Sorry, can't find that key.")
-    return web.text_response(pong)
+    return web.Response(status=200, text=pong)
 
 
 async def send_message_handler(request: web.Request) -> web.Response:
