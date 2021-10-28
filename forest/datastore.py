@@ -224,12 +224,15 @@ def setup_tmpdir() -> None:
             shutil.rmtree(utils.ROOT_DIR)
         except (FileNotFoundError, OSError) as e:
             logging.warning("couldn't remove rootdir: %s", e)
-    (Path(utils.ROOT_DIR) / "data").mkdir(exist_ok=True)
+    (Path(utils.ROOT_DIR) / "data").mkdir(exist_ok=True, parents=True)
     # assume we're running in the repo
     sigcli = utils.get_secret("SIGNAL_CLI_PATH") or "signal-cli"
     sigcli_path = Path(sigcli).absolute()
-    logging.info("symlinking %s to %s", sigcli_path, utils.ROOT_DIR)
-    os.symlink(sigcli_path, utils.ROOT_DIR + "/signal-cli")
+    try:
+        logging.info("symlinking %s to %s", sigcli_path, utils.ROOT_DIR)
+        os.symlink(sigcli_path, utils.ROOT_DIR + "/signal-cli")
+    except FileExistsError:
+        logging.info("signal-cli's already there")
     os.symlink(Path("avatar.png").absolute(), utils.ROOT_DIR + "/avatar.png")
     logging.info("chdir to %s", utils.ROOT_DIR)
     os.chdir(utils.ROOT_DIR)
