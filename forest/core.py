@@ -361,10 +361,18 @@ class Bot(Signal):
         return fact.strip()
 
     async def do_ping(self, message: Message) -> str:
-        """pong"""
+        """returns to /ping with /pong"""
         if message.text:
-            return f"pong {message.text}"
-        return "pong"
+            return f"/pong {message.text}"
+        return "/pong"
+
+
+    async def do_pong(self, message: Message) -> str:
+        if message.text:
+            self.pongs[message.text] = message.text
+            return f"OK, stashing {message.text}"
+        return "OK"
+
 
     async def check_target_number(self, msg: Message) -> Optional[str]:
         """Check if arg1 is a valid number. If it isn't, let the user know and return None"""
@@ -412,6 +420,16 @@ class Bot(Signal):
 async def no_get(request: web.Request) -> web.Response:
     raise web.HTTPFound(location="https://signal.org/")
 
+async def pong_handler(request: web.Request) -> web.Response:
+    pong = request.match_info.get("pong")
+    session = request.app.get("bot")
+    if not session:
+        return web.Response(status=504, text="Sorry, no live workers.")
+    pong = session.pongs.pop(pong, "")
+    if pong == "":
+        return web.Response(status=404, text="Sorry, can't find that key.")
+    return web.text_response(pong)
+
 
 async def send_message_handler(request: web.Request) -> web.Response:
     """Allow webhooks to send messages to users.
@@ -433,6 +451,7 @@ app = web.Application()
 app.add_routes(
     [
         web.get("/", no_get),
+        web.get("/pongs/{pong}", pong_handler),
         web.post("/user/{phonenumber}", send_message_handler),
     ]
 )
