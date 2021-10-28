@@ -1,14 +1,14 @@
 Requires python3.9
 
-## Bootstrapping Forestbot 
+## Bootstrapping Forestbot
 
 Use pipenv install to install deps. Install notes for Ubuntu Hirsuite in INSTALL.md
 
-you'll need to grab [https://github.com/forestcontact/signal-cli], check out the stdio-generalized `./gradlew installDist`, and add a symlink from signal-cli/build/install/signal-cli/bin/signal-cli to the working directory. `default-jre` should work for signal-cli. 
+you'll need to grab [https://github.com/forestcontact/signal-cli], check out the stdio-generalized `./gradlew installDist`, and add a symlink from signal-cli/build/install/signal-cli/bin/signal-cli to the working directory. `default-jre` should work for signal-cli.
 
 you also need to register an account -- you can use https://github.com/forestcontact/go_ham/blob/main/register.py or https://github.com/forestcontact/message-in-a-bottle as a starting point. you can also grab one from the DB if you have access to secrets.
 
-you can use `python3.9 -m forest.datastore upload --number` or `python3.9 -m forest.datastore sync --number` to mess with the DB. your secrets file should be named {prod,staging,dev}_secrets. 
+you can use `python3.9 -m forest.datastore upload --number` or `python3.9 -m forest.datastore sync --number` to mess with the DB. your secrets file should be named {prod,staging,dev}_secrets.
 
 you can use `ENV=prod python3.9 -m forest.datastore` to select said file accordingly. <- deprecated? "ENV=x" alone in the pipenv seems to do the right thing.
 
@@ -17,6 +17,12 @@ you can use `ENV=prod python3.9 -m forest.datastore` to select said file accordi
 You'll need your signal-cli symlinked to the forest-draft directory. `ln -s ~/signal-cli/build/install/signal-cli/bin/signal-cli .`
 
 If you have secrets, `python3.9 -m forest.datastore list_accounts` should show your available accounts. Then you can start it with an available number: `python3.9 contactbot.py +5555555555`
+
+If you have credentials locally and do not wish to have the datatore updated, the `core` forestbot can be launched with this command.
+
+> sh -c 'DEBUG=true LOGFILES= BOT_NUMBER=+12406171474 NO_MEMFS=true NO_DOWNLOAD=true $(which python3) -m forest.core'
+
+
 
 ## Running in Docker Locally
 
@@ -42,19 +48,19 @@ If things seem wrong, you can use `fly suspend`, the above to sync, use signal-c
 
 # Options and secrets
 
-- `ENV`: which {ENV}_secrets to use and optionally set as profile family name 
+- `ENV`: which {ENV}_secrets to use and optionally set as profile family name
 - `BOT_NUMBER`: signal account being used
 - `ADMIN`: primarily fallback recipient for invalid webhooks; may also be used to send error messages
 - `DATABASE_URL`: Postgres DB
 - `TELI_KEY`: token to authenticate with teli
- 
+
 ## Flags
-- `NO_DOWNLOAD`: don't download a datastore, use pwd 
+- `NO_DOWNLOAD`: don't download a datastore, use pwd
 - `NO_MEMFS`: don't autosave. if not `NO_DOWNLOAD`, also create an equivalent tmpdir at /tmp/local-signal and symlink signal-cli process and avatar
-- `MONITOR_WALLET`: monitor transactions from full-service. has bugs 
+- `MONITOR_WALLET`: monitor transactions from full-service. has bugs
 - `SIGNAL_CLI_PATH`: executable to use. useful for running graalvm tracing agent
 - `MIGRATE`: run db migrations and set teli sms webhooks
-- `LOGFILES`: create a debug.log 
+- `LOGFILES`: create a debug.log
 - `ORDER`: allow users to buy phonenumbers
 - `GROUPS`: use group routes
 
