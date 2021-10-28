@@ -1,5 +1,6 @@
 import logging
 import os
+import functools
 from asyncio.subprocess import PIPE, create_subprocess_exec
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Optional, cast
@@ -21,27 +22,28 @@ logging.addLevelName(TRACE, "TRACE")
 
 logger_class = logging.getLoggerClass()
 
-
+# doesn't work / not used
 class TraceLogger(logger_class):  # type: ignore
     def trace(self, msg: str, *args: Any, **kwargs: Any) -> None:
         self.log(TRACE, msg, *args, **kwargs)
 
 
 logging.setLoggerClass(TraceLogger)
-
-logging.basicConfig(
-    level=os.getenv("LOGLEVEL", "DEBUG"),
-    format="{levelname} {module}:{lineno}: {message}",
-    style="{",
-)
 logger = logging.getLogger()
-logging.getLogger().handlers[0].addFilter(FuckAiohttp)
+logger.setLevel("DEBUG")
+fmt = logging.Formatter("{levelname} {module}:{lineno}: {message}", style="{")
+console_handler = logging.StreamHandler()
+console_handler.setLevel(os.getenv("LOGLEVEL") or "INFO")
+console_handler.setFormatter(fmt)
+console_handler.addFilter(FuckAiohttp)
+logger.addHandler(console_handler)
 
 # edge cases:
 # accessing an unset secret loads other variables and potentially overwrites existing ones
 # "false" being truthy is annoying
 
 
+@functools.cache  # don't load the same env more than once?
 def load_secrets(env: Optional[str] = None, overwrite: bool = False) -> None:
     if not env:
         env = os.environ.get("ENV", "dev")
@@ -60,12 +62,17 @@ def load_secrets(env: Optional[str] = None, overwrite: bool = False) -> None:
         pass
 
 
+# TODO: split this into get_flag and get_secret; move all of the flags into fly.toml;
+# maybe keep all the tomls and dockerfiles in a separate dir with a deploy script passing --config and --dockerfile explicitly
 def get_secret(key: str, env: Optional[str] = None) -> str:
     try:
-        return os.environ[key]
+        secret = os.environ[key]
     except KeyError:
         load_secrets(env)
-        return os.environ.get(key) or ""  # fixme
+        secret = os.environ.get(key) or ""  # fixme
+    if secret.lower() in ("0", "false", "no"):
+        return ""
+    return secret
 
 
 HOSTNAME = open("/etc/hostname").read().strip()  #  FLY_ALLOC_ID
@@ -76,12 +83,15 @@ ROOT_DIR = (
     "." if get_secret("NO_DOWNLOAD") else "/tmp/local-signal" if LOCAL else "/app"
 )
 
-if get_secret("LOGFILES"):
+if get_secret("LOGFILES") or not LOCAL:
     tracelog = logging.FileHandler("trace.log")
     tracelog.setLevel(TRACE)
+    tracelog.setFormatter(fmt)
     logger.addHandler(tracelog)
     handler = logging.FileHandler("debug.log")
     handler.setLevel("DEBUG")
+    handler.setFormatter(fmt)
+    handler.addFilter(FuckAiohttp)
     logger.addHandler(handler)
 
 

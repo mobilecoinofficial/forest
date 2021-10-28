@@ -44,6 +44,7 @@ class Message:
         self.source: str = envelope.get("source")
         self.name: str = envelope.get("sourceName") or self.source
         self.timestamp = envelope.get("timestamp")
+        self.typing = envelope.get("typingMessage", {}).get("action")
 
         # msg data
         msg = envelope.get("dataMessage", {})
@@ -106,6 +107,7 @@ class Signal:
             await self.datastore.download()
         if utils.get_secret("PROFILE"):
             await self.set_profile()
+        write_task: Optional[asyncio.Task] = None
         while self.sigints == 0 and not self.exiting:
             command = f"{utils.ROOT_DIR}/signal-cli --config {utils.ROOT_DIR} --output=json stdio".split()
             logging.info(command)
@@ -119,7 +121,10 @@ class Signal:
             )
             assert self.proc.stdout and self.proc.stdin
             asyncio.create_task(self.handle_signalcli_raw_output(self.proc.stdout))
-            asyncio.create_task(self.write_commands(self.proc.stdin))
+            # prevent the previous signal-cli's write task from stealing commands from the input queue
+            if write_task:
+                write_task.cancel()
+            write_task = asyncio.create_task(self.write_commands(self.proc.stdin))
             returncode = await self.proc.wait()
             logging.warning("signal-cli exited: %s", returncode)
             if returncode == 0:
@@ -211,7 +216,6 @@ class Signal:
             message = await self.signalcli_output_queue.get()
             yield message
 
-
     # Next, we see how the input queue is populated and consumed.
 
     async def set_profile(self) -> None:
@@ -230,7 +234,7 @@ class Signal:
         self,
         recipient: Optional[str],
         msg: Response,
-        group: Optional[str] = None, # maybe combine this with recipient?
+        group: Optional[str] = None,  # maybe combine this with recipient?
         endsession: bool = False,
         attachments: Optional[list[str]] = None,
     ) -> None:
@@ -263,7 +267,7 @@ class Signal:
         await self.signalcli_input_queue.put(json_command)
         return
 
-    async def respond(self, target_msg: Message, msg: Union[str, list, dict]) -> None:
+    async def respond(self, target_msg: Message, msg: Response) -> None:
         """Respond to a message depending on whether it's a DM or group"""
         if target_msg.group:
             await self.send_message(None, msg, group=target_msg.group)
@@ -295,6 +299,8 @@ class Signal:
         """Encode and write pending signal-cli commands"""
         async for msg in self.signalcli_input_iter():
             logging.info("input to signal: %s", msg)
+            if pipe.is_closing():
+                logging.error("signal-cli stdin pipe is closed")
             pipe.write(json.dumps(msg).encode() + b"\n")
 
 
@@ -335,10 +341,16 @@ class Bot(Signal):
             return f"Sorry! Command {message.command} not recognized!" + suggest_help
         if message.text == "TERMINATE":
             return "signal session reset"
-        if message.text and not message.group:
-            return "That didn't look like a valid command"
         if message.payment:
-            return await self.handle_payment(message)
+            asyncio.create_task(self.handle_payment(message))
+            return None
+        return await self.default(message)
+
+    async def default(self, message: Message) -> Response:
+        resp = "That didn't look like a valid command"
+        # if it messages an echoserver, don't get in a loop
+        if message.text and not (message.group or message.text == resp):
+            return resp
         return None
 
     async def do_help(self, message: Message) -> str:
@@ -383,17 +395,21 @@ class Bot(Signal):
             )
             return None
 
-    async def handle_payment(self, message: Message) -> str:
-        """Decode the receipt, then update balances"""
+    async def handle_payment(self, message: Message) -> None:
+        """Decode the receipt, then update balances.
+        Blocks on transaction completion, run concurrently"""
         logging.info(message.payment)
         amount_pmob = await self.mobster.get_receipt_amount_pmob(
             message.payment["receipt"]
         )
         if amount_pmob is None:
-            return "That looked like a payment, but we couldn't parse it"
+            await self.respond(
+                message, "That looked like a payment, but we couldn't parse it"
+            )
+            return
         amount_mob = mc_util.pmob2mob(amount_pmob)
         amount_usd_cents = round(amount_mob * await self.mobster.get_rate() * 100)
-        self.mobster.ledger_manager.put_mob_tx(
+        await self.mobster.ledger_manager.put_pmob_tx(
             message.source,
             amount_usd_cents,
             amount_pmob,
@@ -401,9 +417,9 @@ class Bot(Signal):
         )
         await self.respond(
             message,
-            f"Thank you for sending {amount_mob} MOB ({amount_usd_cents/100} USD)",
+            f"Thank you for sending {float(amount_mob)} MOB ({amount_usd_cents/100} USD)",
         )
-        return await self.payment_response(message)
+        await self.respond(message, await self.payment_response(message))
 
     async def payment_response(self, _: Message) -> Response:
         return "This bot doesn't have a response for payments."
