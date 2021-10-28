@@ -43,7 +43,7 @@ status = "aws ec2 describe-instances --region us-east-1| jq -r '..|.State?|.Name
 start = "aws ec2 start-instances --region us-east-1 --instance-ids {}"
 stop = "aws ec2 stop-instances --region us-east-1 --instance-ids {}"
 get_ip = "aws ec2 describe-instances --region us-east-1|jq -r .Reservations[].Instances[].PublicIpAddress"
-#start_worker = "ssh -i id_rsa -o ConnectTimeout=2 ubuntu@{} ~/ml/read_redis.py {}"
+# start_worker = "ssh -i id_rsa -o ConnectTimeout=2 ubuntu@{} ~/ml/read_redis.py {}"
 
 
 get_cost = (
