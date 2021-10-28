@@ -120,7 +120,7 @@ class Imogen(Bot):
         state = await get_output(status)
         logging.info("worker state: %s", state)
         # await self.mobster.put_usd_tx(msg.sender, self.image_rate_cents, msg.text[:32])
-        if state == "stopped":
+        if state in ("stopped", "stopping"):
             # if not, turn it on
             logging.info(await get_output(start.format(self.worker_instance_id)))
             # asyncio.create_task(really_start_worker())
@@ -165,7 +165,8 @@ async def admin_handler(request: web.Request) -> web.Response:
     bot = request.app.get("bot")
     if not bot:
         return web.Response(status=504, text="Sorry, no live workers.")
-    await bot.send_message(utils.get_secret("ADMIN"), request.query.get("message"))
+    msg = urllib.parse.unquote(request.query.get("message"))
+    await bot.send_message(utils.get_secret("ADMIN"), msg)
     return web.Response(text="OK")
 
 
