@@ -301,7 +301,6 @@ class Signal:
             logging.info("input to signal: %s", msg)
             if pipe.is_closing():
                 logging.error("signal-cli stdin pipe is closed")
-                # maybe self.proc.kill()
             pipe.write(json.dumps(msg).encode() + b"\n")
 
 

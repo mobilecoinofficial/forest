@@ -94,6 +94,7 @@ class SignalDatastore:
         logging.info("SignalDatastore number is %s", self.number)
         self.filepath = "data/" + number
         # await self.account_interface.create_table()
+        setup_tmpdir() # shouldn't do anything if not running locally
 
     def is_registered_locally(self) -> bool:
         try:
@@ -343,9 +344,7 @@ async def set_note(ns: argparse.Namespace) -> None:
 
 @subcommand([argument("--number")])
 async def sync(ns: argparse.Namespace) -> None:
-    setup_tmpdir()
-    # asyncio.create_task(start_memfs(app))  # ???
-    # await start_memfs_monitor(app)
+    # maybe worth running autosave after all?
     try:
         datastore = SignalDatastore(ns.number)
         await datastore.download()
