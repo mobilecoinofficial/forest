@@ -106,6 +106,7 @@ class Signal:
             await self.datastore.download()
         if utils.get_secret("PROFILE"):
             await self.set_profile()
+        write_task: Optional[asyncio.Task] = None
         while self.sigints == 0 and not self.exiting:
             command = f"{utils.ROOT_DIR}/signal-cli --config {utils.ROOT_DIR} --output=json stdio".split()
             logging.info(command)
@@ -119,7 +120,10 @@ class Signal:
             )
             assert self.proc.stdout and self.proc.stdin
             asyncio.create_task(self.handle_signalcli_raw_output(self.proc.stdout))
-            asyncio.create_task(self.write_commands(self.proc.stdin))
+            # prevent the previous signal-cli's write task from stealing commands from the input queue
+            if write_task:
+                write_task.cancel()
+            write_task = asyncio.create_task(self.write_commands(self.proc.stdin))
             returncode = await self.proc.wait()
             logging.warning("signal-cli exited: %s", returncode)
             if returncode == 0:
