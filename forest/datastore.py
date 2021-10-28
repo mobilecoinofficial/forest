@@ -233,7 +233,10 @@ def setup_tmpdir() -> None:
         os.symlink(sigcli_path, utils.ROOT_DIR + "/signal-cli")
     except FileExistsError:
         logging.info("signal-cli's already there")
-    os.symlink(Path("avatar.png").absolute(), utils.ROOT_DIR + "/avatar.png")
+    try:
+        os.symlink(Path("avatar.png").absolute(), utils.ROOT_DIR + "/avatar.png")
+    except FileExistsError:
+        pass
     logging.info("chdir to %s", utils.ROOT_DIR)
     os.chdir(utils.ROOT_DIR)
     logging.info("not starting memfs because running locally")
