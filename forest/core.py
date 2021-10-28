@@ -109,7 +109,7 @@ class Signal:
             await self.set_profile()
         write_task: Optional[asyncio.Task] = None
         while self.sigints == 0 and not self.exiting:
-            command = f"{utils.ROOT_DIR}/signal-cli --config {utils.ROOT_DIR} --output=json stdio".split()
+            command = f"{utils.ROOT_DIR}/signal-cli --config {utils.ROOT_DIR} --output=json --user {self.bot_number} stdio".split()
             logging.info(command)
             self.proc = await asyncio.create_subprocess_exec(
                 *command, stdin=PIPE, stdout=PIPE
@@ -314,6 +314,7 @@ class Bot(Signal):
         """Creates AND STARTS a bot that routes commands to do_x handlers"""
         self.client_session = aiohttp.ClientSession()
         self.mobster = payments_monitor.Mobster()
+        self.pongs = {}
         super().__init__(*args)
         asyncio.create_task(self.start_process())
         asyncio.create_task(self.handle_messages())
@@ -373,10 +374,18 @@ class Bot(Signal):
         return fact.strip()
 
     async def do_ping(self, message: Message) -> str:
-        """pong"""
+        """returns to /ping with /pong"""
         if message.text:
-            return f"pong {message.text}"
-        return "pong"
+            return f"/pong {message.text}"
+        return "/pong"
+
+
+    async def do_pong(self, message: Message) -> str:
+        if message.text:
+            self.pongs[message.text] = message.text
+            return f"OK, stashing {message.text}"
+        return "OK"
+
 
     async def check_target_number(self, msg: Message) -> Optional[str]:
         """Check if arg1 is a valid number. If it isn't, let the user know and return None"""
@@ -428,6 +437,16 @@ class Bot(Signal):
 async def no_get(request: web.Request) -> web.Response:
     raise web.HTTPFound(location="https://signal.org/")
 
+async def pong_handler(request: web.Request) -> web.Response:
+    pong = request.match_info.get("pong")
+    session = request.app.get("bot")
+    if not session:
+        return web.Response(status=504, text="Sorry, no live workers.")
+    pong = session.pongs.pop(pong, "")
+    if pong == "":
+        return web.Response(status=404, text="Sorry, can't find that key.")
+    return web.Response(status=200, text=pong)
+
 
 async def send_message_handler(request: web.Request) -> web.Response:
     """Allow webhooks to send messages to users.
@@ -449,6 +468,7 @@ app = web.Application()
 app.add_routes(
     [
         web.get("/", no_get),
+        web.get("/pongs/{pong}", pong_handler),
         web.post("/user/{phonenumber}", send_message_handler),
     ]
 )
