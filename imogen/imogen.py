@@ -178,7 +178,7 @@ async def store_image_handler(request: web.Request) -> web.Response:
     async for field in reader:
         logging.info(field)
         logging.info("multipart field name: %s", field.name)
-        filename = field.filename or f"attachment-{time.time()}"
+        filename = field.filename or f"attachment-{time.time()}.jpg"
         # You cannot rely on Content-Length if transfer is chunked.
         size = 0
         path = Path(filename).absolute()
