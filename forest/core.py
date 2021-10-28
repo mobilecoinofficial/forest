@@ -103,7 +103,7 @@ class Signal:
         loop = asyncio.get_running_loop()
         loop.add_signal_handler(signal.SIGINT, self.sync_signal_handler)
         logging.debug("added signal handler, downloading...")
-        if not utils.get_secret("NO_DOWNLOAD"):
+        if utils.DOWNLOAD:
             await self.datastore.download()
         if utils.get_secret("PROFILE"):
             await self.set_profile()
@@ -150,16 +150,19 @@ class Signal:
     async def async_shutdown(self, *_: Any, wait: bool = False) -> None:
         """Upload our datastore, close postgres connections pools, kill signal-cli, exit"""
         logging.info("starting async_shutdown")
-        await self.datastore.upload()
+        # if we're downloading, then we upload too
+        if utils.UPLOAD:
+            await self.datastore.upload()
         if self.proc:
             try:
                 self.proc.kill()
-                if wait:
+                if wait and utils.UPLOAD:
                     await self.proc.wait()
                     await self.datastore.upload()
             except ProcessLookupError:
                 logging.info("no signal-cli process")
-        await self.datastore.mark_freed()
+        if utils.UPLOAD:
+            await self.datastore.mark_freed()
         await pghelp.close_pools()
         # this still deadlocks. see https://github.com/forestcontact/forest-draft/issues/10
         if autosave._memfs_process:
@@ -203,7 +206,7 @@ class Signal:
                 logging.error(termcolor.colored(blob["error"], "red"))
             return
         msg = Message(blob)
-        if msg.full_text:  # and utils.get_secret("I_AM_NOT_A_FEDERAL_AGENT"):
+        if msg.full_text:
             logging.info("signal: %s", line)
         await self.signalcli_output_queue.put(msg)
         return
@@ -473,7 +476,7 @@ app.add_routes(
     ]
 )
 
-if not utils.get_secret("NO_MEMFS"):
+if utils.MEMFS:
     app.on_startup.append(autosave.start_memfs)
     app.on_startup.append(autosave.start_memfs_monitor)
 
