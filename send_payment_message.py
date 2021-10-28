@@ -21,24 +21,22 @@ async def get_output(cmd: str) -> str:
 
 
 class AuthorizedPayer(Bot):
-    # idea from scala's cats-effect MVar
-    pending_requests: dict[str, asyncio.Queue[Message]] = defaultdict(
-        lambda: asyncio.Queue(maxsize=1)
-    )
+    pending_requests: dict[str, asyncio.Future[Message]] = {}
 
     async def handle_message(self, msg: Message) -> Response:
-        # if it's not a generic receive message or such, put it in a queue
-        if msg.id not in (0, 1):
-            await self.pending_requests[msg.id].put(msg)
+        if msg.id in self.pending_requests:
+            await self.pending_requests[msg.id].set_result(msg)
             return None
         return await super().handle_message(msg)
 
     async def wait_resp(self, cmd: dict) -> dict:
         stamp = str(round(time.time()))
         cmd["id"] = stamp
+        self.pending_requests[stamp] = asyncio.Future()
         self.signalcli_input_queue.put(cmd)
-        # when the response is received, it'll be in a queue under this key
-        return await self.pending_requests[stamp].get()
+        result = await self.pending_requests[stamp]
+        self.pending_requests.pop(stamp)
+        return result
 
     async def auxin_req(self, method: str, **params: Any) -> dict:
         q = {"jsonrpc": "2.0", "method": method, "params": params}
