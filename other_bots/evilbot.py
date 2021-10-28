@@ -3,7 +3,7 @@ from aiohttp import web
 from forest.core import Bot, Message, Response, app
 
 
-class InsecureBot(Bot):
+class EvilBot(Bot):
     async def send_typing(self, recipient: str, stop: bool = False) -> None:
         typing_cmd = {
             "command": "sendTyping",
@@ -31,6 +31,6 @@ if __name__ == "__main__":
 
     @app.on_startup.append
     async def start_wrapper(out_app: web.Application) -> None:
-        out_app["bot"] = InsecureBot()
+        out_app["bot"] = EvilBot()
 
     web.run_app(app, port=8080, host="0.0.0.0")
