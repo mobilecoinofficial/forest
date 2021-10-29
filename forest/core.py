@@ -103,13 +103,13 @@ class Signal:
         loop = asyncio.get_running_loop()
         loop.add_signal_handler(signal.SIGINT, self.sync_signal_handler)
         logging.debug("added signal handler, downloading...")
-        if not utils.get_secret("NO_DOWNLOAD"):
+        if utils.DOWNLOAD:
             await self.datastore.download()
         if utils.get_secret("PROFILE"):
             await self.set_profile()
         write_task: Optional[asyncio.Task] = None
         while self.sigints == 0 and not self.exiting:
-            command = f"{utils.ROOT_DIR}/signal-cli --config {utils.ROOT_DIR} --output=json stdio".split()
+            command = f"{utils.ROOT_DIR}/signal-cli --config {utils.ROOT_DIR} --output=json --user {self.bot_number} stdio".split()
             logging.info(command)
             self.proc = await asyncio.create_subprocess_exec(
                 *command, stdin=PIPE, stdout=PIPE
@@ -150,16 +150,19 @@ class Signal:
     async def async_shutdown(self, *_: Any, wait: bool = False) -> None:
         """Upload our datastore, close postgres connections pools, kill signal-cli, exit"""
         logging.info("starting async_shutdown")
-        await self.datastore.upload()
+        # if we're downloading, then we upload too
+        if utils.UPLOAD:
+            await self.datastore.upload()
         if self.proc:
             try:
                 self.proc.kill()
-                if wait:
+                if wait and utils.UPLOAD:
                     await self.proc.wait()
                     await self.datastore.upload()
             except ProcessLookupError:
                 logging.info("no signal-cli process")
-        await self.datastore.mark_freed()
+        if utils.UPLOAD:
+            await self.datastore.mark_freed()
         await pghelp.close_pools()
         # this still deadlocks. see https://github.com/forestcontact/forest-draft/issues/10
         if autosave._memfs_process:
@@ -203,7 +206,7 @@ class Signal:
                 logging.error(termcolor.colored(blob["error"], "red"))
             return
         msg = Message(blob)
-        if msg.full_text:  # and utils.get_secret("I_AM_NOT_A_FEDERAL_AGENT"):
+        if msg.full_text:
             logging.info("signal: %s", line)
         await self.signalcli_output_queue.put(msg)
         return
@@ -301,7 +304,6 @@ class Signal:
             logging.info("input to signal: %s", msg)
             if pipe.is_closing():
                 logging.error("signal-cli stdin pipe is closed")
-                # maybe self.proc.kill()
             pipe.write(json.dumps(msg).encode() + b"\n")
 
 
@@ -315,6 +317,7 @@ class Bot(Signal):
         """Creates AND STARTS a bot that routes commands to do_x handlers"""
         self.client_session = aiohttp.ClientSession()
         self.mobster = payments_monitor.Mobster()
+        self.pongs = {}
         super().__init__(*args)
         asyncio.create_task(self.start_process())
         asyncio.create_task(self.handle_messages())
@@ -374,10 +377,18 @@ class Bot(Signal):
         return fact.strip()
 
     async def do_ping(self, message: Message) -> str:
-        """pong"""
+        """returns to /ping with /pong"""
         if message.text:
-            return f"pong {message.text}"
-        return "pong"
+            return f"/pong {message.text}"
+        return "/pong"
+
+
+    async def do_pong(self, message: Message) -> str:
+        if message.text:
+            self.pongs[message.text] = message.text
+            return f"OK, stashing {message.text}"
+        return "OK"
+
 
     async def check_target_number(self, msg: Message) -> Optional[str]:
         """Check if arg1 is a valid number. If it isn't, let the user know and return None"""
@@ -429,6 +440,16 @@ class Bot(Signal):
 async def no_get(request: web.Request) -> web.Response:
     raise web.HTTPFound(location="https://signal.org/")
 
+async def pong_handler(request: web.Request) -> web.Response:
+    pong = request.match_info.get("pong")
+    session = request.app.get("bot")
+    if not session:
+        return web.Response(status=504, text="Sorry, no live workers.")
+    pong = session.pongs.pop(pong, "")
+    if pong == "":
+        return web.Response(status=404, text="Sorry, can't find that key.")
+    return web.Response(status=200, text=pong)
+
 
 async def send_message_handler(request: web.Request) -> web.Response:
     """Allow webhooks to send messages to users.
@@ -450,11 +471,12 @@ app = web.Application()
 app.add_routes(
     [
         web.get("/", no_get),
+        web.get("/pongs/{pong}", pong_handler),
         web.post("/user/{phonenumber}", send_message_handler),
     ]
 )
 
-if not utils.get_secret("NO_MEMFS"):
+if utils.MEMFS:
     app.on_startup.append(autosave.start_memfs)
     app.on_startup.append(autosave.start_memfs_monitor)
 
