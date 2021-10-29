@@ -3,7 +3,6 @@ import base64
 import json
 import time
 from typing import Any
-from collections import defaultdict
 
 import mc_util  # actually needs printable_pb2
 import mobilecoin
