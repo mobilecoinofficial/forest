@@ -93,4 +93,3 @@ async def start_memfs_monitor(app: web.Application) -> None:
                     await maybe_session.datastore.upload()
 
     app["mem_task"] = asyncio.create_task(upload_after_signalcli_writes())
-
