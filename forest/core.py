@@ -17,6 +17,7 @@ import aiohttp
 import phonenumbers as pn
 import termcolor
 from aiohttp import web
+import phonenumbers as pn
 from phonenumbers import NumberParseException
 
 # framework
@@ -29,7 +30,6 @@ from forest import payments_monitor
 
 JSON = dict[str, Any]
 Response = Union[str, list, dict[str, str], None]
-
 
 class Message:
     """Represents a Message received from signal-cli, optionally
@@ -81,7 +81,7 @@ class Signal:
     def __init__(self, bot_number: Optional[str] = None) -> None:
         if not bot_number:
             try:
-                bot_number = utils.signal_format(sys.argv[1])
+                bot_number = signal_format(sys.argv[1])
                 assert bot_number is not None
             except IndexError:
                 bot_number = utils.get_secret("BOT_NUMBER")
@@ -262,7 +262,7 @@ class Signal:
             json_command["group"] = group
         elif recipient:
             try:
-                assert recipient == utils.signal_format(recipient)
+                assert recipient == signal_format(recipient)
             except (AssertionError, NumberParseException) as e:
                 logging.error(e)
                 return
@@ -306,6 +306,12 @@ class Signal:
                 logging.error("signal-cli stdin pipe is closed")
             pipe.write(json.dumps(msg).encode() + b"\n")
 
+
+def signal_format(raw_number: str) -> Optional[str]:
+    try:
+        return pn.format_number(pn.parse(raw_number, "US"), pn.PhoneNumberFormat.E164)
+    except NumberParseException:
+        return None
 
 class Bot(Signal):
     """Handles messages and command dispatch, as well as basic commands.

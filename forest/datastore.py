@@ -12,6 +12,8 @@ from pathlib import Path
 from tarfile import TarFile
 from typing import Any, Callable, Optional, cast
 
+import phonenumbers as pn
+from phonenumbers import NumberParseException
 
 try:
     # normally in a package
@@ -35,6 +37,12 @@ else:
 
 class DatastoreError(Exception):
     pass
+
+def signal_format(raw_number: str) -> Optional[str]:
+    try:
+        return pn.format_number(pn.parse(raw_number, "US"), pn.PhoneNumberFormat.E164)
+    except NumberParseException:
+        return None
 
 
 AccountPGExpressions = pghelp.PGExpressions(
@@ -86,7 +94,7 @@ class SignalDatastore:
 
     def __init__(self, number: str):
         self.account_interface = get_account_interface()
-        formatted_number = utils.signal_format(number)
+        formatted_number = signal_format(number)
         if isinstance(formatted_number, str):
             self.number: str = formatted_number
         else:

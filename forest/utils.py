@@ -4,8 +4,6 @@ import functools
 from asyncio.subprocess import PIPE, create_subprocess_exec
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Optional, cast
-import phonenumbers as pn
-from phonenumbers import NumberParseException
 
 
 def FuckAiohttp(record: logging.LogRecord) -> bool:
@@ -96,13 +94,6 @@ if get_secret("LOGFILES") or not LOCAL:
     handler.setFormatter(fmt)
     handler.addFilter(FuckAiohttp)
     logger.addHandler(handler)
-
-
-def signal_format(raw_number: str) -> Optional[str]:
-    try:
-        return pn.format_number(pn.parse(raw_number, "US"), pn.PhoneNumberFormat.E164)
-    except NumberParseException:
-        return None
 
 
 @asynccontextmanager

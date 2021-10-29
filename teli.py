@@ -9,7 +9,29 @@ import aiohttp
 import phonenumbers as pn
 from aiohttp import web
 
-from forest.utils import get_secret, get_url
+from forest.utils import get_secret
+
+from asyncio.subprocess import PIPE, create_subprocess_exec
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def get_url(port: int = 8080) -> AsyncIterator[str]:
+    if not APP_NAME:
+        try:
+            logging.info("starting tunnel")
+            tunnel = await create_subprocess_exec(
+                *(f"lt -p {port}".split()),
+                stdout=PIPE,
+            )
+            assert tunnel.stdout
+            line = await tunnel.stdout.readline()
+            url = line.decode().lstrip("your url is: ").strip()
+            yield url + "/inbound"
+        finally:
+            logging.info("terminaitng tunnel")
+            tunnel.terminate()
+    else:
+        yield APP_NAME + ".fly.io"
 
 
 def teli_format(raw_number: str) -> str:

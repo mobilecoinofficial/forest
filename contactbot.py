@@ -273,7 +273,7 @@ class Forest(Bot):
             return "Sorry, this command is only for admins"
         teli_num, signal_num = msg.text.split(" ")
         _id = teli.teli_format(teli_num)
-        destination = utils.signal_format(signal_num)
+        destination = core.signal_format(signal_num)
         if not (_id and destination):
             return "that doesn't look like valid numbers"
         return await self.routing_manager.execute(
@@ -307,7 +307,7 @@ class Forest(Bot):
             if not utils.LOCAL:
                 await self.teli.set_sms_url(row.get("id"), utils.URL + "/inbound")
             if (dest := row.get("destination")) :
-                new_dest = utils.signal_format(dest)
+                new_dest = core.signal_format(dest)
                 await self.routing_manager.set_destination(row.get("id"), new_dest)
         await self.datastore.account_interface.migrate()
         await group_routing_manager.execute("DROP TABLE IF EXISTS group_routing")

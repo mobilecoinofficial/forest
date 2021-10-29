@@ -193,7 +193,7 @@ async def store_image_handler(request: web.Request) -> web.Response:
                 f.write(chunk)
     message = urllib.parse.unquote(request.query.get("message", ""))
     destination = urllib.parse.unquote(request.query.get("destination", ""))
-    recipient = utils.signal_format(str(destination))
+    recipient = core.signal_format(str(destination))
     if destination and not recipient:
         try:
             group = base58.b58decode(destination).decode()
