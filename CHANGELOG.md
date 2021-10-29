@@ -2,7 +2,22 @@ TODO:
 - use jsonRpc (requires graal payments against mainline)
 - migrate the forest module into your-signal-bot or something like it
 
-## 0.5.2
+## 0.5.3
+
+- make_rule command for contactbot (needs to be admin-only)
+- more example bots: evilbot (starts and stops typing when you do), "almost as secure as ssh"
+- typing field on messages
+- allow overwriting default response
+- retry receipt decoding if the transaction is pending
+- fix a bug where commands wouldn't be sent after signal-cli was restarted
+- fix payment bugs
+- allow different full-service urls
+- get_balance
+- get_secret treats "0", "false", "no" as falsey; doesn't reload the same secrets file
+- fix logging to files
+- imogen: urldecode destinations and messages, b58encode groupIds, dump_queue (needs to actually send what was dumped)
+
+## 0.5.2 
 
 - autosave.py is a separate file. datastore can be invoked directly again. tmpdir setup moved to a different function from start_memfs
 - example dockerfile that only downloads a datastore and does nothing else that could theoretically be included in other stuff
