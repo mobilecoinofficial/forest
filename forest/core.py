@@ -237,33 +237,68 @@ class Signal:
         group: Optional[str] = None,  # maybe combine this with recipient?
         endsession: bool = False,
         attachments: Optional[list[str]] = None,
+        content: str = None
     ) -> None:
-        """Builds send command with specified recipient and msg, writes to signal-cli.
-        Prettyprints dict msgs, sends multiple messages for lists. Also does groups,
-        attachments, and endsession"""
+ 
+        """
+        Builds send command for the specified recipient in jsonrpc format and 
+        writes to the built command to the underlying signal engine. Supports
+        multiple messages.
+
+        Parameters
+        -----------
+        recipient `Optional[str]`:
+            phone number of recepient (if individual user)
+        msg `Response`:
+            text message to recipient
+        group 'Optional[str]':
+            group to send message to if specified
+        endsession `bool`:
+            if specified as True, will reset session key
+        attachments 'Optional[list[str]]`
+            list of media attachments to upload
+        content `str`:
+            json string specifying payment data
+        """
+
+        #Consider inferring desination 
+        if all(recipient, group) or not any(recipient, group):
+            raise ValueError("either a group or individual recipient \
+            must be specified, cannot specify both")
+
         if isinstance(msg, list):
             for m in msg:
                 await self.send_message(recipient, m)
             return
         if isinstance(msg, dict):
             msg = "\n".join((f"{key}:\t{value}" for key, value in msg.items()))
-        json_command: JSON = {
-            "command": "send",
-            "message": msg,
-        }
+        
+        message = {}        
+        message["msg"] = msg
         if endsession:
-            json_command["endsession"] = True
+            message["end_session"] = True
         if attachments:
-            json_command["attachment"] = attachments
+            message["attachments"] = attachments
+        if content:
+            message["content"] = content
         if group:
-            json_command["group"] = group
+            message["group"] = group
         elif recipient:
             try:
                 assert recipient == utils.signal_format(recipient)
             except (AssertionError, NumberParseException) as e:
                 logging.error(e)
                 return
-            json_command["recipient"] = [str(recipient)]
+        message["destination"] = [str(recipient)]
+
+
+        json_command: JSON = {
+            "jsonrpc":"2.0",
+            "id": "rand",
+            "command": "send",
+            "parameters": message
+        }
+        
         await self.signalcli_input_queue.put(json_command)
         return
 
