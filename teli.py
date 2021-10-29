@@ -14,6 +14,7 @@ from forest.utils import get_secret
 from asyncio.subprocess import PIPE, create_subprocess_exec
 from contextlib import asynccontextmanager
 
+
 @asynccontextmanager
 async def get_url(port: int = 8080) -> AsyncIterator[str]:
     if not APP_NAME:
