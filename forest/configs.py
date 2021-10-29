@@ -5,6 +5,7 @@ from asyncio.subprocess import PIPE, create_subprocess_exec
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Optional, cast
 
+#### Configure Logging
 
 def MuteAiohttpNoise(record: logging.LogRecord) -> bool:
     str_msg = str(getattr(record, "msg", ""))
@@ -14,10 +15,6 @@ def MuteAiohttpNoise(record: logging.LogRecord) -> bool:
         return False
     return True
 
-
-TRACE = logging.DEBUG - 10
-logging.addLevelName(TRACE, "TRACE")
-
 logger = logging.getLogger()
 logger.setLevel("DEBUG")
 fmt = logging.Formatter("{levelname} {module}:{lineno}: {message}", style="{")
@@ -26,6 +23,8 @@ console_handler.setLevel(os.getenv("LOGLEVEL") or "INFO")
 console_handler.setFormatter(fmt)
 console_handler.addFilter(MuteAiohttpNoise)
 logger.addHandler(console_handler)
+
+#### Configure Parameters
 
 # edge cases:
 # accessing an unset secret loads other variables and potentially overwrites existing ones
@@ -64,6 +63,8 @@ def get_secret(key: str, env: Optional[str] = None) -> str:
     return secret
 
 
+#### Parameters for easy access and ergonomic use.
+
 HOSTNAME = open("/etc/hostname").read().strip()  #  FLY_ALLOC_ID
 APP_NAME = os.getenv("FLY_APP_NAME")
 URL = f"https://{APP_NAME}.fly.dev"
@@ -75,11 +76,9 @@ ROOT_DIR = (
 UPLOAD = DOWNLOAD = not get_secret("NO_DOWNLOAD")
 MEMFS = not get_secret("NO_MEMFS")
 
+#### Configure Logging to File
+
 if get_secret("LOGFILES") or not LOCAL:
-    tracelog = logging.FileHandler("trace.log")
-    tracelog.setLevel(TRACE)
-    tracelog.setFormatter(fmt)
-    logger.addHandler(tracelog)
     handler = logging.FileHandler("debug.log")
     handler.setLevel("DEBUG")
     handler.setFormatter(fmt)

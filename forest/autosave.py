@@ -8,7 +8,7 @@ from typing import Any
 import aioprocessing
 from aiohttp import web
 
-from forest import fuse, mem, utils
+from forest import fuse, mem, configs
 
 _memfs_process = None
 
@@ -46,7 +46,7 @@ async def start_memfs(app: web.Application) -> None:
         )
         backend = mem.Memory(logqueue=mem_queue)  # type: ignore
         logging.info("initing FUSE")
-        return fuse.FUSE(operations=backend, mountpoint=utils.ROOT_DIR + "/data")  # type: ignore
+        return fuse.FUSE(operations=backend, mountpoint=configs.ROOT_DIR + "/data")  # type: ignore
 
     async def launch() -> None:
         logging.info("about to launch memfs with aioprocessing")
@@ -79,7 +79,7 @@ async def start_memfs_monitor(app: web.Application) -> None:
             # iff fsync triggered by signal-cli
             if (
                 queue_item[0:2] == ["->", "fsync"]
-                and queue_item[5][0] == utils.ROOT_DIR + "/signal-cli"
+                and queue_item[5][0] == configs.ROOT_DIR + "/signal-cli"
             ):
                 # /+14703226669
                 # file_to_sync = queue_item[2]

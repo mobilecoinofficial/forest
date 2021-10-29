@@ -24,7 +24,7 @@ from phonenumbers import NumberParseException
 from forest import datastore
 from forest import autosave
 from forest import pghelp
-from forest import utils
+from forest import configs
 from forest import mc_util
 from forest import payments_monitor
 
@@ -84,7 +84,7 @@ class Signal:
                 bot_number = signal_format(sys.argv[1])
                 assert bot_number is not None
             except IndexError:
-                bot_number = utils.get_secret("BOT_NUMBER")
+                bot_number = configs.get_secret("BOT_NUMBER")
         logging.debug("bot number: %s", bot_number)
         self.bot_number = bot_number
         self.datastore = datastore.SignalDatastore(bot_number)
@@ -103,13 +103,13 @@ class Signal:
         loop = asyncio.get_running_loop()
         loop.add_signal_handler(signal.SIGINT, self.sync_signal_handler)
         logging.debug("added signal handler, downloading...")
-        if utils.DOWNLOAD:
+        if configs.DOWNLOAD:
             await self.datastore.download()
-        if utils.get_secret("PROFILE"):
+        if configs.get_secret("PROFILE"):
             await self.set_profile()
         write_task: Optional[asyncio.Task] = None
         while self.sigints == 0 and not self.exiting:
-            command = f"{utils.ROOT_DIR}/signal-cli --config {utils.ROOT_DIR} --output=json --user {self.bot_number} stdio".split()
+            command = f"{configs.ROOT_DIR}/signal-cli --config {configs.ROOT_DIR} --output=json --user {self.bot_number} stdio".split()
             logging.info(command)
             self.proc = await asyncio.create_subprocess_exec(
                 *command, stdin=PIPE, stdout=PIPE
@@ -151,17 +151,17 @@ class Signal:
         """Upload our datastore, close postgres connections pools, kill signal-cli, exit"""
         logging.info("starting async_shutdown")
         # if we're downloading, then we upload too
-        if utils.UPLOAD:
+        if configs.UPLOAD:
             await self.datastore.upload()
         if self.proc:
             try:
                 self.proc.kill()
-                if wait and utils.UPLOAD:
+                if wait and configs.UPLOAD:
                     await self.proc.wait()
                     await self.datastore.upload()
             except ProcessLookupError:
                 logging.info("no signal-cli process")
-        if utils.UPLOAD:
+        if configs.UPLOAD:
             await self.datastore.mark_freed()
         await pghelp.close_pools()
         # this still deadlocks. see https://github.com/forestcontact/forest-draft/issues/10
@@ -223,10 +223,10 @@ class Signal:
 
     async def set_profile(self) -> None:
         """Set signal profile. Note that this will overwrite any mobilecoin address"""
-        env = utils.get_secret("ENV")
+        env = configs.get_secret("ENV")
         profile = {
             "command": "updateProfile",
-            "given-name": "localbot" if utils.LOCAL else "forestbot",
+            "given-name": "localbot" if configs.LOCAL else "forestbot",
             "family-name": "" if env == "prod" else env,  # maybe not?
             "avatar": "avatar.png",
         }
@@ -327,7 +327,7 @@ class Bot(Signal):
         super().__init__(*args)
         asyncio.create_task(self.start_process())
         asyncio.create_task(self.handle_messages())
-        if utils.get_secret("MONITOR_WALLET"):
+        if configs.get_secret("MONITOR_WALLET"):
             # currently spams and re-credits the same invoice each reboot
             asyncio.create_task(self.mobster.monitor_wallet())
 
@@ -482,7 +482,7 @@ app.add_routes(
     ]
 )
 
-if utils.MEMFS:
+if configs.MEMFS:
     app.on_startup.append(autosave.start_memfs)
     app.on_startup.append(autosave.start_memfs_monitor)
 

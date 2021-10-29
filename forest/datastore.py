@@ -17,19 +17,19 @@ from phonenumbers import NumberParseException
 
 try:
     # normally in a package
-    from forest import pghelp, utils
+    from forest import pghelp, configs
 except ImportError:
     # maybe we're local?
     try:
         import pghelp
-        import utils
+        import configs
     except ImportError:
         # i wasn't asking
         sys.path.append("forest")
         sys.path.append("..")
         import pghelp  # pylint: disable=ungrouped-imports
-        import utils  # pylint: disable=ungrouped-imports
-if utils.get_secret("MIGRATE"):
+        import configs  # pylint: disable=ungrouped-imports
+if configs.get_secret("MIGRATE"):
     get_datastore = "SELECT account, datastore FROM {self.table} WHERE id=$1"
 else:
     get_datastore = "SELECT datastore FROM {self.table} WHERE id=$1"
@@ -83,7 +83,7 @@ AccountPGExpressions = pghelp.PGExpressions(
 def get_account_interface() -> pghelp.PGInterface:
     return pghelp.PGInterface(
         query_strings=AccountPGExpressions,
-        database=utils.get_secret("DATABASE_URL"),
+        database=configs.get_secret("DATABASE_URL"),
     )
 
 
@@ -141,7 +141,7 @@ class SignalDatastore:
                 logging.info("time's up")
         logging.info("downloading")
         record = await self.account_interface.get_datastore(self.number)
-        if not record and utils.get_secret("MIGRATE"):
+        if not record and configs.get_secret("MIGRATE"):
             logging.warning("trying without plus")
             record = await self.account_interface.get_datastore(
                 self.number.removeprefix("+")
@@ -166,9 +166,9 @@ class SignalDatastore:
             self.filepath,
             self.filepath in fnames,
         )
-        tarball.extractall(utils.ROOT_DIR)
+        tarball.extractall(configs.ROOT_DIR)
         # open("last_downloaded_checksum", "w").write(zlib.crc32(buffer.seek(0).read()))
-        await self.account_interface.mark_account_claimed(self.number, utils.HOSTNAME)
+        await self.account_interface.mark_account_claimed(self.number, configs.HOSTNAME)
         logging.debug("marked account as claimed, asserting that this is the case")
         assert await self.is_claimed()
         return
@@ -223,25 +223,25 @@ class SignalDatastore:
 
 
 def setup_tmpdir() -> None:
-    if not utils.LOCAL:
+    if not configs.LOCAL:
         return
-    if utils.ROOT_DIR == ".":
+    if configs.ROOT_DIR == ".":
         logging.warning("not setting up tmpdir")
         return
-    if utils.ROOT_DIR == "/tmp/local-signal/":
+    if configs.ROOT_DIR == "/tmp/local-signal/":
         try:
-            shutil.rmtree(utils.ROOT_DIR)
+            shutil.rmtree(configs.ROOT_DIR)
         except (FileNotFoundError, OSError) as e:
             logging.warning("couldn't remove rootdir: %s", e)
-    (Path(utils.ROOT_DIR) / "data").mkdir(exist_ok=True)
+    (Path(configs.ROOT_DIR) / "data").mkdir(exist_ok=True)
     # assume we're running in the repo
-    sigcli = utils.get_secret("SIGNAL_CLI_PATH") or "signal-cli"
+    sigcli = configs.get_secret("SIGNAL_CLI_PATH") or "signal-cli"
     sigcli_path = Path(sigcli).absolute()
-    logging.info("symlinking %s to %s", sigcli_path, utils.ROOT_DIR)
-    os.symlink(sigcli_path, utils.ROOT_DIR + "/signal-cli")
-    os.symlink(Path("avatar.png").absolute(), utils.ROOT_DIR + "/avatar.png")
-    logging.info("chdir to %s", utils.ROOT_DIR)
-    os.chdir(utils.ROOT_DIR)
+    logging.info("symlinking %s to %s", sigcli_path, configs.ROOT_DIR)
+    os.symlink(sigcli_path, configs.ROOT_DIR + "/signal-cli")
+    os.symlink(Path("avatar.png").absolute(), configs.ROOT_DIR + "/avatar.png")
+    logging.info("chdir to %s", configs.ROOT_DIR)
+    os.chdir(configs.ROOT_DIR)
     logging.info("not starting memfs because running locally")
     return
 

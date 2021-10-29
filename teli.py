@@ -9,7 +9,7 @@ import aiohttp
 import phonenumbers as pn
 from aiohttp import web
 
-from forest.utils import get_secret
+from forest.configs import get_secret
 
 from asyncio.subprocess import PIPE, create_subprocess_exec
 from contextlib import asynccontextmanager

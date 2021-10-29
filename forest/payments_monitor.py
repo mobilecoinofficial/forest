@@ -7,10 +7,10 @@ import random
 import asyncpg
 import aiohttp
 
-from forest import mc_util, utils
+from forest import mc_util, configs
 from forest.pghelp import Loop, PGExpressions, PGInterface
 
-DATABASE_URL = utils.get_secret("DATABASE_URL")
+DATABASE_URL = configs.get_secret("DATABASE_URL")
 LedgerPGExpressions = PGExpressions(
     table="ledger",
     create_table="CREATE TABLE IF NOT EXISTS {self.table} ( \
@@ -145,7 +145,7 @@ class Mobster:
 
     async def import_account(self) -> dict:
         params = {
-            "mnemonic": utils.get_secret("MNEMONIC"),
+            "mnemonic": configs.get_secret("MNEMONIC"),
             "key_derivation_version": "2",
             "name": "falloopa",
             "next_subaddress_index": "2",

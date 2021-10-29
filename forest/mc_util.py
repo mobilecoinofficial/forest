@@ -3,7 +3,7 @@ from decimal import Decimal
 import base64
 import mobilecoin
 
-# adapted from https://github.com/mobilecoinofficial/full-service/tree/main/python-utils/mc_util
+# adapted from https://github.com/mobilecoinofficial/full-service/tree/main/python-configs/mc_util
 
 PMOB = Decimal("1e12")
 

@@ -14,5 +14,5 @@ RUN apt install -y python3.9
 RUN apt-get clean autoclean && apt-get autoremove --yes && rm -rf /var/lib/{apt,dpkg,cache,log}/
 WORKDIR /app
 COPY --from=libbuilder /app/venv/lib/python3.9/site-packages /app/
-COPY  ./datastore.py ./utils.py ./pghelp.py /app/ 
+COPY  ./datastore.py ./configs.py ./pghelp.py /app/ 
 ENTRYPOINT ["/usr/bin/python3.9", "/app/datastore.py"]

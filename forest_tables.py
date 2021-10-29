@@ -1,7 +1,7 @@
 from forest.pghelp import PGExpressions, PGInterface, Loop
-from forest import utils
+from forest import configs
 
-DATABASE_URL = utils.get_secret("DATABASE_URL")
+DATABASE_URL = configs.get_secret("DATABASE_URL")
 
 RoutingPGExpressions = PGExpressions(
     table="routing",

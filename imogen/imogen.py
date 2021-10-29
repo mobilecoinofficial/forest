@@ -12,26 +12,26 @@ import base58
 import aiohttp
 import aioredis
 from aiohttp import web
-from forest import utils
+from forest import configs
 from forest.core import Bot, Message, Response, app
 
-if not utils.LOCAL:
-    aws_cred = utils.get_secret("AWS_CREDENTIALS")
+if not configs.LOCAL:
+    aws_cred = configs.get_secret("AWS_CREDENTIALS")
     if aws_cred:
         aws_dir = Path("/root/.aws")
         aws_dir.mkdir(parents=True, exist_ok=True)
         with (aws_dir / "credentials").open("w") as creds:
-            creds.write(base64.b64decode(utils.get_secret("AWS_CREDENTIALS")).decode())
+            creds.write(base64.b64decode(configs.get_secret("AWS_CREDENTIALS")).decode())
         logging.info("wrote creds")
         with (aws_dir / "config").open("w") as config:
             config.write("[profile default]\nregion = us-east-1")
         logging.info("writing config")
     else:
         logging.info("couldn't find creds")
-    ssh_key = utils.get_secret("SSH_KEY")
+    ssh_key = configs.get_secret("SSH_KEY")
     open("id_rsa", "w").write(base64.b64decode(ssh_key).decode())
 url = (
-    utils.get_secret("FLY_REDIS_CACHE_URL")
+    configs.get_secret("FLY_REDIS_CACHE_URL")
     or "redis://:ImVqcG9uMTdqMjc2MWRncjQi8a6c817565c7926c7c7e971b4782cf96a705bb20@forest-dev.redis.fly.io:10079"
 )
 password, rest = url.lstrip("redis://:").split("@")
@@ -166,7 +166,7 @@ async def admin_handler(request: web.Request) -> web.Response:
     if not bot:
         return web.Response(status=504, text="Sorry, no live workers.")
     msg = urllib.parse.unquote(request.query.get("message"))
-    await bot.send_message(utils.get_secret("ADMIN"), msg)
+    await bot.send_message(configs.get_secret("ADMIN"), msg)
     return web.Response(text="OK")
 
 

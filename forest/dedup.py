@@ -2,14 +2,14 @@
 # if you're running this script, .execute will return lists, not Optional[list]
 import asyncio
 import forest_tables
-from forest import utils
+from forest import configs
 
-utils.load_secrets("dev")
-dev = forest_tables.RoutingManager(database=utils.get_secret("DATABASE_URL"))
-utils.load_secrets("staging")
-staging = forest_tables.RoutingManager(database=utils.get_secret("DATABASE_URL"))
-utils.load_secrets("prod")
-prod = forest_tables.RoutingManager(database=utils.get_secret("DATABASE_URL"))
+configs.load_secrets("dev")
+dev = forest_tables.RoutingManager(database=configs.get_secret("DATABASE_URL"))
+configs.load_secrets("staging")
+staging = forest_tables.RoutingManager(database=configs.get_secret("DATABASE_URL"))
+configs.load_secrets("prod")
+prod = forest_tables.RoutingManager(database=configs.get_secret("DATABASE_URL"))
 
 
 async def dedup() -> None:

@@ -4,7 +4,7 @@ from typing import Union
 from aiohttp import web
 import teli
 from forest_tables import GroupRoutingManager, PaymentsManager, RoutingManager
-from forest import utils
+from forest import configs
 from forest.core import Bot, Message, Response, app
 
 
@@ -25,7 +25,7 @@ class Forest(Bot):
             "message": message_text,
         }
         response = await self.client_session.post(
-            "https://api.teleapi.net/sms/send?token=" + utils.get_secret("TELI_KEY"),
+            "https://api.teleapi.net/sms/send?token=" + configs.get_secret("TELI_KEY"),
             data=payload,
         )
         response_json_all = await response.json()
@@ -153,7 +153,7 @@ class Forest(Bot):
         return "invited you to a group"
 
     do_query = do_mkgroup
-    if not utils.get_secret("GROUPS"):
+    if not configs.get_secret("GROUPS"):
         del do_mkgroup, do_query
 
     async def payment_response(self, message: Message) -> str:
@@ -257,7 +257,7 @@ class Forest(Bot):
                 await self.routing_manager.delete(number)
                 return f"Something went wrong: {buy_info}"
             await self.routing_manager.mark_bought(number)
-        await self.teli.set_sms_url(number, utils.URL + "/inbound")
+        await self.teli.set_sms_url(number, configs.URL + "/inbound")
         await self.routing_manager.set_destination(number, msg.source)
         if await self.routing_manager.get_destination(number):
             await self.mobster.ledger_manager.put_usd_tx(
@@ -269,7 +269,7 @@ class Forest(Bot):
     async def do_make_rule(self, msg: Message) -> Response:
         """creates or updates a routing rule.
         usage: /make_rule <teli number> <signal destination number>"""
-        if msg.source != utils.get_secret("ADMIN"):
+        if msg.source != configs.get_secret("ADMIN"):
             return "Sorry, this command is only for admins"
         teli_num, signal_num = msg.text.split(" ")
         _id = teli.teli_format(teli_num)
@@ -282,7 +282,7 @@ class Forest(Bot):
             f"set destination='{destination}', status='assigned' "
         )
 
-    if not utils.get_secret("ORDER"):
+    if not configs.get_secret("ORDER"):
         del do_order, do_pay
 
     async def start_process(self) -> None:
@@ -291,7 +291,7 @@ class Forest(Bot):
             await self.mobster.get_address()
         except IndexError:
             await self.mobster.import_account()
-        if utils.get_secret("MIGRATE"):
+        if configs.get_secret("MIGRATE"):
             await self.migrate()
         await super().start_process()
 
@@ -304,8 +304,8 @@ class Forest(Bot):
         await self.routing_manager.migrate()
         rows = await self.routing_manager.execute("SELECT id, destination FROM routing")
         for row in rows if rows else []:
-            if not utils.LOCAL:
-                await self.teli.set_sms_url(row.get("id"), utils.URL + "/inbound")
+            if not configs.LOCAL:
+                await self.teli.set_sms_url(row.get("id"), configs.URL + "/inbound")
             if (dest := row.get("destination")) :
                 new_dest = core.signal_format(dest)
                 await self.routing_manager.set_destination(row.get("id"), new_dest)
@@ -353,7 +353,7 @@ async def inbound_sms_handler(request: web.Request) -> web.Response:
         logging.info("falling back to admin")
         if not msg_data:
             msg_data["text"] = await request.text()
-        recipient = utils.get_secret("ADMIN")
+        recipient = configs.get_secret("ADMIN")
         msg_data[
             "note"
         ] = "fallback, signal destination not found for this sms destination"
