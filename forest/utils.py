@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Optional, cast
 
 
-def FuckAiohttp(record: logging.LogRecord) -> bool:
+def MuteAiohttpNoise(record: logging.LogRecord) -> bool:
     str_msg = str(getattr(record, "msg", ""))
     if "was destroyed but it is pending" in str_msg:
         return False
@@ -18,22 +18,13 @@ def FuckAiohttp(record: logging.LogRecord) -> bool:
 TRACE = logging.DEBUG - 10
 logging.addLevelName(TRACE, "TRACE")
 
-logger_class = logging.getLoggerClass()
-
-# doesn't work / not used
-class TraceLogger(logger_class):  # type: ignore
-    def trace(self, msg: str, *args: Any, **kwargs: Any) -> None:
-        self.log(TRACE, msg, *args, **kwargs)
-
-
-logging.setLoggerClass(TraceLogger)
 logger = logging.getLogger()
 logger.setLevel("DEBUG")
 fmt = logging.Formatter("{levelname} {module}:{lineno}: {message}", style="{")
 console_handler = logging.StreamHandler()
 console_handler.setLevel(os.getenv("LOGLEVEL") or "INFO")
 console_handler.setFormatter(fmt)
-console_handler.addFilter(FuckAiohttp)
+console_handler.addFilter(MuteAiohttpNoise)
 logger.addHandler(console_handler)
 
 # edge cases:
@@ -92,7 +83,7 @@ if get_secret("LOGFILES") or not LOCAL:
     handler = logging.FileHandler("debug.log")
     handler.setLevel("DEBUG")
     handler.setFormatter(fmt)
-    handler.addFilter(FuckAiohttp)
+    handler.addFilter(MuteAiohttpNoise)
     logger.addHandler(handler)
 
 
