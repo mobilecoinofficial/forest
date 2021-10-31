@@ -181,10 +181,14 @@ class Mobster:
             pmob = int(tx["result"]["txo"]["value_pmob"])
             return pmob
 
+    account_id: Optional[str] = None
+
     async def get_account(self) -> str:
-        return (await self.req({"method": "get_all_accounts"}))["result"][
-            "account_ids"
-        ][0]
+        if not isinstance(self.account_id, str):
+            self.account_id = (await self.req({"method": "get_all_accounts"}))[
+                "result"
+            ]["account_ids"][0]
+        return self.account_id
 
     async def get_balance(self) -> str:
         return (
