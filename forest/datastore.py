@@ -19,14 +19,14 @@ try:
 except ImportError:
     # maybe we're local?
     try:
-        import pghelp
-        import utils
+        import pghelp # type: ignore
+        import utils # type: ignore
     except ImportError:
         # i wasn't asking
         sys.path.append("forest")
         sys.path.append("..")
-        import pghelp  # pylint: disable=ungrouped-imports
-        import utils  # pylint: disable=ungrouped-imports
+        import pghelp  # pylint: disable=ungrouped-imports #type: ignore
+        import utils  # pylint: disable=ungrouped-imports #type: ignore
 if utils.get_secret("MIGRATE"):
     get_datastore = "SELECT account, datastore FROM {self.table} WHERE id=$1"
 else:
@@ -227,13 +227,13 @@ def setup_tmpdir() -> None:
             logging.warning("couldn't remove rootdir: %s", e)
     (Path(utils.ROOT_DIR) / "data").mkdir(exist_ok=True, parents=True)
     # assume we're running in the repo
-    sigcli = utils.get_secret("SIGNAL_CLI_PATH") or "signal-cli"
+    sigcli = utils.get_secret("SIGNAL_CLI_PATH") or "auxin-cli"
     sigcli_path = Path(sigcli).absolute()
     try:
         logging.info("symlinking %s to %s", sigcli_path, utils.ROOT_DIR)
-        os.symlink(sigcli_path, utils.ROOT_DIR + "/signal-cli")
+        os.symlink(sigcli_path, utils.ROOT_DIR + "/auxin-cli")
     except FileExistsError:
-        logging.info("signal-cli's already there")
+        logging.info("auxin-cli's already there")
     try:
         os.symlink(Path("avatar.png").absolute(), utils.ROOT_DIR + "/avatar.png")
     except FileExistsError:
