@@ -7,6 +7,7 @@ import asyncio.subprocess as subprocess  # https://github.com/PyCQA/pylint/issue
 import json
 import logging
 import os
+import time
 import signal
 import sys
 from asyncio import Queue, StreamReader, StreamWriter
@@ -26,56 +27,62 @@ from forest import pghelp
 from forest import utils
 from forest import mc_util
 from forest import payments_monitor
+from forest.message import Message, AuxinMessage
+
 
 JSON = dict[str, Any]
 Response = Union[str, list, dict[str, str], None]
 
 
-class Message:
-    """Represents a Message received from signal-cli, optionally
-    containing a command with arguments, group, quote, or payment"""
 
-    def __init__(self, blob: dict) -> None:
-        self.blob = blob
-        self.envelope = envelope = blob.get("envelope", {})
-        # {'envelope': {'source': '+15133278483', 'sourceDevice': 2, 'timestamp': 1621402445257, 'receiptMessage': {'when': 1621402445257, 'isDelivery': True, 'isRead': False, 'timestamps': [1621402444517]}}}
+def rpc(method: str, id: str = "1", **params: Any) -> dict:
+    return {"jsonrpc": "2.0", "method": method, "id": id, "params": params}
 
-        # envelope data
-        self.source: str = envelope.get("source")
-        self.name: str = envelope.get("sourceName") or self.source
-        self.timestamp = envelope.get("timestamp")
-        self.typing = envelope.get("typingMessage", {}).get("action")
+# class Message:
+#     """Represents a Message received from auxin-cli, optionally
+#     containing a command with arguments, group, quote, or payment"""
 
-        # msg data
-        msg = envelope.get("dataMessage", {})
-        self.full_text = self.text = msg.get("message", "")
-        self.group: Optional[str] = msg.get("groupInfo", {}).get("groupId")
-        self.quoted_text = msg.get("quote", {}).get("text")
-        self.payment = msg.get("payment")
+#     def __init__(self, blob: dict) -> None:
+#         self.blob = blob
+#         self.envelope = envelope = blob.get("envelope", {})
+#         # {'envelope': {'source': '+15133278483', 'sourceDevice': 2, 'timestamp': 1621402445257, 'receiptMessage': {'when': 1621402445257, 'isDelivery': True, 'isRead': False, 'timestamps': [1621402444517]}}}
 
-        # parsing
-        self.command: Optional[str] = None
-        self.tokens: Optional[list[str]] = None
-        if self.text and self.text.startswith("/"):
-            command, *self.tokens = self.text.split(" ")
-            self.command = command[1:].lower()  # remove /
-            self.arg1 = self.tokens[0] if self.tokens else None
-            self.text = " ".join(self.tokens)
-        # self.reactions: dict[str, str] = {}
+#         # envelope data
+#         self.source: str = envelope.get("source")
+#         self.name: str = envelope.get("sourceName") or self.source
+#         self.timestamp = envelope.get("timestamp")
+#         self.typing = envelope.get("typingMessage", {}).get("action")
 
-    def __repr__(self) -> str:
-        # it might be nice to prune this so the logs are easier to read
-        return f"<{self.envelope}>"
+#         # msg data
+#         msg = envelope.get("dataMessage", {})
+#         self.full_text = self.text = msg.get("message", "")
+#         self.group: Optional[str] = msg.get("groupInfo", {}).get("groupId")
+#         self.quoted_text = msg.get("quote", {}).get("text")
+#         self.payment = msg.get("payment")
+
+#         # parsing
+#         self.command: Optional[str] = None
+#         self.tokens: Optional[list[str]] = None
+#         if self.text and self.text.startswith("/"):
+#             command, *self.tokens = self.text.split(" ")
+#             self.command = command[1:].lower()  # remove /
+#             self.arg1 = self.tokens[0] if self.tokens else None
+#             self.text = " ".join(self.tokens)
+#         # self.reactions: dict[str, str] = {}
+
+#     def __repr__(self) -> str:
+#         # it might be nice to prune this so the logs are easier to read
+#         return f"<{self.envelope}>"
 
 
 class Signal:
     """
-    Represents a signal-cli session.
-    Lifecycle: Downloads the datastore, runs and restarts signal-cli,
-    tries to gracefully kill signal-cli and upload before exiting.
-    I/O: reads signal-cli's output into signalcli_output_queue,
-    has methods for sending commands to signal-cli, and
-    actually writes those json blobs to signal-cli's stdin.
+    Represents a auxin-cli session.
+    Lifecycle: Downloads the datastore, runs and restarts auxin-cli,
+    tries to gracefully kill auxin-cli and upload before exiting.
+    I/O: reads auxin-cli's output into auxincli_output_queue,
+    has methods for sending commands to auxin-cli, and
+    actually writes those json blobs to auxin-cli's stdin.
     """
 
     def __init__(self, bot_number: Optional[str] = None) -> None:
@@ -89,14 +96,14 @@ class Signal:
         self.bot_number = bot_number
         self.datastore = datastore.SignalDatastore(bot_number)
         self.proc: Optional[subprocess.Process] = None
-        self.signalcli_output_queue: Queue[Message] = Queue()
-        self.signalcli_input_queue: Queue[dict] = Queue()
+        self.auxincli_output_queue: Queue[Message] = Queue()
+        self.auxincli_input_queue: Queue[dict] = Queue()
         self.exiting = False
 
     async def start_process(self) -> None:
         """
         Add SIGINT handlers. Download datastore. Maybe set profile.
-        (Re)start signal-cli and launch reading and writing with it.
+        (Re)start auxin-cli and launch reading and writing with it.
         """
         # things that don't work: loop.add_signal_handler(async_shutdown) - TypeError
         # signal.signal(sync_signal_handler) - can't interact with loop
@@ -109,26 +116,26 @@ class Signal:
             await self.set_profile()
         write_task: Optional[asyncio.Task] = None
         while self.sigints == 0 and not self.exiting:
-            command = f"{utils.ROOT_DIR}/signal-cli --config {utils.ROOT_DIR} --output=json --user {self.bot_number} stdio".split()
+            command = f"{utils.ROOT_DIR}/auxin-cli --config {utils.ROOT_DIR} --user {self.bot_number} jsonRpc".split()
             logging.info(command)
             self.proc = await asyncio.create_subprocess_exec(
                 *command, stdin=PIPE, stdout=PIPE
             )
             logging.info(
-                "started signal-cli @ %s with PID %s",
+                "started auxin-cli @ %s with PID %s",
                 self.bot_number,
                 self.proc.pid,
             )
             assert self.proc.stdout and self.proc.stdin
-            asyncio.create_task(self.handle_signalcli_raw_output(self.proc.stdout))
-            # prevent the previous signal-cli's write task from stealing commands from the input queue
+            asyncio.create_task(self.handle_auxincli_raw_output(self.proc.stdout))
+            # prevent the previous auxin-cli's write task from stealing commands from the input queue
             if write_task:
                 write_task.cancel()
             write_task = asyncio.create_task(self.write_commands(self.proc.stdin))
             returncode = await self.proc.wait()
-            logging.warning("signal-cli exited: %s", returncode)
+            logging.warning("auxin-cli exited: %s", returncode)
             if returncode == 0:
-                logging.info("signal-cli apparently exited cleanly, not restarting")
+                logging.info("auxin-cli apparently exited cleanly, not restarting")
                 break
 
     sigints = 0
@@ -148,7 +155,7 @@ class Signal:
             sys.exit(1)
 
     async def async_shutdown(self, *_: Any, wait: bool = False) -> None:
-        """Upload our datastore, close postgres connections pools, kill signal-cli, exit"""
+        """Upload our datastore, close postgres connections pools, kill auxin-cli, exit"""
         logging.info("starting async_shutdown")
         # if we're downloading, then we upload too
         if utils.UPLOAD:
@@ -160,7 +167,7 @@ class Signal:
                     await self.proc.wait()
                     await self.datastore.upload()
             except ProcessLookupError:
-                logging.info("no signal-cli process")
+                logging.info("no auxin-cli process")
         if utils.UPLOAD:
             await self.datastore.mark_freed()
         await pghelp.close_pools()
@@ -174,17 +181,17 @@ class Signal:
         logging.info("called sys.exit but still running, trying os._exit")
         os._exit(1)
 
-    async def handle_signalcli_raw_output(self, stream: StreamReader) -> None:
-        """Read signal-cli output but delegate handling it"""
+    async def handle_auxincli_raw_output(self, stream: StreamReader) -> None:
+        """Read auxin-cli output but delegate handling it"""
         while True:
             line = (await stream.readline()).decode().strip()
             if not line:
                 break
-            await self.handle_signalcli_raw_line(line)
-        logging.info("stopped reading signal-cli stdout")
+            await self.handle_auxincli_raw_line(line)
+        logging.info("stopped reading auxin-cli stdout")
 
-    async def handle_signalcli_raw_line(self, line: str) -> None:
-        """Try to parse a single line of signal-cli output. If it's a message, enqueue it"""
+    async def handle_auxincli_raw_line(self, line: str) -> None:
+        """Try to parse a single line of auxin-cli output. If it's a message, enqueue it"""
         # TODO: maybe output and color non-json. pretty-print errors
         # unrelatedly, try to sensibly color the other logging stuff like http logs
         # fly / db / asyncio and other lib warnings / java / signal logic and networking
@@ -208,18 +215,34 @@ class Signal:
         msg = Message(blob)
         if msg.full_text:
             logging.info("signal: %s", line)
-        await self.signalcli_output_queue.put(msg)
+        await self.auxincli_output_queue.put(msg)
         return
 
     # i'm tempted to refactor these into handle_messages
-    async def signalcli_output_iter(self) -> AsyncIterator[Message]:
+    async def auxincli_output_iter(self) -> AsyncIterator[Message]:
         """Provides an asynchronous iterator over messages on the queue.
         See Bot for how messages and consumed and dispatched"""
         while True:
-            message = await self.signalcli_output_queue.get()
+            message = await self.auxincli_output_queue.get()
             yield message
 
     # Next, we see how the input queue is populated and consumed.
+    pending_requests: dict[str, asyncio.Future[Message]] = {}
+
+    async def wait_resp(self, cmd: dict) -> AuxinMessage:
+        stamp = str(round(time.time()))
+        cmd["id"] = stamp
+        self.pending_requests[stamp] = asyncio.Future()
+        self.auxincli_input_queue.put(cmd)
+        result = await self.pending_requests[stamp]
+        self.pending_requests.pop(stamp)
+        return result
+
+    # async def auxin_req(self, method: str, ret: bool = True, **params: Any) -> dict:
+    #     q = {"jsonrpc": "2.0", "method": method, "params": params}
+    #     if not ret:
+    #         await self.auxincli_input_queue.put(q)
+    #     return (await self.wait_resp(q))["result"]
 
     async def set_profile(self) -> None:
         """Set signal profile. Note that this will overwrite any mobilecoin address"""
@@ -230,7 +253,7 @@ class Signal:
             "family-name": "" if env == "prod" else env,  # maybe not?
             "avatar": "avatar.png",
         }
-        await self.signalcli_input_queue.put(profile)
+        await self.auxincli_input_queue.put(profile)
         logging.info(profile)
 
     async def send_message(  # pylint: disable=too-many-arguments
@@ -240,11 +263,11 @@ class Signal:
         group: Optional[str] = None,  # maybe combine this with recipient?
         endsession: bool = False,
         attachments: Optional[list[str]] = None,
-        content: str = None
+        content: str = "",
     ) -> None:
- 
+
         """
-        Builds send command for the specified recipient in jsonrpc format and 
+        Builds send command for the specified recipient in jsonrpc format and
         writes to the built command to the underlying signal engine. Supports
         multiple messages.
 
@@ -261,13 +284,15 @@ class Signal:
         attachments 'Optional[list[str]]`
             list of media attachments to upload
         content `str`:
-            json string specifying payment data
+            json string specifying raw message content to be serialized into protobufs
         """
 
-        #Consider inferring desination 
-        if all(recipient, group) or not any(recipient, group):
-            raise ValueError("either a group or individual recipient \
-            must be specified, cannot specify both")
+        # Consider inferring desination
+        if all((recipient, group)) or not any((recipient, group)):
+            raise ValueError(
+                "either a group or individual recipient \
+            must be specified, cannot specify both"
+            )
 
         if isinstance(msg, list):
             for m in msg:
@@ -275,34 +300,32 @@ class Signal:
             return
         if isinstance(msg, dict):
             msg = "\n".join((f"{key}:\t{value}" for key, value in msg.items()))
-        
-        message = {}        
-        message["msg"] = msg
+
+        params: JSON = {"msg": msg}
         if endsession:
-            message["end_session"] = True
+            params["end_session"] = True
         if attachments:
-            message["attachments"] = attachments
+            params["attachments"] = attachments
         if content:
-            message["content"] = content
+            params["content"] = content
         if group:
-            message["group"] = group
+            params["group"] = group
         elif recipient:
             try:
                 assert recipient == utils.signal_format(recipient)
             except (AssertionError, NumberParseException) as e:
                 logging.error(e)
                 return
-        message["destination"] = [str(recipient)]
-
+        params["destination"] = str(recipient)
 
         json_command: JSON = {
-            "jsonrpc":"2.0",
-            "id": "rand",
-            "command": "send",
-            "parameters": message
+            "jsonrpc": "2.0",
+            "id": "send",
+            "method": "send",
+            "parameters": params,
         }
-        
-        await self.signalcli_input_queue.put(json_command)
+
+        await self.auxincli_input_queue.put(json_command)
         return
 
     async def respond(self, target_msg: Message, msg: Response) -> None:
@@ -324,21 +347,24 @@ class Signal:
             react["group"] = target_msg.group
         else:
             react["recipient"] = [target_msg.source]
-        await self.signalcli_input_queue.put(react)
+        await self.auxincli_input_queue.put(react)
 
-    async def signalcli_input_iter(self) -> AsyncIterator[dict]:
-        """Provides an asynchronous iterator over pending signal-cli commands"""
+    async def auxincli_input_iter(self) -> AsyncIterator[dict]:
+        """Provides an asynchronous iterator over pending auxin-cli commands"""
         while True:
-            command = await self.signalcli_input_queue.get()
+            command = await self.auxincli_input_queue.get()
             yield command
 
     # maybe merge with the above?
     async def write_commands(self, pipe: StreamWriter) -> None:
-        """Encode and write pending signal-cli commands"""
-        async for msg in self.signalcli_input_iter():
-            logging.info("input to signal: %s", msg)
+        """Encode and write pending auxin-cli commands"""
+        async for msg in self.auxincli_input_iter():
+            if not msg.get("method"):
+                print(msg)
+            if msg.get("method") != "receive":
+                logging.info("input to signal: %s", msg)
             if pipe.is_closing():
-                logging.error("signal-cli stdin pipe is closed")
+                logging.error("auxin-cli stdin pipe is closed")
             pipe.write(json.dumps(msg).encode() + b"\n")
 
 
@@ -352,7 +378,7 @@ class Bot(Signal):
         """Creates AND STARTS a bot that routes commands to do_x handlers"""
         self.client_session = aiohttp.ClientSession()
         self.mobster = payments_monitor.Mobster()
-        self.pongs = {}
+        self.pongs: dict[str, str] = {}
         super().__init__(*args)
         asyncio.create_task(self.start_process())
         asyncio.create_task(self.handle_messages())
@@ -363,7 +389,7 @@ class Bot(Signal):
     async def handle_messages(self) -> None:
         """Read messages from the queue and pass each message to handle_message
         If that returns a non-empty string, send it as a response"""
-        async for message in self.signalcli_output_iter():
+        async for message in self.auxincli_output_iter():
             # potentially stick a try-catch block here and send errors to admin
             response = await self.handle_message(message)
             if response:
@@ -373,6 +399,10 @@ class Bot(Signal):
         """Method dispatch to do_x commands and goodies.
         Overwrite this to add your own non-command logic,
         but call super().handle_message(message) at the end"""
+        if message.id in self.pending_requests:
+            logging.info("setting result for future %s: %s", msg.id, msg)
+            await self.pending_requests[message.id].set_result(message)
+            return None
         if message.command:
             if hasattr(self, "do_" + message.command):
                 return await getattr(self, "do_" + message.command)(message)
@@ -417,13 +447,11 @@ class Bot(Signal):
             return f"/pong {message.text}"
         return "/pong"
 
-
     async def do_pong(self, message: Message) -> str:
         if message.text:
             self.pongs[message.text] = message.text
             return f"OK, stashing {message.text}"
         return "OK"
-
 
     async def check_target_number(self, msg: Message) -> Optional[str]:
         """Check if arg1 is a valid number. If it isn't, let the user know and return None"""
@@ -474,6 +502,7 @@ class Bot(Signal):
 
 async def no_get(request: web.Request) -> web.Response:
     raise web.HTTPFound(location="https://signal.org/")
+
 
 async def pong_handler(request: web.Request) -> web.Response:
     pong = request.match_info.get("pong")
