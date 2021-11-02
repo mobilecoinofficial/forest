@@ -1,7 +1,7 @@
 import json
 from typing import Optional
 from forest.utils import logging
-
+import termcolor
 
 class Message:
     """
@@ -33,9 +33,12 @@ class Message:
         """
         properties = {}
         for attr in dir(self):
-            if not (attr.startswith("_") or attr == "blob"):
+            if not (attr.startswith("_") or attr in ("blob", "full_text")):
                 val = getattr(self, attr)
                 if val and not callable(val):
+                    #if attr == "text":
+                    #    val = termcolor.colored(val, attrs=["bold"])
+                    #    # gets mangled by repr
                     properties[attr] = val
 
         return properties
@@ -53,7 +56,6 @@ class AuxinMessage(Message):
         if "id" in blob:
             self.id = blob["id"]
             blob = blob.get("result", {})
-            logging.info("id: %s", self.id)
         else:
             self.id = None
         self.timestamp = blob.get("timestamp")
@@ -67,7 +69,8 @@ class AuxinMessage(Message):
         self.source = (
             blob.get("remote_address", {}).get("address", {}).get("Both", [""])[0]
         )
-        logging.info("parsed a message with body: '%s'", self.text)
+        if self.text:
+            logging.info(self)  # "parsed a message with body: '%s'", self.text)
         super().__init__(blob)
 
 
