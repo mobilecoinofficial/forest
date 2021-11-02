@@ -23,7 +23,8 @@ class AuthorizedPayer(Bot):
 
     async def handle_auxincli_raw_line(self, line: str) -> None:
         if '{"jsonrpc":"2.0","result":[],"id":"receive"}' not in line:
-            logging.info("auxin: %s", line)
+            pass
+            #logging.info("auxin: %s", line)
         try:
             blob = json.loads(line)
         except json.JSONDecodeError:
@@ -35,7 +36,6 @@ class AuthorizedPayer(Bot):
             if "result" in blob:
                 if isinstance(blob.get("result"), list):
                     for msg in blob.get("result"):
-                        logging.info("received message")
                         await self.auxincli_output_queue.put(AuxinMessage(msg))
                     return
                 msg = AuxinMessage(blob)
@@ -43,7 +43,7 @@ class AuthorizedPayer(Bot):
         except KeyError:  # ?
             logging.info("auxin parse error: %s", line)
             return
-        #if msg.full_text:
+        # if msg.full_text:
         #   logging.info("signal: %s", line)
         return
 
@@ -66,7 +66,7 @@ class AuthorizedPayer(Bot):
     #     return result
 
     async def auxin_req(self, method: str, **params: Any) -> AuxinMessage:
-        return (await self.wait_resp(rpc(method, **params)))
+        return await self.wait_resp(rpc(method, **params))
 
     async def send_payment(self, recipient: str, amount_pmob: int) -> None:
         result = await self.auxin_req("getPayAddress", peer_name=recipient)
@@ -79,6 +79,7 @@ class AuthorizedPayer(Bot):
                 )
             )
         )
+        await self.send_message(recipient, "got your address")
         raw_prop = await self.mobster.req_(
             "build_transaction",
             account_id=await self.mobster.get_account(),
@@ -100,14 +101,18 @@ class AuthorizedPayer(Bot):
                 mc_util.full_service_receipt_to_b64_receipt(receipt)
             )
         ]
-        content_skeletor = json.loads(
-            (await self.auxin_req("send", simulate=True, message=""))["simulate_output"]
+        content_skeletor = (
+            await self.auxin_req(
+                "send", simulate=True, message="", destination=recipient
+            )
         )
+        logging.info(content_skeletor.blob)
+        content_skeletor = json.loads(content_skeletor.blob["simulate_output"])
         content_skeletor["dataMessage"]["body"] = None
         content_skeletor["dataMessage"]["payment"] = {
             "Item": {
                 "notification": {
-                    "note": "foo",
+                    "note": "check out this java-free payment notification",
                     "Transaction": {"mobileCoin": {"receipt": u8_receipt}},
                 }
             }
@@ -115,6 +120,7 @@ class AuthorizedPayer(Bot):
         await self.auxin_req(
             "send", destination=recipient, content=json.dumps(content_skeletor)
         )
+        await self.send_message(recipient, "payment sent!")
 
     async def do_pay(self, msg: AuxinMessage) -> str:
         # 1e9=1 milimob (.01 usd today)

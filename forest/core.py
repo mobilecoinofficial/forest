@@ -7,6 +7,7 @@ import asyncio.subprocess as subprocess  # https://github.com/PyCQA/pylint/issue
 import json
 import logging
 import os
+from pprint import pformat
 import time
 import signal
 import sys
@@ -213,7 +214,7 @@ class Signal:
                 logging.error(termcolor.colored(blob["error"], "red"))
             return
         msg = Message(blob)
-        if msg.full_text:
+        if msg.text:
             logging.info("signal: %s", line)
         await self.auxincli_output_queue.put(msg)
         return
@@ -230,7 +231,7 @@ class Signal:
     pending_requests: dict[str, asyncio.Future[Message]] = {}
 
     async def wait_resp(self, cmd: dict) -> AuxinMessage:
-        stamp = str(round(time.time()))
+        stamp = cmd["method"] + "-" +  str(round(time.time()))
         cmd["id"] = stamp
         self.pending_requests[stamp] = asyncio.Future()
         await self.auxincli_input_queue.put(cmd)
