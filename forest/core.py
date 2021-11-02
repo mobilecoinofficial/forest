@@ -96,7 +96,7 @@ class Signal:
         self.bot_number = bot_number
         self.datastore = datastore.SignalDatastore(bot_number)
         self.proc: Optional[subprocess.Process] = None
-        self.auxincli_output_queue: Queue[Message] = Queue()
+        self.auxincli_output_queue: Queue[AuxinMessage] = Queue()
         self.auxincli_input_queue: Queue[dict] = Queue()
         self.exiting = False
 
@@ -233,7 +233,7 @@ class Signal:
         stamp = str(round(time.time()))
         cmd["id"] = stamp
         self.pending_requests[stamp] = asyncio.Future()
-        self.auxincli_input_queue.put(cmd)
+        await self.auxincli_input_queue.put(cmd)
         result = await self.pending_requests[stamp]
         self.pending_requests.pop(stamp)
         return result
@@ -301,7 +301,7 @@ class Signal:
         if isinstance(msg, dict):
             msg = "\n".join((f"{key}:\t{value}" for key, value in msg.items()))
 
-        params: JSON = {"msg": msg}
+        params: JSON = {"message": msg}
         if endsession:
             params["end_session"] = True
         if attachments:
@@ -322,7 +322,7 @@ class Signal:
             "jsonrpc": "2.0",
             "id": "send",
             "method": "send",
-            "parameters": params,
+            "params": params,
         }
 
         await self.auxincli_input_queue.put(json_command)
@@ -362,7 +362,7 @@ class Signal:
             if not msg.get("method"):
                 print(msg)
             if msg.get("method") != "receive":
-                logging.info("input to signal: %s", msg)
+                logging.info("input to signal: %s", json.dumps(msg))
             if pipe.is_closing():
                 logging.error("auxin-cli stdin pipe is closed")
             pipe.write(json.dumps(msg).encode() + b"\n")
@@ -400,8 +400,8 @@ class Bot(Signal):
         Overwrite this to add your own non-command logic,
         but call super().handle_message(message) at the end"""
         if message.id in self.pending_requests:
-            logging.info("setting result for future %s: %s", msg.id, msg)
-            await self.pending_requests[message.id].set_result(message)
+            logging.info("setting result for future %s: %s", message.id, message)
+            self.pending_requests[message.id].set_result(message)
             return None
         if message.command:
             if hasattr(self, "do_" + message.command):
@@ -473,6 +473,7 @@ class Bot(Signal):
     async def handle_payment(self, message: Message) -> None:
         """Decode the receipt, then update balances.
         Blocks on transaction completion, run concurrently"""
+        assert message.payment
         logging.info(message.payment)
         amount_pmob = await self.mobster.get_receipt_amount_pmob(
             message.payment["receipt"]

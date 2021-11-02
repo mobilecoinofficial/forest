@@ -18,12 +18,12 @@ from forest.core import Bot, Message, Response, app, rpc
 britbot = "+447888866969"
 
 
-
 class AuthorizedPayer(Bot):
     pending_requests: dict[Any, asyncio.Future[Message]] = {}
 
     async def handle_auxincli_raw_line(self, line: str) -> None:
-        logging.info("auxin: %s", line)
+        if '{"jsonrpc":"2.0","result":[],"id":"receive"}' not in line:
+            logging.info("auxin: %s", line)
         try:
             blob = json.loads(line)
         except json.JSONDecodeError:
@@ -39,12 +39,12 @@ class AuthorizedPayer(Bot):
                         await self.auxincli_output_queue.put(AuxinMessage(msg))
                     return
                 msg = AuxinMessage(blob)
+                await self.auxincli_output_queue.put(msg)
         except KeyError:  # ?
             logging.info("auxin parse error: %s", line)
             return
         #if msg.full_text:
         #   logging.info("signal: %s", line)
-        await self.auxincli_output_queue.put(msg)
         return
 
     async def start_process(self) -> None:
@@ -56,14 +56,14 @@ class AuthorizedPayer(Bot):
             await self.auxincli_input_queue.put(rpc("receive", id="receive"))
             await asyncio.sleep(1)
 
-    async def wait_resp(self, cmd: dict) -> AuxinMessage:
-        stamp = str(round(time.time()))
-        cmd["id"] = stamp
-        self.pending_requests[stamp] = asyncio.Future()
-        self.auxincli_input_queue.put(cmd)
-        result = await self.pending_requests[stamp]
-        self.pending_requests.pop(stamp)
-        return result
+    # async def wait_resp(self, cmd: dict) -> AuxinMessage:
+    #     stamp = str(round(time.time()))
+    #     cmd["id"] = stamp
+    #     self.pending_requests[stamp] = asyncio.Future()
+    #     await self.auxincli_input_queue.put(cmd)
+    #     result = await self.pending_requests[stamp]
+    #     self.pending_requests.pop(stamp)
+    #     return result
 
     async def auxin_req(self, method: str, **params: Any) -> AuxinMessage:
         return (await self.wait_resp(rpc(method, **params)))
@@ -83,7 +83,7 @@ class AuthorizedPayer(Bot):
             "build_transaction",
             account_id=await self.mobster.get_account(),
             recipient_public_address=address,
-            value_pmob=str(amount_pmob),
+            value_pmob=str(int(amount_pmob)),
             fee="400000000",
         )
         prop = raw_prop["result"]["tx_proposal"]
