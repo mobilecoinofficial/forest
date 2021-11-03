@@ -1,6 +1,6 @@
 #!/usr/bin/python3.9
 import logging
-from typing import Union
+from typing import Union, cast
 from aiohttp import web
 import teli
 from forest_tables import GroupRoutingManager, PaymentsManager, RoutingManager
@@ -81,9 +81,12 @@ class Forest(Bot):
             logging.warning("couldn't find the route for this group...")
         elif numbers and message.quoted_text:
             try:
-                quoted = dict(
+                quoted_list = [
                     line.split(":\t", 1) for line in message.quoted_text.split("\n")
-                )
+                ]
+                can_be_a_dict = cast(list[tuple[str, str]], quoted_list)
+
+                quoted: dict[str, str] = dict(can_be_a_dict)
             except ValueError:
                 quoted = {}
             if quoted.get("destination") in numbers and quoted.get("source"):
@@ -148,7 +151,7 @@ class Forest(Bot):
             "admin": [message.source],
             "name": f"SMS with {target_number} via {numbers[0]}",
         }
-        await self.signalcli_input_queue.put(cmd)
+        await self.auxincli_input_queue.put(cmd)
         await self.send_reaction(message, "\N{Busts In Silhouette}")
         return "invited you to a group"
 
@@ -156,7 +159,7 @@ class Forest(Bot):
     if not utils.get_secret("GROUPS"):
         del do_mkgroup, do_query
 
-    async def payment_response(self, message: Message) -> str:
+    async def payment_response(self, message: Message, _: int) -> str:
         diff = await self.get_balance(message.source) - self.usd_price
         if diff < 0:
             return f"Please send another {abs(diff)} USD to buy a phone number"
