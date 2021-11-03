@@ -10,7 +10,7 @@ import time
 from io import BytesIO
 from pathlib import Path
 from tarfile import TarFile
-from typing import Any, Callable, Optional, cast
+from typing import Any, Callable, Optional
 
 
 try:

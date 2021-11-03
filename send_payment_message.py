@@ -1,21 +1,19 @@
 #!/usr/bin/python3.9
-import logging
-import termcolor
 import asyncio
 import base64
 import json
-import time
+import logging
 from typing import Any
+
+import termcolor
 from aiohttp import web
 
-import mc_util  # actually needs printable_pb2
-import mobilecoin
-from forest import payments_monitor
-
-from forest.message import AuxinMessage
+import mc_util
 from forest.core import Bot, Message, Response, app, rpc
+from forest.message import AuxinMessage
 
 britbot = "+447888866969"
+fee = int(1e12 * 0.0004)
 
 
 class AuthorizedPayer(Bot):
@@ -23,8 +21,7 @@ class AuthorizedPayer(Bot):
 
     async def handle_auxincli_raw_line(self, line: str) -> None:
         if '{"jsonrpc":"2.0","result":[],"id":"receive"}' not in line:
-            pass
-            #logging.info("auxin: %s", line)
+            logging.info("auxin: %s", line)
         try:
             blob = json.loads(line)
         except json.JSONDecodeError:
@@ -69,7 +66,9 @@ class AuthorizedPayer(Bot):
         return await self.wait_resp(rpc(method, **params))
 
     async def send_payment(self, recipient: str, amount_pmob: int) -> None:
+        logging.info("getting pay address")
         result = await self.auxin_req("getPayAddress", peer_name=recipient)
+        logging.info("got pay address")
         address = mc_util.b64_public_address_to_b58_wrapper(
             base64.b64encode(
                 bytes(
@@ -77,7 +76,7 @@ class AuthorizedPayer(Bot):
                     .get("mobileCoinAddress", {})
                     .get("address")
                 )
-            )
+            ).decode()
         )
         await self.send_message(recipient, "got your address")
         raw_prop = await self.mobster.req_(
@@ -85,10 +84,11 @@ class AuthorizedPayer(Bot):
             account_id=await self.mobster.get_account(),
             recipient_public_address=address,
             value_pmob=str(int(amount_pmob)),
-            fee="400000000",
+            fee=str(fee),
         )
         prop = raw_prop["result"]["tx_proposal"]
         await self.mobster.req_("submit_transaction", tx_proposal=prop)
+        await self.send_message(recipient, "payment sent")
         receipt_resp = await self.mobster.req_(
             "create_receiver_receipts",
             tx_proposal=prop,
@@ -101,13 +101,10 @@ class AuthorizedPayer(Bot):
                 mc_util.full_service_receipt_to_b64_receipt(receipt)
             )
         ]
-        content_skeletor = (
-            await self.auxin_req(
-                "send", simulate=True, message="", destination=recipient
-            )
+        resp = await self.auxin_req(
+            "send", simulate=True, message="", destination=recipient
         )
-        logging.info(content_skeletor.blob)
-        content_skeletor = json.loads(content_skeletor.blob["simulate_output"])
+        content_skeletor = json.loads(resp.blob["simulate_output"])
         content_skeletor["dataMessage"]["body"] = None
         content_skeletor["dataMessage"]["payment"] = {
             "Item": {
@@ -120,12 +117,16 @@ class AuthorizedPayer(Bot):
         await self.auxin_req(
             "send", destination=recipient, content=json.dumps(content_skeletor)
         )
-        await self.send_message(recipient, "payment sent!")
+        await self.send_message(recipient, "receipt sent!")
 
     async def do_pay(self, msg: AuxinMessage) -> str:
         # 1e9=1 milimob (.01 usd today)
-        asyncio.create_task(self.send_payment(msg.source, 1e9))
+        asyncio.create_task(self.send_payment(msg.source, int(1e9)))
         return "trying to send a payment"
+
+    async def payment_response(self, msg: Message, amount: int) -> str:
+        asyncio.create_task(self.send_payment(msg.source, amount - fee))
+        return f"trying to send you back {mc_util.pmob2mob(amount - fee)} MOB"
 
 
 if __name__ == "__main__":

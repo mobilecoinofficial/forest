@@ -7,7 +7,6 @@ import asyncio.subprocess as subprocess  # https://github.com/PyCQA/pylint/issue
 import json
 import logging
 import os
-from pprint import pformat
 import time
 import signal
 import sys
@@ -22,11 +21,11 @@ from aiohttp import web
 from phonenumbers import NumberParseException
 
 # framework
+import mc_util
 from forest import datastore
 from forest import autosave
 from forest import pghelp
 from forest import utils
-from forest import mc_util
 from forest import payments_monitor
 from forest.message import Message, AuxinMessage
 
@@ -35,9 +34,9 @@ JSON = dict[str, Any]
 Response = Union[str, list, dict[str, str], None]
 
 
-
 def rpc(method: str, id: str = "1", **params: Any) -> dict:
     return {"jsonrpc": "2.0", "method": method, "id": id, "params": params}
+
 
 # class Message:
 #     """Represents a Message received from auxin-cli, optionally
@@ -231,7 +230,7 @@ class Signal:
     pending_requests: dict[str, asyncio.Future[Message]] = {}
 
     async def wait_resp(self, cmd: dict) -> AuxinMessage:
-        stamp = cmd["method"] + "-" +  str(round(time.time()))
+        stamp = cmd["method"] + "-" + str(round(time.time()))
         cmd["id"] = stamp
         self.pending_requests[stamp] = asyncio.Future()
         await self.auxincli_input_queue.put(cmd)
@@ -400,7 +399,7 @@ class Bot(Signal):
         """Method dispatch to do_x commands and goodies.
         Overwrite this to add your own non-command logic,
         but call super().handle_message(message) at the end"""
-        if message.id in self.pending_requests:
+        if message.id and message.id in self.pending_requests:
             logging.info("setting result for future %s: %s", message.id, message)
             self.pending_requests[message.id].set_result(message)
             return None
@@ -484,7 +483,7 @@ class Bot(Signal):
                 message, "That looked like a payment, but we couldn't parse it"
             )
             return
-        amount_mob = mc_util.pmob2mob(amount_pmob)
+        amount_mob = float(mc_util.pmob2mob(amount_pmob))
         amount_usd_cents = round(amount_mob * await self.mobster.get_rate() * 100)
         await self.mobster.ledger_manager.put_pmob_tx(
             message.source,
@@ -496,9 +495,9 @@ class Bot(Signal):
             message,
             f"Thank you for sending {float(amount_mob)} MOB ({amount_usd_cents/100} USD)",
         )
-        await self.respond(message, await self.payment_response(message))
+        await self.respond(message, await self.payment_response(message, amount_pmob))
 
-    async def payment_response(self, _: Message) -> Response:
+    async def payment_response(self, _: Message, amount: int) -> Response:
         return "This bot doesn't have a response for payments."
 
 
