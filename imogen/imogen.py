@@ -78,7 +78,7 @@ class Imogen(Bot):
             "about-emoji": "\N{Artist Palette}",
             "family-name": "",
         }
-        await self.signalcli_input_queue.put(profile)
+        await self.auxincli_input_queue.put(profile)
         logging.info(profile)
 
     async def do_get_cost(self, _: Message) -> str:
@@ -152,8 +152,8 @@ class Imogen(Bot):
             prompts.append(str(json.loads(item)["prompt"]))
         return prompts
 
-    async def payment_response(self, _: Message) -> None:
-        return None
+    # async def payment_response(self, _: Message, _: int) -> None:
+    #     return None
 
     # eh
     # async def async_shutdown(self):
@@ -165,7 +165,7 @@ async def admin_handler(request: web.Request) -> web.Response:
     bot = request.app.get("bot")
     if not bot:
         return web.Response(status=504, text="Sorry, no live workers.")
-    msg = urllib.parse.unquote(request.query.get("message"))
+    msg = urllib.parse.unquote(request.query.get("message", ""))
     await bot.send_message(utils.get_secret("ADMIN"), msg)
     return web.Response(text="OK")
 

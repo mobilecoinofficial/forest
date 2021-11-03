@@ -21,7 +21,7 @@ class AuthorizedPayer(Bot):
 
     async def handle_auxincli_raw_line(self, line: str) -> None:
         if '{"jsonrpc":"2.0","result":[],"id":"receive"}' not in line:
-            logging.info("auxin: %s", line)
+            logging.error("auxin: %s", line)
         try:
             blob = json.loads(line)
         except json.JSONDecodeError:
@@ -62,7 +62,7 @@ class AuthorizedPayer(Bot):
     #     self.pending_requests.pop(stamp)
     #     return result
 
-    async def auxin_req(self, method: str, **params: Any) -> AuxinMessage:
+    async def auxin_req(self, method: str, **params: Any) -> Message:
         return await self.wait_resp(rpc(method, **params))
 
     async def send_payment(self, recipient: str, amount_pmob: int) -> None:
@@ -92,7 +92,7 @@ class AuthorizedPayer(Bot):
         receipt_resp = await self.mobster.req_(
             "create_receiver_receipts",
             tx_proposal=prop,
-            account_id=self.mobster.account_id,
+            account_id=await self.mobster.get_account(),
         )
         receipt = receipt_resp["result"]["receiver_receipts"][0]
         u8_receipt = [
@@ -119,12 +119,12 @@ class AuthorizedPayer(Bot):
         )
         await self.send_message(recipient, "receipt sent!")
 
-    async def do_pay(self, msg: AuxinMessage) -> str:
+    async def do_pay(self, msg: AuxinMessage) -> Response:
         # 1e9=1 milimob (.01 usd today)
         asyncio.create_task(self.send_payment(msg.source, int(1e9)))
         return "trying to send a payment"
 
-    async def payment_response(self, msg: Message, amount: int) -> str:
+    async def payment_response(self, msg: Message, amount: int) -> Response:
         asyncio.create_task(self.send_payment(msg.source, amount - fee))
         return f"trying to send you back {mc_util.pmob2mob(amount - fee)} MOB"
 

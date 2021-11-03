@@ -34,45 +34,8 @@ JSON = dict[str, Any]
 Response = Union[str, list, dict[str, str], None]
 
 
-def rpc(method: str, id: str = "1", **params: Any) -> dict:
-    return {"jsonrpc": "2.0", "method": method, "id": id, "params": params}
-
-
-# class Message:
-#     """Represents a Message received from auxin-cli, optionally
-#     containing a command with arguments, group, quote, or payment"""
-
-#     def __init__(self, blob: dict) -> None:
-#         self.blob = blob
-#         self.envelope = envelope = blob.get("envelope", {})
-#         # {'envelope': {'source': '+15133278483', 'sourceDevice': 2, 'timestamp': 1621402445257, 'receiptMessage': {'when': 1621402445257, 'isDelivery': True, 'isRead': False, 'timestamps': [1621402444517]}}}
-
-#         # envelope data
-#         self.source: str = envelope.get("source")
-#         self.name: str = envelope.get("sourceName") or self.source
-#         self.timestamp = envelope.get("timestamp")
-#         self.typing = envelope.get("typingMessage", {}).get("action")
-
-#         # msg data
-#         msg = envelope.get("dataMessage", {})
-#         self.full_text = self.text = msg.get("message", "")
-#         self.group: Optional[str] = msg.get("groupInfo", {}).get("groupId")
-#         self.quoted_text = msg.get("quote", {}).get("text")
-#         self.payment = msg.get("payment")
-
-#         # parsing
-#         self.command: Optional[str] = None
-#         self.tokens: Optional[list[str]] = None
-#         if self.text and self.text.startswith("/"):
-#             command, *self.tokens = self.text.split(" ")
-#             self.command = command[1:].lower()  # remove /
-#             self.arg1 = self.tokens[0] if self.tokens else None
-#             self.text = " ".join(self.tokens)
-#         # self.reactions: dict[str, str] = {}
-
-#     def __repr__(self) -> str:
-#         # it might be nice to prune this so the logs are easier to read
-#         return f"<{self.envelope}>"
+def rpc(method: str, _id: str = "1", **params: Any) -> dict:
+    return {"jsonrpc": "2.0", "method": method, "id": _id, "params": params}
 
 
 class Signal:
@@ -96,7 +59,7 @@ class Signal:
         self.bot_number = bot_number
         self.datastore = datastore.SignalDatastore(bot_number)
         self.proc: Optional[subprocess.Process] = None
-        self.auxincli_output_queue: Queue[AuxinMessage] = Queue()
+        self.auxincli_output_queue: Queue[Message] = Queue()
         self.auxincli_input_queue: Queue[dict] = Queue()
         self.exiting = False
 
@@ -229,7 +192,7 @@ class Signal:
     # Next, we see how the input queue is populated and consumed.
     pending_requests: dict[str, asyncio.Future[Message]] = {}
 
-    async def wait_resp(self, cmd: dict) -> AuxinMessage:
+    async def wait_resp(self, cmd: dict) -> Message:
         stamp = cmd["method"] + "-" + str(round(time.time()))
         logging.info("expecting response id: %s", stamp)
         cmd["id"] = stamp
@@ -499,7 +462,8 @@ class Bot(Signal):
         )
         await self.respond(message, await self.payment_response(message, amount_pmob))
 
-    async def payment_response(self, _: Message, amount: int) -> Response:
+    async def payment_response(self, msg: Message, amount_pmob: int) -> Response:
+        del msg, amount_pmob # shush linters
         return "This bot doesn't have a response for payments."
 
 

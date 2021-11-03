@@ -171,7 +171,7 @@ class Mobster:
         acc_id = res["result"]["account_ids"][0]
         return res["result"]["account_map"][acc_id]["main_address"]
 
-    async def get_receipt_amount_pmob(self, receipt_str: str) -> Optional[float]:
+    async def get_receipt_amount_pmob(self, receipt_str: str) -> Optional[int]:
         full_service_receipt = mc_util.b64_receipt_to_full_service_receipt(receipt_str)
         logging.debug("fs receipt: %s", full_service_receipt)
         params = {
