@@ -1,3 +1,9 @@
+"""
+FYI: this module uses a lot of `or`. `None or 1` is `1`, not `True`.
+We're using this because you can have `{"attachments": null}` in JSON, which
+breaks our typing if we expect Message.attachments to be list[str].
+Using `or` like this is a bit of a hack, but it's what we've got.
+"""
 import base64
 from typing import Optional
 from forest.utils import logging
@@ -12,8 +18,13 @@ class Message:
     blob: dict
        blob representing the jsonrpc message
     """
-
+    timestamp: int
     text: str
+    attachments: list[str]
+    group: str
+    quoted_text: str
+    source: str
+    payment: dict
 
     def __init__(self, blob: dict) -> None:
         self.blob = blob
@@ -58,13 +69,13 @@ class AuxinMessage(Message):
             blob = blob.get("result", {})
         else:
             self.id = None
-        logging.info("msg id: %s", self.id)
-        self.timestamp = blob.get("timestamp")
+        #logging.info("msg id: %s", self.id)
+        self.timestamp = blob["timestamp"]
         content = blob.get("content", {})
         msg = (content.get("source") or {}).get("dataMessage") or {}
         self.text = self.full_text = msg.get("body") or ""
-        self.attachments = msg.get("attachments")
-        self.group = msg.get("group") or msg.get("groupV2")
+        self.attachments = msg.get("attachments", [])
+        self.group = msg.get("group") or msg.get("groupV2") or ""
         maybe_quote = msg.get("quote")
         self.quoted_text = "" if not maybe_quote else maybe_quote.get("text")
         self.source = (
@@ -102,7 +113,7 @@ class StdioMessage(Message):
         # msg data
         msg = envelope.get("dataMessage", {})
         self.full_text = self.text = msg.get("message", "")
-        self.group: Optional[str] = msg.get("groupInfo", {}).get("groupId")
+        self.group: Optional[str] = msg.get("groupInfo", {}).get("groupId") or ""
         self.quoted_text = msg.get("quote", {}).get("text")
         self.payment = msg.get("payment")
         # self.reactions: dict[str, str] = {}
