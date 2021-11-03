@@ -6,8 +6,8 @@ from typing import Optional
 import random
 import asyncpg
 import aiohttp
-
-from forest import mc_util, utils
+import mc_util
+from forest import utils
 from forest.pghelp import Loop, PGExpressions, PGInterface
 
 DATABASE_URL = utils.get_secret("DATABASE_URL")
@@ -74,10 +74,18 @@ class LedgerManager(PGInterface):
 class Mobster:
     """Class to keep track of a aiohttp session and cached rate"""
 
-    def __init__(self, url: str = "http://full-service.fly.dev/wallet") -> None:
+    default_url = ()
+
+    def __init__(self, url: str = "") -> None:
+        if not url:
+            url = (
+                utils.get_secret("FULL_SERVICE_URL")
+                or "http://full-service.fly.dev/wallet"
+            )
         self.session = aiohttp.ClientSession()
         self.ledger_manager = LedgerManager()
         self.invoice_manager = InvoiceManager()
+        logging.info("full-service url: %s", url)
         self.url = url
 
     async def req_(self, method: str, **params: str) -> dict:
@@ -122,7 +130,7 @@ class Mobster:
         return mob_rate
 
     async def pmob2usd(self, pmob: int) -> float:
-        return mc_util.pmob2mob(pmob) * await self.get_rate()
+        return float(mc_util.pmob2mob(pmob)) * await self.get_rate()
 
     async def usd2mob(self, usd: float, perturb: bool = False) -> float:
         invnano = 100000000

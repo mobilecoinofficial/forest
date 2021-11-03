@@ -1,7 +1,7 @@
-import json
+import base64
 from typing import Optional
 from forest.utils import logging
-import termcolor
+
 
 class Message:
     """
@@ -36,7 +36,7 @@ class Message:
             if not (attr.startswith("_") or attr in ("blob", "full_text")):
                 val = getattr(self, attr)
                 if val and not callable(val):
-                    #if attr == "text":
+                    # if attr == "text":
                     #    val = termcolor.colored(val, attrs=["bold"])
                     #    # gets mangled by repr
                     properties[attr] = val
@@ -61,7 +61,7 @@ class AuxinMessage(Message):
         self.timestamp = blob.get("timestamp")
         content = blob.get("content", {})
         msg = (content.get("source") or {}).get("dataMessage") or {}
-        self.text = self.full_text = msg.get("body")
+        self.text = self.full_text = msg.get("body") or ""
         self.attachments = msg.get("attachments")
         self.group = msg.get("group") or msg.get("groupV2")
         maybe_quote = msg.get("quote")
@@ -69,6 +69,17 @@ class AuxinMessage(Message):
         self.source = (
             blob.get("remote_address", {}).get("address", {}).get("Both", [""])[0]
         )
+        payment_notif = (
+            (msg.get("payment") or {}).get("Item", {}).get("notification", {})
+        )
+        if payment_notif:
+            receipt = payment_notif["Transaction"]["mobileCoin"]["receipt"]
+            self.payment = {
+                "note": payment_notif.get("note"),
+                "receipt": base64.b64encode(bytes(receipt)).decode(),
+            }
+        else:
+            self.payment = {}
         if self.text:
             logging.info(self)  # "parsed a message with body: '%s'", self.text)
         super().__init__(blob)
