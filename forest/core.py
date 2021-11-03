@@ -231,6 +231,7 @@ class Signal:
 
     async def wait_resp(self, cmd: dict) -> AuxinMessage:
         stamp = cmd["method"] + "-" + str(round(time.time()))
+        logging.info("expecting response id: %s", stamp)
         cmd["id"] = stamp
         self.pending_requests[stamp] = asyncio.Future()
         await self.auxincli_input_queue.put(cmd)
