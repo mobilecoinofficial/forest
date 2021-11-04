@@ -1,13 +1,11 @@
-app = "forest-dev"
+app = "imogen-uk"
 kill_signal = "SIGINT" 
 kill_timeout = 5
 
 [env]
 LOGLEVEL="INFO"
-BOT_NUMBER=+447888866969
-ORDER="yes"
-GROUPS="yes"
-MONITOR_WALLET="yes"
+BOT_NUMBER="+447888874208"
+
 
 [experimental]
   allowed_public_ports = []
