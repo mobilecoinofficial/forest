@@ -93,7 +93,7 @@ class Signal:
             asyncio.create_task(self.handle_auxincli_raw_output(self.proc.stdout))
             # prevent the previous auxin-cli's write task from stealing commands from the input queue
             if write_task:
-                write_task.cancel()
+                await write_task.cancel()
             write_task = asyncio.create_task(self.write_commands(self.proc.stdin))
             returncode = await self.proc.wait()
             logging.warning("auxin-cli exited: %s", returncode)
@@ -144,6 +144,44 @@ class Signal:
         logging.info("called sys.exit but still running, trying os._exit")
         os._exit(1)
 
+
+    async def handle_auxincli_raw_line(self, line: str) -> None:
+        if '{"jsonrpc":"2.0","result":[],"id":"receive"}' not in line:
+            pass  # logging.error("auxin: %s", line)
+        try:
+            blob = json.loads(line)
+        except json.JSONDecodeError:
+            logging.info("auxin: %s", line)
+            return
+        if "error" in blob:
+            logging.info("auxin: %s", line)
+            logging.error(termcolor.colored(blob["error"], "red"))
+        try:
+            if "params" in blob and isinstance(blob["params"], list):
+                for msg in blob["params"]:
+                    await self.auxincli_output_queue.put(AuxinMessage(msg))
+                return
+            if "result" in blob:
+                if isinstance(blob.get("result"), list):
+                    for msg in blob.get("result"):
+                        await self.auxincli_output_queue.put(AuxinMessage(msg))
+                    return
+                msg = AuxinMessage(blob)
+                await self.auxincli_output_queue.put(msg)
+        except KeyError as e:  # ?
+            logging.info("auxin parse error: %s", line)
+            traceback.print_exception(*sys.exc_info())
+            return
+        return
+
+    async def auxin_req(self, method: str, **params: Any) -> Message:
+        return await self.wait_resp(rpc(method, **params))
+
+    async def handle_message(self, msg: Message) -> Response:
+        if "hit me up" in msg.text.lower():
+            return await self.do_pay(msg)
+        return await super().handle_message(msg)
+
     async def handle_auxincli_raw_output(self, stream: StreamReader) -> None:
         """Read auxin-cli output but delegate handling it"""
         while True:
@@ -153,33 +191,6 @@ class Signal:
             await self.handle_auxincli_raw_line(line)
         logging.info("stopped reading auxin-cli stdout")
 
-    async def handle_auxincli_raw_line(self, line: str) -> None:
-        """Try to parse a single line of auxin-cli output. If it's a message, enqueue it"""
-        # TODO: maybe output and color non-json. pretty-print errors
-        # unrelatedly, try to sensibly color the other logging stuff like http logs
-        # fly / db / asyncio and other lib warnings / java / signal logic and networking
-        try:
-            blob = json.loads(line)
-        except json.JSONDecodeError:
-            logging.info("signal: %s", line)
-            return
-        if not isinstance(blob, dict):  # e.g. a timestamp
-            return
-        if "error" in blob:
-            if "traceback" in blob:
-                exception, *tb = blob["traceback"].split("\n")
-                logging.error(termcolor.colored(exception, "red"))
-                # maybe also send this to admin as a signal message
-                for _line in tb:
-                    logging.error(_line)
-            else:
-                logging.error(termcolor.colored(blob["error"], "red"))
-            return
-        msg = Message(blob)
-        if msg.text:
-            logging.info("signal: %s", line)
-        await self.auxincli_output_queue.put(msg)
-        return
 
     # i'm tempted to refactor these into handle_messages
     async def auxincli_output_iter(self) -> AsyncIterator[Message]:
@@ -201,12 +212,6 @@ class Signal:
         result = await self.pending_requests[stamp]
         self.pending_requests.pop(stamp)
         return result
-
-    # async def auxin_req(self, method: str, ret: bool = True, **params: Any) -> dict:
-    #     q = {"jsonrpc": "2.0", "method": method, "params": params}
-    #     if not ret:
-    #         await self.auxincli_input_queue.put(q)
-    #     return (await self.wait_resp(q))["result"]
 
     async def set_profile(self) -> None:
         """Set signal profile. Note that this will overwrite any mobilecoin address"""
@@ -364,6 +369,7 @@ class Bot(Signal):
         If that returns a non-empty string, send it as a response"""
         async for message in self.auxincli_output_iter():
             # potentially stick a try-catch block here and send errors to admin
+            print(message)
             response = await self.handle_message(message)
             if response:
                 await self.respond(message, response)
