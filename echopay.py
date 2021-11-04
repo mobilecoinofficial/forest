@@ -3,6 +3,8 @@ import asyncio
 import base64
 import json
 import logging
+import sys
+import traceback
 from typing import Any
 
 import termcolor
@@ -21,7 +23,7 @@ class AuthorizedPayer(Bot):
 
     async def handle_auxincli_raw_line(self, line: str) -> None:
         if '{"jsonrpc":"2.0","result":[],"id":"receive"}' not in line:
-            logging.error("auxin: %s", line)
+            pass #logging.error("auxin: %s", line)
         try:
             blob = json.loads(line)
         except json.JSONDecodeError:
@@ -37,8 +39,9 @@ class AuthorizedPayer(Bot):
                     return
                 msg = AuxinMessage(blob)
                 await self.auxincli_output_queue.put(msg)
-        except KeyError:  # ?
+        except KeyError as e:  # ?
             logging.info("auxin parse error: %s", line)
+            traceback.print_exception(*sys.exc_info())
             return
         # if msg.full_text:
         #   logging.info("signal: %s", line)
