@@ -25,8 +25,8 @@ except ImportError:
         # i wasn't asking
         sys.path.append("forest")
         sys.path.append("..")
-        import pghelp  # pylint: disable=ungrouped-imports #type: ignore
-        import utils  # pylint: disable=ungrouped-imports #type: ignore
+        import pghelp  #type: ignore # pylint: disable=ungrouped-imports 
+        import utils #type: ignore # pylint: disable=ungrouped-imports 
 if utils.get_secret("MIGRATE"):
     get_datastore = "SELECT account, datastore FROM {self.table} WHERE id=$1"
 else:
