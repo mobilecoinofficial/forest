@@ -79,6 +79,7 @@ class Signal:
             await self.set_profile()
         write_task: Optional[asyncio.Task] = None
         while self.sigints == 0 and not self.exiting:
+            # count number of errors and backoff 
             command = f"{utils.ROOT_DIR}/auxin-cli --config {utils.ROOT_DIR} --user {self.bot_number} jsonRpc".split()
             logging.info(command)
             self.proc = await asyncio.create_subprocess_exec(
