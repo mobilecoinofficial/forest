@@ -18,6 +18,7 @@ class Message:
     blob: dict
        blob representing the jsonrpc message
     """
+
     timestamp: int
     text: str
     attachments: list[str]
@@ -63,15 +64,15 @@ class Message:
 
 
 class AuxinMessage(Message):
-    def __init__(self, outer_blob: dict) -> None:
+    def __init__(self, outer_blob: dict, _id=None) -> None:
         if "id" in outer_blob:
             self.id = outer_blob["id"]
             self.error = outer_blob.get("error", {})
-            blob= outer_blob.get("result", {})
+            blob = outer_blob.get("result", {})
         else:
-            self.id = None
+            self.id = _id
             blob = outer_blob
-        #logging.info("msg id: %s", self.id)
+        # logging.info("msg id: %s", self.id)
         self.timestamp = blob.get("timestamp", -1)
         content = blob.get("content", {})
         msg = (content.get("source") or {}).get("dataMessage") or {}
@@ -80,9 +81,18 @@ class AuxinMessage(Message):
         self.group = msg.get("group") or msg.get("groupV2") or ""
         maybe_quote = msg.get("quote")
         self.quoted_text = "" if not maybe_quote else maybe_quote.get("text")
-        self.source = (
-            blob.get("remote_address", {}).get("address", {}).get("Both", [""])[0]
-        )
+        address = blob.get("remote_address", {}).get("address", {})
+        if "Both" in address:
+            self.source, self.uuid = address["Both"]
+        elif "Uuid" in address:
+            self.uuid = address.get("Uuid")
+            if self.text:
+                logging.error("text message has no number: %s", outer_blob)
+        elif "Phone" in address:
+            self.source = address["Phone"]
+        else:
+            if self.text:
+                logging.error("text message has no remote address: %s", outer_blob)
         if self.text and not self.source:
             logging.error(outer_blob)
         payment_notif = (

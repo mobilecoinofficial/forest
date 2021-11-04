@@ -8,8 +8,10 @@ import json
 import logging
 import os
 import time
+import uuid
 import signal
 import sys
+import traceback
 from asyncio import Queue, StreamReader, StreamWriter
 from asyncio.subprocess import PIPE
 from typing import Any, AsyncIterator, Optional, Union
@@ -93,7 +95,7 @@ class Signal:
             asyncio.create_task(self.handle_auxincli_raw_output(self.proc.stdout))
             # prevent the previous auxin-cli's write task from stealing commands from the input queue
             if write_task:
-                await write_task.cancel()
+                write_task.cancel()
             write_task = asyncio.create_task(self.write_commands(self.proc.stdin))
             returncode = await self.proc.wait()
             logging.warning("auxin-cli exited: %s", returncode)
@@ -144,7 +146,6 @@ class Signal:
         logging.info("called sys.exit but still running, trying os._exit")
         os._exit(1)
 
-
     async def handle_auxincli_raw_line(self, line: str) -> None:
         if '{"jsonrpc":"2.0","result":[],"id":"receive"}' not in line:
             pass  # logging.error("auxin: %s", line)
@@ -155,7 +156,8 @@ class Signal:
             return
         if "error" in blob:
             logging.info("auxin: %s", line)
-            logging.error(termcolor.colored(blob["error"], "red"))
+            error = json.dumps(blob["error"])
+            logging.error(json.dumps(blob).replace(error, termcolor.colored(error, "red")))
         try:
             if "params" in blob and isinstance(blob["params"], list):
                 for msg in blob["params"]:
@@ -168,7 +170,7 @@ class Signal:
                     return
                 msg = AuxinMessage(blob)
                 await self.auxincli_output_queue.put(msg)
-        except KeyError as e:  # ?
+        except KeyError:
             logging.info("auxin parse error: %s", line)
             traceback.print_exception(*sys.exc_info())
             return
@@ -176,11 +178,6 @@ class Signal:
 
     async def auxin_req(self, method: str, **params: Any) -> Message:
         return await self.wait_resp(rpc(method, **params))
-
-    async def handle_message(self, msg: Message) -> Response:
-        if "hit me up" in msg.text.lower():
-            return await self.do_pay(msg)
-        return await super().handle_message(msg)
 
     async def handle_auxincli_raw_output(self, stream: StreamReader) -> None:
         """Read auxin-cli output but delegate handling it"""
@@ -190,7 +187,6 @@ class Signal:
                 break
             await self.handle_auxincli_raw_line(line)
         logging.info("stopped reading auxin-cli stdout")
-
 
     # i'm tempted to refactor these into handle_messages
     async def auxincli_output_iter(self) -> AsyncIterator[Message]:
@@ -286,9 +282,12 @@ class Signal:
         elif recipient:
             try:
                 assert recipient == utils.signal_format(recipient)
-            except (AssertionError, NumberParseException) as e:
-                logging.error(e)
-                return
+            except (AssertionError, NumberParseException):
+                try:
+                    assert recipient == uuid.UUID(recipient)
+                except (AssertionError, ValueError) as e:
+                    logging.error(e)
+                    return
         params["destination"] = str(recipient)
 
         json_command: JSON = {
