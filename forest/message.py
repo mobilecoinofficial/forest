@@ -21,7 +21,7 @@ class Message:
     timestamp: int
     text: str
     attachments: list[str]
-    group: str
+    group: Optional[str]
     quoted_text: str
     source: str
     payment: dict
@@ -63,13 +63,14 @@ class Message:
 
 
 class AuxinMessage(Message):
-    def __init__(self, blob: dict) -> None:
-        if "id" in blob:
-            self.id = blob["id"]
-            self.error = blob.get("error", {})
-            blob = blob.get("result", {})
+    def __init__(self, outer_blob: dict) -> None:
+        if "id" in outer_blob:
+            self.id = outer_blob["id"]
+            self.error = outer_blob.get("error", {})
+            blob= outer_blob.get("result", {})
         else:
             self.id = None
+            blob = outer_blob
         #logging.info("msg id: %s", self.id)
         self.timestamp = blob.get("timestamp", -1)
         content = blob.get("content", {})
@@ -82,6 +83,8 @@ class AuxinMessage(Message):
         self.source = (
             blob.get("remote_address", {}).get("address", {}).get("Both", [""])[0]
         )
+        if self.text and not self.source:
+            logging.error(outer_blob)
         payment_notif = (
             (msg.get("payment") or {}).get("Item", {}).get("notification", {})
         )

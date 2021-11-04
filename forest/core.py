@@ -252,10 +252,14 @@ class Signal:
         """
 
         # Consider inferring desination
-        if all((recipient, group)) or not any((recipient, group)):
+        if recipient and group:  # (recipient or group):
             raise ValueError(
-                "either a group or individual recipient \
-            must be specified, cannot specify both"
+                "either a group or individual recipient must be specified, not both; "
+                f"got {recipient} and {group}"
+            )
+        if not recipient and not group:
+            raise ValueError(
+                f"need either a recipient or a group, got {recipient} and {group}"
             )
 
         if isinstance(msg, list):
@@ -294,7 +298,11 @@ class Signal:
 
     async def respond(self, target_msg: Message, msg: Response) -> None:
         """Respond to a message depending on whether it's a DM or group"""
-        if target_msg.group:
+        if not target_msg.source:
+            logging.error(target_msg.blob)
+        if (
+            not utils.AUXIN and target_msg.group and isinstance(target_msg.group, str)
+        ):  # and it's a valid b64
             await self.send_message(None, msg, group=target_msg.group)
         else:
             await self.send_message(target_msg.source, msg)
@@ -463,7 +471,7 @@ class Bot(Signal):
         await self.respond(message, await self.payment_response(message, amount_pmob))
 
     async def payment_response(self, msg: Message, amount_pmob: int) -> Response:
-        del msg, amount_pmob # shush linters
+        del msg, amount_pmob  # shush linters
         return "This bot doesn't have a response for payments."
 
 
