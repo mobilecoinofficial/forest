@@ -79,7 +79,7 @@ class Signal:
             await self.set_profile()
         write_task: Optional[asyncio.Task] = None
         while self.sigints == 0 and not self.exiting:
-            command = f"stdbuf -i0 -o0 -e0 {utils.ROOT_DIR}/auxin-cli --config {utils.ROOT_DIR} --user {self.bot_number} jsonRpc".split()
+            command = f"{utils.ROOT_DIR}/auxin-cli --config {utils.ROOT_DIR} --user {self.bot_number} jsonRpc".split()
             logging.info(command)
             self.proc = await asyncio.create_subprocess_exec(
                 *command, stdin=PIPE, stdout=PIPE

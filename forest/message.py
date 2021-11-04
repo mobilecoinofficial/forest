@@ -70,7 +70,7 @@ class AuxinMessage(Message):
         else:
             self.id = None
         #logging.info("msg id: %s", self.id)
-        self.timestamp = blob["timestamp"]
+        self.timestamp = blob.get("timestamp", -1)
         content = blob.get("content", {})
         msg = (content.get("source") or {}).get("dataMessage") or {}
         self.text = self.full_text = msg.get("body") or ""
