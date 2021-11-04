@@ -157,7 +157,9 @@ class Signal:
         if "error" in blob:
             logging.info("auxin: %s", line)
             error = json.dumps(blob["error"])
-            logging.error(json.dumps(blob).replace(error, termcolor.colored(error, "red")))
+            logging.error(
+                json.dumps(blob).replace(error, termcolor.colored(error, "red"))
+            )
         try:
             if "params" in blob and isinstance(blob["params"], list):
                 for msg in blob["params"]:

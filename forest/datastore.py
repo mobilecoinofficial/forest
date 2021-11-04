@@ -19,14 +19,14 @@ try:
 except ImportError:
     # maybe we're local?
     try:
-        import pghelp # type: ignore
-        import utils # type: ignore
+        import pghelp  # type: ignore
+        import utils  # type: ignore
     except ImportError:
         # i wasn't asking
         sys.path.append("forest")
         sys.path.append("..")
-        import pghelp  #type: ignore # pylint: disable=ungrouped-imports 
-        import utils #type: ignore # pylint: disable=ungrouped-imports 
+        import pghelp  # type: ignore # pylint: disable=ungrouped-imports
+        import utils  # type: ignore # pylint: disable=ungrouped-imports
 if utils.get_secret("MIGRATE"):
     get_datastore = "SELECT account, datastore FROM {self.table} WHERE id=$1"
 else:
@@ -94,7 +94,7 @@ class SignalDatastore:
         logging.info("SignalDatastore number is %s", self.number)
         self.filepath = "data/" + number
         # await self.account_interface.create_table()
-        setup_tmpdir() # shouldn't do anything if not running locally
+        setup_tmpdir()  # shouldn't do anything if not running locally
 
     def is_registered_locally(self) -> bool:
         try:
