@@ -33,6 +33,10 @@ class AuthorizedPayer(Bot):
             logging.info("auxin: %s", line)
             logging.error(termcolor.colored(blob["error"], "red"))
         try:
+            if "params" in blob and isinstance(blob["params"], list):
+                for msg in blob["params"]:
+                    await self.auxincli_output_queue.put(AuxinMessage(msg))
+                return
             if "result" in blob:
                 if isinstance(blob.get("result"), list):
                     for msg in blob.get("result"):
@@ -47,24 +51,6 @@ class AuthorizedPayer(Bot):
         # if msg.full_text:
         #   logging.info("signal: %s", line)
         return
-
-    async def start_process(self) -> None:
-        asyncio.create_task(self.recv_loop())
-        await super().start_process()
-
-    async def recv_loop(self) -> None:
-        while not self.exiting:
-            await self.auxincli_input_queue.put(rpc("receive", id="receive"))
-            await asyncio.sleep(1)
-
-    # async def wait_resp(self, cmd: dict) -> AuxinMessage:
-    #     stamp = str(round(time.time()))
-    #     cmd["id"] = stamp
-    #     self.pending_requests[stamp] = asyncio.Future()
-    #     await self.auxincli_input_queue.put(cmd)
-    #     result = await self.pending_requests[stamp]
-    #     self.pending_requests.pop(stamp)
-    #     return result
 
     async def auxin_req(self, method: str, **params: Any) -> Message:
         return await self.wait_resp(rpc(method, **params))
@@ -82,7 +68,7 @@ class AuthorizedPayer(Bot):
         )
         if result.error or not b64_address:
             logging.info("bad address: %s", result.blob)
-            await self.send_message("sorry, couldn't get your MobileCoin address")
+            await self.send_message(recipient, "sorry, couldn't get your MobileCoin address")
         logging.info("got pay address")
         address = mc_util.b64_public_address_to_b58_wrapper(b64_address)
         await self.send_message(recipient, "got your address")
@@ -126,7 +112,7 @@ class AuthorizedPayer(Bot):
         )
         await self.send_message(recipient, "receipt sent!")
 
-    async def do_pay(self, msg: AuxinMessage) -> Response:
+    async def do_pay(self, msg: Message) -> Response:
         # 1e9=1 milimob (.01 usd today)
         asyncio.create_task(self.send_payment(msg.source, int(1e9)))
         return "trying to send a payment"
