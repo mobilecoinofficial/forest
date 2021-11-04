@@ -66,6 +66,7 @@ class AuxinMessage(Message):
     def __init__(self, blob: dict) -> None:
         if "id" in blob:
             self.id = blob["id"]
+            self.error = blob.get("error", {})
             blob = blob.get("result", {})
         else:
             self.id = None
@@ -88,7 +89,7 @@ class AuxinMessage(Message):
             receipt = payment_notif["Transaction"]["mobileCoin"]["receipt"]
             self.payment = {
                 "note": payment_notif.get("note"),
-                "receipt": base64.b64encode(bytes(receipt)).decode(),
+                "receipt": receipt,
             }
         else:
             self.payment = {}
