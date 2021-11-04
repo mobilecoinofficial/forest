@@ -23,13 +23,14 @@ class AuthorizedPayer(Bot):
 
     async def handle_auxincli_raw_line(self, line: str) -> None:
         if '{"jsonrpc":"2.0","result":[],"id":"receive"}' not in line:
-            pass #logging.error("auxin: %s", line)
+            pass  # logging.error("auxin: %s", line)
         try:
             blob = json.loads(line)
         except json.JSONDecodeError:
             logging.info("auxin: %s", line)
             return
         if "error" in blob:
+            logging.info("auxin: %s", line)
             logging.error(termcolor.colored(blob["error"], "red"))
         try:
             if "result" in blob:
@@ -68,19 +69,22 @@ class AuthorizedPayer(Bot):
     async def auxin_req(self, method: str, **params: Any) -> Message:
         return await self.wait_resp(rpc(method, **params))
 
+    async def handle_message(self, msg: Message) -> Response:
+        if "hit me up" in msg.text.lower():
+            return await self.do_pay(msg)
+        return await super().handle_message(msg)
+
     async def send_payment(self, recipient: str, amount_pmob: int) -> None:
         logging.info("getting pay address")
         result = await self.auxin_req("getPayAddress", peer_name=recipient)
-        logging.info("got pay address")
-        address = mc_util.b64_public_address_to_b58_wrapper(
-            base64.b64encode(
-                bytes(
-                    result.blob.get("Address", {})
-                    .get("mobileCoinAddress", {})
-                    .get("address")
-                )
-            ).decode()
+        b64_address = (
+            result.blob.get("Address", {}).get("mobileCoinAddress", {}).get("address")
         )
+        if result.error or not b64_address:
+            logging.info("bad address: %s", result.blob)
+            await self.send_message("sorry, couldn't get your MobileCoin address")
+        logging.info("got pay address")
+        address = mc_util.b64_public_address_to_b58_wrapper(b64_address)
         await self.send_message(recipient, "got your address")
         raw_prop = await self.mobster.req_(
             "build_transaction",
