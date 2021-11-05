@@ -81,7 +81,7 @@ class Signal:
             await self.set_profile()
         write_task: Optional[asyncio.Task] = None
         while self.sigints == 0 and not self.exiting:
-            # count number of errors and backoff 
+            # TODO: count number of errors and backoff
             command = f"{utils.ROOT_DIR}/auxin-cli --config {utils.ROOT_DIR} --user {self.bot_number} jsonRpc".split()
             logging.info(command)
             self.proc = await asyncio.create_subprocess_exec(
@@ -287,9 +287,13 @@ class Signal:
                 assert recipient == utils.signal_format(recipient)
             except (AssertionError, NumberParseException):
                 try:
-                    assert recipient == uuid.UUID(recipient)
+                    assert recipient == str(uuid.UUID(recipient))
                 except (AssertionError, ValueError) as e:
-                    logging.error(e)
+                    logging.error(
+                        "not sending message to invalid recipient %s. error: %s",
+                        recipient,
+                        e,
+                    )
                     return
         params["destination"] = str(recipient)
 
@@ -312,7 +316,8 @@ class Signal:
         ):  # and it's a valid b64
             await self.send_message(None, msg, group=target_msg.group)
         else:
-            await self.send_message(target_msg.source, msg)
+            destination = target_msg.source or target_msg.uuid
+            await self.send_message(destination, msg)
 
     async def send_reaction(self, target_msg: Message, emoji: str) -> None:
         """Send a reaction. Protip: you can use e.g. \N{GRINNING FACE} in python"""
