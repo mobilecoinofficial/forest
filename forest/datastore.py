@@ -40,7 +40,7 @@ class DatastoreError(Exception):
 AccountPGExpressions = pghelp.PGExpressions(
     table="signal_accounts",
     # rename="ALTAR TABLE IF EXISTS prod_users RENAME TO {self.table}",
-    migrate="ALTER TABLE IF EXISTS {self.table} ADD IF NOT EXISTS datastore BYTEA, notes TEXT",
+    migrate="ALTER TABLE IF EXISTS {self.table} ADD IF NOT EXISTS datastore BYTEA, ADD IF NOT EXISTS notes TEXT",
     create_table="CREATE TABLE IF NOT EXISTS {self.table} \
             (id TEXT PRIMARY KEY, \
             datastore BYTEA, \
