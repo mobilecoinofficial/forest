@@ -64,7 +64,7 @@ class Message:
 
 
 class AuxinMessage(Message):
-    def __init__(self, outer_blob: dict, _id=None) -> None:
+    def __init__(self, outer_blob: dict, _id: Optional[str]=None) -> None:
         if "id" in outer_blob:
             self.id = outer_blob["id"]
             self.error = outer_blob.get("error", {})

@@ -161,7 +161,8 @@ class Forest(Bot):
     if not utils.get_secret("GROUPS"):
         del do_mkgroup, do_query
 
-    async def payment_response(self, message: Message, _: int) -> str:
+    async def payment_response(self, message: Message, amount_pmob: int) -> str:
+        del amount_pmob
         diff = await self.get_balance(message.source) - self.usd_price
         if diff < 0:
             return f"Please send another {abs(diff)} USD to buy a phone number"
