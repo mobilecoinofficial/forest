@@ -203,7 +203,7 @@ class Signal:
                 for _line in tb:
                     logging.error(_line)
             else:
-                logging.error(termcolor.colored(blob["error"], "red"))
+                logging.error("signal-cli error blob: %s", termcolor.colored(blob["error"], "red"))
             return
         msg = Message(blob)
         if msg.full_text:
