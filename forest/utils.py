@@ -74,6 +74,7 @@ def get_secret(key: str, env: Optional[str] = None) -> str:
         return ""
     return secret
 
+
 AUXIN = get_secret("AUXIN") or True
 HOSTNAME = open("/etc/hostname").read().strip()  #  FLY_ALLOC_ID
 APP_NAME = os.getenv("FLY_APP_NAME")
