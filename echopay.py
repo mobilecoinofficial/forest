@@ -7,7 +7,7 @@ import logging
 from aiohttp import web
 
 import mc_util
-from forest.core import Bot, Message, Response, app, rpc
+from forest.core import Bot, Message, Response, app
 
 britbot = "+447888866969"
 fee = int(1e12 * 0.0004)
