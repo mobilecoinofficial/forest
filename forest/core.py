@@ -80,7 +80,7 @@ class Signal:
         if utils.get_secret("PROFILE"):
             await self.set_profile()
         write_task: Optional[asyncio.Task] = None
-        RESTART_TIME = 2 # move somewhere else maybe
+        RESTART_TIME = 2  # move somewhere else maybe
         restart_count = 0
         while self.sigints == 0 and not self.exiting:
             # TODO: count number of errors and backoff
@@ -134,6 +134,7 @@ class Signal:
         # if we're downloading, then we upload too
         if utils.UPLOAD:
             await self.datastore.upload()
+        # ideally also cancel Bot.restart_task
         if self.proc:
             try:
                 self.proc.kill()
@@ -151,9 +152,19 @@ class Signal:
             logging.info(executor)
             executor.shutdown(wait=False, cancel_futures=True)
         logging.info("exited".center(60, "="))
-        sys.exit(0)
+        sys.exit(0)  # equivelent to `raise SystemExit()`
         logging.info("called sys.exit but still running, trying os._exit")
+        # call C fn _exit() without calling cleanup handlers, flushing stdio buffers, etc.
         os._exit(1)
+
+    async def handle_auxincli_raw_output(self, stream: StreamReader) -> None:
+        """Read auxin-cli output but delegate handling it"""
+        while True:
+            line = (await stream.readline()).decode().strip()
+            if not line:
+                break
+            await self.handle_auxincli_raw_line(line)
+        logging.info("stopped reading auxin-cli stdout")
 
     async def handle_auxincli_raw_line(self, line: str) -> None:
         if '{"jsonrpc":"2.0","result":[],"id":"receive"}' not in line:
@@ -189,18 +200,6 @@ class Signal:
             return
         return
 
-    async def auxin_req(self, method: str, **params: Any) -> Message:
-        return await self.wait_resp(rpc(method, **params))
-
-    async def handle_auxincli_raw_output(self, stream: StreamReader) -> None:
-        """Read auxin-cli output but delegate handling it"""
-        while True:
-            line = (await stream.readline()).decode().strip()
-            if not line:
-                break
-            await self.handle_auxincli_raw_line(line)
-        logging.info("stopped reading auxin-cli stdout")
-
     # i'm tempted to refactor these into handle_messages
     async def auxincli_output_iter(self) -> AsyncIterator[Message]:
         """Provides an asynchronous iterator over messages on the queue.
@@ -222,9 +221,13 @@ class Signal:
         self.pending_requests.pop(stamp)
         return result
 
+    async def auxin_req(self, method: str, **params: Any) -> Message:
+        return await self.wait_resp(rpc(method, **params))
+
     async def set_profile(self) -> None:
         """Set signal profile. Note that this will overwrite any mobilecoin address"""
         env = utils.get_secret("ENV")
+        # maybe use rpc format
         profile = {
             "command": "updateProfile",
             "given-name": "localbot" if utils.LOCAL else "forestbot",
@@ -234,6 +237,7 @@ class Signal:
         await self.auxincli_input_queue.put(profile)
         logging.info(profile)
 
+    # this should maybe yield a future (eep) and/or use auxin_req
     async def send_message(  # pylint: disable=too-many-arguments
         self,
         recipient: Optional[str],
@@ -306,7 +310,7 @@ class Signal:
                     )
                     return
         params["destination"] = str(recipient)
-
+        # maybe use rpc instead
         json_command: JSON = {
             "jsonrpc": "2.0",
             "id": "send",  # f"send-{int(time.time())}",
@@ -376,31 +380,15 @@ class Bot(Signal):
         self.pongs: dict[str, str] = {}
         super().__init__(*args)
         self.pending_response_tasks = []
-        self.process = asyncio.create_task(self.start_process())
+        self.restart_task = asyncio.create_task(
+            self.start_process()
+        )  # maybe cancel on sigint?
         self.queue_task = asyncio.create_task(self.handle_messages())
+        Datapoint = tuple[int, float]  # timestamp, latency in seconds
+        self.response_metrics: list[Datapoint] = []
         if utils.get_secret("MONITOR_WALLET"):
             # currently spams and re-credits the same invoice each reboot
             asyncio.create_task(self.mobster.monitor_wallet())
-
-    async def work_on_message(self, message: Message) -> None:
-        response = await self.handle_message(message)
-        if response is not None:
-            await self.respond(message, response)
-
-    async def respond_with_message(self, message: Message) -> None:
-        try:
-            response = await self.handle_message(message)
-            if response is not None:
-                await self.respond(message, response)
-        except:
-            exception_traceback = "".join(traceback.format_exception(*sys.exc_info()))
-            self.pending_response_tasks.append(
-                asyncio.create_task(
-                    self.send_message(utils.get_secret("ADMIN"),
-                        f"{message}\n{exception_traceback}",
-                    )
-                )
-            )
 
     async def handle_messages(self) -> None:
         """Read messages from the queue and pass each message to handle_message
@@ -409,13 +397,29 @@ class Bot(Signal):
         async for message in self.auxincli_output_iter():
             self.pending_response_tasks = [
                 task for task in self.pending_response_tasks if not task.done()
-            ]
-            self.pending_response_tasks.append(
-                asyncio.create_task(self.respond_with_message(message))
+            ] + [asyncio.create_task(self.respond_with_message(message))]
+
+    # maybe respond_with_message is merged with handle_message?
+    async def respond_with_message(self, message: Message) -> None:
+        start_time = time.time()
+        try:
+            response = await self.handle_message(message)
+            if response is not None:
+                # this should eventually return the message sent timestamp / use that info
+                await self.respond(message, response)
+        except:
+            exception_traceback = "".join(traceback.format_exception(*sys.exc_info()))
+            self.pending_response_tasks.append(  # should this actually be parallel?
+                asyncio.create_task(
+                    self.send_message(
+                        utils.get_secret("ADMIN"),
+                        f"{message}\n{exception_traceback}",
+                    )
+                )
             )
-            # potentially stick a try-catch block here and send errors to admin
-            print(f"doing work with {message}")
-            pending_tasks.append(asyncio.create_task(self.work_on_message(message)))
+        self.response_metrics.append((int(start_time), time.time() - start_time))
+        # after we've recorded how long it took in python to process the message, do something like
+        # self.auxin_roundtrip_latency.append(message.timestamp, await self.pending_requests[send_id].timestamp - message.timestamp)
 
     async def handle_message(self, message: Message) -> Response:
         """Method dispatch to do_x commands and goodies.
