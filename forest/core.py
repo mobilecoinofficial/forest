@@ -164,15 +164,20 @@ class Signal:
         try:
             if "params" in blob and isinstance(blob["params"], list):
                 for msg in blob["params"]:
-                    await self.auxincli_output_queue.put(AuxinMessage(msg))
+                    print("params", msg)
+                    if not blob.get("content", {}).get("receipt_message", {}):
+                        await self.auxincli_output_queue.put(AuxinMessage(msg))
                 return
             if "result" in blob:
                 if isinstance(blob.get("result"), list):
                     for msg in blob.get("result"):
-                        await self.auxincli_output_queue.put(AuxinMessage(msg))
+                        print("result", msg)
+                        if not blob.get("content", {}).get("receipt_message", {}):
+                            await self.auxincli_output_queue.put(auxinmessage(msg))
                     return
                 msg = AuxinMessage(blob)
                 await self.auxincli_output_queue.put(msg)
+            print("PUT MSG on OUTPUT_QUEUE", msg)
         except KeyError:
             logging.info("auxin parse error: %s", line)
             traceback.print_exception(*sys.exc_info())
@@ -186,6 +191,7 @@ class Signal:
         """Read auxin-cli output but delegate handling it"""
         while True:
             line = (await stream.readline()).decode().strip()
+            print(line)
             if not line:
                 break
             await self.handle_auxincli_raw_line(line)
@@ -197,6 +203,7 @@ class Signal:
         See Bot for how messages and consumed and dispatched"""
         while True:
             message = await self.auxincli_output_queue.get()
+            print("output_iter", message)
             yield message
 
     # Next, we see how the input queue is populated and consumed.
@@ -374,17 +381,22 @@ class Bot(Signal):
     async def handle_messages(self) -> None:
         """Read messages from the queue and pass each message to handle_message
         If that returns a non-empty string, send it as a response"""
+        pending_tasks = []
         async for message in self.auxincli_output_iter():
             # potentially stick a try-catch block here and send errors to admin
-            print(message)
-            response = await self.handle_message(message)
-            if response:
-                await self.respond(message, response)
+            print(f"doing work with {message}")
+            async def do_work():
+                response = await self.handle_message(message)
+                if response is not None:
+                    await self.respond(message, response)
+            pending_tasks.append(asyncio.create_task(do_work()))
 
     async def handle_message(self, message: Message) -> Response:
         """Method dispatch to do_x commands and goodies.
         Overwrite this to add your own non-command logic,
         but call super().handle_message(message) at the end"""
+        print(f"handle - doing work with {message}")
+        print(self.pending_requests)
         if message.id and message.id in self.pending_requests:
             logging.info("setting result for future %s: %s", message.id, message)
             self.pending_requests[message.id].set_result(message)
@@ -455,6 +467,18 @@ class Bot(Signal):
                 "did you include the country code?",
             )
             return None
+
+    async def do_address(self, message: Message) -> str:
+        recipient = message.source
+        result = await self.auxin_req("getPayAddress", peer_name=recipient)
+        b64_address = (
+            result.blob.get("Address", {}).get("mobileCoinAddress", {}).get("address")
+        )
+        if result.error or not b64_address:
+            logging.info("bad address: %s", result.blob)
+            return "sorry, couldn't get your MobileCoin address"
+        address = mc_util.b64_public_address_to_b58_wrapper(b64_address)
+        return address
 
     async def handle_payment(self, message: Message) -> None:
         """Decode the receipt, then update balances.
