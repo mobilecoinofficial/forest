@@ -80,6 +80,7 @@ class AuxinMessage(Message):
         self.attachments = msg.get("attachments", [])
         self.group = msg.get("group") or msg.get("groupV2") or ""
         maybe_quote = msg.get("quote")
+        self.address = blob.get("Address", {})
         self.quoted_text = "" if not maybe_quote else maybe_quote.get("text")
         address = blob.get("remote_address", {}).get("address", {})
         if "Both" in address:
