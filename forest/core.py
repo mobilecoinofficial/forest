@@ -7,6 +7,7 @@ import asyncio.subprocess as subprocess  # https://github.com/PyCQA/pylint/issue
 import json
 import logging
 import os
+import datetime
 import time
 import uuid
 import signal
@@ -38,6 +39,10 @@ Response = Union[str, list, dict[str, str], None]
 
 def rpc(method: str, _id: str = "1", **params: Any) -> dict:
     return {"jsonrpc": "2.0", "method": method, "id": _id, "params": params}
+
+
+def fmt_ms(ts: int) -> str:
+    return datetime.datetime.utcfromtimestamp(ts / 1000).isoformat()
 
 
 class Signal:
@@ -168,7 +173,7 @@ class Signal:
 
     async def handle_auxincli_raw_line(self, line: str) -> None:
         if '{"jsonrpc":"2.0","result":[],"id":"receive"}' not in line:
-            pass  # logging.error("auxin: %s", line)
+            logging.info("auxin: %s", line)
         try:
             blob = json.loads(line)
         except json.JSONDecodeError:
@@ -246,8 +251,7 @@ class Signal:
         endsession: bool = False,
         attachments: Optional[list[str]] = None,
         content: str = "",
-    ) -> None:
-
+    ) -> str:
         """
         Builds send command for the specified recipient in jsonrpc format and
         writes to the built command to the underlying signal engine. Supports
@@ -268,7 +272,6 @@ class Signal:
         content `str`:
             json string specifying raw message content to be serialized into protobufs
         """
-
         # Consider inferring desination
         if recipient and group:  # (recipient or group):
             raise ValueError(
@@ -281,9 +284,8 @@ class Signal:
             )
 
         if isinstance(msg, list):
-            for m in msg:
-                await self.send_message(recipient, m)
-            return
+            # return the last stamp
+            return [await self.send_message(recipient, m) for m in msg][-1]
         if isinstance(msg, dict):
             msg = "\n".join((f"{key}:\t{value}" for key, value in msg.items()))
 
@@ -308,31 +310,33 @@ class Signal:
                         recipient,
                         e,
                     )
-                    return
+                    return ""
         params["destination"] = str(recipient)
         # maybe use rpc instead
+        stamp = f"send-{int(time.time()*1000)}"
         json_command: JSON = {
             "jsonrpc": "2.0",
-            "id": "send",  # f"send-{int(time.time())}",
+            "id": stamp,
             "method": "send",
             "params": params,
         }
-
+        self.pending_requests[stamp] = asyncio.Future()
         await self.auxincli_input_queue.put(json_command)
-        return
+        return stamp
 
-    async def respond(self, target_msg: Message, msg: Response) -> None:
+    async def respond(self, target_msg: Message, msg: Response) -> str:
         """Respond to a message depending on whether it's a DM or group"""
         if not target_msg.source:
             logging.error(target_msg.blob)
         if (
             not utils.AUXIN and target_msg.group and isinstance(target_msg.group, str)
         ):  # and it's a valid b64
-            await self.send_message(None, msg, group=target_msg.group)
+            return await self.send_message(None, msg, group=target_msg.group)
         else:
             destination = target_msg.source or target_msg.uuid
-            await self.send_message(destination, msg)
+            return await self.send_message(destination, msg)
 
+    # FIXME: disable for auxin
     async def send_reaction(self, target_msg: Message, emoji: str) -> None:
         """Send a reaction. Protip: you can use e.g. \N{GRINNING FACE} in python"""
         react = {
@@ -384,8 +388,11 @@ class Bot(Signal):
             self.start_process()
         )  # maybe cancel on sigint?
         self.queue_task = asyncio.create_task(self.handle_messages())
-        Datapoint = tuple[int, float]  # timestamp, latency in seconds
+        Datapoint = tuple[
+            int, str, float
+        ]  # timestamp in ms, command/info, latency in seconds
         self.response_metrics: list[Datapoint] = []
+        self.auxin_roundtrip_latency: list[Datapoint] = []
         if utils.get_secret("MONITOR_WALLET"):
             # currently spams and re-credits the same invoice each reboot
             asyncio.create_task(self.mobster.monitor_wallet())
@@ -400,12 +407,17 @@ class Bot(Signal):
 
     # maybe respond_with_message is merged with handle_message?
     async def respond_with_message(self, message: Message) -> None:
+        if message.id and message.id in self.pending_requests:
+            logging.info("setting result for future %s: %s", message.id, message)
+            self.pending_requests[message.id].set_result(message)
+            return None
+        future_key = None
         start_time = time.time()
         try:
             response = await self.handle_message(message)
             if response is not None:
                 # this should eventually return the message sent timestamp / use that info
-                await self.respond(message, response)
+                future_key = await self.respond(message, response)
         except:
             exception_traceback = "".join(traceback.format_exception(*sys.exc_info()))
             self.pending_response_tasks.append(  # should this actually be parallel?
@@ -416,18 +428,21 @@ class Bot(Signal):
                     )
                 )
             )
-        self.response_metrics.append((int(start_time), time.time() - start_time))
-        # after we've recorded how long it took in python to process the message, do something like
-        # self.auxin_roundtrip_latency.append(message.timestamp, await self.pending_requests[send_id].timestamp - message.timestamp)
+        delta = round(time.time() - start_time, 4)
+        note = message.command or ""
+        if delta:
+            # add message.command
+            self.response_metrics.append((int(start_time), note, delta))
+        if future_key:
+            result = await self.pending_requests.pop(future_key)
+            self.auxin_roundtrip_latency.append(
+                (message.timestamp, note, result.timestamp - message.timestamp)
+            )
 
     async def handle_message(self, message: Message) -> Response:
         """Method dispatch to do_x commands and goodies.
         Overwrite this to add your own non-command logic,
         but call super().handle_message(message) at the end"""
-        if message.id and message.id in self.pending_requests:
-            logging.info("setting result for future %s: %s", message.id, message)
-            self.pending_requests[message.id].set_result(message)
-            return None
         if message.command:
             if hasattr(self, "do_" + message.command):
                 return await getattr(self, "do_" + message.command)(message)
@@ -447,6 +462,23 @@ class Bot(Signal):
             return resp
         return None
 
+    async def do_average_metric(self, _: Message) -> Response:
+        avg = sum(metric[-1] for metric in self.response_metrics) / len(
+            self.response_metrics
+        )
+        return str(round(avg, 4))
+
+    async def do_dump_metric_csv(self, _: Message) -> Response:
+        return "start_time, command, delta\n" + "\n".join(
+            f"{fmt_ms(t)}, {cmd}, {delta}" for t, cmd, delta in self.response_metrics
+        )
+
+    async def do_dump_roundtrip(self, _: Message) -> Response:
+        return "start_time, command, delta\n" + "\n".join(
+            f"{fmt_ms(t)}, {cmd}, {delta}"
+            for t, cmd, delta in self.auxin_roundtrip_latency
+        )
+
     async def do_help(self, message: Message) -> str:
         """List available commands. /help <command> gives you that command's documentation, if available"""
         if message.arg1:
@@ -456,6 +488,7 @@ class Bot(Signal):
                     return cmd.__doc__
                 return f"Sorry, {message.arg1} isn't documented"
         # TODO: filter aliases and indicate which commands are undocumented
+
         return "commands: " + ", ".join(
             k.removeprefix("do_") for k in dir(self) if k.startswith("do_")
         )
