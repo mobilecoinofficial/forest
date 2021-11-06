@@ -103,7 +103,7 @@ class Signal:
             write_task = asyncio.create_task(self.write_commands(self.proc.stdin))
             returncode = await self.proc.wait()
             proc_exit_time = time.time()
-            runtime = proc_exit_time - proc_start_time
+            runtime = proc_exit_time - proc_launch_time
             if runtime < RESTART_TIME:
                 logging.info("sleeping briefly")
                 await asyncio.sleep(RESTART_TIME ** restart_count)
@@ -379,7 +379,7 @@ class Bot(Signal):
         self.mobster = payments_monitor.Mobster()
         self.pongs: dict[str, str] = {}
         super().__init__(*args)
-        self.pending_response_tasks = []
+        self.pending_response_tasks: list[asyncio.Task] = []
         self.restart_task = asyncio.create_task(
             self.start_process()
         )  # maybe cancel on sigint?
@@ -393,7 +393,6 @@ class Bot(Signal):
     async def handle_messages(self) -> None:
         """Read messages from the queue and pass each message to handle_message
         If that returns a non-empty string, send it as a response"""
-        pending_tasks = []
         async for message in self.auxincli_output_iter():
             self.pending_response_tasks = [
                 task for task in self.pending_response_tasks if not task.done()
@@ -510,18 +509,6 @@ class Bot(Signal):
 
     async def do_exception(self, message: Message) -> None:
         raise Exception("You asked for it!")
-
-    async def do_address(self, message: Message) -> str:
-        recipient = message.source
-        result = await self.auxin_req("getPayAddress", peer_name=recipient)
-        b64_address = (
-            result.blob.get("Address", {}).get("mobileCoinAddress", {}).get("address")
-        )
-        if result.error or not b64_address:
-            logging.info("bad address: %s", result.blob)
-            return "sorry, couldn't get your MobileCoin address"
-        address = mc_util.b64_public_address_to_b58_wrapper(b64_address)
-        return address
 
     async def handle_payment(self, message: Message) -> None:
         """Decode the receipt, then update balances.
