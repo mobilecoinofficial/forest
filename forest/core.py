@@ -373,6 +373,11 @@ class Bot(Signal):
             # currently spams and re-credits the same invoice each reboot
             asyncio.create_task(self.mobster.monitor_wallet())
 
+    async def work_on_message(self, message: Message) -> None: 
+        response = await self.handle_message(message)
+        if response is not None:
+            await self.respond(message, response)
+
     async def handle_messages(self) -> None:
         """Read messages from the queue and pass each message to handle_message
         If that returns a non-empty string, send it as a response"""
@@ -380,11 +385,7 @@ class Bot(Signal):
         async for message in self.auxincli_output_iter():
             # potentially stick a try-catch block here and send errors to admin
             print(f"doing work with {message}")
-            async def do_work():
-                response = await self.handle_message(message)
-                if response is not None:
-                    await self.respond(message, response)
-            pending_tasks.append(asyncio.create_task(do_work()))
+            pending_tasks.append(asyncio.create_task(self.work_on_message(message)))
 
     async def handle_message(self, message: Message) -> Response:
         """Method dispatch to do_x commands and goodies.
