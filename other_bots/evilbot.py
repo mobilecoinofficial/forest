@@ -2,6 +2,7 @@ from aiohttp import web
 from forest.core import Bot, Message, Response, app
 from typing import Any
 
+
 class EvilBot(Bot):
     async def send_typing(self, recipient: str, stop: bool = False) -> None:
         typing_cmd: dict[str, Any] = {
