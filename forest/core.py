@@ -193,6 +193,8 @@ class Signal:
                 return
             if "result" in blob:
                 if isinstance(blob.get("result"), list):
+                    # idt this happens anymore, remove?
+                    logging.info("results list code path")
                     for msg in blob.get("result"):
                         if not blob.get("content", {}).get("receipt_message", {}):
                             await self.auxincli_output_queue.put(AuxinMessage(msg))
@@ -408,7 +410,7 @@ class Bot(Signal):
     # maybe respond_with_message is merged with handle_message?
     async def respond_with_message(self, message: Message) -> None:
         if message.id and message.id in self.pending_requests:
-            logging.info("setting result for future %s: %s", message.id, message)
+            logging.debug("setting result for future %s: %s", message.id, message)
             self.pending_requests[message.id].set_result(message)
             return None
         future_key = None
@@ -420,23 +422,29 @@ class Bot(Signal):
                 future_key = await self.respond(message, response)
         except:
             exception_traceback = "".join(traceback.format_exception(*sys.exc_info()))
-            self.pending_response_tasks.append(  # should this actually be parallel?
-                asyncio.create_task(
-                    self.send_message(
-                        utils.get_secret("ADMIN"),
-                        f"{message}\n{exception_traceback}",
-                    )
-                )
+            send_coro = self.send_message(
+                utils.get_secret("ADMIN"),
+                f"{message}\n{exception_traceback}",
             )
-        delta = round(time.time() - start_time, 4)
+            # should this actually be parallel?
+            self.pending_response_tasks.append(asyncio.create_task(send_coro))
+        python_delta = round(time.time() - start_time, 4)
         note = message.command or ""
-        if delta:
-            # add message.command
-            self.response_metrics.append((int(start_time), note, delta))
+        if python_delta:
+            self.response_metrics.append((int(start_time), note, python_delta))
         if future_key:
-            result = await self.pending_requests.pop(future_key)
+            logging.debug("awaiting future %s", future_key)
+            result = await self.pending_requests[future_key]
+            self.pending_requests.pop(future_key)
+            roundtrip_delta = (result.timestamp - message.timestamp) / 1000
             self.auxin_roundtrip_latency.append(
-                (message.timestamp, note, result.timestamp - message.timestamp)
+                (message.timestamp, note, roundtrip_delta)
+            )
+            logging.info("noted roundtrip time: %s", roundtrip_delta)
+            # stick this in prometheus
+            await self.send_message(
+                utils.get_secret("ADMIN"),
+                f"command: {note}. python delta: {python_delta}s. roundtrip delta: {roundtrip_delta}s",
             )
 
     async def handle_message(self, message: Message) -> Response:
@@ -462,6 +470,7 @@ class Bot(Signal):
             return resp
         return None
 
+    # gross
     async def do_average_metric(self, _: Message) -> Response:
         avg = sum(metric[-1] for metric in self.response_metrics) / len(
             self.response_metrics
