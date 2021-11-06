@@ -44,14 +44,14 @@ class Message:
         variables except for the blob
         """
         properties = {}
+        #'blob': {'content': {'end_session': False, 'receipt_message'
         for attr in dir(self):
-            if not (attr.startswith("_") or attr in ("blob", "full_text")):
-                val = getattr(self, attr)
-                if val and not callable(val):
-                    # if attr == "text":
-                    #    val = termcolor.colored(val, attrs=["bold"])
-                    #    # gets mangled by repr
-                    properties[attr] = val
+            val = getattr(self, attr)
+            if val and not callable(val) and not "_" in attr:
+                # if attr == "text":
+                #    val = termcolor.colored(val, attrs=["bold"])
+                #    # gets mangled by repr
+                properties[attr] = val
 
         return properties
 
@@ -80,6 +80,7 @@ class AuxinMessage(Message):
         self.attachments = msg.get("attachments", [])
         self.group = msg.get("group") or msg.get("groupV2") or ""
         maybe_quote = msg.get("quote")
+        self.address = blob.get("Address", {})
         self.quoted_text = "" if not maybe_quote else maybe_quote.get("text")
         address = blob.get("remote_address", {}).get("address", {})
         if "Both" in address:
