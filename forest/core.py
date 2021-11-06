@@ -80,10 +80,13 @@ class Signal:
         if utils.get_secret("PROFILE"):
             await self.set_profile()
         write_task: Optional[asyncio.Task] = None
+        RESTART_TIME = 2
+        restart_count = 0
         while self.sigints == 0 and not self.exiting:
             # TODO: count number of errors and backoff
             command = f"{utils.ROOT_DIR}/auxin-cli --config {utils.ROOT_DIR} --user {self.bot_number} jsonRpc".split()
             logging.info(command)
+            proc_launch_time = time.time()
             self.proc = await asyncio.create_subprocess_exec(
                 *command, stdin=PIPE, stdout=PIPE
             )
@@ -99,6 +102,11 @@ class Signal:
                 write_task.cancel()
             write_task = asyncio.create_task(self.write_commands(self.proc.stdin))
             returncode = await self.proc.wait()
+            proc_exit_time = time.time()
+            runtime = proc_exit_time - proc_start_time
+            if runtime < RESTART_TIME:
+                logging.info("sleeping briefly")
+                await asyncio.sleep(RESTART_TIME ** restart_count)
             logging.warning("auxin-cli exited: %s", returncode)
             if returncode == 0:
                 logging.info("auxin-cli apparently exited cleanly, not restarting")
@@ -164,20 +172,19 @@ class Signal:
         try:
             if "params" in blob and isinstance(blob["params"], list):
                 for msg in blob["params"]:
-                    print("params", msg)
+                    print("params", dict(msg))
                     if not blob.get("content", {}).get("receipt_message", {}):
                         await self.auxincli_output_queue.put(AuxinMessage(msg))
                 return
             if "result" in blob:
                 if isinstance(blob.get("result"), list):
                     for msg in blob.get("result"):
-                        print("result", msg)
+                        print("result", dict(msg))
                         if not blob.get("content", {}).get("receipt_message", {}):
                             await self.auxincli_output_queue.put(auxinmessage(msg))
                     return
                 msg = AuxinMessage(blob)
                 await self.auxincli_output_queue.put(msg)
-            print("PUT MSG on OUTPUT_QUEUE", msg)
         except KeyError:
             logging.info("auxin parse error: %s", line)
             traceback.print_exception(*sys.exc_info())
@@ -191,7 +198,6 @@ class Signal:
         """Read auxin-cli output but delegate handling it"""
         while True:
             line = (await stream.readline()).decode().strip()
-            print(line)
             if not line:
                 break
             await self.handle_auxincli_raw_line(line)
@@ -203,7 +209,6 @@ class Signal:
         See Bot for how messages and consumed and dispatched"""
         while True:
             message = await self.auxincli_output_queue.get()
-            print("output_iter", message)
             yield message
 
     # Next, we see how the input queue is populated and consumed.
@@ -306,7 +311,7 @@ class Signal:
 
         json_command: JSON = {
             "jsonrpc": "2.0",
-            "id": "send",
+            "id": "send",  # f"send-{int(time.time())}",
             "method": "send",
             "params": params,
         }
@@ -372,31 +377,43 @@ class Bot(Signal):
         self.mobster = payments_monitor.Mobster()
         self.pongs: dict[str, str] = {}
         super().__init__(*args)
-        asyncio.create_task(self.start_process())
-        asyncio.create_task(self.handle_messages())
+        self.pending_response_tasks = []
+        self.process = asyncio.create_task(self.start_process())
+        self.queue_task = asyncio.create_task(self.handle_messages())
         if utils.get_secret("MONITOR_WALLET"):
             # currently spams and re-credits the same invoice each reboot
             asyncio.create_task(self.mobster.monitor_wallet())
 
+    async def respond_with_message(self, message: Message) -> None:
+        try:
+            response = await self.handle_message(message)
+            if response is not None:
+                await self.respond(message, response)
+        except:
+            exception_traceback = "".join(traceback.format_exception(*sys.exc_info()))
+            self.pending_response_tasks.append(
+                asyncio.create_task(
+                    self.send_message(utils.get_secret("ADMIN"),
+                        f"{message}\n{exception_traceback}",
+                    )
+                )
+            )
+
     async def handle_messages(self) -> None:
         """Read messages from the queue and pass each message to handle_message
         If that returns a non-empty string, send it as a response"""
-        pending_tasks = []
         async for message in self.auxincli_output_iter():
-            # potentially stick a try-catch block here and send errors to admin
-            print(f"doing work with {message}")
-            async def do_work():
-                response = await self.handle_message(message)
-                if response is not None:
-                    await self.respond(message, response)
-            pending_tasks.append(asyncio.create_task(do_work()))
+            self.pending_response_tasks = [
+                task for task in self.pending_response_tasks if not task.done()
+            ]
+            self.pending_response_tasks.append(
+                asyncio.create_task(self.respond_with_message(message))
+            )
 
     async def handle_message(self, message: Message) -> Response:
         """Method dispatch to do_x commands and goodies.
         Overwrite this to add your own non-command logic,
         but call super().handle_message(message) at the end"""
-        print(f"handle - doing work with {message}")
-        print(self.pending_requests)
         if message.id and message.id in self.pending_requests:
             logging.info("setting result for future %s: %s", message.id, message)
             self.pending_requests[message.id].set_result(message)
@@ -479,6 +496,9 @@ class Bot(Signal):
             return "sorry, couldn't get your MobileCoin address"
         address = mc_util.b64_public_address_to_b58_wrapper(b64_address)
         return address
+
+    async def do_exception(self, message: Message) -> None:
+        raise Exception("You asked for it!")
 
     async def handle_payment(self, message: Message) -> None:
         """Decode the receipt, then update balances.
