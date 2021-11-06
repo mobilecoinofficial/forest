@@ -172,16 +172,14 @@ class Signal:
         try:
             if "params" in blob and isinstance(blob["params"], list):
                 for msg in blob["params"]:
-                    print("params", dict(msg))
                     if not blob.get("content", {}).get("receipt_message", {}):
                         await self.auxincli_output_queue.put(AuxinMessage(msg))
                 return
             if "result" in blob:
                 if isinstance(blob.get("result"), list):
                     for msg in blob.get("result"):
-                        print("result", dict(msg))
                         if not blob.get("content", {}).get("receipt_message", {}):
-                            await self.auxincli_output_queue.put(auxinmessage(msg))
+                            await self.auxincli_output_queue.put(AuxinMessage(msg))
                     return
                 msg = AuxinMessage(blob)
                 await self.auxincli_output_queue.put(msg)
