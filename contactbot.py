@@ -163,7 +163,7 @@ class Forest(Bot):
 
     async def payment_response(self, msg: Message, amount_pmob: int) -> str:
         del amount_pmob
-        diff = await self.get_balance(message.source) - self.usd_price
+        diff = await self.get_balance(msg.source) - self.usd_price
         if diff < 0:
             return f"Please send another {abs(diff)} USD to buy a phone number"
         if diff == 0:
