@@ -1,5 +1,6 @@
 FROM rust:latest as builder
 WORKDIR /src
+ENV cache_burst=1
 RUN git clone https://github.com/forestcontact/auxin
 WORKDIR /app
 RUN rustup default nightly
