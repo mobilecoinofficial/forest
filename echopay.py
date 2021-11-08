@@ -7,6 +7,7 @@ import logging
 from aiohttp import web
 
 import mc_util
+from forest import utils
 from forest.core import Bot, Message, Response, app
 
 britbot = "+447888866969"
@@ -19,7 +20,7 @@ class AuthorizedPayer(Bot):
             return await self.do_pay(message)
         return await super().handle_message(message)
 
-    async def send_payment(self, recipient: str, amount_pmob: int) -> None:
+    async def send_payment(self, recipient: str, amount_pmob: int) -> Message:
         logging.info("getting pay address")
         result = await self.auxin_req("getPayAddress", peer_name=recipient)
         b64_address = (
@@ -68,18 +69,34 @@ class AuthorizedPayer(Bot):
                 }
             }
         }
-        await self.auxin_req(
+        payment_notif = await self.auxin_req(
             "send", destination=recipient, content=json.dumps(content_skeletor)
         )
         await self.send_message(recipient, "receipt sent!")
+        return payment_notif
 
     async def do_pay(self, msg: Message) -> Response:
-        # 1e9=1 milimob (.01 usd today)
-        asyncio.create_task(self.send_payment(msg.source, int(1e9)))
+        # stick the variables in the parameters to avoid closure confusion
+        async def wrapper(self: AuthorizedPayer = self, msg: Message = msg) -> None:
+            # 1e9=1 milimob (.01 usd today)
+            payment_notif_sent = await self.send_payment(msg.source, int(1e9))
+            delta = (payment_notif_sent.timestamp - msg.timestamp) / 1000
+            await self.send_message(
+                utils.get_secret("ADMIN"), f"payment delta: {delta}"
+            )
+
+        asyncio.create_task(wrapper())
         return "trying to send a payment"
 
     async def payment_response(self, msg: Message, amount_pmob: int) -> Response:
-        asyncio.create_task(self.send_payment(msg.source, amount_pmob - fee))
+        async def wrapper() -> None:
+            payment_notif = await self.send_payment(msg.source, amount_pmob - fee)
+            delta = (payment_notif.timestamp - msg.timestamp) / 1000
+            await self.send_message(
+                utils.get_secret("ADMIN"), f"repayment delta: {delta}"
+            )
+
+        asyncio.create_task(wrapper())
         return f"trying to send you back {mc_util.pmob2mob(amount_pmob - fee)} MOB"
 
 
