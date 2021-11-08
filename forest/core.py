@@ -173,7 +173,7 @@ class Signal:
 
     async def handle_auxincli_raw_line(self, line: str) -> None:
         if '{"jsonrpc":"2.0","result":[],"id":"receive"}' not in line:
-            logging.info("auxin: %s", line)
+            pass # logging.info("auxin: %s", line)
         try:
             blob = json.loads(line)
         except json.JSONDecodeError:
@@ -315,7 +315,7 @@ class Signal:
                     return ""
         params["destination"] = str(recipient)
         # maybe use rpc instead
-        stamp = f"send-{int(time.time()*1000)}"
+        stamp = f"send-{int(time.time()*1000)}-{hex(hash(msg))[-4:]}"
         json_command: JSON = {
             "jsonrpc": "2.0",
             "id": stamp,
@@ -373,6 +373,9 @@ class Signal:
             await pipe.drain()
 
 
+Datapoint = tuple[int, str, float]  # timestamp in ms, command/info, latency in seconds
+
+
 class Bot(Signal):
     """Handles messages and command dispatch, as well as basic commands.
     Must be instantiated within a running async loop.
@@ -390,9 +393,6 @@ class Bot(Signal):
             self.start_process()
         )  # maybe cancel on sigint?
         self.queue_task = asyncio.create_task(self.handle_messages())
-        Datapoint = tuple[
-            int, str, float
-        ]  # timestamp in ms, command/info, latency in seconds
         self.response_metrics: list[Datapoint] = []
         self.auxin_roundtrip_latency: list[Datapoint] = []
         if utils.get_secret("MONITOR_WALLET"):
@@ -428,7 +428,7 @@ class Bot(Signal):
             )
             # should this actually be parallel?
             self.pending_response_tasks.append(asyncio.create_task(send_coro))
-        python_delta = round(time.time() - start_time, 4)
+        python_delta = round(time.time() - start_time, 3)
         note = message.command or ""
         if python_delta:
             self.response_metrics.append((int(start_time), note, python_delta))
