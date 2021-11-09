@@ -216,7 +216,7 @@ app.add_routes([web.post("/admin", admin_handler)])
 if __name__ == "__main__":
 
     @app.on_startup.append
-    async def start_wrapper(out_app: web.Application) -> None:
-        out_app["bot"] = Imogen()
+    async def start_wrapper(our_app: web.Application) -> None:
+        our_app["bot"] = Imogen()
 
     web.run_app(app, port=8080, host="0.0.0.0")

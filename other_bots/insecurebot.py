@@ -29,7 +29,7 @@ class InsecureBot(Bot):
 if __name__ == "__main__":
 
     @app.on_startup.append
-    async def start_wrapper(out_app: web.Application) -> None:
-        out_app["bot"] = InsecureBot()
+    async def start_wrapper(our_app: web.Application) -> None:
+        our_app["bot"] = InsecureBot()
 
     web.run_app(app, port=8080, host="0.0.0.0")
