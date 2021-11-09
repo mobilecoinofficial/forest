@@ -203,7 +203,9 @@ class Signal:
                 for _line in tb:
                     logging.error(_line)
             else:
-                logging.error("signal-cli error blob: %s", termcolor.colored(blob["error"], "red"))
+                logging.error(
+                    "signal-cli error blob: %s", termcolor.colored(blob["error"], "red")
+                )
             return
         msg = Message(blob)
         if msg.full_text:
@@ -317,7 +319,7 @@ class Bot(Signal):
         """Creates AND STARTS a bot that routes commands to do_x handlers"""
         self.client_session = aiohttp.ClientSession()
         self.mobster = payments_monitor.Mobster()
-        self.pongs = {}
+        self.pongs: dict[str, str] = {}
         super().__init__(*args)
         asyncio.create_task(self.start_process())
         asyncio.create_task(self.handle_messages())
@@ -382,13 +384,11 @@ class Bot(Signal):
             return f"/pong {message.text}"
         return "/pong"
 
-
     async def do_pong(self, message: Message) -> str:
         if message.text:
             self.pongs[message.text] = message.text
             return f"OK, stashing {message.text}"
         return "OK"
-
 
     async def check_target_number(self, msg: Message) -> Optional[str]:
         """Check if arg1 is a valid number. If it isn't, let the user know and return None"""
@@ -440,6 +440,7 @@ class Bot(Signal):
 async def no_get(request: web.Request) -> web.Response:
     raise web.HTTPFound(location="https://signal.org/")
 
+
 async def pong_handler(request: web.Request) -> web.Response:
     pong = request.match_info.get("pong")
     session = request.app.get("bot")
@@ -484,7 +485,7 @@ if utils.MEMFS:
 if __name__ == "__main__":
 
     @app.on_startup.append
-    async def start_wrapper(out_app: web.Application) -> None:
-        out_app["bot"] = Bot()
+    async def start_wrapper(our_app: web.Application) -> None:
+        our_app["bot"] = Bot()
 
     web.run_app(app, port=8080, host="0.0.0.0")
