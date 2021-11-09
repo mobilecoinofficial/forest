@@ -34,15 +34,17 @@ class AuthorizedPayer(Bot):
         logging.info("got pay address")
         address = mc_util.b64_public_address_to_b58_wrapper(b64_address)
         await self.send_message(recipient, "got your address")
-        raw_prop = await self.mobster.req_(
-            "build_transaction",
-            account_id=await self.mobster.get_account(),
-            recipient_public_address=address,
-            value_pmob=str(int(amount_pmob)),
-            fee=str(fee),
-        )
-        prop = raw_prop["result"]["tx_proposal"]
-        await self.mobster.req_("submit_transaction", tx_proposal=prop)
+        try:
+            raw_prop= await self.mobster.req_(
+                "build_and_submit_transaction",
+                account_id=await self.mobster.get_account(),
+                recipient_public_address=address,
+                value_pmob=str(int(amount_pmob)),
+                fee=str(fee),
+            )
+            prop = raw_prop["result"]["tx_proposal"]
+        except:
+            print(json.dumps(raw_prop))
         await self.send_message(recipient, "payment sent")
         receipt_resp = await self.mobster.req_(
             "create_receiver_receipts",
