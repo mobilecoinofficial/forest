@@ -4,8 +4,8 @@ from forest.core import Bot, Message, app
 
 
 class InsecureBot(Bot):
-    async def do_sh(self, msg: Message) -> str:
-        async def concurrently():
+    async def do_sh(self, msg: Message) -> None:
+        async def concurrently() -> None:
             await self.send_message(
                 msg.source,
                 "\n".join(

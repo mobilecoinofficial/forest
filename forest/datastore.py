@@ -10,7 +10,7 @@ import time
 from io import BytesIO
 from pathlib import Path
 from tarfile import TarFile
-from typing import Any, Callable, Optional, cast
+from typing import Any, Callable, Optional
 
 import phonenumbers as pn
 from phonenumbers import NumberParseException
@@ -21,15 +21,15 @@ try:
 except ImportError:
     # maybe we're local?
     try:
-        import pghelp
-        import configs
+        import pghelp # type: ignore
+        import configs # type: ignore
     except ImportError:
         # i wasn't asking
         sys.path.append("forest")
         sys.path.append("..")
-        import pghelp  # pylint: disable=ungrouped-imports
-        import configs  # pylint: disable=ungrouped-imports
-if configs.get_secret("MIGRATE"):
+        import pghelp  # type: ignore # pylint: disable=ungrouped-imports
+        import configs  # type: ignore # pylint: disable=ungrouped-imports
+if utils.get_secret("MIGRATE"):
     get_datastore = "SELECT account, datastore FROM {self.table} WHERE id=$1"
 else:
     get_datastore = "SELECT datastore FROM {self.table} WHERE id=$1"
@@ -102,7 +102,7 @@ class SignalDatastore:
         logging.info("SignalDatastore number is %s", self.number)
         self.filepath = "data/" + number
         # await self.account_interface.create_table()
-        setup_tmpdir() # shouldn't do anything if not running locally
+        setup_tmpdir()  # shouldn't do anything if not running locally
 
     def is_registered_locally(self) -> bool:
         try:
@@ -233,13 +233,19 @@ def setup_tmpdir() -> None:
             shutil.rmtree(configs.ROOT_DIR)
         except (FileNotFoundError, OSError) as e:
             logging.warning("couldn't remove rootdir: %s", e)
-    (Path(configs.ROOT_DIR) / "data").mkdir(exist_ok=True)
+    (Path(configs.ROOT_DIR) / "data").mkdir(exist_ok=True, parents=True)
     # assume we're running in the repo
-    sigcli = configs.get_secret("SIGNAL_CLI_PATH") or "signal-cli"
+    sigcli = configs.get_secret("SIGNAL_CLI_PATH") or "auxin-cli"
     sigcli_path = Path(sigcli).absolute()
-    logging.info("symlinking %s to %s", sigcli_path, configs.ROOT_DIR)
-    os.symlink(sigcli_path, configs.ROOT_DIR + "/signal-cli")
-    os.symlink(Path("avatar.png").absolute(), configs.ROOT_DIR + "/avatar.png")
+    try:
+        logging.info("symlinking %s to %s", sigcli_path, configs.ROOT_DIR)
+        os.symlink(sigcli_path, configs.ROOT_DIR + "/auxin-cli")
+    except FileExistsError:
+        logging.info("auxin-cli's already there")
+    try:
+        os.symlink(Path("avatar.png").absolute(), configs.ROOT_DIR + "/avatar.png")
+    except FileExistsError:
+        pass
     logging.info("chdir to %s", configs.ROOT_DIR)
     os.chdir(configs.ROOT_DIR)
     logging.info("not starting memfs because running locally")

@@ -1,18 +1,18 @@
-import asyncio
 from aiohttp import web
 from forest.core import Bot, Message, Response, app
+from typing import Any
 
 
 class EvilBot(Bot):
     async def send_typing(self, recipient: str, stop: bool = False) -> None:
-        typing_cmd = {
+        typing_cmd: dict[str, Any] = {
             "command": "sendTyping",
             "recipient": [recipient],
         }
         if stop:
             typing_cmd["stop"] = stop
 
-        await self.signalcli_input_queue.put(typing_cmd)
+        await self.auxincli_input_queue.put(typing_cmd)
 
     async def handle_message(self, msg: Message) -> Response:
         if msg.typing == "STARTED":

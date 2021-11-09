@@ -6,8 +6,8 @@ from typing import Optional
 import random
 import asyncpg
 import aiohttp
-
-from forest import mc_util, configs
+import mc_util
+from forest import configs
 from forest.pghelp import Loop, PGExpressions, PGInterface
 
 DATABASE_URL = configs.get_secret("DATABASE_URL")
@@ -74,14 +74,26 @@ class LedgerManager(PGInterface):
 class Mobster:
     """Class to keep track of a aiohttp session and cached rate"""
 
-    def __init__(self, url: str = "http://full-service.fly.dev/wallet") -> None:
+    default_url = ()
+
+    def __init__(self, url: str = "") -> None:
+        if not url:
+            url = (
+                utils.get_secret("FULL_SERVICE_URL")
+                or "http://full-service.fly.dev/wallet"
+            )
         self.session = aiohttp.ClientSession()
         self.ledger_manager = LedgerManager()
         self.invoice_manager = InvoiceManager()
+        logging.info("full-service url: %s", url)
         self.url = url
 
     async def req_(self, method: str, **params: str) -> dict:
-        return await self.req({"method": method, "params": params})
+        logging.info("full-service request: %s", method)
+        result = await self.req({"method": method, "params": params})
+        if "error" in result:
+            logging.info(result)
+        return result
 
     async def req(self, data: dict) -> dict:
         better_data = {"jsonrpc": "2.0", "id": 1, **data}
@@ -118,7 +130,7 @@ class Mobster:
         return mob_rate
 
     async def pmob2usd(self, pmob: int) -> float:
-        return mc_util.pmob2mob(pmob) * await self.get_rate()
+        return float(mc_util.pmob2mob(pmob)) * await self.get_rate()
 
     async def usd2mob(self, usd: float, perturb: bool = False) -> float:
         invnano = 100000000
@@ -159,7 +171,7 @@ class Mobster:
         acc_id = res["result"]["account_ids"][0]
         return res["result"]["account_map"][acc_id]["main_address"]
 
-    async def get_receipt_amount_pmob(self, receipt_str: str) -> Optional[float]:
+    async def get_receipt_amount_pmob(self, receipt_str: str) -> Optional[int]:
         full_service_receipt = mc_util.b64_receipt_to_full_service_receipt(receipt_str)
         logging.debug("fs receipt: %s", full_service_receipt)
         params = {
@@ -181,10 +193,14 @@ class Mobster:
             pmob = int(tx["result"]["txo"]["value_pmob"])
             return pmob
 
+    account_id: Optional[str] = None
+
     async def get_account(self) -> str:
-        return (await self.req({"method": "get_all_accounts"}))["result"][
-            "account_ids"
-        ][0]
+        if not isinstance(self.account_id, str):
+            self.account_id = (await self.req({"method": "get_all_accounts"}))[
+                "result"
+            ]["account_ids"][0]
+        return self.account_id
 
     async def get_balance(self) -> str:
         return (

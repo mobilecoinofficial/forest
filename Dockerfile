@@ -1,14 +1,29 @@
-FROM ghcr.io/graalvm/graalvm-ce:latest as sigbuilder
-ENV GRAALVM_HOME=/opt/graalvm-ce-java11-21.2.0/ 
-SHELL ["/usr/bin/bash", "-c"]
+FROM rust:latest as builder
+WORKDIR /src
+ENV cache_burst=1
+RUN git clone https://github.com/forestcontact/auxin
 WORKDIR /app
-RUN microdnf install -y git zlib-devel && rm -rf /var/cache/yum
-RUN gu install native-image
-RUN git clone https://github.com/forestcontact/signal-cli
-WORKDIR /app/signal-cli
-RUN git pull origin forest-fork-v1.1.2-payments
-RUN git log -1 --pretty=%B | tee commit-msg
-RUN ./gradlew assembleNativeImage
+RUN rustup default nightly
+# from https://stackoverflow.com/questions/58473606/cache-rust-dependencies-with-docker-build
+RUN mkdir -p /app/auxin_cli/src /app/auxin/src
+RUN mv /src/auxin/Cargo.toml .
+RUN mv /src/auxin/auxin/Cargo.toml ./auxin
+RUN mv /src/auxin/auxin_cli/Cargo.toml /app/auxin_cli/
+RUN mv /src/auxin/auxin_protos /app/auxin_protos
+WORKDIR /app/auxin_cli
+# build dummy auxin_cli using latest Cargo.toml/Cargo.lock
+RUN echo 'fn main() { println!("Dummy!"); }' > ./src/lib.rs
+RUN echo 'fn lib() { println!("Dummy!"); }' > ../auxin/src/lib.rs
+RUN find /app/
+RUN cargo build --release
+# replace with latest source
+RUN rm -r /app/auxin/src /app/auxin_cli/src
+RUN mv /src/auxin/auxin/src /app/auxin/src
+RUN mv /src/auxin/auxin/data /app/auxin/data
+RUN mv /src/auxin/auxin_cli/src /app/auxin_cli/src
+RUN find /app/auxin_cli
+RUN touch -a -m /app/auxin_cli/src/main.rs
+RUN cargo +nightly build --release
 
 FROM ubuntu:hirsute as libbuilder
 WORKDIR /app
@@ -18,7 +33,6 @@ RUN DEBIAN_FRONTEND="noninteractive" apt install -yy python3.9 python3.9-venv li
 RUN python3.9 -m venv /app/venv
 COPY Pipfile.lock Pipfile /app/
 RUN VIRTUAL_ENV=/app/venv pipenv install 
-#RUN VIRTUAL_ENV=/app/venv pipenv run pip uninstall dataclasses -y
 
 FROM ubuntu:hirsute
 WORKDIR /app
@@ -27,13 +41,11 @@ RUN apt update
 RUN apt install -y python3.9 wget libfuse2 kmod #npm
 RUN apt-get clean autoclean && apt-get autoremove --yes && rm -rf /var/lib/{apt,dpkg,cache,log}/
 
-# v5.12.2 for fly.io
 RUN wget -q -O fuse.ko "https://public.getpost.workers.dev/?key=01F54FQVAX85R1Y98ACCXT2AGT&raw"
-#RUN sudo insmod fuse.ko
-COPY --from=sigbuilder /app/signal-cli/build/native-image/signal-cli /app/signal-cli/commit-msg /app/signal-cli/build.gradle.kts  /app/
-# for signal-cli's unpacking of native deps
-COPY --from=sigbuilder /lib64/libz.so.1 /lib64
+COPY --from=builder /app/target/release/auxin-cli /app/auxin-cli
 COPY --from=libbuilder /app/venv/lib/python3.9/site-packages /app/
+ENV a=1
 COPY ./forest/ /app/forest/
-COPY  ./teli.py ./forest_tables.py ./contactbot.py ./avatar.png /app/ 
-ENTRYPOINT ["/usr/bin/python3.9", "/app/contactbot.py"]
+COPY ./mc_util/ /app/mc_util/
+COPY ./echopay.py  /app/ 
+ENTRYPOINT ["/usr/bin/python3.9", "/app/echopay.py"]

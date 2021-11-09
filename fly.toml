@@ -1,9 +1,12 @@
-app = "forest-dev"
+app = "imogen-uk"
 kill_signal = "SIGINT" 
 kill_timeout = 5
 
 [env]
-LOGLEVEL="INFO"
+LOGLEVEL="DEBUG"
+BOT_NUMBER="+447888874208"
+MONITOR_WALLET=""
+FULL_SERVICE_URL="https://full-service-imogen.fly.dev/wallet"
 
 [experimental]
   allowed_public_ports = []

@@ -1,5 +1,5 @@
-from forest.pghelp import PGExpressions, PGInterface, Loop
 from forest import configs
+from forest.pghelp import Loop, PGExpressions, PGInterface
 
 DATABASE_URL = configs.get_secret("DATABASE_URL")
 

@@ -65,6 +65,7 @@ def get_secret(key: str, env: Optional[str] = None) -> str:
 
 #### Parameters for easy access and ergonomic use.
 
+AUXIN = get_secret("AUXIN") or True
 HOSTNAME = open("/etc/hostname").read().strip()  #  FLY_ALLOC_ID
 APP_NAME = os.getenv("FLY_APP_NAME")
 URL = f"https://{APP_NAME}.fly.dev"
