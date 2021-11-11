@@ -16,6 +16,7 @@ RUN echo 'fn main() { println!("Dummy!"); }' > ./src/lib.rs
 RUN echo 'fn lib() { println!("Dummy!"); }' > ../auxin/src/lib.rs
 RUN find /app/
 RUN cargo build --release
+RUN cd /src/auxin && git pull origin 0.1.2 && cd /app/auxin_cli
 # replace with latest source
 RUN rm -r /app/auxin/src /app/auxin_cli/src
 RUN mv /src/auxin/auxin/src /app/auxin/src

@@ -45,6 +45,7 @@ class AuthorizedPayer(Bot):
             prop = raw_prop["result"]["tx_proposal"]
         except:
             print(json.dumps(raw_prop))
+            return await self.send_message(recipient, f"something went wrong: {raw_prop['error']}")
         await self.send_message(recipient, "payment sent")
         receipt_resp = await self.mobster.req_(
             "create_receiver_receipts",
