@@ -7,6 +7,8 @@ LOGLEVEL="DEBUG"
 BOT_NUMBER="+447888874208"
 MONITOR_WALLET=""
 FULL_SERVICE_URL="https://full-service-imogen.fly.dev/wallet"
+#RUST_LOG="debug"
+RUST_TRACEBACK="full"
 
 [experimental]
   allowed_public_ports = []
