@@ -227,11 +227,14 @@ def setup_tmpdir() -> None:
             logging.warning("couldn't remove rootdir: %s", e)
     (Path(utils.ROOT_DIR) / "data").mkdir(exist_ok=True)
     # assume we're running in the repo
-    sigcli = utils.get_secret("SIGNAL_CLI_PATH") or "signal-cli"
-    sigcli_path = Path(sigcli).absolute()
-    logging.info("symlinking %s to %s", sigcli_path, utils.ROOT_DIR)
-    os.symlink(sigcli_path, utils.ROOT_DIR + "/signal-cli")
-    os.symlink(Path("avatar.png").absolute(), utils.ROOT_DIR + "/avatar.png")
+    try:
+        sigcli = utils.get_secret("SIGNAL_CLI_PATH") or "signal-cli"
+        sigcli_path = Path(sigcli).absolute()
+        logging.info("symlinking %s to %s", sigcli_path, utils.ROOT_DIR)
+        os.symlink(sigcli_path, utils.ROOT_DIR + "/signal-cli")
+        os.symlink(Path("avatar.png").absolute(), utils.ROOT_DIR + "/avatar.png")
+    except FileExistsError as e:
+        logging.warning(e)
     logging.info("chdir to %s", utils.ROOT_DIR)
     os.chdir(utils.ROOT_DIR)
     logging.info("not starting memfs because running locally")
