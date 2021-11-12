@@ -1,7 +1,7 @@
 #!/usr/bin/python3.9
-import asyncio
 import base64
 import json
+from typing import Optional
 import logging
 
 from aiohttp import web
@@ -20,20 +20,29 @@ class AuthorizedPayer(Bot):
             return await self.do_pay(message)
         return await super().handle_message(message)
 
-    async def send_payment(self, recipient: str, amount_pmob: int) -> Message:
-        logging.info("getting pay address")
+    async def get_address(self, recipient: str) -> Optional[str]:
         result = await self.auxin_req("getPayAddress", peer_name=recipient)
         b64_address = (
             result.blob.get("Address", {}).get("mobileCoinAddress", {}).get("address")
         )
         if result.error or not b64_address:
             logging.info("bad address: %s", result.blob)
+            return None
+        address = mc_util.b64_public_address_to_b58_wrapper(b64_address)
+        return address
+
+    async def do_address(self, msg: Message) -> Response:
+        address = await self.get_address(msg.source)
+        return address or "sorry, couldn't get your MobileCoin address"
+
+    async def send_payment(self, recipient: str, amount_pmob: int) -> Optional[Message]:
+        logging.info("getting pay address")
+        address = await self.get_address(recipient)
+        if not address:
             await self.send_message(
                 recipient, "sorry, couldn't get your MobileCoin address"
             )
-        logging.info("got pay address")
-        address = mc_util.b64_public_address_to_b58_wrapper(b64_address)
-        await self.send_message(recipient, "got your address")
+            return None
         # TODO: add a lock around two-part build/submit OR
         # TODO: add explicit utxo handling
         # TODO: add task which keeps full-service filled
@@ -79,20 +88,22 @@ class AuthorizedPayer(Bot):
 
     async def do_pay(self, msg: Message) -> Response:
         payment_notif_sent = await self.send_payment(msg.source, int(1e9))
-        logging.info(payment_notif_sent)
-        delta = (payment_notif_sent.timestamp - msg.timestamp) / 1000
-        await self.send_message(
-            utils.get_secret("ADMIN"), f"payment delta: {delta}"
-        )
+        if payment_notif_sent:
+            logging.info(payment_notif_sent)
+            delta = (payment_notif_sent.timestamp - msg.timestamp) / 1000
+            await self.send_message(
+                utils.get_secret("ADMIN"), f"payment delta: {delta}"
+            )
         return None
 
     async def payment_response(self, msg: Message, amount_pmob: int) -> Response:
         payment_notif = await self.send_payment(msg.source, amount_pmob - fee)
+        if not payment_notif:
+            return None
         delta = (payment_notif.timestamp - msg.timestamp) / 1000
-        await self.send_message(
-            utils.get_secret("ADMIN"), f"repayment delta: {delta}"
-        )
+        await self.send_message(utils.get_secret("ADMIN"), f"repayment delta: {delta}")
         return None
+
 
 if __name__ == "__main__":
 
