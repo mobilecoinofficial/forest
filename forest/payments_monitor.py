@@ -207,7 +207,7 @@ class Mobster:
             await self.req(
                 {
                     "method": "get_balance_for_account",
-                    "params": {"account_id", await self.get_account()},
+                    "params": {"account_id": await self.get_account()},
                 }
             )
         )["result"]["balance"]["unspent_pmob"]
