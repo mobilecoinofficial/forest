@@ -92,7 +92,7 @@ class Mobster:
         logging.info("full-service request: %s", method)
         result = await self.req({"method": method, "params": params})
         if "error" in result:
-            logging.info(result)
+            logging.error(result)
         return result
 
     async def req(self, data: dict) -> dict:
