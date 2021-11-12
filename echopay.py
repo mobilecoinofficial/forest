@@ -16,7 +16,7 @@ fee = int(1e12 * 0.0004)
 
 class AuthorizedPayer(Bot):
     async def handle_message(self, message: Message) -> Response:
-        if "hit me up" in message.text.lower():
+        if "hook me up" in message.text.lower():
             return await self.do_pay(message)
         return await super().handle_message(message)
 
@@ -34,19 +34,19 @@ class AuthorizedPayer(Bot):
         logging.info("got pay address")
         address = mc_util.b64_public_address_to_b58_wrapper(b64_address)
         await self.send_message(recipient, "got your address")
-        try:
-            raw_prop= await self.mobster.req_(
-                "build_and_submit_transaction",
-                account_id=await self.mobster.get_account(),
-                recipient_public_address=address,
-                value_pmob=str(int(amount_pmob)),
-                fee=str(fee),
-            )
-            prop = raw_prop["result"]["tx_proposal"]
-        except:
-            print(json.dumps(raw_prop))
-            return await self.send_message(recipient, f"something went wrong: {raw_prop['error']}")
-        await self.send_message(recipient, "payment sent")
+        # TODO: add a lock around two-part build/submit OR
+        # TODO: add explicit utxo handling
+        # TODO: add task which keeps full-service filled
+        raw_prop = await self.mobster.req_(
+            "build_transaction",
+            account_id=await self.mobster.get_account(),
+            recipient_public_address=address,
+            value_pmob=str(int(amount_pmob)),
+            fee=str(fee),
+        )
+        prop = raw_prop["result"]["tx_proposal"]
+        await self.mobster.req_("submit_transaction", tx_proposal=prop)
+
         receipt_resp = await self.mobster.req_(
             "create_receiver_receipts",
             tx_proposal=prop,
@@ -88,8 +88,7 @@ class AuthorizedPayer(Bot):
                 utils.get_secret("ADMIN"), f"payment delta: {delta}"
             )
 
-        asyncio.create_task(wrapper())
-        return "trying to send a payment"
+        await wrapper()
 
     async def payment_response(self, msg: Message, amount_pmob: int) -> Response:
         async def wrapper() -> None:
