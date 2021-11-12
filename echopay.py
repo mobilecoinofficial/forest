@@ -83,12 +83,14 @@ class AuthorizedPayer(Bot):
         async def wrapper(self: AuthorizedPayer = self, msg: Message = msg) -> None:
             # 1e9=1 milimob (.01 usd today)
             payment_notif_sent = await self.send_payment(msg.source, int(1e9))
+            logging.info(payment_notif_sent)
             delta = (payment_notif_sent.timestamp - msg.timestamp) / 1000
             await self.send_message(
                 utils.get_secret("ADMIN"), f"payment delta: {delta}"
             )
 
-        await wrapper()
+        asyncio.create_task(wrapper())
+        return "trying to send a payment"
 
     async def payment_response(self, msg: Message, amount_pmob: int) -> Response:
         async def wrapper() -> None:
