@@ -88,7 +88,6 @@ class Signal:
         RESTART_TIME = 2  # move somewhere else maybe
         restart_count = 0
         while self.sigints == 0 and not self.exiting:
-            # TODO: count number of errors and backoff
             command = f"{utils.ROOT_DIR}/auxin-cli --config {utils.ROOT_DIR} --user {self.bot_number} jsonRpc".split()
             logging.info(command)
             proc_launch_time = time.time()
@@ -220,13 +219,13 @@ class Signal:
     pending_requests: dict[str, asyncio.Future[Message]] = {}
 
     async def wait_resp(self, cmd: dict) -> Message:
-        stamp = cmd["method"] + "-" + str(round(time.time()))
-        logging.info("expecting response id: %s", stamp)
-        cmd["id"] = stamp
-        self.pending_requests[stamp] = asyncio.Future()
+        future_key = cmd["method"] + "-" + str(round(time.time()))
+        logging.info("expecting response id: %s", future_key)
+        cmd["id"] = future_key
+        self.pending_requests[future_key] = asyncio.Future()
         await self.auxincli_input_queue.put(cmd)
-        result = await self.pending_requests[stamp]
-        self.pending_requests.pop(stamp)
+        result = await self.pending_requests[future_key]
+        self.pending_requests.pop(future_key)
         return result
 
     async def auxin_req(self, method: str, **params: Any) -> Message:
@@ -315,17 +314,17 @@ class Signal:
                     )
                     return ""
         params["destination"] = str(recipient)
-        # maybe use rpc instead
-        stamp = f"send-{int(time.time()*1000)}-{hex(hash(msg))[-4:]}"
+        # maybe use rpc() instead
+        future_key = f"send-{int(time.time()*1000)}-{hex(hash(msg))[-4:]}"
         json_command: JSON = {
             "jsonrpc": "2.0",
-            "id": stamp,
+            "id": future_key,
             "method": "send",
             "params": params,
         }
-        self.pending_requests[stamp] = asyncio.Future()
+        self.pending_requests[future_key] = asyncio.Future()
         await self.auxincli_input_queue.put(json_command)
-        return stamp
+        return future_key
 
     async def respond(self, target_msg: Message, msg: Response) -> str:
         """Respond to a message depending on whether it's a DM or group"""
@@ -404,22 +403,21 @@ class Bot(Signal):
         """Read messages from the queue and pass each message to handle_message
         If that returns a non-empty string, send it as a response"""
         async for message in self.auxincli_output_iter():
+            if message.id and message.id in self.pending_requests:
+                logging.debug("setting result for future %s: %s", message.id, message)
+                self.pending_requests[message.id].set_result(message)
+                continue
             self.pending_response_tasks = [
                 task for task in self.pending_response_tasks if not task.done()
-            ] + [asyncio.create_task(self.respond_with_message(message))]
+            ] + [asyncio.create_task(self.handle_message(message))]
 
-    # maybe respond_with_message is merged with handle_message?
-    async def respond_with_message(self, message: Message) -> None:
-        if message.id and message.id in self.pending_requests:
-            logging.debug("setting result for future %s: %s", message.id, message)
-            self.pending_requests[message.id].set_result(message)
-            return None
+    # maybe this is merged with dispatch_message?
+    async def handle_message(self, message: Message) -> None:
         future_key = None
         start_time = time.time()
         try:
-            response = await self.handle_message(message)
+            response = await self.dispatch_message(message)
             if response is not None:
-                # this should eventually return the message sent timestamp / use that info
                 future_key = await self.respond(message, response)
         except:
             exception_traceback = "".join(traceback.format_exception(*sys.exc_info()))
@@ -448,7 +446,7 @@ class Bot(Signal):
                 f"command: {note}. python delta: {python_delta}s. roundtrip delta: {roundtrip_delta}s",
             )
 
-    async def handle_message(self, message: Message) -> Response:
+    async def dispatch_message(self, message: Message) -> Response:
         """Method dispatch to do_x commands and goodies.
         Overwrite this to add your own non-command logic,
         but call super().handle_message(message) at the end"""
@@ -470,24 +468,6 @@ class Bot(Signal):
         if message.text and not (message.group or message.text == resp):
             return resp
         return None
-
-    # gross
-    async def do_average_metric(self, _: Message) -> Response:
-        avg = sum(metric[-1] for metric in self.response_metrics) / len(
-            self.response_metrics
-        )
-        return str(round(avg, 4))
-
-    async def do_dump_metric_csv(self, _: Message) -> Response:
-        return "start_time, command, delta\n" + "\n".join(
-            f"{fmt_ms(t)}, {cmd}, {delta}" for t, cmd, delta in self.response_metrics
-        )
-
-    async def do_dump_roundtrip(self, _: Message) -> Response:
-        return "start_time, command, delta\n" + "\n".join(
-            f"{fmt_ms(t)}, {cmd}, {delta}"
-            for t, cmd, delta in self.auxin_roundtrip_latency
-        )
 
     async def do_help(self, message: Message) -> str:
         """List available commands. /help <command> gives you that command's documentation, if available"""
