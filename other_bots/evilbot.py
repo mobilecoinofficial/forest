@@ -1,6 +1,6 @@
+from typing import Any
 from aiohttp import web
 from forest.core import Bot, Message, Response, app
-from typing import Any
 
 
 class EvilBot(Bot):
@@ -14,14 +14,14 @@ class EvilBot(Bot):
 
         await self.auxincli_input_queue.put(typing_cmd)
 
-    async def handle_message(self, msg: Message) -> Response:
-        if msg.typing == "STARTED":
-            await self.send_typing(msg.source)
+    async def handle_message(self, message: Message) -> Response:
+        if message.typing == "STARTED":
+            await self.send_typing(message.source)
             return None
-        if msg.typing == "STOPPED":
-            await self.send_typing(msg.source, stop=True)
+        if message.typing == "STOPPED":
+            await self.send_typing(message.source, stop=True)
             return None
-        return await super().handle_message(msg)
+        return await super().handle_message(message)
 
     async def default(self, _: Message) -> None:
         return None
