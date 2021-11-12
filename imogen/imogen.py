@@ -9,7 +9,6 @@ import time
 from pathlib import Path
 from typing import Optional
 import base58
-import aiohttp
 import aioredis
 from aiohttp import web
 from forest import utils

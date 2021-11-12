@@ -4,7 +4,6 @@ We're using this because you can have `{"attachments": null}` in JSON, which
 breaks our typing if we expect Message.attachments to be list[str].
 Using `or` like this is a bit of a hack, but it's what we've got.
 """
-import base64
 from typing import Optional
 from forest.utils import logging
 
@@ -37,6 +36,8 @@ class Message:
             self.command = command[1:]  # remove /
             self.arg1 = self.tokens[0] if self.tokens else None
             self.text = " ".join(self.tokens)
+        elif self.text and "help" in self.text.lower():
+            self.command = "help"
 
     def to_dict(self) -> dict:
         """

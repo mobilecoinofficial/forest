@@ -330,13 +330,12 @@ class Signal:
         """Respond to a message depending on whether it's a DM or group"""
         if not target_msg.source:
             logging.error(target_msg.blob)
-        if (
-            not utils.AUXIN and target_msg.group and isinstance(target_msg.group, str)
+        if not utils.AUXIN and isinstance(
+            target_msg.group, str
         ):  # and it's a valid b64
             return await self.send_message(None, msg, group=target_msg.group)
-        else:
-            destination = target_msg.source or target_msg.uuid
-            return await self.send_message(destination, msg)
+        destination = target_msg.source or target_msg.uuid
+        return await self.send_message(destination, msg)
 
     # FIXME: disable for auxin
     async def send_reaction(self, target_msg: Message, emoji: str) -> None:
@@ -409,17 +408,17 @@ class Bot(Signal):
                 continue
             self.pending_response_tasks = [
                 task for task in self.pending_response_tasks if not task.done()
-            ] + [asyncio.create_task(self.handle_message(message))]
+            ] + [asyncio.create_task(self.time_response(message))]
 
     # maybe this is merged with dispatch_message?
-    async def handle_message(self, message: Message) -> None:
+    async def time_response(self, message: Message) -> None:
         future_key = None
         start_time = time.time()
         try:
-            response = await self.dispatch_message(message)
+            response = await self.handle_message(message)
             if response is not None:
                 future_key = await self.respond(message, response)
-        except:
+        except: # pylint: disable=bare-except
             exception_traceback = "".join(traceback.format_exception(*sys.exc_info()))
             send_coro = self.send_message(
                 utils.get_secret("ADMIN"),
@@ -446,7 +445,7 @@ class Bot(Signal):
                 f"command: {note}. python delta: {python_delta}s. roundtrip delta: {roundtrip_delta}s",
             )
 
-    async def dispatch_message(self, message: Message) -> Response:
+    async def handle_message(self, message: Message) -> Response:
         """Method dispatch to do_x commands and goodies.
         Overwrite this to add your own non-command logic,
         but call super().handle_message(message) at the end"""
@@ -517,18 +516,6 @@ class Bot(Signal):
                 "did you include the country code?",
             )
             return None
-
-    async def do_address(self, message: Message) -> str:
-        recipient = message.source
-        result = await self.auxin_req("getPayAddress", peer_name=recipient)
-        b64_address = (
-            result.blob.get("Address", {}).get("mobileCoinAddress", {}).get("address")
-        )
-        if result.error or not b64_address:
-            logging.info("bad address: %s", result.blob)
-            return "sorry, couldn't get your MobileCoin address"
-        address = mc_util.b64_public_address_to_b58_wrapper(b64_address)
-        return address
 
     async def do_exception(self, message: Message) -> None:
         raise Exception("You asked for it!")
