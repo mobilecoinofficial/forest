@@ -1,7 +1,6 @@
-FROM rust:latest as builder
+FROM ghcr.io/rust-lang/rust:nightly as builder
 WORKDIR /src
-ENV cache_burst=1
-RUN git clone https://github.com/forestcontact/auxin
+RUN git clone https://github.com/forestcontact/auxin && cd auxin && git pull origin 0.1.3
 WORKDIR /app
 RUN rustup default nightly
 # from https://stackoverflow.com/questions/58473606/cache-rust-dependencies-with-docker-build
@@ -10,14 +9,13 @@ RUN mv /src/auxin/Cargo.toml .
 RUN mv /src/auxin/auxin/Cargo.toml ./auxin
 RUN mv /src/auxin/auxin_cli/Cargo.toml /app/auxin_cli/
 RUN mv /src/auxin/auxin_protos /app/auxin_protos
+RUN mv /app/auxin_protos/build.rs.always /app/auxin_protos/build.rs
 WORKDIR /app/auxin_cli
 # build dummy auxin_cli using latest Cargo.toml/Cargo.lock
 RUN echo 'fn main() { println!("Dummy!"); }' > ./src/lib.rs
 RUN echo 'fn lib() { println!("Dummy!"); }' > ../auxin/src/lib.rs
 RUN find /app/
 RUN cargo build --release
-RUN cd /src/auxin && git pull origin 0.1.2 && cd /app/auxin_cli
-# replace with latest source
 RUN rm -r /app/auxin/src /app/auxin_cli/src
 RUN mv /src/auxin/auxin/src /app/auxin/src
 RUN mv /src/auxin/auxin/data /app/auxin/data
