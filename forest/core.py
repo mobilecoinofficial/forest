@@ -173,7 +173,7 @@ class Signal:
 
     async def handle_auxincli_raw_line(self, line: str) -> None:
         if '{"jsonrpc":"2.0","result":[],"id":"receive"}' not in line:
-            pass # logging.info("auxin: %s", line)
+            pass  # logging.info("auxin: %s", line)
         try:
             blob = json.loads(line)
         except json.JSONDecodeError:
@@ -215,7 +215,8 @@ class Signal:
             message = await self.auxincli_output_queue.get()
             yield message
 
-    # Next, we see how the input queue is populated and consumed.
+    # In the next section, we see how the input queue is populated and consumed
+
     pending_requests: dict[str, asyncio.Future[Message]] = {}
 
     async def wait_resp(self, cmd: dict) -> Message:

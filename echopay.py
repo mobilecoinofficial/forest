@@ -46,7 +46,6 @@ class AuthorizedPayer(Bot):
         )
         prop = raw_prop["result"]["tx_proposal"]
         await self.mobster.req_("submit_transaction", tx_proposal=prop)
-
         receipt_resp = await self.mobster.req_(
             "create_receiver_receipts",
             tx_proposal=prop,
