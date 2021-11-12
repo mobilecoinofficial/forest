@@ -78,30 +78,21 @@ class AuthorizedPayer(Bot):
         return payment_notif
 
     async def do_pay(self, msg: Message) -> Response:
-        # stick the variables in the parameters to avoid closure confusion
-        async def wrapper(self: AuthorizedPayer = self, msg: Message = msg) -> None:
-            # 1e9=1 milimob (.01 usd today)
-            payment_notif_sent = await self.send_payment(msg.source, int(1e9))
-            logging.info(payment_notif_sent)
-            delta = (payment_notif_sent.timestamp - msg.timestamp) / 1000
-            await self.send_message(
-                utils.get_secret("ADMIN"), f"payment delta: {delta}"
-            )
-
-        asyncio.create_task(wrapper())
-        return "trying to send a payment"
+        payment_notif_sent = await self.send_payment(msg.source, int(1e9))
+        logging.info(payment_notif_sent)
+        delta = (payment_notif_sent.timestamp - msg.timestamp) / 1000
+        await self.send_message(
+            utils.get_secret("ADMIN"), f"payment delta: {delta}"
+        )
+        return None
 
     async def payment_response(self, msg: Message, amount_pmob: int) -> Response:
-        async def wrapper() -> None:
-            payment_notif = await self.send_payment(msg.source, amount_pmob - fee)
-            delta = (payment_notif.timestamp - msg.timestamp) / 1000
-            await self.send_message(
-                utils.get_secret("ADMIN"), f"repayment delta: {delta}"
-            )
-
-        asyncio.create_task(wrapper())
-        return f"trying to send you back {mc_util.pmob2mob(amount_pmob - fee)} MOB"
-
+        payment_notif = await self.send_payment(msg.source, amount_pmob - fee)
+        delta = (payment_notif.timestamp - msg.timestamp) / 1000
+        await self.send_message(
+            utils.get_secret("ADMIN"), f"repayment delta: {delta}"
+        )
+        return None
 
 if __name__ == "__main__":
 
