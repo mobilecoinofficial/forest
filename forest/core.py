@@ -468,6 +468,24 @@ class Bot(Signal):
             return resp
         return None
 
+    # gross
+    async def do_average_metric(self, _: Message) -> Response:
+        avg = sum(metric[-1] for metric in self.response_metrics) / len(
+            self.response_metrics
+        )
+        return str(round(avg, 4))
+
+    async def do_dump_metric_csv(self, _: Message) -> Response:
+        return "start_time, command, delta\n" + "\n".join(
+            f"{fmt_ms(t)}, {cmd}, {delta}" for t, cmd, delta in self.response_metrics
+        )
+
+    async def do_dump_roundtrip(self, _: Message) -> Response:
+        return "start_time, command, delta\n" + "\n".join(
+            f"{fmt_ms(t)}, {cmd}, {delta}"
+            for t, cmd, delta in self.auxin_roundtrip_latency
+        )
+
     async def do_help(self, message: Message) -> str:
         """List available commands. /help <command> gives you that command's documentation, if available"""
         if message.arg1:
