@@ -418,7 +418,7 @@ class Bot(Signal):
             response = await self.handle_message(message)
             if response is not None:
                 future_key = await self.respond(message, response)
-        except: # pylint: disable=bare-except
+        except:  # pylint: disable=bare-except
             exception_traceback = "".join(traceback.format_exception(*sys.exc_info()))
             send_coro = self.send_message(
                 utils.get_secret("ADMIN"),
@@ -600,6 +600,18 @@ async def send_message_handler(request: web.Request) -> web.Response:
     return web.json_response({"status": "sent"})
 
 
+async def metrics(request: web.Request) -> web.Response:
+    bot = request.app.get("bot")
+    return web.Response(
+        status=200,
+        text="start_time, command, delta\n"
+        + "\n".join(
+            f"{fmt_ms(t)}, {cmd}, {delta}"
+            for t, cmd, delta in bot.auxin_roundtrip_latency
+        ),
+    )
+
+
 app = web.Application()
 
 app.add_routes(
@@ -607,6 +619,7 @@ app.add_routes(
         web.get("/", no_get),
         web.get("/pongs/{pong}", pong_handler),
         web.post("/user/{phonenumber}", send_message_handler),
+        web.get("/metrics", metrics)
     ]
 )
 
