@@ -4,15 +4,15 @@ The core chatbot framework: Message, Signal, Bot, and app
 """
 import asyncio
 import asyncio.subprocess as subprocess  # https://github.com/PyCQA/pylint/issues/1469
+import datetime
 import json
 import logging
 import os
-import datetime
-import time
-import uuid
 import signal
 import sys
+import time
 import traceback
+import uuid
 from asyncio import Queue, StreamReader, StreamWriter
 from asyncio.subprocess import PIPE
 from typing import Any, AsyncIterator, Optional, Union
@@ -22,20 +22,19 @@ import phonenumbers as pn
 import termcolor
 from aiohttp import web
 from phonenumbers import NumberParseException
+from prometheus_async import aio
+from prometheus_client import Summary, Histogram
 
 # framework
 import mc_util
-from forest import datastore
-from forest import autosave
-from forest import pghelp
-from forest import utils
-from forest import payments_monitor
-from forest.message import Message, AuxinMessage
-
+from forest import autosave, datastore, payments_monitor, pghelp, utils
+from forest.message import AuxinMessage, Message
 
 JSON = dict[str, Any]
 Response = Union[str, list, dict[str, str], None]
 
+roundtrip_histogram = Histogram("roundtrip_h", "Roundtrip message response time")
+roundtrip_summary = Summary("roundtrip_s", "Roundtrip message response time")
 
 def rpc(method: str, _id: str = "1", **params: Any) -> dict:
     return {"jsonrpc": "2.0", "method": method, "id": _id, "params": params}
@@ -438,6 +437,8 @@ class Bot(Signal):
             self.auxin_roundtrip_latency.append(
                 (message.timestamp, note, roundtrip_delta)
             )
+            roundtrip_summary.observe(roundtrip_delta)
+            roundtrip_histogram.observe(roundtrip_delta)
             logging.info("noted roundtrip time: %s", roundtrip_delta)
             # stick this in prometheus
             await self.send_message(
@@ -470,7 +471,7 @@ class Bot(Signal):
 
     # gross
     async def do_average_metric(self, _: Message) -> Response:
-        avg = sum(metric[-1] for metric in self.response_metrics) / len(
+        avg = sum(metric[-1] for metric in self.auxin_roundtrip_latency) / len(
             self.response_metrics
         )
         return str(round(avg, 4))
@@ -619,7 +620,8 @@ app.add_routes(
         web.get("/", no_get),
         web.get("/pongs/{pong}", pong_handler),
         web.post("/user/{phonenumber}", send_message_handler),
-        web.get("/metrics", metrics)
+        web.get("/metrics", aio.web.server_stats),
+        web.get("/csv_metrics", metrics)
     ]
 )
 
@@ -627,6 +629,7 @@ if utils.MEMFS:
     app.on_startup.append(autosave.start_memfs)
     app.on_startup.append(autosave.start_memfs_monitor)
 
+app.add_routes([])
 
 if __name__ == "__main__":
 

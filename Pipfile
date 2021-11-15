@@ -8,12 +8,11 @@ aioprocessing = "*"
 pyqrcode = "*"
 pynacl = "*"
 asyncpg = "*"
-aiohttp = {extras = [ "speedups",], version = "*"}
 mobilecoin = "*"
 base58 = "*"
-# sylv additions
 phonenumbers = "*"
 termcolor = "*"
+prometheus-async = "*"
 
 [requires]
 python_version = "3.9"
@@ -22,9 +21,3 @@ python_version = "3.9"
 allow_prereleases = true
 
 [dev-packages]
-pytest = "*"
-mypy = "*"
-pylint = "*"
-isort = "*"
-black = "*"
-

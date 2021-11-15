@@ -1,10 +1,13 @@
 #!/usr/bin/python3.9
 import base64
 import json
-from typing import Optional
 import logging
+from typing import Optional
 
 from aiohttp import web
+from prometheus_async import aio
+from prometheus_async.aio import time
+from prometheus_client import Summary
 
 import mc_util
 from forest import utils
@@ -12,6 +15,8 @@ from forest.core import Bot, Message, Response, app
 
 britbot = "+447888866969"
 fee = int(1e12 * 0.0004)
+
+REQUEST_TIME = Summary("request_processing_seconds", "Time spent processing request")
 
 
 class AuthorizedPayer(Bot):
@@ -86,6 +91,7 @@ class AuthorizedPayer(Bot):
         await self.send_message(recipient, "receipt sent!")
         return payment_notif
 
+    @time(REQUEST_TIME)
     async def do_pay(self, msg: Message) -> Response:
         payment_notif_sent = await self.send_payment(msg.source, int(1e9))
         if payment_notif_sent:
@@ -94,24 +100,22 @@ class AuthorizedPayer(Bot):
             await self.send_message(
                 utils.get_secret("ADMIN"), f"payment delta: {delta}"
             )
-            self.auxin_roundtrip_latency.append(
-                (msg.timestamp, "payment", delta)
-            )
+            self.auxin_roundtrip_latency.append((msg.timestamp, "payment", delta))
         return None
 
+    @time(REQUEST_TIME)
     async def payment_response(self, msg: Message, amount_pmob: int) -> Response:
         payment_notif = await self.send_payment(msg.source, amount_pmob - fee)
         if not payment_notif:
             return None
         delta = (payment_notif.timestamp - msg.timestamp) / 1000
-        self.auxin_roundtrip_latency.append(
-            (msg.timestamp, "repayment", delta)
-        )
+        self.auxin_roundtrip_latency.append((msg.timestamp, "repayment", delta))
         await self.send_message(utils.get_secret("ADMIN"), f"repayment delta: {delta}")
         return None
 
 
 if __name__ == "__main__":
+    app.add_routes([web.get("/metrics", aio.web.server_stats)])
 
     @app.on_startup.append
     async def start_wrapper(out_app: web.Application) -> None:

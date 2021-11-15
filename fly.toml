@@ -14,6 +14,10 @@ RUST_BACKTRACE="full"
   allowed_public_ports = []
   auto_rollback = false
 
+[metrics]
+port = 8080
+path = "/metrics"
+
 [[services]]
   internal_port = 8080
   protocol = "tcp"
