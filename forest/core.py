@@ -13,6 +13,7 @@ import sys
 import time
 import traceback
 import uuid
+import urllib
 from asyncio import Queue, StreamReader, StreamWriter
 from asyncio.subprocess import PIPE
 from typing import Any, AsyncIterator, Optional, Union
@@ -35,6 +36,7 @@ Response = Union[str, list, dict[str, str], None]
 
 roundtrip_histogram = Histogram("roundtrip_h", "Roundtrip message response time")
 roundtrip_summary = Summary("roundtrip_s", "Roundtrip message response time")
+
 
 def rpc(method: str, _id: str = "1", **params: Any) -> dict:
     return {"jsonrpc": "2.0", "method": method, "id": _id, "params": params}
@@ -171,7 +173,7 @@ class Signal:
 
     async def handle_auxincli_raw_line(self, line: str) -> None:
         if '{"jsonrpc":"2.0","result":[],"id":"receive"}' not in line:
-            pass  # logging.info("auxin: %s", line)
+            logging.info("auxin: %s", line)
         try:
             blob = json.loads(line)
         except json.JSONDecodeError:
@@ -327,6 +329,9 @@ class Signal:
         await self.auxincli_input_queue.put(json_command)
         return future_key
 
+    async def admin(self, msg: Response) -> None:
+        await self.send_message(utils.get_secret("ADMIN"), msg)
+
     async def respond(self, target_msg: Message, msg: Response) -> str:
         """Respond to a message depending on whether it's a DM or group"""
         if not target_msg.source:
@@ -421,12 +426,10 @@ class Bot(Signal):
                 future_key = await self.respond(message, response)
         except:  # pylint: disable=bare-except
             exception_traceback = "".join(traceback.format_exception(*sys.exc_info()))
-            send_coro = self.send_message(
-                utils.get_secret("ADMIN"),
-                f"{message}\n{exception_traceback}",
-            )
             # should this actually be parallel?
-            self.pending_response_tasks.append(asyncio.create_task(send_coro))
+            self.pending_response_tasks.append(
+                asyncio.create_task(self.admin(f"{message}\n{exception_traceback}"))
+            )
         python_delta = round(time.time() - start_time, 3)
         note = message.command or ""
         if python_delta:
@@ -442,9 +445,7 @@ class Bot(Signal):
             roundtrip_summary.observe(roundtrip_delta)
             roundtrip_histogram.observe(roundtrip_delta)
             logging.info("noted roundtrip time: %s", roundtrip_delta)
-            # stick this in prometheus
-            await self.send_message(
-                utils.get_secret("ADMIN"),
+            await self.admin(
                 f"command: {note}. python delta: {python_delta}s. roundtrip delta: {roundtrip_delta}s",
             )
 
@@ -603,8 +604,17 @@ async def send_message_handler(request: web.Request) -> web.Response:
     return web.json_response({"status": "sent"})
 
 
-async def metrics(request: web.Request) -> web.Response:
+async def admin_handler(request: web.Request) -> web.Response:
     bot = request.app.get("bot")
+    if not bot:
+        return web.Response(status=504, text="Sorry, no live workers.")
+    msg = urllib.parse.unquote(request.query.get("message", ""))
+    await bot.admin(msg)
+    return web.Response(text="OK")
+
+
+async def metrics(request: web.Request) -> web.Response:
+    bot = request.app["bot"]
     return web.Response(
         status=200,
         text="start_time, command, delta\n"
@@ -622,8 +632,9 @@ app.add_routes(
         web.get("/", no_get),
         web.get("/pongs/{pong}", pong_handler),
         web.post("/user/{phonenumber}", send_message_handler),
+        web.post("/admin", admin_handler),
         web.get("/metrics", aio.web.server_stats),
-        web.get("/csv_metrics", metrics)
+        web.get("/csv_metrics", metrics),
     ]
 )
 
