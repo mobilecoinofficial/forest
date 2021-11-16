@@ -20,6 +20,8 @@ REQUEST_TIME = Summary("request_processing_seconds", "Time spent processing requ
 
 
 class AuthorizedPayer(Bot):
+    no_repay = []
+
     async def handle_message(self, message: Message) -> Response:
         if "hook me up" in message.text.lower():
             return await self.do_pay(message)
@@ -90,6 +92,13 @@ class AuthorizedPayer(Bot):
         )
         await self.send_message(recipient, "receipt sent!")
         return payment_notif
+
+    async def do_no_repay(self, msg: Message) -> Response:
+        if msg.source in self.no_repay:
+            self.no_repay.remove(msg.source)
+            return "will repay you"
+        self.no_repay.append(msg.source)
+        return "won't repay you"
 
     @time(REQUEST_TIME)
     async def do_pay(self, msg: Message) -> Response:

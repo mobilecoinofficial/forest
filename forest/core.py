@@ -474,7 +474,7 @@ class Bot(Signal):
     # gross
     async def do_average_metric(self, _: Message) -> Response:
         avg = sum(metric[-1] for metric in self.auxin_roundtrip_latency) / len(
-            self.response_metrics
+            self.auxin_roundtrip_latency
         )
         return str(round(avg, 4))
 
