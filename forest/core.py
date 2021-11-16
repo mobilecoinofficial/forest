@@ -184,11 +184,13 @@ class Signal:
                 json.dumps(blob).replace(error, termcolor.colored(error, "red"))
             )
         try:
-            if "params" in blob and isinstance(blob["params"], list):
-                for msg in blob["params"]:
-                    if not blob.get("content", {}).get("receipt_message", {}):
-                        await self.auxincli_output_queue.put(AuxinMessage(msg))
-                return
+            if "params" in blob:
+                if isinstance(blob["params"], list):
+                    for msg in blob["params"]:
+                        if not blob.get("content", {}).get("receipt_message", {}):
+                            await self.auxincli_output_queue.put(AuxinMessage(msg))
+                    return
+                await self.auxincli_output_queue.put(AuxinMessage(blob["params"]))
             if "result" in blob:
                 if isinstance(blob.get("result"), list):
                     # idt this happens anymore, remove?
