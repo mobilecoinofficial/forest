@@ -1,31 +1,14 @@
 #!/usr/bin/python3.9
 import time
 import logging
-from dataclasses import dataclass
 import asyncio
-from asyncio import Queue, Future
-from typing import Optional
-from forest.core import Bot, Message, AuxinMessage
-
-
-@dataclass
-class StepResult:
-    """Result of individual test step"""
-
-    uid: str
-    expected_response: AuxinMessage = None
-    actual_response: AuxinMessage = None
-    result: str = None
-    python_timestamp: int = None
-    auxin_timestamp: int = None
-
-
-@dataclass
-class TestResult:
-    """Result of a multi-step test"""
-
-    step_results: list[StepResult]
-    result: str
+from copy import deepcopy
+from dataclasses import dataclass, field
+from asyncio import Queue, wait_for
+from typing import Optional, Union
+from aiohttp import web
+from forest.utils import get_secret
+from forest.core import Bot, Message, app
 
 
 @dataclass
@@ -38,6 +21,7 @@ class TestMessage:
     endsession: bool = False
     attachments: Optional[list[str]] = None
     content: Optional[str] = None
+    sender: str = None
 
 
 @dataclass
@@ -46,8 +30,8 @@ class TestStep:
 
     uid: str
     description: str
-    message: Message
-    expected_response: Optional[AuxinMessage] = None
+    message: TestMessage
+    expected_response: Optional[TestMessage] = None
     delay: int = 3
 
 
@@ -65,6 +49,39 @@ class Test:
     def __post_init__(self):
         if self.order not in ("sequential", "paralllel"):
             raise ValueError("Order must be either sequential or parallel")
+
+
+@dataclass
+class StepResult:
+    """Result of individual test step"""
+
+    uid: Optional[Union[None, str]] = None
+    message_sent: Optional[TestMessage] = None
+    expected_response: Optional[TestMessage] = None
+    actual_response: TestMessage = None
+    result: Optional[str] = None
+    python_timestamp: int = None
+    auxin_timestamp: int = None
+    send_delay: int = None
+    response_timestamp: int = None
+    roundtrip_delta: int = None
+
+
+@dataclass
+class TestResult:
+    """Result of a multi-step test"""
+
+    test: Test = field(repr=False)
+    name: str = None
+    test_account: str = "tester"
+    step_results: list[StepResult] = field(default_factory=list, repr=False)
+    result: str = "pre_initialization"
+    start_time: int = -1
+    end_time: int = -1
+    runtime: int = -1
+
+    def __post_init__(self):
+        self.name = self.test.name
 
 
 def create_test_definition_file(test: Test) -> None:
@@ -86,7 +103,7 @@ def send_n_messages(
     delay: int = 1,
     order="sequential",
     validate_responses=False,
-    timeout=3600
+    timeout=360,
 ) -> Test:
     """
     Auto-definition of test for sending an {amount} of messages to a {receipient}
@@ -95,19 +112,23 @@ def send_n_messages(
     steps = []
 
     for i in range(amount):
-        if message == expected_response:
-            expected_response = message + " " + {i + 1}
-        message = message + " " + {i + 1}
+        sender_message = message
+        response = None
 
-        expected_response = AuxinMessage(
-            {"content": {"source": {"dataMessage": {"body": expected_response}}}}
-        )
+        if expected_response:
+            if message == expected_response:
+                response_message = message + " " + str(i + 1)
+                sender_message = response_message
+                response = TestMessage("tester", response_message, sender=recipient)
+            else:
+                response = TestMessage("tester", expected_response, sender=recipient)
+
         steps += [
             TestStep(
                 uid=f"{name}-{i+1}",
-                description=f"send message {message}",
-                message=TestMessage(recipient, message),
-                expected_response=expected_response,
+                description=f"send message: {sender_message}",
+                message=TestMessage(recipient, sender_message),
+                expected_response=response,
                 delay=delay,
             )
         ]
@@ -115,37 +136,44 @@ def send_n_messages(
 
 
 load_test = send_n_messages(
-    name="send_20_messages",
+    name="send_2_messages",
     description="send 20 messages",
     recipient="+12406171615",
-    amount=20,
+    amount=2,
     message="it's okay to be broken",
     expected_response=None,
     delay=3.5,
+    timeout=30 * 3.5,
 )
 
 acceptance_test = send_n_messages(
     name="test_echobot",
     description="test echobot for correct behavior",
     recipient="+12406171615",
-    amount=10,
+    amount=2,
     message="it's okay to be broken",
     expected_response="it's okay to be broken",
     delay=3.5,
+    validate_responses=True,
+    timeout=20 * 3.5,
 )
 
 
 class Tiamat(Bot):
-    def __init__(self, *args, test: Test, admin: "str" = None) -> None:
+    def __init__(
+        self,
+        *args,
+        test: Optional[Test] = None,
+        admin: Optional[Union[str, list[str]]] = None,
+    ) -> None:
         super().__init__(*args)
         self.test: Test = test
-        self.actions: list[tuple(Future, TestStep)] = []
-        self.responses: dict[str, list[Message]] = {}  # Responses for given test
-        self.response_queue: Queue(Message) = Queue()
-        self.pending_step_results: Queue(TestResult) = Queue()
-        self.step_results: dict = {}
-        self.test_running = False
-        self.test_admin = admin
+        self.test_result: TestResult = None
+        self.test_running: bool = False
+        self.test_admin: str = admin
+        self.test_result_log: list[TestResult] = []
+        self.pending_step_results: Queue[StepResult] = None
+        self.response_queue: Queue[Message] = None
 
     @staticmethod
     def isDataMessage(response: Message):
@@ -158,7 +186,16 @@ class Tiamat(Bot):
         Reads responses from auxin and takes sends to response
         handler
         """
+        if not isinstance(self.response_queue, Queue):
+            logging.info("starting tiamat")
+            self.response_queue = Queue()
+        if not isinstance(self.pending_step_results, Queue):
+            self.pending_step_results = Queue()
+
+        logging.info("starting message hander")
         async for response in self.auxincli_output_iter():
+
+            logging.info(f"incoming message from {response}")
             self.pending_response_tasks = [
                 task for task in self.pending_response_tasks if not task.done()
             ] + [asyncio.create_task(self.handle_response(response))]
@@ -168,93 +205,225 @@ class Tiamat(Bot):
         If message is response to text, hanlde it according to test definition.
         If it is another type of message, deal with it.
         """
-
         if response.id and response.id in self.pending_requests:
             self.pending_requests[response.id].set_result(response)
             return None
 
         try:
-            # If incoming message is test response from target bot
-            if response.source == self.test.recipient and self.isDataMessage(response):
-                await self.response_queue.put((response, self.test, time.time()))
-                return None
-        except:
-            pass  # Temporary
+            # If incoming message is test response from target bot and a test
+            # that's configured to validate responses is running, put message
+            # in queue, otherwise ignore
+            if (
+                isinstance(self.test, Test)
+                and self.test_running
+                and self.test.validate_responses
+            ):
+                if response.source == self.test.recipient and self.isDataMessage(
+                    response
+                ):
+                    await self.response_queue.put((response, self.test, time.time()))
+                    return None
+        except Exception as e:
+            logging.error("error {e}")
 
         try:
-            # If you're anyone else than the service being tested, respond
-            # normally
-            self.handle_message(self, Message)
-        except:
-            pass  # Temporary
+            # If you're admin, respond, else, blackhole
+            logging.info(f"sender is {response.source}")
+            logging.info(f"sender is admin {self.is_admin(response.source)}")
+            logging.info(f"admin is {self.test_admin}")
+            if self.is_admin(response.source):
+                tiamat_message = await self.handle_message(response)
+                if tiamat_message is not None:
+                    future_key = await self.respond(response, tiamat_message)
+        except Exception as e:
+            logging.error(f"error: {e}")
 
-    async def prepare_test(self, test: Test = None) -> None:
-        """Prepare a series of test coroutines for execution"""
+    async def configure_test(self, test: Test = None) -> None:
+        """Prepare test configuration within bot"""
 
-        logging.info("loading {test.name}")
+        logging.info(f"attempting to load {test.name}")
+        if self.test_running or self.test:
+            message = "existing test running, please wait"
+            logging.warning(message)
+            return message
 
-        if test is None:
-            test = self.test
-        else:
-            self.test = test
-        self.responses[test.name] = []
+        self.test = test
+        self.test_result = TestResult(test=test, test_account=self.bot_number)
+        message = f"{test.name} configured, {len(test.steps)} steps ready to run"
+        logging.info(message)
+        return message
 
-        for step in test.steps:
-            self.actions.append(
-                (
-                    self.send_message(
-                        step.message.recipient,
-                        step.message.message,
-                        step.message.group,
-                        step.message.endsession,
-                        step.message.attachments,
-                        step.message.content,
-                    ),
-                    TestStep,
-                )
-            )
+    async def cleanup_test(
+        self, test_monitor: asyncio.Task = None, pass_or_fail: str = None
+    ):
+        if test_monitor and not test_monitor.done():
+            if test_monitor.exception():
+                test_monitor.cancel()
+            if pass_or_fail == "failed":
+                test_monitor.cancel()
 
-        logging.info("Test loaded, {len(test.steps)} steps ready to run")
+        if isinstance(self.test_result, TestResult):
+            result = self.test_result
+            if pass_or_fail:
+                result.result = pass_or_fail
+            else:
+                result.result = self.validate_test_result(result)
+            result.end_time = time.time()
+            result.runtime = result.end_time - result.start_time
+            logging.info(result)
+            final_result = deepcopy(result)
+            self.test_result_log.append(final_result)
+            await self.send_message(recipient=self.test_admin, msg=repr(final_result))
+
+        self.test_running = False
+        self.test = None
+        self.test_result = None
+
+    @staticmethod
+    def validate_test_result(test_result: TestResult):
+        if not isinstance(test_result, TestResult):
+            raise TypeError("Cannot validate test result, invalid input passed")
+        if not test_result.test.validate_responses:
+            return "passed"
+
+        result_list = []
+        for step_result in test_result.step_results:
+            result_list.append(step_result.result == "passed")
+        if all(result_list):
+            return "passed"
+        return "failed"
 
     async def launch_test(self) -> None:
-        logging.info("{test} launching in {test.order} order, oh myyyy")
+        if self.test_running:
+            logging.warning("Existing test running, aborting run attempt")
+            return
 
-        asyncio.wait_for(self.response_monitor(self.test), self.test.timeout)
+        test_monitor = None
+        logging.info(f"{self.test.name} launching in {self.test.order} order, oh myyyy")
+        self.test_running = True
+        if self.test.validate_responses:
+            try:
+                test_monitor = wait_for(self.response_monitor(), self.test.timeout)
+                self.test_result.start_time = time.time()
+            except asyncio.TimeoutError:
+                await self.cleanup_test(test_monitor, "failed")
+            except Exception as e:
+                logging.exception("Test monitor task failed, aborting test")
+                await self.cleanup_test(test_monitor, "failed")
+
         if self.test.order == "sequential":
-            for action in self.actions:
-                step_future, step = action
+
+            for step in self.test.steps:
                 logging.debug(f"starting step: {step}")
-                step_result = StepResult(step.uid, step.expected_result)
-                asyncio.sleep(step.delay)
+                step_future = self.send_message(
+                    recipient=step.message.recipient,
+                    msg=step.message.message,
+                    group=step.message.group,
+                    endsession=step.message.endsession,
+                    attachments=step.message.attachments,
+                    content=step.message.content,
+                )
+                await asyncio.sleep(step.delay)
+                step_result = StepResult(
+                    uid=step.uid,
+                    message_sent=step.message,
+                    expected_response=step.expected_response,
+                )
                 step_result.python_timestamp = time.time()
                 rpc_id = await step_future
                 send_receipt = await self.pending_requests[rpc_id]
+                logging.info("send receipt is {send_receipt}")
                 step_result.auxin_timestamp = send_receipt.timestamp
-                await self.pending_step_results.put(step_result)
+                if self.test.validate_responses:
+                    await self.pending_step_results.put(step_result)
+                else:
+                    self.test_result.step_results.append(step_result)
+                logging.info("all steps in {test.name} executed")
 
-    async def response_monitor(self, test: Test) -> None:
+            if self.test.validate_responses:
+                logging.info("awaiting remaining test message responses")
+                await test_monitor
+
+        await self.cleanup_test(test_monitor)
+
+    async def response_monitor(self, test: Test = None) -> None:
         """
         Response monitor for test, stops after test timeout
         """
-        while 1:
-            response, test, timestamp = await self.response_queue.get()
-            self.responses[test.name].append(response)
-            if test.validate_responses is True:
-                step_result = await self.pending_step_results.get()
-                step_result.actual_response = response
-                if (
-                    step_result.actual_response.message
-                    == step_result.expected_response.message
-                ):
-                    step_result.result = "pass"
-                logging.info(f"result: {step_result}")
+        while self.test.validate_responses:
+            try:
+                response, test, timestamp = await wait_for(
+                    self.response_queue.get(), 10
+                )
+            except asyncio.TimeoutError:
+                return
+            try:
+                step_result = await wait_for(self.pending_step_results.get(), 20)
+            except asyncio.TimeoutError:
+                logging.warning("waiting for corresponding result tracker failed")
+                continue
+            step_result.response_timestamp = timestamp
+            if step_result.auxin_timestamp > 0:
+                step_result.roundtrip_delta = timestamp - step_result.auxin_timestamp
+
+            step_result.actual_response = TestMessage(
+                recipient=self.bot_number,
+                message=response.text,
+                group=response.group,
+                endsession=False,
+                attachments=response.attachments,
+                content=None,
+                sender=response.source,
+            )
+            if (
+                step_result.actual_response.message
+                == step_result.expected_response.message
+            ):
+                step_result.result = "passed"
+            self.test_result.step_results.append(step_result)
+            logging.info(f"result: {step_result}")
 
     async def do_stop_test(self, message: Message) -> str:
-        if not self.test_admin:
-            return "This will stop test in progress"
-        if self.test_admin == message.source:
-            return "This will stop test in progress if you're admin"
-        return "sorry you don't have sufficient privileges to stop this test"
+        if not self.is_admin(message.source):
+            return "sorry you don't have sufficient privileges to stop this test"
+        return "this will stop ongoing tests"
+
+    def is_admin(self, sender):
+        logging.info(f"admin is {self.test_admin} sender is {sender}")
+        if isinstance(self.test_admin, str):
+            return sender == self.test_admin
+        if isinstance(self.test_admin, list):
+            return sender in self.test_admin
+        return True
+
+    async def do_start_test(self, message: Message):
+        if self.is_admin(message.source):
+            if self.test_running:
+                if self.test:
+                    return f"{self.test.name} running, please wait until it finishes"
+                return "current test running, please wait until it finishes"
+            if ("load_test" in message.text) and ("acceptance_test" in message.text):
+                return "cannot specify more than one test"
+            if "load_test" in message.text:
+                test = deepcopy(load_test)
+            if "acceptance_test" in message.text:
+                test = deepcopy(acceptance_test)
+            try:
+                await self.configure_test(test)
+            except Exception as e:
+                logging.warning("Test failed to configure with error {e}")
+
+            asyncio.create_task(self.launch_test())
+            return f"{test.name} launched"
+
+    async def do_get_running_tests(self, message: Message):
+        if self.test is None or not self.test_running:
+            return "No running tests"
+        if self.test and self.test_running:
+            return f"{self.test.name} currently running"
+
+    async def do_available_tests(self, message: Message) -> str:
+        return "load_test and acceptance_test are available"
 
     async def do_get_running_status(self, message: Message) -> str:
         # Get test status
@@ -269,11 +438,12 @@ class Tiamat(Bot):
         return "This will schedule tests in the future"
 
 
-# if __name__ == "__main__":
+if __name__ == "__main__":
+    admin = get_secret("TEST_ADMIN")
+    logging.info(f"starting tiamat with admin {admin}")
 
-#    @app.on_startup.append
-#    async def start_wrapper(out_app: web.Application) -> None:
-#        out_app["bot"] = Forest()
-#
-#    group_routing_manager = GroupRoutingManager()
-#    web.run_app(app, port=8080, host="0.0.0.0")
+    @app.on_startup.append
+    async def start_wrapper(out_app: web.Application) -> None:
+        out_app["bot"] = Tiamat(admin=admin)
+
+    web.run_app(app, port=8080, host="0.0.0.0")
