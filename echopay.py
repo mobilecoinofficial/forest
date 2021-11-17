@@ -133,4 +133,4 @@ if __name__ == "__main__":
     async def start_wrapper(out_app: web.Application) -> None:
         out_app["bot"] = AuthorizedPayer()
 
-    web.run_app(app, port=8080, host="0.0.0.0")
+    web.run_app(app, port=8080, host="0.0.0.0", access_log=None)
