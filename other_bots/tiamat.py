@@ -1,15 +1,17 @@
 #!/usr/bin/python3.9
 import time
+import re
 import logging
 import asyncio
 from copy import deepcopy
 from dataclasses import dataclass, field
-from asyncio import Queue, wait_for
+from asyncio import Queue, wait_for, create_task
 from typing import Optional, Union
 from aiohttp import web
 from forest.utils import get_secret
 from forest.core import Bot, Message, app
 
+new_line = '\n'
 
 @dataclass
 class TestMessage:
@@ -45,6 +47,7 @@ class Test:
     order: str = "sequential"
     validate_responses: bool = False
     timeout: int = 3600
+    recipient: str = None
 
     def __post_init__(self):
         if self.order not in ("sequential", "paralllel"):
@@ -60,8 +63,9 @@ class StepResult:
     expected_response: Optional[TestMessage] = None
     actual_response: TestMessage = None
     result: Optional[str] = None
-    python_timestamp: int = None
-    auxin_timestamp: int = None
+    python_timestamp: float = None
+    auxin_timestamp: float = None
+    auxin_roundtrip_latency: float = None
     send_delay: int = None
     response_timestamp: int = None
     roundtrip_delta: int = None
@@ -132,14 +136,14 @@ def send_n_messages(
                 delay=delay,
             )
         ]
-    return Test(name, description, steps, order, validate_responses, timeout)
+    return Test(name, description, steps, order, validate_responses, timeout, recipient)
 
 
 load_test = send_n_messages(
-    name="send_2_messages",
+    name="send_3_messages",
     description="send 20 messages",
     recipient="+12406171615",
-    amount=2,
+    amount=3,
     message="it's okay to be broken",
     expected_response=None,
     delay=3.5,
@@ -150,7 +154,7 @@ acceptance_test = send_n_messages(
     name="test_echobot",
     description="test echobot for correct behavior",
     recipient="+12406171615",
-    amount=2,
+    amount=3,
     message="it's okay to be broken",
     expected_response="it's okay to be broken",
     delay=3.5,
@@ -192,10 +196,9 @@ class Tiamat(Bot):
         if not isinstance(self.pending_step_results, Queue):
             self.pending_step_results = Queue()
 
-        logging.info("starting message hander")
         async for response in self.auxincli_output_iter():
 
-            logging.info(f"incoming message from {response}")
+            logging.info(f"incoming message {response}")
             self.pending_response_tasks = [
                 task for task in self.pending_response_tasks if not task.done()
             ] + [asyncio.create_task(self.handle_response(response))]
@@ -224,13 +227,10 @@ class Tiamat(Bot):
                     await self.response_queue.put((response, self.test, time.time()))
                     return None
         except Exception as e:
-            logging.error("error {e}")
+            logging.error(f"error {e}")
 
         try:
             # If you're admin, respond, else, blackhole
-            logging.info(f"sender is {response.source}")
-            logging.info(f"sender is admin {self.is_admin(response.source)}")
-            logging.info(f"admin is {self.test_admin}")
             if self.is_admin(response.source):
                 tiamat_message = await self.handle_message(response)
                 if tiamat_message is not None:
@@ -269,7 +269,8 @@ class Tiamat(Bot):
             else:
                 result.result = self.validate_test_result(result)
             result.end_time = time.time()
-            result.runtime = result.end_time - result.start_time
+            if result.start_time is not -1:
+                result.runtime = result.end_time - result.start_time
             logging.info(result)
             final_result = deepcopy(result)
             self.test_result_log.append(final_result)
@@ -303,14 +304,15 @@ class Tiamat(Bot):
         self.test_running = True
         if self.test.validate_responses:
             try:
-                test_monitor = wait_for(self.response_monitor(), self.test.timeout)
-                self.test_result.start_time = time.time()
+                test_monitor = create_task(wait_for(self.response_monitor(),
+                    self.test.timeout))
             except asyncio.TimeoutError:
                 await self.cleanup_test(test_monitor, "failed")
             except Exception as e:
                 logging.exception("Test monitor task failed, aborting test")
                 await self.cleanup_test(test_monitor, "failed")
-
+        
+        self.test_result.start_time = time.time()
         if self.test.order == "sequential":
 
             for step in self.test.steps:
@@ -332,13 +334,14 @@ class Tiamat(Bot):
                 step_result.python_timestamp = time.time()
                 rpc_id = await step_future
                 send_receipt = await self.pending_requests[rpc_id]
-                logging.info("send receipt is {send_receipt}")
-                step_result.auxin_timestamp = send_receipt.timestamp
+                logging.info(f"send receipt is {send_receipt}")
+                step_result.auxin_timestamp = send_receipt.timestamp/1000
+                step_result.auxin_roundtrip_latency = step_result.auxin_timestamp - step_result.python_timestamp
                 if self.test.validate_responses:
                     await self.pending_step_results.put(step_result)
                 else:
                     self.test_result.step_results.append(step_result)
-                logging.info("all steps in {test.name} executed")
+                logging.info(f"all steps in {self.test.name} executed")
 
             if self.test.validate_responses:
                 logging.info("awaiting remaining test message responses")
@@ -350,11 +353,16 @@ class Tiamat(Bot):
         """
         Response monitor for test, stops after test timeout
         """
-        while self.test.validate_responses:
+        logging.info("starting reply monitoring")
+        while 1:
+            
             try:
                 response, test, timestamp = await wait_for(
                     self.response_queue.get(), 10
                 )
+            
+                logging.info(f"attempting to validate reply {response}")
+            
             except asyncio.TimeoutError:
                 return
             try:
@@ -362,6 +370,7 @@ class Tiamat(Bot):
             except asyncio.TimeoutError:
                 logging.warning("waiting for corresponding result tracker failed")
                 continue
+            logging.info(f"comparing {step_result} with {response}")
             step_result.response_timestamp = timestamp
             if step_result.auxin_timestamp > 0:
                 step_result.roundtrip_delta = timestamp - step_result.auxin_timestamp
@@ -380,13 +389,15 @@ class Tiamat(Bot):
                 == step_result.expected_response.message
             ):
                 step_result.result = "passed"
+
             self.test_result.step_results.append(step_result)
             logging.info(f"result: {step_result}")
 
     async def do_stop_test(self, message: Message) -> str:
         if not self.is_admin(message.source):
             return "sorry you don't have sufficient privileges to stop this test"
-        return "this will stop ongoing tests"
+        elif self.test:
+            return "this will stop ongoing tests"
 
     def is_admin(self, sender):
         logging.info(f"admin is {self.test_admin} sender is {sender}")
@@ -425,18 +436,21 @@ class Tiamat(Bot):
     async def do_available_tests(self, message: Message) -> str:
         return "load_test and acceptance_test are available"
 
-    async def do_get_running_status(self, message: Message) -> str:
-        # Get test status
-        return "This will list running tests"
-
-    async def do_get_tests(self, message: Message) -> str:
-        # Find available test
-        return "This will find available tests"
-
-    async def do_schedule_test(self, message: Message) -> str:
-        # Enqueue a test
-        return "This will schedule tests in the future"
-
+    async def do_view_test_results(self, message: Message) -> str:
+        if not self.test_result_log:
+            return "No test records have been logged"
+        try:
+            selection = int(re.search(r'\d+', message.text).group())
+            test_result = self.test_result_log[selection-1]
+            if "--steps" in message.text:
+                return repr(test_result.step_results)
+            return repr(test_result)
+        except (AttributeError, IndexError, ValueError) as e:
+            result_log = self.test_result_log
+            results = {i+1:result_log[i].name for i in range(len(result_log))}
+            msg = f"avaliable test logs: {str(results)} {new_line} type /view_test_results (test number) to access specific test or /view_test_results (test number) --steps to print that test's test step results"
+            return msg
+            
 
 if __name__ == "__main__":
     admin = get_secret("TEST_ADMIN")
