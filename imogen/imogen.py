@@ -105,8 +105,7 @@ class Imogen(Bot):
 
     image_rate_cents = 5
 
-    async def do_imagine(self, msg: Message) -> str:
-        """/imagine <prompt>"""
+    async def do_imagine_nostart(self, msg: Message) -> str:
         logging.info(msg.full_text)
         logging.info(msg.text)
         if msg.group:
@@ -116,7 +115,13 @@ class Imogen(Bot):
         await redis.rpush(
             "prompt_queue", json.dumps({"prompt": msg.text, "callback": destination})
         )
+        timed = await redis.llen("prompt_queue")
+        return f"you are #{timed} in line"
+
+    async def do_imagine(self, msg: Message) -> str:
+        """/imagine <prompt>"""
         # check if worker is up
+        resp = await self.do_imagine_nostart(msg)
         state = await get_output(status)
         logging.info("worker state: %s", state)
         # await self.mobster.put_usd_tx(msg.sender, self.image_rate_cents, msg.text[:32])
@@ -124,8 +129,7 @@ class Imogen(Bot):
             # if not, turn it on
             logging.info(await get_output(start.format(self.worker_instance_id)))
             # asyncio.create_task(really_start_worker())
-        timed = await redis.llen("prompt_queue")
-        return f"you are #{timed} in line"
+        return resp
 
     async def do_stop(self, _: Message) -> str:
         return await get_output(stop.format(self.worker_instance_id))
@@ -135,10 +139,11 @@ class Imogen(Bot):
 
     async def do_list_queue(self, _: Message) -> str:
         try:
-            return "; ".join(
+            q = "; ".join(
                 json.loads(item)["prompt"]
                 for item in await redis.lrange("prompt_queue", 0, -1)
             )
+            return q or "queue empty"
         except json.JSONDecodeError:
             return "json decode error?"
 
