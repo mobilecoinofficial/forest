@@ -170,7 +170,7 @@ async def admin_handler(request: web.Request) -> web.Response:
     bot = request.app.get("bot")
     if not bot:
         return web.Response(status=504, text="Sorry, no live workers.")
-    msg = urllib.parse.unquote(request.query.get("message"))
+    msg = urllib.parse.unquote(request.query.get("message", ""))
     await bot.send_message(utils.get_secret("ADMIN"), msg)
     return web.Response(text="OK")
 
