@@ -222,18 +222,22 @@ class Signal:
 
     pending_requests: dict[str, asyncio.Future[Message]] = {}
 
-    async def wait_resp(self, cmd: dict) -> Message:
-        future_key = cmd["method"] + "-" + str(round(time.time()))
-        logging.info("expecting response id: %s", future_key)
-        cmd["id"] = future_key
-        self.pending_requests[future_key] = asyncio.Future()
-        await self.auxincli_input_queue.put(cmd)
-        result = await self.pending_requests[future_key]
+    async def wait_resp(
+        self, req: Optional[dict] = None, future_key: str = ""
+    ) -> Message:
+        if req:
+            future_key = req["method"] + "-" + str(round(time.time()))
+            logging.info("expecting response id: %s", future_key)
+            req["id"] = future_key
+            self.pending_requests[future_key] = asyncio.Future()
+            await self.auxincli_input_queue.put(req)
+        # when the result is received, the future will be set
+        response = await self.pending_requests[future_key]
         self.pending_requests.pop(future_key)
-        return result
+        return response
 
     async def auxin_req(self, method: str, **params: Any) -> Message:
-        return await self.wait_resp(rpc(method, **params))
+        return await self.wait_resp(req=rpc(method, **params))
 
     async def set_profile(self) -> None:
         """Set signal profile. Note that this will overwrite any mobilecoin address"""
@@ -437,8 +441,7 @@ class Bot(Signal):
             self.response_metrics.append((int(start_time), note, python_delta))
         if future_key:
             logging.debug("awaiting future %s", future_key)
-            result = await self.pending_requests[future_key]
-            self.pending_requests.pop(future_key)
+            result = await self.wait_resp(future_key=future_key)
             roundtrip_delta = (result.timestamp - message.timestamp) / 1000
             self.auxin_roundtrip_latency.append(
                 (message.timestamp, note, roundtrip_delta)
@@ -647,11 +650,9 @@ class PayBot(Bot):
         content = await self.fs_receipt_to_payment_message_content(receipt_resp)
         # pass our beautifully composed spicy JSON content to auxin.
         # message body is ignored in this case.
-        payment_notif = await self.auxin_req(
-            "send", destination=recipient, content=content
-        )
+        payment_notif = await self.send_message(recipient, "", content=content)
         await self.send_message(recipient, "receipt sent!")
-        return payment_notif
+        return await self.wait_resp(future_key=payment_notif)
 
 
 async def no_get(request: web.Request) -> web.Response:
