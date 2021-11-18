@@ -85,7 +85,7 @@ class TestResult:
     end_time: float = -1.0
     runtime: float = -1.0
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.name = self.test.name
 
 
@@ -166,12 +166,11 @@ acceptance_test = send_n_messages(
 class Tiamat(Bot):
     def __init__(
         self,
-        *args,
-        test: Optional[Test] = None,
         admin: str,
+        test: Optional[Test] = None,
         secondary_admins: Optional[list[str]] = None,
     ) -> None:
-        super().__init__(*args)
+        super().__init__()
         self.test: Optional[Test] = test
         self.test_result: Optional[TestResult] = None
         self.test_running: bool = False
@@ -182,7 +181,7 @@ class Tiamat(Bot):
         self.response_queue: Queue[tuple[Message, Test, float]] = Queue()
 
     @staticmethod
-    def is_data_message(response: Message):
+    def is_data_message(response: Message) -> bool:
         if response.blob.get("content", {}).get("source", {}).get("dataMessage"):
             return True
         return False
@@ -343,7 +342,7 @@ class Tiamat(Bot):
             logging.info(f"result: {step_result}")
 
     @staticmethod
-    def validate_test_result(test_result: TestResult):
+    def validate_test_result(test_result: TestResult) -> str:
         if not isinstance(test_result, TestResult):
             raise TypeError("Cannot validate test result, invalid input passed")
         if not test_result.test.validate_responses:
@@ -355,7 +354,7 @@ class Tiamat(Bot):
 
     async def cleanup_test(
         self, test_monitor: asyncio.Task = None, pass_or_fail: str = None
-    ):
+    ) -> None:
         if test_monitor and not test_monitor.done():
             if test_monitor.exception():
                 test_monitor.cancel()
@@ -380,14 +379,14 @@ class Tiamat(Bot):
         self.test = None
         self.test_result = None
 
-    def is_admin(self, sender):
+    def is_admin(self, sender: str) -> bool:
         if isinstance(self.test_admin, str):
             return sender == self.test_admin
         if isinstance(self.secondary_admins, list):
             return sender in self.secondary_admins
         return True
 
-    async def do_start_test(self, message: Message):
+    async def do_start_test(self, message: Message) -> str:
         if self.is_admin(message.source):
             if self.test_running:
                 if self.test:
@@ -405,9 +404,11 @@ class Tiamat(Bot):
                 await self.configure_test(test)
             except Exception as e:
                 logging.warning("Test failed to configure with error %s", e)
+                return "Test failed to configure correctly"
 
             asyncio.create_task(self.launch_test())
             return f"{test.name} launched"
+        return "Not authorized"
 
     async def do_stop_test(self, message: Message) -> str:
         if not self.is_admin(message.source):
@@ -416,11 +417,10 @@ class Tiamat(Bot):
             return "this will stop ongoing tests"
         return "no tests to stop!"
 
-    async def do_get_running_tests(self, message: Message):
-        if self.test is None or not self.test_running:
-            return "No running tests"
+    async def do_get_running_tests(self, message: Message) -> str:
         if self.test and self.test_running:
             return f"{self.test.name} currently running"
+        return "No running tests"
 
     async def do_available_tests(self, message: Message) -> str:
         return "load_test and acceptance_test are available"
