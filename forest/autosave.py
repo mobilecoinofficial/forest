@@ -41,7 +41,7 @@ async def start_memfs(app: web.Application) -> None:
     def memfs_proc(path: str = "data") -> Any:
         """Start the memfs process"""
         pid = os.getpid()
-        mountpath = Path(utils.ROOT_DIR / path)
+        mountpath = Path(utils.ROOT_DIR) / path
         logging.info(
             "Starting memfs with PID: %s on dir: %s/%s", os.getpid(), mountpath
         )
