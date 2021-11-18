@@ -9,10 +9,9 @@ from asyncio import Queue, Task, wait_for, create_task
 from typing import Optional, Union, Any
 from aiohttp import web
 from forest.utils import get_secret
-from forest.core import Bot, Message, Response, app
+from forest.core import Bot, Message, Response, JSON, app
 
 new_line: str = "\n"
-JSON = dict[str, Any]
 
 
 @dataclass
@@ -173,8 +172,8 @@ class Tiamat(Bot):
         secondary_admins: Optional[list[str]] = None,
     ) -> None:
         super().__init__(*args)
-        self.test: Union[Test, None] = test
-        self.test_result: Union[TestResult, None] = None
+        self.test: Optional[Test] = test
+        self.test_result: Optional[TestResult] = None
         self.test_running: bool = False
         self.test_admin: str = admin
         self.secondary_admins: Optional[list[str]] = secondary_admins
@@ -203,10 +202,7 @@ class Tiamat(Bot):
             await self.response_queue.put((message, self.test, time.time()))
 
         # If you're admin, respond, else, blackhole
-        if self.is_admin(message.source) or (
-            isinstance(self.secondary_admins, list)
-            and message.source in self.secondary_admins
-        ):
+        if self.is_admin(message.source):
             return await super().handle_message(message)
 
         return None
