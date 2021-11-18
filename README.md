@@ -64,7 +64,8 @@ If things seem wrong, you can use `fly suspend`, the above to sync, use signal-c
 - `LOGLEVEL`: what log level to use for console logs (DEBUG, INFO, WARNING, ERROR)
 - `ORDER`: allow users to buy phonenumbers with `/order` and `/pay shibboleth`
 - `GROUPS`: use group routes, allowing `/mkgroup` (aka `/query`), using groups to manage to/from context
-
+- `ADMIN_METRICS`: send python and roundtrip timedeltas for each command to ADMIN
+- 
 ## Other stuff
 
 Code style: `mypy *py` and `pylint *py` should not have errors when you push. run `black`. prefer verbose, easier to read names over conciser ones.

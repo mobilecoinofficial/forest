@@ -174,7 +174,7 @@ class Signal:
 
     async def handle_auxincli_raw_line(self, line: str) -> None:
         if '{"jsonrpc":"2.0","result":[],"id":"receive"}' not in line:
-            pass # logging.debug("auxin: %s", line)
+            pass  # logging.debug("auxin: %s", line)
         try:
             blob = json.loads(line)
         except json.JSONDecodeError:
@@ -449,9 +449,10 @@ class Bot(Signal):
             roundtrip_summary.observe(roundtrip_delta)
             roundtrip_histogram.observe(roundtrip_delta)
             logging.info("noted roundtrip time: %s", roundtrip_delta)
-            await self.admin(
-                f"command: {note}. python delta: {python_delta}s. roundtrip delta: {roundtrip_delta}s",
-            )
+            if utils.get_secret("ADMIN_METRICS"):
+                await self.admin(
+                    f"command: {note}. python delta: {python_delta}s. roundtrip delta: {roundtrip_delta}s",
+                )
 
     async def handle_message(self, message: Message) -> Response:
         """Method dispatch to do_x commands and goodies.

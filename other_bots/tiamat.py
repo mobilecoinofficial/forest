@@ -6,7 +6,7 @@ import asyncio
 from copy import deepcopy
 from dataclasses import dataclass, field, asdict
 from asyncio import Queue, Task, wait_for, create_task
-from typing import Optional, Union
+from typing import Any, Optional, Union
 from aiohttp import web
 from forest.utils import get_secret
 from forest.core import Bot, Message, Response, JSON, app
@@ -70,6 +70,11 @@ class StepResult:
     send_delay: Optional[float] = None
     response_timestamp: Optional[float] = None
     roundtrip_delta: Optional[float] = None
+
+    def __repr__(self) -> str:
+        expected = self.expected_response.message if self.expected_response else "None"
+        got = self.actual_response.message if self.actual_response else "None"
+        return f"<expected: '{expected}'; got '{got}'>"
 
 
 @dataclass
@@ -159,10 +164,20 @@ def script_test(name: str, recipient: str, script: list[tuple[str, str]]) -> Tes
     )
 
 
-imogen = "+12406171657"
+imogen = "+12406171474" # "+12406171657"
 
 ping_test = script_test(
     "ping", imogen, [("/ping", "/pong"), ("/ping 1", "/pong 1"), ("/pong", "OK")]
+)
+redis_test = script_test(
+    "redis",
+    imogen,
+    [
+        ("/imagine_nostart foo", "you are #1 in line"),
+        ("/list_queue", "foo"),
+        ("/dump_queue", "foo"),
+        ("/list_queue", "queue empty"),
+    ],
 )
 
 load_test = send_n_messages(
@@ -246,20 +261,21 @@ class Tiamat(Bot):
         message = f"{test.name} configured, {len(test.steps)} steps ready to run"
         logging.info(message)
 
-    async def launch_test(self) -> None:
+    async def launch_test(self) -> Optional[TestResult]:
+        # maybe merge into configure_test
         if self.test_running:
             logging.warning("Existing test running, aborting run attempt")
-            return
+            return None
 
         if not self.test:
             logging.warning("No currently loaded test, aborting run attempt")
-            return
+            return None
 
         if not self.test_result:
             logging.warning(
                 "Test result object must be configured prior to launching test, aborting"
             )
-            return
+            return None
 
         test_monitor = None
         logging.info(f"{self.test.name} launching in {self.test.order} order, oh myyyy")
@@ -306,7 +322,7 @@ class Tiamat(Bot):
                     await self.pending_step_results.put(step_result)
                 else:
                     self.test_result.step_results.append(step_result)
-                logging.info(f"all steps in {self.test.name} executed")
+            logging.info(f"all steps in {self.test.name} executed")
 
             if self.test.validate_responses and isinstance(test_monitor, Task):
                 logging.info("awaiting remaining test message responses")
@@ -314,7 +330,7 @@ class Tiamat(Bot):
         else:
             raise NotImplementedError
 
-        await self.cleanup_test(test_monitor)
+        return await self.cleanup_test(test_monitor)
 
     async def response_monitor(self) -> None:
         """
@@ -349,7 +365,7 @@ class Tiamat(Bot):
 
             step_result.actual_response = TestMessage(
                 recipient=self.bot_number,
-                message=response.text,
+                message=response.full_text,
                 group=response.group,
                 endsession=False,
                 attachments=response.attachments,
@@ -381,13 +397,13 @@ class Tiamat(Bot):
 
     async def cleanup_test(
         self, test_monitor: asyncio.Task = None, pass_or_fail: str = None
-    ) -> None:
+    ) -> Optional[TestResult]:
         if test_monitor and not test_monitor.done():
             if test_monitor.exception():
                 test_monitor.cancel()
             if pass_or_fail == "failed":
                 test_monitor.cancel()
-
+        result = None
         if isinstance(self.test_result, TestResult):
             result = self.test_result
             if pass_or_fail:
@@ -405,6 +421,7 @@ class Tiamat(Bot):
         self.test_running = False
         self.test = None
         self.test_result = None
+        return result
 
     def is_admin(self, sender: str) -> bool:
         if isinstance(self.test_admin, str):
@@ -435,6 +452,12 @@ class Tiamat(Bot):
             asyncio.create_task(self.launch_test())
             return f"{test.name} launched"
         return "Not authorized"
+
+    async def run_test_programmatically(self, test: Test) -> TestResult:
+        await self.configure_test(test)
+        result = await self.launch_test()
+        assert result
+        return result
 
     async def do_stop_test(self, message: Message) -> str:
         if not self.is_admin(message.source):
@@ -472,14 +495,20 @@ class Tiamat(Bot):
             return msg
 
 
+class FakeMessage(Message):
+    def __init__(self, **kwargs: Any) -> None:  # pylint: disable=super-init-not-called
+        self.__dict__.update(kwargs)
+
+
 if __name__ == "__main__":
     test_admin = get_secret("TEST_ADMIN") or get_secret("ADMIN")
     logging.info(f"starting tiamat with admin {test_admin}")
 
     @app.on_startup.append
     async def start_wrapper(our_app: web.Application) -> None:
-        our_app["bot"] = Tiamat(
-            admin=test_admin, available_tests=[load_test, ping_test, acceptance_test]
+        our_app["bot"] = bot = Tiamat(
+            admin=test_admin, available_tests=[load_test, ping_test, acceptance_test, redis_test]
         )
+        await bot.run_test_programmatically(redis_test)
 
-    web.run_app(app, port=8080, host="0.0.0.0")
+    web.run_app(app, port=9090, host="0.0.0.0")

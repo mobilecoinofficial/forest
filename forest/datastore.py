@@ -57,7 +57,7 @@ AccountPGExpressions = pghelp.PGExpressions(
         WHERE id=$1;",
     mark_account_freed="UPDATE {self.table} SET last_claim_ms = 0, \
         active_node_name = NULL WHERE id=$1;",
-    get_free_account="SELECT (id, datastore) FROM {self.table} \
+    get_free_account="SELECT id, datastore FROM {self.table} \
             WHERE active_node_name IS NULL \
             AND last_claim_ms = 0 \
             LIMIT 1;",
@@ -320,7 +320,7 @@ async def list_accounts(_args: argparse.Namespace) -> None:
         )
     ]:
         cols.append("notes")
-    query = f"select {' ,'.join(cols)} from signal_accounts"
+    query = f"select {' ,'.join(cols)} from signal_accounts order by id"
     accounts = await get_account_interface().execute(query)
     if not isinstance(accounts, list):
         return
