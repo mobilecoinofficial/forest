@@ -4,6 +4,7 @@ The core chatbot framework: Message, Signal, Bot, and app
 """
 import asyncio
 import asyncio.subprocess as subprocess  # https://github.com/PyCQA/pylint/issues/1469
+import base64
 import datetime
 import json
 import logging
@@ -12,8 +13,8 @@ import signal
 import sys
 import time
 import traceback
-import uuid
 import urllib
+import uuid
 from asyncio import Queue, StreamReader, StreamWriter
 from asyncio.subprocess import PIPE
 from typing import Any, AsyncIterator, Optional, Union
@@ -24,7 +25,7 @@ import termcolor
 from aiohttp import web
 from phonenumbers import NumberParseException
 from prometheus_async import aio
-from prometheus_client import Summary, Histogram
+from prometheus_client import Histogram, Summary
 
 # framework
 import mc_util
@@ -460,9 +461,6 @@ class Bot(Signal):
             return f"Sorry! Command {message.command} not recognized!" + suggest_help
         if message.text == "TERMINATE":
             return "signal session reset"
-        if message.payment:
-            asyncio.create_task(self.handle_payment(message))
-            return None
         return await self.default(message)
 
     async def default(self, message: Message) -> Response:
@@ -542,6 +540,14 @@ class Bot(Signal):
     async def do_exception(self, message: Message) -> None:
         raise Exception("You asked for it!")
 
+
+class PayBot(Bot):
+    async def handle_message(self, message: Message) -> Response:
+        if message.payment:
+            asyncio.create_task(self.handle_payment(message))
+            return None
+        return await super().handle_message(message)
+
     async def handle_payment(self, message: Message) -> None:
         """Decode the receipt, then update balances.
         Blocks on transaction completion, run concurrently"""
@@ -572,6 +578,80 @@ class Bot(Signal):
     async def payment_response(self, msg: Message, amount_pmob: int) -> Response:
         del msg, amount_pmob  # shush linters
         return "This bot doesn't have a response for payments."
+
+    async def get_address(self, recipient: str) -> Optional[str]:
+        result = await self.auxin_req("getPayAddress", peer_name=recipient)
+        b64_address = (
+            result.blob.get("Address", {}).get("mobileCoinAddress", {}).get("address")
+        )
+        if result.error or not b64_address:
+            logging.info("bad address: %s", result.blob)
+            return None
+        address = mc_util.b64_public_address_to_b58_wrapper(b64_address)
+        return address
+
+    async def do_address(self, msg: Message) -> Response:
+        address = await self.get_address(msg.source)
+        return address or "sorry, couldn't get your MobileCoin address"
+
+    async def mob_request(self, method: str, **params: Any) -> dict:
+        result = await self.mobster.req_(method, **params)
+        if "error" in result:
+            await self.admin(f"{params}\n{result}")
+        return result
+
+    async def fs_receipt_to_payment_message_content(self, fs_receipt: dict) -> str:
+        full_service_receipt = fs_receipt["result"]["receiver_receipts"][0]
+        # this gets us a Receipt protobuf
+        b64_receipt = mc_util.full_service_receipt_to_b64_receipt(full_service_receipt)
+        # serde expects bytes to be u8[], not b64
+        u8_receipt = [int(char) for char in base64.b64decode(b64_receipt)]
+        tx = {"mobileCoin": {"receipt": u8_receipt}}
+        note = "check out this java-free payment notification"
+        payment = {"Item": {"notification": {"note": note, "Transaction": tx}}}
+        # SignalServiceMessageContent protobuf represented as JSON (spicy)
+        # destination is outside the content so it doesn't matter,
+        # but it does contain the bot's profileKey
+        resp = await self.auxin_req(
+            "send", simulate=True, message="", destination="+15555555555"
+        )
+        content_skeletor = json.loads(resp.blob["simulate_output"])
+        content_skeletor["dataMessage"]["body"] = None
+        content_skeletor["dataMessage"]["payment"] = payment
+        return json.dumps(content_skeletor)
+
+    async def send_payment(self, recipient: str, amount_pmob: int) -> Optional[Message]:
+        address = await self.get_address(recipient)
+        if not address:
+            await self.send_message(
+                recipient, "sorry, couldn't get your MobileCoin address"
+            )
+            return None
+        # TODO: add a lock around two-part build/submit OR
+        # TODO: add explicit utxo handling
+        # TODO: add task which keeps full-service filled
+        raw_prop = await self.mob_request(
+            "build_transaction",
+            account_id=await self.mobster.get_account(),
+            recipient_public_address=address,
+            value_pmob=str(int(amount_pmob)),
+            fee=str(int(1e12 * 0.0004)),
+        )
+        prop = raw_prop["result"]["tx_proposal"]
+        await self.mob_request("submit_transaction", tx_proposal=prop)
+        receipt_resp = await self.mob_request(
+            "create_receiver_receipts",
+            tx_proposal=prop,
+            account_id=await self.mobster.get_account(),
+        )
+        content = await self.fs_receipt_to_payment_message_content(receipt_resp)
+        # pass our beautifully composed spicy JSON content to auxin.
+        # message body is ignored in this case.
+        payment_notif = await self.auxin_req(
+            "send", destination=recipient, content=content
+        )
+        await self.send_message(recipient, "receipt sent!")
+        return payment_notif
 
 
 async def no_get(request: web.Request) -> web.Response:
