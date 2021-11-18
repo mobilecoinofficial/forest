@@ -9,7 +9,7 @@ from asyncio import Queue, Task, wait_for, create_task
 from typing import Optional, Union, Any
 from aiohttp import web
 from forest.utils import get_secret
-from forest.core import Bot, Message, app
+from forest.core import Bot, Message, Response, app
 
 new_line: str = "\n"
 JSON = dict[str, Any]
@@ -51,7 +51,7 @@ class Test:
     validate_responses: bool = False
     timeout: float = 3600.0
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.order not in ("sequential", "paralllel"):
             raise ValueError("Order must be either sequential or parallel")
 
@@ -99,7 +99,7 @@ def create_test_definition_file(test: Test) -> JSON:
     return test_json
 
 
-def send_n_messages(
+def send_n_messages(  # pylint: disable=too-many-arguments
     name: str,
     description: str,
     recipient: str,
@@ -129,7 +129,7 @@ def send_n_messages(
             else:
                 response = TestMessage("tester", expected_response, sender=recipient)
 
-        steps += [
+        steps.append(
             TestStep(
                 uid=f"{name}-{i+1}",
                 description=f"send message: {sender_message}",
@@ -137,7 +137,7 @@ def send_n_messages(
                 expected_response=response,
                 delay=delay,
             )
-        ]
+        )
     return Test(name, description, recipient, steps, order, validate_responses, timeout)
 
 
@@ -183,40 +183,33 @@ class Tiamat(Bot):
         self.response_queue: Queue[tuple[Message, Test, float]] = Queue()
 
     @staticmethod
-    def isDataMessage(response: Message):
+    def is_data_message(response: Message):
         if response.blob.get("content", {}).get("source", {}).get("dataMessage"):
             return True
         return False
 
-    async def time_response(self, response: Message) -> None:
+    async def handle_message(self, message: Message) -> Union[Response, None]:
         """
         If message is response to text, hanlde it according to test definition.
         If it is another type of message, deal with it.
         """
+        if (
+            isinstance(self.test, Test)
+            and self.test_running
+            and self.test.validate_responses
+            and message.source == self.test.recipient
+            and self.is_data_message(message)
+        ):
+            await self.response_queue.put((message, self.test, time.time()))
 
-        try:
-            # If incoming message is test response from target bot and a test
-            # that's configured to validate responses is running, put message
-            # in queue, otherwise ignore
-            if (
-                isinstance(self.test, Test)
-                and self.test_running
-                and self.test.validate_responses
-            ):
-                if response.source == self.test.recipient and self.isDataMessage(
-                    response
-                ):
-                    await self.response_queue.put((response, self.test, time.time()))
-                    return None
-        except Exception as e:
-            logging.error(f"error {e}")
+        # If you're admin, respond, else, blackhole
+        if self.is_admin(message.source) or (
+            isinstance(self.secondary_admins, list)
+            and message.source in self.secondary_admins
+        ):
+            return await super().handle_message(message)
 
-        try:
-            # If you're admin, respond, else, blackhole
-            if self.is_admin(response.source) and self.isDataMessage(response):
-                await super().time_response(response)
-        except Exception as e:
-            logging.error(f"error: {e}")
+        return None
 
     async def configure_test(self, test: Test) -> None:
         """Prepare test configuration within bot"""
@@ -230,47 +223,6 @@ class Tiamat(Bot):
         self.test_result = TestResult(test=test, test_account=self.bot_number)
         message = f"{test.name} configured, {len(test.steps)} steps ready to run"
         logging.info(message)
-
-    async def cleanup_test(
-        self, test_monitor: asyncio.Task = None, pass_or_fail: str = None
-    ):
-        if test_monitor and not test_monitor.done():
-            if test_monitor.exception():
-                test_monitor.cancel()
-            if pass_or_fail == "failed":
-                test_monitor.cancel()
-
-        if isinstance(self.test_result, TestResult):
-            result = self.test_result
-            if pass_or_fail:
-                result.result = pass_or_fail
-            else:
-                result.result = self.validate_test_result(result)
-            result.end_time = time.time()
-            if result.start_time is not -1:
-                result.runtime = result.end_time - result.start_time
-            logging.info(result)
-            final_result = deepcopy(result)
-            self.test_result_log.append(final_result)
-            await self.send_message(recipient=self.test_admin, msg=repr(final_result))
-
-        self.test_running = False
-        self.test = None
-        self.test_result = None
-
-    @staticmethod
-    def validate_test_result(test_result: TestResult):
-        if not isinstance(test_result, TestResult):
-            raise TypeError("Cannot validate test result, invalid input passed")
-        if not test_result.test.validate_responses:
-            return "passed"
-
-        result_list = []
-        for step_result in test_result.step_results:
-            result_list.append(step_result.result == "passed")
-        if all(result_list):
-            return "passed"
-        return "failed"
 
     async def launch_test(self) -> None:
         if self.test_running:
@@ -297,7 +249,7 @@ class Tiamat(Bot):
                 )
             except asyncio.TimeoutError:
                 await self.cleanup_test(test_monitor, "failed")
-            except Exception as e:
+            except Exception:
                 logging.exception("Test monitor task failed, aborting test")
                 await self.cleanup_test(test_monitor, "failed")
 
@@ -337,6 +289,8 @@ class Tiamat(Bot):
             if self.test.validate_responses and isinstance(test_monitor, Task):
                 logging.info("awaiting remaining test message responses")
                 await test_monitor
+        else:
+            raise NotImplementedError
 
         await self.cleanup_test(test_monitor)
 
@@ -348,6 +302,7 @@ class Tiamat(Bot):
         while 1:
             if not isinstance(self.test_result, TestResult):
                 raise AttributeError("test result not present, aborting test")
+
             try:
                 response, test, timestamp = await wait_for(
                     self.response_queue.get(), 10
@@ -380,11 +335,9 @@ class Tiamat(Bot):
                 sender=response.source,
             )
 
-            
-            if (
-                isinstance(step_result.expected_response, TestMessage) and
-                (step_result.actual_response.message
-                == step_result.expected_response.message)
+            if isinstance(step_result.expected_response, TestMessage) and (
+                step_result.actual_response.message
+                == step_result.expected_response.message
             ):
                 step_result.result = "passed"
             else:
@@ -393,15 +346,45 @@ class Tiamat(Bot):
             self.test_result.step_results.append(step_result)
             logging.info(f"result: {step_result}")
 
-    async def do_stop_test(self, message: Message) -> str:
-        if not self.is_admin(message.source):
-            return "sorry you don't have sufficient privileges to manage tests"
-        if self.test:
-            return "this will stop ongoing tests"
-        return "no tests to stop!"
+    @staticmethod
+    def validate_test_result(test_result: TestResult):
+        if not isinstance(test_result, TestResult):
+            raise TypeError("Cannot validate test result, invalid input passed")
+        if not test_result.test.validate_responses:
+            return "passed"
+        for step_result in test_result.step_results:
+            if step_result.result != "passed":
+                return "failed"
+        return "passed"
+
+    async def cleanup_test(
+        self, test_monitor: asyncio.Task = None, pass_or_fail: str = None
+    ):
+        if test_monitor and not test_monitor.done():
+            if test_monitor.exception():
+                test_monitor.cancel()
+            if pass_or_fail == "failed":
+                test_monitor.cancel()
+
+        if isinstance(self.test_result, TestResult):
+            result = self.test_result
+            if pass_or_fail:
+                result.result = pass_or_fail
+            else:
+                result.result = self.validate_test_result(result)
+            result.end_time = time.time()
+            if result.start_time != -1:
+                result.runtime = result.end_time - result.start_time
+            logging.info(result)
+            final_result = deepcopy(result)
+            self.test_result_log.append(final_result)
+            await self.send_message(recipient=self.test_admin, msg=repr(final_result))
+
+        self.test_running = False
+        self.test = None
+        self.test_result = None
 
     def is_admin(self, sender):
-        logging.info(f"admin is {self.test_admin} sender is {sender}")
         if isinstance(self.test_admin, str):
             return sender == self.test_admin
         if isinstance(self.secondary_admins, list):
@@ -416,6 +399,8 @@ class Tiamat(Bot):
                 return "current test running, please wait until it finishes"
             if ("load_test" in message.text) and ("acceptance_test" in message.text):
                 return "cannot specify more than one test"
+            if not message.text:
+                return "must specify at least one test"
             if "load_test" in message.text:
                 test = deepcopy(load_test)
             if "acceptance_test" in message.text:
@@ -423,10 +408,17 @@ class Tiamat(Bot):
             try:
                 await self.configure_test(test)
             except Exception as e:
-                logging.warning("Test failed to configure with error {e}")
+                logging.warning("Test failed to configure with error %s", e)
 
             asyncio.create_task(self.launch_test())
             return f"{test.name} launched"
+
+    async def do_stop_test(self, message: Message) -> str:
+        if not self.is_admin(message.source):
+            return "sorry you don't have sufficient privileges to manage tests"
+        if self.test:
+            return "this will stop ongoing tests"
+        return "no tests to stop!"
 
     async def do_get_running_tests(self, message: Message):
         if self.test is None or not self.test_running:
@@ -446,18 +438,24 @@ class Tiamat(Bot):
             if "--steps" in message.text:
                 return repr(test_result.step_results)
             return repr(test_result)
-        except (AttributeError, IndexError, ValueError) as e:
+        except (AttributeError, IndexError, ValueError):
             result_log = self.test_result_log
             results = {i + 1: result_log[i].name for i in range(len(result_log))}
-            msg = f"avaliable test logs: {str(results)} {new_line} type /view_test_results (test number) to access specific test or /view_test_results (test number) --steps to print that test's test step results"
+            msg = (
+                f"avaliable test logs: {str(results)} {new_line}"
+                "type /view_test_results (test number) to access specific test"
+                " or /view_test_results (test number) --steps to print that"
+                " test's test step results"
+            )
             return msg
 
+
 if __name__ == "__main__":
-    admin = get_secret("TEST_ADMIN")
-    logging.info(f"starting tiamat with admin {admin}")
+    test_admin = get_secret("TEST_ADMIN")
+    logging.info(f"starting tiamat with admin {test_admin}")
 
     @app.on_startup.append
     async def start_wrapper(out_app: web.Application) -> None:
-        out_app["bot"] = Tiamat(admin=admin)
+        out_app["bot"] = Tiamat(admin=test_admin)
 
     web.run_app(app, port=8080, host="0.0.0.0")
