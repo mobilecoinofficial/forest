@@ -10,10 +10,10 @@ disable=
     logging-fstring-interpolation,
     consider-using-with,
     consider-using-from-import,
+    fixme,
     # handled by black
     format,
-    line-too-long,
-    fixme
+    line-too-long
 
 
 [VARIABLES]
