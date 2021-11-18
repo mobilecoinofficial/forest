@@ -140,6 +140,31 @@ def send_n_messages(  # pylint: disable=too-many-arguments
     return Test(name, description, recipient, steps, order, validate_responses, timeout)
 
 
+def script_test(name: str, recipient: str, script: list[tuple[str, str]]) -> Test:
+    return Test(
+        name,
+        name,
+        recipient,
+        steps=[
+            TestStep(
+                uid=f"{name}-{call[:4]}",
+                description=f"send message: {call}",
+                message=TestMessage(recipient, call),
+                expected_response=TestMessage("tester", response, sender=recipient),
+                delay=0.2,
+            )
+            for call, response in script
+        ],
+        validate_responses=True,
+    )
+
+
+imogen = "+12406171657"
+
+ping_test = script_test(
+    "ping", imogen, [("/ping", "/pong"), ("/ping 1", "/pong 1"), ("/pong", "OK")]
+)
+
 load_test = send_n_messages(
     name="send_3_messages",
     description="send 20 messages",
@@ -167,10 +192,12 @@ class Tiamat(Bot):
     def __init__(
         self,
         admin: str,
+        available_tests: list[Test],
         test: Optional[Test] = None,
         secondary_admins: Optional[list[str]] = None,
     ) -> None:
         super().__init__()
+        self.available_tests = {_test.name: _test for _test in available_tests}
         self.test: Optional[Test] = test
         self.test_result: Optional[TestResult] = None
         self.test_running: bool = False
@@ -244,7 +271,7 @@ class Tiamat(Bot):
                 )
             except asyncio.TimeoutError:
                 await self.cleanup_test(test_monitor, "failed")
-            except Exception: # pylint: disable=broad-except
+            except Exception:  # pylint: disable=broad-except
                 logging.exception("Test monitor task failed, aborting test")
                 await self.cleanup_test(test_monitor, "failed")
 
@@ -302,7 +329,7 @@ class Tiamat(Bot):
                 response, test, timestamp = await wait_for(
                     self.response_queue.get(), 10
                 )
-                del test # shh pylint
+                del test  # shh pylint
                 logging.info(f"attempting to validate reply {response}")
 
             except asyncio.TimeoutError:
@@ -393,15 +420,15 @@ class Tiamat(Bot):
                 return f"{name} running, please wait until it finishes"
             if ("load_test" in message.text) and ("acceptance_test" in message.text):
                 return "cannot specify more than one test"
-            if not message.text:
+            for name, _test in self.available_tests.items():
+                if name in message.text:
+                    test = deepcopy(_test)
+                    break
+            else:
                 return "must specify at least one test"
-            if "load_test" in message.text:
-                test = deepcopy(load_test)
-            elif "acceptance_test" in message.text:
-                test = deepcopy(acceptance_test)
             try:
                 await self.configure_test(test)
-            except Exception: # pylint: disable=broad-except
+            except Exception:  # pylint: disable=broad-except
                 logging.exception("Test failed to configure")
                 return "Test failed to configure correctly"
 
@@ -422,13 +449,13 @@ class Tiamat(Bot):
         return "No running tests"
 
     async def do_available_tests(self, _: Message) -> str:
-        return "load_test and acceptance_test are available"
+        return f"available tests: {', '.join(self.available_tests.keys())}"
 
     async def do_view_test_results(self, message: Message) -> str:
         if not self.test_result_log:
             return "No test records have been logged"
         try:
-            selection = int(re.search(r"\d+", message.text).group()) # type: ignore
+            selection = int(re.search(r"\d+", message.text).group())  # type: ignore
             test_result = self.test_result_log[selection - 1]
             if "--steps" in message.text:
                 return repr(test_result.step_results)
@@ -446,11 +473,13 @@ class Tiamat(Bot):
 
 
 if __name__ == "__main__":
-    test_admin = get_secret("TEST_ADMIN")
+    test_admin = get_secret("TEST_ADMIN") or get_secret("ADMIN")
     logging.info(f"starting tiamat with admin {test_admin}")
 
     @app.on_startup.append
-    async def start_wrapper(out_app: web.Application) -> None:
-        out_app["bot"] = Tiamat(admin=test_admin)
+    async def start_wrapper(our_app: web.Application) -> None:
+        our_app["bot"] = Tiamat(
+            admin=test_admin, available_tests=[load_test, ping_test, acceptance_test]
+        )
 
     web.run_app(app, port=8080, host="0.0.0.0")
