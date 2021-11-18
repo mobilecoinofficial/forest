@@ -13,13 +13,13 @@ from forest import fuse, mem, utils
 _memfs_process = None
 
 
+# this is the first thing that runs on aiohttp app startup, before datastore.download
 async def start_memfs(app: web.Application) -> None:
     """
     mount a filesystem in userspace to store data
     the fs contents are stored in memory, so that our keys never touch a disk
     this means we can log signal-cli's interactions with fs,
     and store them in mem_queue.
-    if running locally, chdir to /tmp/local-signal with symlinks instead
     """
     # refactor this whole mess into some sort of more general "figure out where we are before downloading"
     logging.info("starting memfs")
@@ -41,13 +41,12 @@ async def start_memfs(app: web.Application) -> None:
     def memfs_proc(path: str = "data") -> Any:
         """Start the memfs process"""
         pid = os.getpid()
+        mountpath = Path(utils.ROOT_DIR / path)
         logging.info(
-            "Starting memfs with PID: %s on dir: %s/%s",
-            os.getpid(),
-            utils.ROOT_DIR,
-            path,
+            "Starting memfs with PID: %s on dir: %s/%s", os.getpid(), mountpath
         )
         backend = mem.Memory(logqueue=mem_queue)  # type: ignore
+        logging.info("mountpoint already exists: %s", mountpath.exists())
         Path(utils.ROOT_DIR).mkdir(exist_ok=True, parents=True)
         return fuse.FUSE(operations=backend, mountpoint=utils.ROOT_DIR + "/data")  # type: ignore
 

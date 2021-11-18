@@ -477,6 +477,13 @@ app.add_routes(
     ]
 )
 
+
+# order of operations:
+# 1. start memfs
+# 2. instanciate Bot, which calls setup_tmpdir
+# 3. download
+# 4. start process 
+
 if utils.MEMFS:
     app.on_startup.append(autosave.start_memfs)
     app.on_startup.append(autosave.start_memfs_monitor)

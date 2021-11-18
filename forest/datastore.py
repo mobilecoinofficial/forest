@@ -220,12 +220,13 @@ def setup_tmpdir() -> None:
     if utils.ROOT_DIR == ".":
         logging.warning("not setting up tmpdir")
         return
-    if utils.ROOT_DIR == "/tmp/local-signal/":
+    if utils.ROOT_DIR == "/tmp/local-signal/" and not utils.MEMFS:
         try:
             shutil.rmtree(utils.ROOT_DIR)
         except (FileNotFoundError, OSError) as e:
             logging.warning("couldn't remove rootdir: %s", e)
-    (Path(utils.ROOT_DIR) / "data").mkdir(exist_ok=True, parents=True)
+    if not utils.MEMFS:
+        (Path(utils.ROOT_DIR) / "data").mkdir(exist_ok=True, parents=True)
     # assume we're running in the repo
     try:
         sigcli = utils.get_secret("SIGNAL_CLI_PATH") or "signal-cli"
@@ -237,7 +238,6 @@ def setup_tmpdir() -> None:
         logging.warning(e)
     logging.info("chdir to %s", utils.ROOT_DIR)
     os.chdir(utils.ROOT_DIR)
-    logging.info("not starting memfs because running locally")
     return
 
 
