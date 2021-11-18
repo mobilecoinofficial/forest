@@ -6,7 +6,7 @@ import asyncio
 from copy import deepcopy
 from dataclasses import dataclass, field, asdict
 from asyncio import Queue, Task, wait_for, create_task
-from typing import Optional, Union, Any
+from typing import Optional, Union
 from aiohttp import web
 from forest.utils import get_secret
 from forest.core import Bot, Message, Response, JSON, app
@@ -244,7 +244,7 @@ class Tiamat(Bot):
                 )
             except asyncio.TimeoutError:
                 await self.cleanup_test(test_monitor, "failed")
-            except Exception:
+            except Exception: # pylint: disable=broad-except
                 logging.exception("Test monitor task failed, aborting test")
                 await self.cleanup_test(test_monitor, "failed")
 
@@ -289,7 +289,7 @@ class Tiamat(Bot):
 
         await self.cleanup_test(test_monitor)
 
-    async def response_monitor(self, test: Test = None) -> None:
+    async def response_monitor(self) -> None:
         """
         Response monitor for test, stops after test timeout
         """
@@ -302,7 +302,7 @@ class Tiamat(Bot):
                 response, test, timestamp = await wait_for(
                     self.response_queue.get(), 10
                 )
-
+                del test # shh pylint
                 logging.info(f"attempting to validate reply {response}")
 
             except asyncio.TimeoutError:
@@ -389,21 +389,20 @@ class Tiamat(Bot):
     async def do_start_test(self, message: Message) -> str:
         if self.is_admin(message.source):
             if self.test_running:
-                if self.test:
-                    return f"{self.test.name} running, please wait until it finishes"
-                return "current test running, please wait until it finishes"
+                name = self.test.name if self.test else "current test"
+                return f"{name} running, please wait until it finishes"
             if ("load_test" in message.text) and ("acceptance_test" in message.text):
                 return "cannot specify more than one test"
             if not message.text:
                 return "must specify at least one test"
             if "load_test" in message.text:
                 test = deepcopy(load_test)
-            if "acceptance_test" in message.text:
+            elif "acceptance_test" in message.text:
                 test = deepcopy(acceptance_test)
             try:
                 await self.configure_test(test)
-            except Exception as e:
-                logging.warning("Test failed to configure with error %s", e)
+            except Exception: # pylint: disable=broad-except
+                logging.exception("Test failed to configure")
                 return "Test failed to configure correctly"
 
             asyncio.create_task(self.launch_test())
@@ -417,19 +416,19 @@ class Tiamat(Bot):
             return "this will stop ongoing tests"
         return "no tests to stop!"
 
-    async def do_get_running_tests(self, message: Message) -> str:
+    async def do_get_running_tests(self, _: Message) -> str:
         if self.test and self.test_running:
             return f"{self.test.name} currently running"
         return "No running tests"
 
-    async def do_available_tests(self, message: Message) -> str:
+    async def do_available_tests(self, _: Message) -> str:
         return "load_test and acceptance_test are available"
 
     async def do_view_test_results(self, message: Message) -> str:
         if not self.test_result_log:
             return "No test records have been logged"
         try:
-            selection = int(re.search(r"\d+", message.text).group())
+            selection = int(re.search(r"\d+", message.text).group()) # type: ignore
             test_result = self.test_result_log[selection - 1]
             if "--steps" in message.text:
                 return repr(test_result.step_results)
