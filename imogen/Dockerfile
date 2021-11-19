@@ -1,5 +1,4 @@
-FROM ghcr.io/graalvm/graalvm-ce:latest as sigbuilder
-ENV GRAALVM_HOME=/opt/graalvm-ce-java11-21.2.0/ 
+FROM ghcr.io/graalvm/graalvm-ce:java17-21.3.0as sigbuilder
 SHELL ["/usr/bin/bash", "-c"]
 WORKDIR /app
 RUN microdnf install -y git zlib-devel && rm -rf /var/cache/yum
