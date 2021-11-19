@@ -15,6 +15,7 @@ class Forest(Bot):
         self.teli = teli.Teli()
         self.payments_manager = PaymentsManager()
         self.routing_manager = RoutingManager()
+        self.group_routing_manager = GroupRoutingManager()
         super().__init__(*args)
 
     async def send_sms(
@@ -71,7 +72,9 @@ class Forest(Bot):
             return None
         numbers = await self.get_user_numbers(message)
         if numbers and message.group and message.text:
-            group = await group_routing_manager.get_sms_route_for_group(message.group)
+            group = await self.group_routing_manager.get_sms_route_for_group(
+                message.group
+            )
             if group:
                 await self.send_sms(
                     source=group[0].get("our_sms"),
@@ -316,29 +319,29 @@ class Forest(Bot):
                 new_dest = utils.signal_format(dest)
                 await self.routing_manager.set_destination(row.get("id"), new_dest)
         await self.datastore.account_interface.migrate()
-        await group_routing_manager.execute("DROP TABLE IF EXISTS group_routing")
-        await group_routing_manager.create_table()
+        await self.group_routing_manager.execute("DROP TABLE IF EXISTS group_routing")
+        await self.group_routing_manager.create_table()
 
 
 async def inbound_sms_handler(request: web.Request) -> web.Response:
     """Handles SMS messages received by our numbers.
     Try groups, then try users, otherwise fall back to an admin
     """
-    session = request.app.get("bot")
+    bot = request.app.get("bot")
     msg_data: dict[str, str] = dict(await request.post())  # type: ignore
-    if not session:
-        # no live worker sessions
-        # if we can't get a signal delivery receipt/bad session, we could
+    if not bot:
+        # no live worker bots
+        # if we can't get a signal delivery receipt/bad bot, we could
         # return non-200 and let teli do our retry
         # however, this would require awaiting output from signal; tricky
-        await request.app["client_session"].post(
+        await request.app["client_bot"].post(
             "https://counter.pythia.workers.dev/post", data=msg_data
         )
         return web.Response(status=504, text="Sorry, no live workers.")
     sms_destination = msg_data.get("destination")
     # lookup sms recipient to signal recipient
-    maybe_signal_dest = await RoutingManager().get_destination(sms_destination)
-    maybe_group = await group_routing_manager.get_group_id_for_sms_route(
+    maybe_signal_dest = await bot.routing_manager.get_destination(sms_destination)
+    maybe_group = await bot.group_routing_manager.get_group_id_for_sms_route(
         msg_data.get("source"), msg_data.get("destination")
     )
     if maybe_group:
@@ -348,13 +351,13 @@ async def inbound_sms_handler(request: web.Request) -> web.Response:
         group = maybe_group[0].get("group_id")
         # if it's a group, the to/from is already in the group name
         text = msg_data.get("message", "<empty message>")
-        await session.send_message(None, text, group=group)
+        await bot.send_message(None, text, group=group)
     elif maybe_signal_dest:
         recipient = maybe_signal_dest[0].get("destination")
         # send hashmap as signal message with newlines and tabs and stuff
         keep = ("source", "destination", "message")
         msg_clean = {k: v for k, v in msg_data.items() if k in keep}
-        await session.send_message(recipient, msg_clean)
+        await bot.send_message(recipient, msg_clean)
     else:
         logging.info("falling back to admin")
         if not msg_data:
@@ -366,7 +369,7 @@ async def inbound_sms_handler(request: web.Request) -> web.Response:
         if (agent := request.headers.get("User-Agent")) :
             msg_data["user-agent"] = agent
         # send the admin the full post body, not just the user-friendly part
-        await session.send_message(recipient, msg_data)
+        await bot.send_message(recipient, msg_data)
     return web.Response(text="TY!")
 
 
@@ -375,8 +378,9 @@ app.add_routes([web.post("/inbound", inbound_sms_handler)])
 if __name__ == "__main__":
 
     @app.on_startup.append
-    async def start_wrapper(out_app: web.Application) -> None:
-        out_app["bot"] = Forest()
+    async def start_wrapper(our_app: web.Application) -> None:
+        our_app["bot"] = Forest()
+        our_app["routing"] = RoutingManager()
+        our_app["group_routing"] = GroupRoutingManager()
 
-    group_routing_manager = GroupRoutingManager()
     web.run_app(app, port=8080, host="0.0.0.0")

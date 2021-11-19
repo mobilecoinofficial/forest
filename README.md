@@ -54,17 +54,18 @@ If things seem wrong, you can use `fly suspend`, the above to sync, use signal-c
 - `DATABASE_URL`: Postgres DB
 - `TELI_KEY`: token to authenticate with teli
 
-## Flags
-- `NO_DOWNLOAD`: don't download a datastore, use pwd
-- `NO_MEMFS`: don't autosave. if not `NO_DOWNLOAD`, also create an equivalent tmpdir at /tmp/local-signal and symlink signal-cli process and avatar
-- `MONITOR_WALLET`: monitor transactions from full-service. has bugs
+## Binary flags
+- `NO_DOWNLOAD`: don't download a signal-cli datastore, instead use what's in the current working directory
+- `NO_MEMFS`: if this isn't set, MEMFS is started, making a fake filesystem in `./data` and used to upload the signal-cli datastore to the database whenever it is changed. if not `NO_DOWNLOAD`, also create an equivalent tmpdir at /tmp/local-signal, chdir to it, and symlink signal-cli process and avatar
+- `NO_MONITOR_WALLET`: monitor transactions from full-service. relevent only if you're giving users a payment address to send mobilecoin not with signal pay.  has bugs
 - `SIGNAL_CLI_PATH`: executable to use. useful for running graalvm tracing agent
-- `MIGRATE`: run db migrations and set teli sms webhooks
-- `LOGFILES`: create a debug.log
-- `LOGLEVEL`: what log level to use for console logs
-- `ORDER`: allow users to buy phonenumbers
-- `GROUPS`: use group routes
-
+- `MIGRATE`: run db schema migrations (needed when creating a new  and set teli sms webhooks
+- `LOGFILES`: create a debug.log 
+- `LOGLEVEL`: what log level to use for console logs (DEBUG, INFO, WARNING, ERROR)
+- `ORDER`: allow users to buy phonenumbers with `/order` and `/pay shibboleth`
+- `GROUPS`: use group routes, allowing `/mkgroup` (aka `/query`), using groups to manage to/from context
+- `ADMIN_METRICS`: send python and roundtrip timedeltas for each command to ADMIN
+- 
 ## Other stuff
 
 Code style: `mypy *py` and `pylint *py` should not have errors when you push. run `black`. prefer verbose, easier to read names over conciser ones.
