@@ -19,9 +19,7 @@ async def start_memfs(app: web.Application) -> None:
     the fs contents are stored in memory, so that our keys never touch a disk
     this means we can log signal-cli's interactions with fs,
     and store them in mem_queue.
-    if running locally, chdir to /tmp/local-signal with symlinks instead
     """
-    # refactor this whole mess into some sort of more general "figure out where we are before downloading"
     logging.info("starting memfs")
     app["mem_queue"] = mem_queue = aioprocessing.AioQueue()
     if not os.path.exists("/dev/fuse"):
