@@ -149,6 +149,7 @@ class Imogen(Bot):
             if not (item := await redis.lpop("prompt_queue")):
                 break
             prompts.append(str(json.loads(item)["prompt"]))
+        logging.info(prompts)
         return prompts
 
     # async def payment_response(self, _: Message, _: int) -> None:
@@ -158,15 +159,6 @@ class Imogen(Bot):
     # async def async_shutdown(self):
     #    await redis.disconnect()
     #    super().async_shutdown()
-
-
-async def admin_handler(request: web.Request) -> web.Response:
-    bot = request.app.get("bot")
-    if not bot:
-        return web.Response(status=504, text="Sorry, no live workers.")
-    msg = urllib.parse.unquote(request.query.get("message", ""))
-    await bot.send_message(utils.get_secret("ADMIN"), msg)
-    return web.Response(text="OK")
 
 
 async def store_image_handler(request: web.Request) -> web.Response:
@@ -209,13 +201,13 @@ async def store_image_handler(request: web.Request) -> web.Response:
 
 
 app.add_routes([web.post("/attachment", store_image_handler)])
-app.add_routes([web.post("/admin", admin_handler)])
+app.add_routes([])
 
 
 if __name__ == "__main__":
 
     @app.on_startup.append
-    async def start_wrapper(out_app: web.Application) -> None:
-        out_app["bot"] = Imogen()
+    async def start_wrapper(our_app: web.Application) -> None:
+        our_app["bot"] = Imogen()
 
     web.run_app(app, port=8080, host="0.0.0.0")
