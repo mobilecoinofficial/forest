@@ -30,7 +30,7 @@ from prometheus_client import Histogram, Summary
 # framework
 import mc_util
 from forest import autosave, datastore, payments_monitor, pghelp, utils
-from forest.message import AuxinMessage, Message
+from forest.message import AuxinMessage, Message, StdioMessage
 
 JSON = dict[str, Any]
 Response = Union[str, list, dict[str, str], None]
@@ -38,7 +38,8 @@ Response = Union[str, list, dict[str, str], None]
 roundtrip_histogram = Histogram("roundtrip_h", "Roundtrip message response time")
 roundtrip_summary = Summary("roundtrip_s", "Roundtrip message response time")
 
-
+MessageParser = AuxinMessage if utils.AUXIN else StdioMessage
+logging.info("Using message parser: %s", MessageParser)
 def rpc(method: str, _id: str = "1", **params: Any) -> dict:
     return {"jsonrpc": "2.0", "method": method, "id": _id, "params": params}
 
@@ -90,7 +91,11 @@ class Signal:
         RESTART_TIME = 2  # move somewhere else maybe
         restart_count = 0
         while self.sigints == 0 and not self.exiting:
-            command = f"{utils.ROOT_DIR}/auxin-cli --config {utils.ROOT_DIR} --user {self.bot_number} jsonRpc".split()
+            path = (
+                utils.get_secret("SIGNAL_CLI_PATH")
+                or f"{utils.ROOT_DIR}/{'auxin' if utils.AUXIN else 'signal'}-cli"
+            )
+            command = f"{path} --config {utils.ROOT_DIR} --user {self.bot_number} jsonRpc".split()
             logging.info(command)
             proc_launch_time = time.time()
             self.proc = await asyncio.create_subprocess_exec(
@@ -174,7 +179,7 @@ class Signal:
 
     async def handle_auxincli_raw_line(self, line: str) -> None:
         if '{"jsonrpc":"2.0","result":[],"id":"receive"}' not in line:
-            pass  # logging.debug("auxin: %s", line)
+            logging.debug("auxin: %s", line)
         try:
             blob = json.loads(line)
         except json.JSONDecodeError:
@@ -186,23 +191,24 @@ class Signal:
             logging.error(
                 json.dumps(blob).replace(error, termcolor.colored(error, "red"))
             )
+        #{"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"+***REMOVED***","sourceNumber":"+***REMOVED***","sourceUuid":"412e180d-c500-4c60-b370-14f6693d8ea7","sourceName":"sylv","sourceDevice":3,"timestamp":1637290344242,"dataMessage":{"timestamp":1637290344242,"message":"/ping","expiresInSeconds":0,"viewOnce":false}},"account":"+447927948360"}}
         try:
             if "params" in blob:
                 if isinstance(blob["params"], list):
                     for msg in blob["params"]:
                         if not blob.get("content", {}).get("receipt_message", {}):
-                            await self.auxincli_output_queue.put(AuxinMessage(msg))
+                            await self.auxincli_output_queue.put(MessageParser(msg))
                     return
-                await self.auxincli_output_queue.put(AuxinMessage(blob["params"]))
+                await self.auxincli_output_queue.put(MessageParser(blob["params"]))
             if "result" in blob:
                 if isinstance(blob.get("result"), list):
                     # idt this happens anymore, remove?
                     logging.info("results list code path")
                     for msg in blob.get("result"):
                         if not blob.get("content", {}).get("receipt_message", {}):
-                            await self.auxincli_output_queue.put(AuxinMessage(msg))
+                            await self.auxincli_output_queue.put(MessageParser(msg))
                     return
-                msg = AuxinMessage(blob)
+                msg = MessageParser(blob)
                 await self.auxincli_output_queue.put(msg)
         except KeyError:
             logging.info("auxin parse error: %s", line)
@@ -339,11 +345,10 @@ class Signal:
 
     async def respond(self, target_msg: Message, msg: Response) -> str:
         """Respond to a message depending on whether it's a DM or group"""
+        logging.info(target_msg.source)
         if not target_msg.source:
             logging.error(target_msg.blob)
-        if not utils.AUXIN and isinstance(
-            target_msg.group, str
-        ):  # and it's a valid b64
+        if not utils.AUXIN and target_msg.group:
             return await self.send_message(None, msg, group=target_msg.group)
         destination = target_msg.source or target_msg.uuid
         return await self.send_message(destination, msg)

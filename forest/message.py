@@ -46,7 +46,7 @@ class Message:
         """
         properties = {}
         for attr in dir(self):
-            if not (attr.startswith("_") or attr in ("blob", "full_text")):
+            if not (attr.startswith("_") or attr in ("blob", "full_text", "envelope")):
                 val = getattr(self, attr)
                 if val and not callable(val):
                     # if attr == "text":
@@ -117,11 +117,8 @@ class StdioMessage(Message):
     """Represents a Message received from signal-cli, optionally containing a command with arguments."""
 
     def __init__(self, blob: dict) -> None:
-        super().__init__(blob)
         self.envelope = envelope = blob.get("envelope", {})
-        # {'envelope': {'source': '+15133278483', 'sourceDevice': 2, 'timestamp': 1621402445257, 'receiptMessage': {'when': 1621402445257, 'isDelivery': True, 'isRead': False, 'timestamps': [1621402444517]}}}
-
-        # envelope data
+        # {"envelope":{"source":"+***REMOVED***","sourceNumber":"+***REMOVED***","sourceUuid":"412e180d-c500-4c60-b370-14f6693d8ea7","sourceName":"sylv","sourceDevice":3,"timestamp":1637290589910,"dataMessage":{"timestamp":1637290589910,"message":"/ping","expiresInSeconds":0,"viewOnce":false}},"account":"+447927948360"}
         self.source: str = envelope.get("source")
         self.name: str = envelope.get("sourceName") or self.source
         self.timestamp = envelope.get("timestamp")
@@ -133,3 +130,6 @@ class StdioMessage(Message):
         self.quoted_text = msg.get("quote", {}).get("text")
         self.payment = msg.get("payment")
         # self.reactions: dict[str, str] = {}
+        if self.text:
+            logging.info(self)  # "parsed a message with body: '%s'", self.text)
+        super().__init__(blob)
