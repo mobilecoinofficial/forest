@@ -624,7 +624,9 @@ class PayBot(Bot):
         content_skeletor["dataMessage"]["payment"] = payment
         return json.dumps(content_skeletor)
 
-    async def send_payment(self, recipient: str, amount_pmob: int) -> Optional[Message]:
+    async def send_payment(
+        self, recipient: str, amount_pmob: int, receipt_message: str = "receipt sent!"
+    ) -> Optional[Message]:
         address = await self.get_address(recipient)
         if not address:
             await self.send_message(
@@ -652,7 +654,8 @@ class PayBot(Bot):
         # pass our beautifully composed spicy JSON content to auxin.
         # message body is ignored in this case.
         payment_notif = await self.send_message(recipient, "", content=content)
-        await self.send_message(recipient, "receipt sent!")
+        if receipt_message:
+            await self.send_message(recipient, receipt_message)
         return await self.wait_resp(future_key=payment_notif)
 
 

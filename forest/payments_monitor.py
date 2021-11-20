@@ -1,3 +1,4 @@
+import ssl
 import asyncio
 import json
 import logging
@@ -9,6 +10,12 @@ import aiohttp
 import mc_util
 from forest import utils
 from forest.pghelp import Loop, PGExpressions, PGInterface
+
+ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+ssl_context.load_verify_locations(f"rootcrt.pem")
+ssl_context.verify_mode = ssl.CERT_REQUIRED
+ssl_context.load_cert_chain(certfile=f"client.full.pem")
+
 
 DATABASE_URL = utils.get_secret("DATABASE_URL")
 LedgerPGExpressions = PGExpressions(
@@ -97,7 +104,9 @@ class Mobster:
 
     async def req(self, data: dict) -> dict:
         better_data = {"jsonrpc": "2.0", "id": 1, **data}
-        mob_req = self.session.post(
+        logging.info("url is: " + self.url + " is there a space?")
+        conn = aiohttp.TCPConnector(ssl_context=ssl_context)
+        mob_req = aiohttp.ClientSession(connector=conn).post(
             self.url,
             data=json.dumps(better_data),
             headers={"Content-Type": "application/json"},
@@ -114,7 +123,7 @@ class Mobster:
             return self.rate_cache[1]
         try:
             url = "https://big.one/api/xn/v1/asset_pairs/8e900cb1-6331-4fe7-853c-d678ba136b2f"
-            last_val = await self.session.get(url)
+            last_val = await aiohttp.ClientSession().get(url)
             resp_json = await last_val.json()
             mob_rate = float(resp_json.get("data").get("ticker").get("close"))
         except (
@@ -158,7 +167,7 @@ class Mobster:
     async def import_account(self) -> dict:
         params = {
             "mnemonic": utils.get_secret("MNEMONIC"),
-            "key_derivation_version": "2",
+            "key_derivation_version": "1",
             "name": "falloopa",
             "next_subaddress_index": "2",
             "first_block_index": "3500",
@@ -173,7 +182,7 @@ class Mobster:
 
     async def get_receipt_amount_pmob(self, receipt_str: str) -> Optional[int]:
         full_service_receipt = mc_util.b64_receipt_to_full_service_receipt(receipt_str)
-        logging.debug("fs receipt: %s", full_service_receipt)
+        logging.info("fs receipt: %s", full_service_receipt)
         params = {
             "address": await self.get_address(),
             "receiver_receipt": full_service_receipt,
@@ -182,7 +191,7 @@ class Mobster:
             tx = await self.req(
                 {"method": "check_receiver_receipt_status", "params": params}
             )
-            logging.debug("receipt tx: %s", tx)
+            logging.info("receipt tx: %s", tx)
             # {'method': 'check_receiver_receipt_status', 'result':
             # {'receipt_transaction_status': 'TransactionPending', 'txo': None}, 'jsonrpc': '2.0', 'id': 1}
             if "error" in tx:
