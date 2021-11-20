@@ -54,22 +54,6 @@ class Forest(Bot):
         If it's a payment, deal with that separately.
         Otherwise, use the default Bot do_x method dispatch
         """
-        if "group" in message.blob:
-            # SMS with {number} via {number}
-            their, our = message.blob["name"].removeprefix("SMS with ").split(" via ")
-            # TODO: this needs to use number[0]
-            await GroupRoutingManager().set_sms_route_for_group(
-                teli.teli_format(their),
-                teli.teli_format(our),
-                message.blob["group"],
-            )
-            # cmd = {
-            #     "command": "updateGroup",
-            #     "group": message.blob["group"],
-            #     "admin": message.source,
-            # }
-            logging.info("made a new group route from %s", message.blob)
-            return None
         numbers = await self.get_user_numbers(message)
         if numbers and message.group and message.text:
             group = await self.group_routing_manager.get_sms_route_for_group(
@@ -149,15 +133,24 @@ class Forest(Bot):
             return "no"
         if not target_number:
             return ""
-        cmd = {
-            "output": "json",
-            "command": "updateGroup",
-            "member": [message.source],
-            "admin": [message.source],
-            "name": f"SMS with {target_number} via {numbers[0]}",
-        }
-        await self.auxincli_input_queue.put(cmd)
         await self.send_reaction(message, "\N{Busts In Silhouette}")
+        group_resp = await self.auxin_req(
+            "updateGroup",
+            member=[message.source],
+            admin=[message.source],
+            name=f"SMS with {target_number} via {numbers[0]}",
+        )
+        await self.group_routing_manager.set_sms_route_for_group(
+            teli.teli_format(target_number),
+            teli.teli_format(numbers[0]),
+            group_resp.group,
+        )
+        logging.info(
+            "created a group route: %s -> %s -> %s",
+            target_number,
+            numbers[0],
+            group_resp.group,
+        )
         return "invited you to a group"
 
     do_query = do_mkgroup

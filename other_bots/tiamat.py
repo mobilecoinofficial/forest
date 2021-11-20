@@ -164,7 +164,7 @@ def script_test(name: str, recipient: str, script: list[tuple[str, str]]) -> Tes
     )
 
 
-imogen = "+12406171474" # "+12406171657"
+imogen = "+12406171474"  # "+12406171657"
 
 ping_test = script_test(
     "ping", imogen, [("/ping", "/pong"), ("/ping 1", "/pong 1"), ("/pong", "OK")]
@@ -179,6 +179,10 @@ redis_test = script_test(
         ("/list_queue", "queue empty"),
     ],
 )
+# todo: /send <number> across two contactbot instances or one with multiple accounts,
+# check for reaction
+
+# maybe a signal-cli based test for groups
 
 load_test = send_n_messages(
     name="send_3_messages",
@@ -507,7 +511,8 @@ if __name__ == "__main__":
     @app.on_startup.append
     async def start_wrapper(our_app: web.Application) -> None:
         our_app["bot"] = bot = Tiamat(
-            admin=test_admin, available_tests=[load_test, ping_test, acceptance_test, redis_test]
+            admin=test_admin,
+            available_tests=[load_test, ping_test, acceptance_test, redis_test],
         )
         await bot.run_test_programmatically(redis_test)
 

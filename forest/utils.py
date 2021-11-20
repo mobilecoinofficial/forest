@@ -74,6 +74,7 @@ def get_secret(key: str, env: Optional[str] = None) -> str:
         return ""
     return secret
 
+
 SIGNAL = get_secret("SIGNAL") or "auxin"
 AUXIN = SIGNAL.lower() == "auxin"
 HOSTNAME = open("/etc/hostname").read().strip()  #  FLY_ALLOC_ID
@@ -83,7 +84,6 @@ LOCAL = APP_NAME is None
 ROOT_DIR = (
     "." if get_secret("NO_DOWNLOAD") else "/tmp/local-signal" if LOCAL else "/app"
 )
-
 UPLOAD = DOWNLOAD = not get_secret("NO_DOWNLOAD")
 MEMFS = not get_secret("NO_MEMFS")
 
