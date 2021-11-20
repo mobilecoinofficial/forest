@@ -1,4 +1,4 @@
-FROM ghcr.io/graalvm/graalvm-ce:latest as sigbuilder
+FROM ghcr.io/graalvm/graalvm-ce:java11-21.2.0 as sigbuilder
 ENV GRAALVM_HOME=/opt/graalvm-ce-java11-21.2.0/ 
 SHELL ["/usr/bin/bash", "-c"]
 WORKDIR /app
