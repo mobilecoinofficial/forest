@@ -43,7 +43,7 @@ async def start_memfs(app: web.Application) -> None:
         pid = os.getpid()
         mountpath = Path(utils.ROOT_DIR) / path
         logging.info(
-            "Starting memfs with PID: %s on dir: %s/%s", os.getpid(), mountpath
+            "Starting memfs with PID: %s on dir: %s", os.getpid(), mountpath
         )
         backend = mem.Memory(logqueue=mem_queue)  # type: ignore
         logging.info("mountpoint already exists: %s", mountpath.exists())
