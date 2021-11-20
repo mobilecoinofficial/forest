@@ -6,11 +6,11 @@ from aiohttp import web
 
 import teli
 from forest import utils
-from forest.core import Bot, Message, Response, app
+from forest.core import PayBot, Message, Response, app
 from forest_tables import GroupRoutingManager, PaymentsManager, RoutingManager
 
 
-class Forest(Bot):
+class Forest(PayBot):
     def __init__(self, *args: str) -> None:
         self.teli = teli.Teli()
         self.payments_manager = PaymentsManager()
@@ -89,7 +89,7 @@ class Forest(Bot):
                 return response
             await self.send_reaction(message, "\N{Cross Mark}")
             return "Couldn't send that reply"
-        return await Bot.handle_message(self, message)
+        return await super().handle_message(message)
 
     async def do_help(self, _: Message) -> str:
         # TODO: https://github.com/forestcontact/forest-draft/issues/14
