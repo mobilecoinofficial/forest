@@ -248,7 +248,7 @@ class Signal:
         attachments, and endsession"""
         if isinstance(msg, list):
             for m in msg:
-                await self.send_message(recipient, m)
+                await self.send_message(recipient, m, group, endsession, attachments)
             return
         if isinstance(msg, dict):
             msg = "\n".join((f"{key}:\t{value}" for key, value in msg.items()))
