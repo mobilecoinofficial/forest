@@ -40,8 +40,17 @@ roundtrip_summary = Summary("roundtrip_s", "Roundtrip message response time")
 
 MessageParser = AuxinMessage if utils.AUXIN else StdioMessage
 logging.info("Using message parser: %s", MessageParser)
-def rpc(method: str, _id: str = "1", **params: Any) -> dict:
-    return {"jsonrpc": "2.0", "method": method, "id": _id, "params": params}
+
+
+def rpc(
+    method: str, param_dict: Optional[dict] = None, _id: str = "1", **params: Any
+) -> dict:
+    return {
+        "jsonrpc": "2.0",
+        "method": method,
+        "id": _id,
+        "params": (param_dict or {}) | params,
+    }
 
 
 def fmt_ms(ts: int) -> str:
@@ -191,7 +200,7 @@ class Signal:
             logging.error(
                 json.dumps(blob).replace(error, termcolor.colored(error, "red"))
             )
-        #{"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"+***REMOVED***","sourceNumber":"+***REMOVED***","sourceUuid":"412e180d-c500-4c60-b370-14f6693d8ea7","sourceName":"sylv","sourceDevice":3,"timestamp":1637290344242,"dataMessage":{"timestamp":1637290344242,"message":"/ping","expiresInSeconds":0,"viewOnce":false}},"account":"+447927948360"}}
+        # {"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"+***REMOVED***","sourceNumber":"+***REMOVED***","sourceUuid":"412e180d-c500-4c60-b370-14f6693d8ea7","sourceName":"sylv","sourceDevice":3,"timestamp":1637290344242,"dataMessage":{"timestamp":1637290344242,"message":"/ping","expiresInSeconds":0,"viewOnce":false}},"account":"+447927948360"}}
         try:
             if "params" in blob:
                 if isinstance(blob["params"], list):
@@ -313,6 +322,8 @@ class Signal:
         if content:
             params["content"] = content
         if group:
+            if utils.AUXIN:
+                logging.error("setting a group message, but auxin doesn't support this")
             params["group"] = group
         elif recipient:
             try:
@@ -327,7 +338,7 @@ class Signal:
                         e,
                     )
                     return ""
-        params["destination"] = str(recipient)
+        params["destination" if utils.AUXIN else "recipient"] = str(recipient)
         # maybe use rpc() instead
         future_key = f"send-{int(time.time()*1000)}-{hex(hash(msg))[-4:]}"
         json_command: JSON = {
@@ -356,17 +367,21 @@ class Signal:
     # FIXME: disable for auxin
     async def send_reaction(self, target_msg: Message, emoji: str) -> None:
         """Send a reaction. Protip: you can use e.g. \N{GRINNING FACE} in python"""
+        # rip rpc syntax and invalid python variable names
         react = {
-            "command": "sendReaction",
-            "emoji": emoji,
             "target-author": target_msg.source,
             "target-timestamp": target_msg.timestamp,
         }
         if target_msg.group:
             react["group"] = target_msg.group
-        else:
-            react["recipient"] = [target_msg.source]
-        await self.auxincli_input_queue.put(react)
+        await self.auxincli_input_queue.put(
+            rpc(
+                "sendReaction",
+                param_dict=react,
+                emoji=emoji,
+                recipient=target_msg.source,
+            )
+        )
 
     async def auxincli_input_iter(self) -> AsyncIterator[dict]:
         """Provides an asynchronous iterator over pending auxin-cli commands"""
