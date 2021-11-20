@@ -151,7 +151,6 @@ class Imogen(Bot):
             ),
         )
         timed = await redis.llen("prompt_queue")
-        resp = await self.do_imagine_nostart(msg)
         state = await get_output(status)
         logging.info("worker state: %s", state)
         # await self.mobster.put_usd_tx(msg.sender, self.image_rate_cents, msg.text[:32])
