@@ -1,3 +1,7 @@
+#!/usr/bin/python3.9
+# Copyright (c) 2021 MobileCoin Inc.
+# Copyright (c) 2021 The Forest Team
+
 import json
 import logging
 from forest.core import Bot, Message, Response
