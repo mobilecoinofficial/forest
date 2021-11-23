@@ -1,3 +1,7 @@
+#!/usr/bin/python3.9
+# Copyright (c) 2021 MobileCoin Inc.
+# Copyright (c) 2021 The Forest Team
+
 # type: ignore
 # if you're running this script, .execute will return lists, not Optional[list]
 import asyncio
