@@ -240,7 +240,6 @@ def setup_tmpdir() -> None:
         pass
     logging.info("chdir to %s", utils.ROOT_DIR)
     os.chdir(utils.ROOT_DIR)
-    logging.info("not starting memfs because running locally")
     return
 
 
