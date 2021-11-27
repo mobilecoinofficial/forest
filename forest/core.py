@@ -41,7 +41,6 @@ roundtrip_summary = Summary("roundtrip_s", "Roundtrip message response time")
 MessageParser = AuxinMessage if utils.AUXIN else StdioMessage
 logging.info("Using message parser: %s", MessageParser)
 
-
 def rpc(
     method: str, param_dict: Optional[dict] = None, _id: str = "1", **params: Any
 ) -> dict:
@@ -412,12 +411,12 @@ class Bot(Signal):
     Subclass this with your own commands.
     """
 
-    def __init__(self, *args: str) -> None:
+    def __init__(self, bot_number: Optional[str] = None) -> None:
         """Creates AND STARTS a bot that routes commands to do_x handlers"""
         self.client_session = aiohttp.ClientSession()
         self.mobster = payments_monitor.Mobster()
         self.pongs: dict[str, str] = {}
-        super().__init__(*args)
+        super().__init__(bot_number)
         self.pending_response_tasks: list[asyncio.Task] = []
         self.restart_task = asyncio.create_task(
             self.start_process()
