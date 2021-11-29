@@ -186,6 +186,24 @@ class Signal:
             await self.handle_auxincli_raw_line(line)
         logging.info("stopped reading auxin-cli stdout")
 
+    async def enqueue_blob_messages(self, blob: JSON) -> None:
+        if "params" in blob:
+            if isinstance(blob["params"], list):
+                for msg in blob["params"]:
+                    if not blob.get("content", {}).get("receipt_message", {}):
+                        await self.auxincli_output_queue.put(MessageParser(msg))
+            message_blob = blob["params"]
+            await self.auxincli_output_queue.put(MessageParser(blob["params"]))
+        if "result" in blob:
+            if isinstance(blob["result"], list):
+                # idt this happens anymore, remove?
+                logging.info("results list code path")
+                for msg in blob["result"]:
+                    if not blob.get("content", {}).get("receipt_message", {}):
+                        await self.auxincli_output_queue.put(MessageParser(msg))
+            message_blob = blob
+        return await self.auxincli_output_queue.put(MessageParser(message_blob))
+
     async def handle_auxincli_raw_line(self, line: str) -> None:
         if '{"jsonrpc":"2.0","result":[],"id":"receive"}' not in line:
             logging.debug("auxin: %s", line)
@@ -200,29 +218,18 @@ class Signal:
             logging.error(
                 json.dumps(blob).replace(error, termcolor.colored(error, "red"))
             )
+            if "traceback" in blob:
+                exception, *tb = blob["traceback"].split("\n")
+                logging.error(termcolor.colored(exception, "red"))
+                # maybe also send this to admin as a signal message
+                for _line in tb:
+                    logging.error(_line)
         # {"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"+16176088864","sourceNumber":"+16176088864","sourceUuid":"412e180d-c500-4c60-b370-14f6693d8ea7","sourceName":"sylv","sourceDevice":3,"timestamp":1637290344242,"dataMessage":{"timestamp":1637290344242,"message":"/ping","expiresInSeconds":0,"viewOnce":false}},"account":"+447927948360"}}
         try:
-            if "params" in blob:
-                if isinstance(blob["params"], list):
-                    for msg in blob["params"]:
-                        if not blob.get("content", {}).get("receipt_message", {}):
-                            await self.auxincli_output_queue.put(MessageParser(msg))
-                    return
-                await self.auxincli_output_queue.put(MessageParser(blob["params"]))
-            if "result" in blob:
-                if isinstance(blob.get("result"), list):
-                    # idt this happens anymore, remove?
-                    logging.info("results list code path")
-                    for msg in blob.get("result"):
-                        if not blob.get("content", {}).get("receipt_message", {}):
-                            await self.auxincli_output_queue.put(MessageParser(msg))
-                    return
-                msg = MessageParser(blob)
-                await self.auxincli_output_queue.put(msg)
+            await self.enqueue_blob_messages(blob)
         except KeyError:
             logging.info("auxin parse error: %s", line)
             traceback.print_exception(*sys.exc_info())
-            return
         return
 
     # i'm tempted to refactor these into handle_messages
@@ -310,7 +317,10 @@ class Signal:
 
         if isinstance(msg, list):
             # return the last stamp
-            return [await self.send_message(recipient, m) for m in msg][-1]
+            return [
+                await self.send_message(recipient, m, group, endsession, attachments)
+                for m in msg
+            ][-1]
         if isinstance(msg, dict):
             msg = "\n".join((f"{key}:\t{value}" for key, value in msg.items()))
 
@@ -739,6 +749,13 @@ app.add_routes(
         web.get("/csv_metrics", metrics),
     ]
 )
+
+
+# order of operations:
+# 1. start memfs
+# 2. instanciate Bot, which calls setup_tmpdir
+# 3. download
+# 4. start process
 
 if utils.MEMFS:
     app.on_startup.append(autosave.start_memfs)
