@@ -120,13 +120,13 @@ class Imogen(Bot):
         else:
             destination = msg.source
         params = {}
-        if msg.attachments:
-            attachment = msg.attachments[0]
-            key = attachment["id"] + "-" + attachment["filename"]
-            params["init_image"] = key
-            await redis.set(
-                key, open(Path("./attachments") / attachment["id"], "rb").read()
-            )
+        # if msg.attachments:
+        #     attachment = msg.attachments[0]
+        #     key = attachment["id"] + "-" + attachment["filename"]
+        #     params["init_image"] = key
+        #     await redis.set(
+        #         key, open(Path("./attachments") / attachment["id"], "rb").read()
+        #     )
         await redis.rpush(
             "prompt_queue",
             json.dumps({"prompt": msg.text, "callback": destination, "params": params}),
