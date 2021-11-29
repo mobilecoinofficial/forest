@@ -22,7 +22,7 @@ class TestMessage:
     message: Optional[str] = None
     group: Optional[str] = None
     endsession: bool = False
-    attachments: Optional[list[str]] = None
+    attachments: Optional[list[dict[str, str]]] = None
     content: str = ""
     sender: Optional[str] = None
 
@@ -305,7 +305,9 @@ class Tiamat(Bot):
                     msg=step.message.message,
                     group=step.message.group,
                     endsession=step.message.endsession,
-                    attachments=step.message.attachments,
+                    attachments=[
+                        attachment["id"] for attachment in step.message.attachments
+                    ],
                     content=step.message.content,
                 )
                 await asyncio.sleep(step.delay)
