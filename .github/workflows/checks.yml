@@ -1,0 +1,36 @@
+name: checks
+'on':
+  - push
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v1
+        with:
+          fetch-depth: 1
+      - name: Set up Python 3.9
+        uses: actions/setup-python@v1
+        with:
+          python-version: 3.9
+      # - uses: Gr1N/setup-poetry@v4
+      # - uses: actions/cache@v1
+      #   id: cache
+      #   with:
+      #     path: ~/.cache/pypoetry/virtualenvs
+      #     key: '${{ runner.os }}-poetry-${{ hashFiles(''poetry.lock'') }}'
+      #     restore-keys: |
+      #       ${{ runner.os }}-poetry-
+      # - run: poetry install
+      # - name: Pytest
+      #   run: poetry run pytest . --cov whispr --cov test_whispr --cov-report xml
+      # - uses: codecov/codecov-action@v1
+      #   with:
+      #     file: ./coverage.xml
+      #     name: codecov-umbrella
+      - name: Black
+        run: black . --check -l 81
+      - name: Mypy
+        run: mypy *py other_bots mc_util forest
+      - name: Pylint
+        run: pylint *py other_bots mc_util forest
+
