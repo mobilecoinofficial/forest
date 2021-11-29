@@ -127,6 +127,7 @@ class StdioMessage(Message):
 
         # msg data
         msg = envelope.get("dataMessage", {})
+        # "attachments":[{"contentType":"image/png","filename":"image.png","id":"1484072582431702699","size":2496}]}
         self.attachments: list[dict[str, str]] = msg.get("attachments")
         self.full_text = self.text = msg.get("message", "")
         self.group: Optional[str] = msg.get("groupInfo", {}).get(

@@ -311,7 +311,7 @@ class Forest(PayBot):
         for row in rows if rows else []:
             if not utils.LOCAL:
                 await self.teli.set_sms_url(row.get("id"), utils.URL + "/inbound")
-            if (dest := row.get("destination")) :
+            if dest := row.get("destination"):
                 new_dest = utils.signal_format(dest)
                 await self.routing_manager.set_destination(row.get("id"), new_dest)
         await self.datastore.account_interface.migrate()
@@ -362,7 +362,7 @@ async def inbound_sms_handler(request: web.Request) -> web.Response:
         msg_data[
             "note"
         ] = "fallback, signal destination not found for this sms destination"
-        if (agent := request.headers.get("User-Agent")) :
+        if agent := request.headers.get("User-Agent"):
             msg_data["user-agent"] = agent
         # send the admin the full post body, not just the user-friendly part
         await bot.send_message(recipient, msg_data)

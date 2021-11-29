@@ -190,7 +190,7 @@ class Signal:
         logging.info("stopped reading auxin-cli stdout")
 
     async def enqueue_blob_messages(self, blob: JSON) -> None:
-        message_blob: Optional[str] = None
+        message_blob: Optional[JSON] = None
         if "params" in blob:
             if isinstance(blob["params"], list):
                 for msg in blob["params"]:
