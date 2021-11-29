@@ -6,8 +6,6 @@ name = "pypi"
 [packages]
 aioprocessing = "*"
 
-pyqrcode = "*"
-pynacl = "*"
 asyncpg = "*"
 aiohttp = {extras = [ "speedups",], version = "*"}
 mobilecoin = "*"
