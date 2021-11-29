@@ -58,6 +58,14 @@ def b58_wrapper_to_b64_public_address(b58_string: str) -> str:
     public_address_bytes = public_address.SerializeToString()
     return base64.b64encode(public_address_bytes).decode("utf-8")
 
+def b58_wrapper_to_transfer_payload(b58_string: str) -> bytes:
+    """Convert a b58-encoded PrintableWrapper address into a b64-encoded TransferPayload protobuf"""
+    checksum_and_wrapper_bytes = base58.b58decode(b58_string)
+    wrapper_bytes = checksum_and_wrapper_bytes[4:]
+    wrapper = printable_pb2.PrintableWrapper()
+    wrapper.ParseFromString(wrapper_bytes)
+    return wrapper
+
 
 # def b58_string_passes_checksum(b58_string):
 #     """Validate the checksum of a b58-encoded string"""
