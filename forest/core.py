@@ -190,13 +190,13 @@ class Signal:
         logging.info("stopped reading auxin-cli stdout")
 
     async def enqueue_blob_messages(self, blob: JSON) -> None:
+        message_blob: Optional[str] = None
         if "params" in blob:
             if isinstance(blob["params"], list):
                 for msg in blob["params"]:
                     if not blob.get("content", {}).get("receipt_message", {}):
                         await self.auxincli_output_queue.put(MessageParser(msg))
             message_blob = blob["params"]
-            await self.auxincli_output_queue.put(MessageParser(blob["params"]))
         if "result" in blob:
             if isinstance(blob["result"], list):
                 # idt this happens anymore, remove?
@@ -205,7 +205,8 @@ class Signal:
                     if not blob.get("content", {}).get("receipt_message", {}):
                         await self.auxincli_output_queue.put(MessageParser(msg))
             message_blob = blob
-        return await self.auxincli_output_queue.put(MessageParser(message_blob))
+        if message_blob:
+            return await self.auxincli_output_queue.put(MessageParser(message_blob))
 
     async def handle_auxincli_raw_line(self, line: str) -> None:
         if '{"jsonrpc":"2.0","result":[],"id":"receive"}' not in line:
@@ -337,7 +338,7 @@ class Signal:
         if group:
             if utils.AUXIN:
                 logging.error("setting a group message, but auxin doesn't support this")
-            params["group"] = group
+            params["group-id"] = group
         elif recipient:
             try:
                 assert recipient == utils.signal_format(recipient)
@@ -351,7 +352,7 @@ class Signal:
                         e,
                     )
                     return ""
-        params["destination" if utils.AUXIN else "recipient"] = str(recipient)
+            params["destination" if utils.AUXIN else "recipient"] = str(recipient)
         # maybe use rpc() instead
         future_key = f"send-{int(time.time()*1000)}-{hex(hash(msg))[-4:]}"
         json_command: JSON = {
