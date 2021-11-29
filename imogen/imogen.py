@@ -14,7 +14,7 @@ import aioredis
 from aiohttp import web
 import openai
 from forest import utils
-from forest.core import Bot, Message, Response, app
+from forest.core import Bot, JSON, Message, Response, app
 
 openai.api_key = utils.get_secret("OPENAI_API_KEY")
 
@@ -119,7 +119,7 @@ class Imogen(Bot):
             destination = base58.b58encode(msg.group).decode()
         else:
             destination = msg.source
-        params = {}
+        params: JSON = {}
         # if msg.attachments:
         #     attachment = msg.attachments[0]
         #     key = attachment["id"] + "-" + attachment["filename"]
@@ -146,7 +146,7 @@ class Imogen(Bot):
             output = await get_output(start.format(self.worker_instance_id))
             logging.info(output)
             if "InsufficientInstanceCapacity" in output:
-                resp += ".\n sorry, andy jassy hates us. no gpu for us"
+                resp += ".\nsorry, andy jassy hates us. no gpu for us"
             # asyncio.create_task(really_start_worker())
         return resp
 

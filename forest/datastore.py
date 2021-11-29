@@ -205,7 +205,7 @@ class SignalDatastore:
         # if it doesn't, you've probably diverged, but someone may have put an invalid ratchet more recently by mistake (e.g. restarting triggering upload despite crashing)
         # or:
         # open("last_uploaded_checksum", "w").write(zlib.crc32(buffer.seek(0).read()))
-        # you could formalize this as "present the previous checksum to upload" as a db 
+        # you could formalize this as "present the previous checksum to upload" as a db procedure
         await self.account_interface.upload(self.number, data)
         logging.debug("saved %s kb of tarballed datastore to supabase", kb)
         return
