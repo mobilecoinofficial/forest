@@ -1,4 +1,7 @@
-#!/bin/python3.9
+#!/usr/bin/python3.9
+# Copyright (c) 2021 MobileCoin Inc.
+# Copyright (c) 2021 The Forest Team
+
 import argparse
 import asyncio
 import json
