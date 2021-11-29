@@ -267,6 +267,19 @@ class Signal:
             "avatar": "avatar.png",
         }
         await self.auxincli_input_queue.put(profile)
+
+    async def set_profile_auxin(
+        self, given_name: str, family_name: str = "", payment_address: str = ""
+    ) -> str:
+        params: JSON = {"profile_fields": {"name": {"givenName": given_name}}}
+        if family_name:
+            params["profile_fields"]["name"]["familyName"] = family_name
+        if payment_address:
+            params["profile_fields"]["mobilecoinAddress"] = payment_address
+        future_key = f"setProfile-{int(time.time()*1000)}"
+        await self.auxincli_input_queue.put(rpc("setProfile", params, future_key))
+        return future_key
+        # {"jsonrpc": "2.0", "method": "setProfile", "params":{"profile_fields":{"name": {"givenName":"TestBotFriend"}}}, "id":"SetName2"}
         logging.info(profile)
 
     # this should maybe yield a future (eep) and/or use auxin_req
@@ -365,19 +378,6 @@ class Signal:
             return await self.send_message(None, msg, group=target_msg.group)
         destination = target_msg.source or target_msg.uuid
         return await self.send_message(destination, msg)
-
-    async def set_profile_auxin(
-        self, given_name: str, family_name: str = "", payment_address: str = ""
-    ) -> str:
-        params: JSON = {"profile_fields": {"name": {"givenName": given_name}}}
-        if family_name:
-            params["profile_fields"]["name"]["familyName"] = family_name
-        if payment_address:
-            params["profile_fields"]["mobilecoinAddress"] = payment_address
-        future_key = f"setProfile-{int(time.time()*1000)}"
-        await self.auxincli_input_queue.put(rpc("setProfile", params, future_key))
-        return future_key
-        # {"jsonrpc": "2.0", "method": "setProfile", "params":{"profile_fields":{"name": {"givenName":"TestBotFriend"}}}, "id":"SetName2"}
 
     # FIXME: disable for auxin
     async def send_reaction(self, target_msg: Message, emoji: str) -> None:
