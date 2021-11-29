@@ -8,7 +8,9 @@ processes = []
 
 [env]
 BOT_NUMBER="***REMOVED***"
-SIGNAL="auxin"
+SIGNAL="signal-cli"
+LOGLEVEL="DEBUG"
+
 
 [experimental]
   allowed_public_ports = []
