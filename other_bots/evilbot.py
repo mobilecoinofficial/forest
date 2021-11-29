@@ -1,3 +1,5 @@
+# Copyright (c) 2021 MobileCoin Inc.
+# Copyright (c) 2021 The Forest Team
 from typing import Any
 from aiohttp import web
 from forest.core import Bot, Message, Response, app
