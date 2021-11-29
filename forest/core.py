@@ -218,7 +218,7 @@ class Signal:
                         if not blob.get("content", {}).get("receipt_message", {}):
                             await self.auxincli_output_queue.put(MessageParser(msg))
                     return
-                if 'version: HTTP/1.1' not in blob.get("result"):
+                if "version: HTTP/1.1" not in blob.get("result"):
                     msg = MessageParser(blob)
                     await self.auxincli_output_queue.put(msg)
         except KeyError:
@@ -366,22 +366,18 @@ class Signal:
         destination = target_msg.source or target_msg.uuid
         return await self.send_message(destination, msg)
 
-    async def set_profile_auxin(self, given_name, family_name= None, payment_address = None):
-        future_key = f"setProfile-{int(time.time()*1000)}"
-        params = {"profile_fields":{"name": {"givenName":given_name}}}
+    async def set_profile_auxin(
+        self, given_name: str, family_name: str = "", payment_address: str = ""
+    ) -> str:
+        params: JSON = {"profile_fields": {"name": {"givenName": given_name}}}
         if family_name:
-            params["profile_fields"]['name']['familyName'] = family_name
+            params["profile_fields"]["name"]["familyName"] = family_name
         if payment_address:
             params["profile_fields"]["mobilecoinAddress"] = payment_address
-        json_command: JSON = {
-            "jsonrpc": "2.0",
-            "id": future_key,
-            "method": "setProfile",
-            "params": params,
-        }
-        await self.auxincli_input_queue.put(json_command)
+        future_key = f"setProfile-{int(time.time()*1000)}"
+        await self.auxincli_input_queue.put(rpc("setProfile", params, future_key))
         return future_key
-        #{"jsonrpc": "2.0", "method": "setProfile", "params":{"profile_fields":{"name": {"givenName":"TestBotFriend"}}}, "id":"SetName2"}
+        # {"jsonrpc": "2.0", "method": "setProfile", "params":{"profile_fields":{"name": {"givenName":"TestBotFriend"}}}, "id":"SetName2"}
 
     # FIXME: disable for auxin
     async def send_reaction(self, target_msg: Message, emoji: str) -> None:
@@ -638,8 +634,10 @@ class PayBot(Bot):
         return address or "sorry, couldn't get your MobileCoin address"
 
     async def do_rename(self, msg: Message) -> Response:
-        await self.set_profile_auxin(*msg.tokens)
-        return "OK"
+        if msg.tokens and len(msg.tokens) > 1:
+            await self.set_profile_auxin(*msg.tokens)
+            return "OK"
+        return "pass arguments for set_profile_auxin"
 
     async def mob_request(self, method: str, **params: Any) -> dict:
         result = await self.mobster.req_(method, **params)
