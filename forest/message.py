@@ -78,7 +78,7 @@ class AuxinMessage(Message):
         content = blob.get("content", {})
         msg = (content.get("source") or {}).get("dataMessage") or {}
         self.text = self.full_text = msg.get("body") or ""
-        self.attachments: list[dict[str,str]] = msg.get("attachments", [])
+        self.attachments: list[dict[str, str]] = msg.get("attachments", [])
         self.group = msg.get("group") or msg.get("groupV2") or ""
         maybe_quote = msg.get("quote")
         self.address = blob.get("Address", {})
