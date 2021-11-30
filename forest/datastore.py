@@ -13,7 +13,7 @@ import time
 from io import BytesIO
 from pathlib import Path
 from tarfile import TarFile
-from typing import Any, Callable, Optional, cast
+from typing import Any, Callable, Optional
 
 
 try:
@@ -97,7 +97,7 @@ class SignalDatastore:
         logging.info("SignalDatastore number is %s", self.number)
         self.filepath = "data/" + number
         # await self.account_interface.create_table()
-        setup_tmpdir() # shouldn't do anything if not running locally
+        setup_tmpdir()  # shouldn't do anything if not running locally
 
     def is_registered_locally(self) -> bool:
         try:
@@ -208,6 +208,7 @@ class SignalDatastore:
         # if it doesn't, you've probably diverged, but someone may have put an invalid ratchet more recently by mistake (e.g. restarting triggering upload despite crashing)
         # or:
         # open("last_uploaded_checksum", "w").write(zlib.crc32(buffer.seek(0).read()))
+        # you could formalize this as "present the previous checksum to upload" as a db procedure
         await self.account_interface.upload(self.number, data)
         logging.debug("saved %s kb of tarballed datastore to supabase", kb)
         return
@@ -231,14 +232,17 @@ def setup_tmpdir() -> None:
     if not utils.MEMFS:
         (Path(utils.ROOT_DIR) / "data").mkdir(exist_ok=True, parents=True)
     # assume we're running in the repo
+    sigcli = utils.get_secret("SIGNAL_CLI_PATH") or "auxin-cli"
+    sigcli_path = Path(sigcli).absolute()
     try:
-        sigcli = utils.get_secret("SIGNAL_CLI_PATH") or "signal-cli"
-        sigcli_path = Path(sigcli).absolute()
         logging.info("symlinking %s to %s", sigcli_path, utils.ROOT_DIR)
-        os.symlink(sigcli_path, utils.ROOT_DIR + "/signal-cli")
+        os.symlink(sigcli_path, utils.ROOT_DIR + "/auxin-cli")
+    except FileExistsError:
+        logging.info("auxin-cli's already there")
+    try:
         os.symlink(Path("avatar.png").absolute(), utils.ROOT_DIR + "/avatar.png")
-    except FileExistsError as e:
-        logging.warning(e)
+    except FileExistsError:
+        pass
     logging.info("chdir to %s", utils.ROOT_DIR)
     os.chdir(utils.ROOT_DIR)
     return
