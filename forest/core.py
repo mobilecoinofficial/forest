@@ -1,4 +1,7 @@
 #!/usr/bin/python3.9
+# Copyright (c) 2021 MobileCoin Inc.
+# Copyright (c) 2021 The Forest Team
+
 """
 The core chatbot framework: Message, Signal, Bot, and app
 """
@@ -80,7 +83,6 @@ class Signal:
         self.proc: Optional[subprocess.Process] = None
         self.auxincli_output_queue: Queue[Message] = Queue()
         self.auxincli_input_queue: Queue[dict] = Queue()
-        self.loop = asyncio.get_event_loop()
         self.exiting = False
 
     async def start_process(self) -> None:
@@ -187,6 +189,25 @@ class Signal:
             await self.handle_auxincli_raw_line(line)
         logging.info("stopped reading auxin-cli stdout")
 
+    async def enqueue_blob_messages(self, blob: JSON) -> None:
+        message_blob: Optional[JSON] = None
+        if "params" in blob:
+            if isinstance(blob["params"], list):
+                for msg in blob["params"]:
+                    if not blob.get("content", {}).get("receipt_message", {}):
+                        await self.auxincli_output_queue.put(MessageParser(msg))
+            message_blob = blob["params"]
+        if "result" in blob:
+            if isinstance(blob["result"], list):
+                # idt this happens anymore, remove?
+                logging.info("results list code path")
+                for msg in blob["result"]:
+                    if not blob.get("content", {}).get("receipt_message", {}):
+                        await self.auxincli_output_queue.put(MessageParser(msg))
+            message_blob = blob
+        if message_blob:
+            return await self.auxincli_output_queue.put(MessageParser(message_blob))
+
     async def handle_auxincli_raw_line(self, line: str) -> None:
         if '{"jsonrpc":"2.0","result":[],"id":"receive"}' not in line:
             logging.debug("auxin: %s", line)
@@ -201,30 +222,18 @@ class Signal:
             logging.error(
                 json.dumps(blob).replace(error, termcolor.colored(error, "red"))
             )
+            if "traceback" in blob:
+                exception, *tb = blob["traceback"].split("\n")
+                logging.error(termcolor.colored(exception, "red"))
+                # maybe also send this to admin as a signal message
+                for _line in tb:
+                    logging.error(_line)
         # {"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"+16176088864","sourceNumber":"+16176088864","sourceUuid":"412e180d-c500-4c60-b370-14f6693d8ea7","sourceName":"sylv","sourceDevice":3,"timestamp":1637290344242,"dataMessage":{"timestamp":1637290344242,"message":"/ping","expiresInSeconds":0,"viewOnce":false}},"account":"+447927948360"}}
         try:
-            if "params" in blob:
-                if isinstance(blob["params"], list):
-                    for msg in blob["params"]:
-                        if not blob.get("content", {}).get("receipt_message", {}):
-                            await self.auxincli_output_queue.put(MessageParser(msg))
-                    return
-                await self.auxincli_output_queue.put(MessageParser(blob["params"]))
-            if "result" in blob:
-                if isinstance(blob.get("result"), list):
-                    # idt this happens anymore, remove?
-                    logging.info("results list code path")
-                    for msg in blob.get("result"):
-                        if not blob.get("content", {}).get("receipt_message", {}):
-                            await self.auxincli_output_queue.put(MessageParser(msg))
-                    return
-                if "version: HTTP/1.1" not in blob.get("result"):
-                    msg = MessageParser(blob)
-                    await self.auxincli_output_queue.put(msg)
+            await self.enqueue_blob_messages(blob)
         except KeyError:
             logging.info("auxin parse error: %s", line)
             traceback.print_exception(*sys.exc_info())
-            return
         return
 
     # i'm tempted to refactor these into handle_messages
@@ -267,19 +276,6 @@ class Signal:
             "avatar": "avatar.png",
         }
         await self.auxincli_input_queue.put(profile)
-
-    async def set_profile_auxin(
-        self, given_name: str, family_name: str = "", payment_address: str = ""
-    ) -> str:
-        params: JSON = {"profile_fields": {"name": {"givenName": given_name}}}
-        if family_name:
-            params["profile_fields"]["name"]["familyName"] = family_name
-        if payment_address:
-            params["profile_fields"]["mobilecoinAddress"] = payment_address
-        future_key = f"setProfile-{int(time.time()*1000)}"
-        await self.auxincli_input_queue.put(rpc("setProfile", params, future_key))
-        return future_key
-        # {"jsonrpc": "2.0", "method": "setProfile", "params":{"profile_fields":{"name": {"givenName":"TestBotFriend"}}}, "id":"SetName2"}
         logging.info(profile)
 
     # this should maybe yield a future (eep) and/or use auxin_req
@@ -325,7 +321,10 @@ class Signal:
 
         if isinstance(msg, list):
             # return the last stamp
-            return [await self.send_message(recipient, m) for m in msg][-1]
+            return [
+                await self.send_message(recipient, m, group, endsession, attachments)
+                for m in msg
+            ][-1]
         if isinstance(msg, dict):
             msg = "\n".join((f"{key}:\t{value}" for key, value in msg.items()))
 
@@ -339,7 +338,7 @@ class Signal:
         if group:
             if utils.AUXIN:
                 logging.error("setting a group message, but auxin doesn't support this")
-            params["group"] = group
+            params["group-id"] = group
         elif recipient:
             try:
                 assert recipient == utils.signal_format(recipient)
@@ -353,7 +352,7 @@ class Signal:
                         e,
                     )
                     return ""
-        params["destination" if utils.AUXIN else "recipient"] = str(recipient)
+            params["destination" if utils.AUXIN else "recipient"] = str(recipient)
         # maybe use rpc() instead
         future_key = f"send-{int(time.time()*1000)}-{hex(hash(msg))[-4:]}"
         json_command: JSON = {
@@ -427,12 +426,12 @@ class Bot(Signal):
     Subclass this with your own commands.
     """
 
-    def __init__(self, *args: str) -> None:
+    def __init__(self, bot_number: Optional[str] = None) -> None:
         """Creates AND STARTS a bot that routes commands to do_x handlers"""
         self.client_session = aiohttp.ClientSession()
         self.mobster = payments_monitor.Mobster()
         self.pongs: dict[str, str] = {}
-        super().__init__(*args)
+        super().__init__(bot_number)
         self.pending_response_tasks: list[asyncio.Task] = []
         self.restart_task = asyncio.create_task(
             self.start_process()
@@ -633,12 +632,6 @@ class PayBot(Bot):
         address = await self.get_address(msg.source)
         return address or "sorry, couldn't get your MobileCoin address"
 
-    async def do_rename(self, msg: Message) -> Response:
-        if msg.tokens and len(msg.tokens) > 1:
-            await self.set_profile_auxin(*msg.tokens)
-            return "OK"
-        return "pass arguments for set_profile_auxin"
-
     async def mob_request(self, method: str, **params: Any) -> dict:
         result = await self.mobster.req_(method, **params)
         if "error" in result:
@@ -761,6 +754,13 @@ app.add_routes(
     ]
 )
 
+
+# order of operations:
+# 1. start memfs
+# 2. instanciate Bot, which calls setup_tmpdir
+# 3. download
+# 4. start process
+
 if utils.MEMFS:
     app.on_startup.append(autosave.start_memfs)
     app.on_startup.append(autosave.start_memfs_monitor)
@@ -771,6 +771,6 @@ if __name__ == "__main__":
 
     @app.on_startup.append
     async def start_wrapper(our_app: web.Application) -> None:
-        our_app["bot"] = PayBot()
+        our_app["bot"] = Bot()
 
     web.run_app(app, port=8080, host="0.0.0.0")

@@ -1,4 +1,7 @@
-#!/bin/python3.9
+#!/usr/bin/python3.9
+# Copyright (c) 2021 MobileCoin Inc.
+# Copyright (c) 2021 The Forest Team
+
 import argparse
 import asyncio
 import json
@@ -205,6 +208,7 @@ class SignalDatastore:
         # if it doesn't, you've probably diverged, but someone may have put an invalid ratchet more recently by mistake (e.g. restarting triggering upload despite crashing)
         # or:
         # open("last_uploaded_checksum", "w").write(zlib.crc32(buffer.seek(0).read()))
+        # you could formalize this as "present the previous checksum to upload" as a db procedure
         await self.account_interface.upload(self.number, data)
         logging.debug("saved %s kb of tarballed datastore to supabase", kb)
         return
@@ -220,12 +224,13 @@ def setup_tmpdir() -> None:
     if utils.ROOT_DIR == ".":
         logging.warning("not setting up tmpdir")
         return
-    if utils.ROOT_DIR == "/tmp/local-signal/":
+    if utils.ROOT_DIR == "/tmp/local-signal/" and not utils.MEMFS:
         try:
             shutil.rmtree(utils.ROOT_DIR)
         except (FileNotFoundError, OSError) as e:
             logging.warning("couldn't remove rootdir: %s", e)
-    (Path(utils.ROOT_DIR) / "data").mkdir(exist_ok=True, parents=True)
+    if not utils.MEMFS:
+        (Path(utils.ROOT_DIR) / "data").mkdir(exist_ok=True, parents=True)
     # assume we're running in the repo
     sigcli = utils.get_secret("SIGNAL_CLI_PATH") or "auxin-cli"
     sigcli_path = Path(sigcli).absolute()
@@ -240,7 +245,6 @@ def setup_tmpdir() -> None:
         pass
     logging.info("chdir to %s", utils.ROOT_DIR)
     os.chdir(utils.ROOT_DIR)
-    logging.info("not starting memfs because running locally")
     return
 
 

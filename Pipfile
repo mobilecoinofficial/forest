@@ -5,11 +5,7 @@ name = "pypi"
 
 [packages]
 aioprocessing = "*"
-
-pyqrcode = "*"
-pynacl = "*"
 asyncpg = "*"
-aiohttp = {extras = [ "speedups",], version = "*"}
 mobilecoin = "*"
 base58 = "*"
 phonenumbers = "*"
@@ -24,3 +20,12 @@ python_version = "3.9"
 allow_prereleases = true
 
 [dev-packages]
+black = "*"
+mypy = "*"
+pylint = "*"
+types-termcolor = "*"
+types-protobuf = "*"
+
+[packages.aiohttp]
+extras = [ "speedups",]
+version = "*"

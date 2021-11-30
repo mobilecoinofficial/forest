@@ -20,7 +20,7 @@ class Message:
 
     timestamp: int
     text: str
-    attachments: list[str]
+    attachments: list[dict[str, str]]
     group: Optional[str]
     quoted_text: str
     source: str
@@ -78,7 +78,7 @@ class AuxinMessage(Message):
         content = blob.get("content", {})
         msg = (content.get("source") or {}).get("dataMessage") or {}
         self.text = self.full_text = msg.get("body") or ""
-        self.attachments = msg.get("attachments", [])
+        self.attachments: list[dict[str, str]] = msg.get("attachments", [])
         self.group = msg.get("group") or msg.get("groupV2") or ""
         maybe_quote = msg.get("quote")
         self.address = blob.get("Address", {})
@@ -127,6 +127,8 @@ class StdioMessage(Message):
 
         # msg data
         msg = envelope.get("dataMessage", {})
+        # "attachments":[{"contentType":"image/png","filename":"image.png","id":"1484072582431702699","size":2496}]}
+        self.attachments: list[dict[str, str]] = msg.get("attachments")
         self.full_text = self.text = msg.get("message", "")
         self.group: Optional[str] = msg.get("groupInfo", {}).get(
             "groupId"

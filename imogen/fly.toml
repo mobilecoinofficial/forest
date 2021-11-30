@@ -8,6 +8,8 @@ processes = []
 
 [env]
 BOT_NUMBER="+12406171657"
+SIGNAL="signal-cli"
+LOGLEVEL="DEBUG"
 
 
 [experimental]

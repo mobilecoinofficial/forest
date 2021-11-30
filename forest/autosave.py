@@ -1,10 +1,14 @@
+#!/usr/bin/python3.9
+# Copyright (c) 2021 MobileCoin Inc.
+# Copyright (c) 2021 The Forest Team
+
 import asyncio
 import logging
 import os
 import time
 from subprocess import PIPE, Popen
 from typing import Any
-
+from pathlib import Path
 import aioprocessing
 from aiohttp import web
 
@@ -13,6 +17,7 @@ from forest import fuse, mem, utils
 _memfs_process = None
 
 
+# this is the first thing that runs on aiohttp app startup, before datastore.download
 async def start_memfs(app: web.Application) -> None:
     """
     mount a filesystem in userspace to store data
@@ -38,12 +43,11 @@ async def start_memfs(app: web.Application) -> None:
 
     def memfs_proc(path: str = "data") -> Any:
         """Start the memfs process"""
-        pid = os.getpid()
-        open("/dev/stdout", "w").write(
-            f"Starting memfs with PID: {pid} on dir: {path}\n"
-        )
+        mountpath = Path(utils.ROOT_DIR) / path
+        logging.info("Starting memfs with PID: %s on dir: %s", os.getpid(), mountpath)
         backend = mem.Memory(logqueue=mem_queue)  # type: ignore
-        logging.info("initing FUSE")
+        logging.info("mountpoint already exists: %s", mountpath.exists())
+        Path(utils.ROOT_DIR).mkdir(exist_ok=True, parents=True)
         return fuse.FUSE(operations=backend, mountpoint=utils.ROOT_DIR + "/data")  # type: ignore
 
     async def launch() -> None:
@@ -53,7 +57,6 @@ async def start_memfs(app: web.Application) -> None:
         app["memfs"] = memfs
         _memfs_process = memfs
 
-    logging.info("awaiting launch func")
     await launch()
 
 

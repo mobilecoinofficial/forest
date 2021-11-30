@@ -1,8 +1,13 @@
+#!/usr/bin/python3.9
+# Copyright (c) 2021 MobileCoin Inc.
+# Copyright (c) 2021 The Forest Team
+
 import asyncio
 import logging
 import os
 import copy
-from typing import Any, Callable, Union, Optional
+from contextlib import asynccontextmanager
+from typing import Any, Callable, Union, Optional, AsyncGenerator
 
 
 try:
@@ -43,6 +48,20 @@ async def close_pools() -> None:
             await pool.close()
         except (asyncpg.PostgresError, asyncpg.InternalClientError) as e:
             logging.error(e)
+
+
+class SimpleInterface:
+    def __init__(self, database: str) -> None:
+        self.database = database
+        self.pool: Optional[asyncpg.Pool] = None
+
+    @asynccontextmanager
+    async def get_connection(self) -> AsyncGenerator:
+        if not self.pool:
+            self.pool = await asyncpg.create_pool(self.database)
+            pools.append(self.pool)
+        async with self.pool.acquire() as conn:
+            yield conn
 
 
 class PGExpressions(dict):

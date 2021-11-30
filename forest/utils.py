@@ -1,9 +1,13 @@
+#!/usr/bin/python3.9
+# Copyright (c) 2021 MobileCoin Inc.
+# Copyright (c) 2021 The Forest Team
+
 import logging
 import os
 import functools
 from asyncio.subprocess import PIPE, create_subprocess_exec
 from contextlib import asynccontextmanager
-from typing import Any, AsyncIterator, Optional, cast
+from typing import AsyncIterator, Optional, cast
 import phonenumbers as pn
 from phonenumbers import NumberParseException
 
@@ -17,18 +21,18 @@ def FuckAiohttp(record: logging.LogRecord) -> bool:
     return True
 
 
-TRACE = logging.DEBUG - 10
-logging.addLevelName(TRACE, "TRACE")
+# TRACE = logging.DEBUG - 10
+# logging.addLevelName(TRACE, "TRACE")
 
 logger_class = logging.getLoggerClass()
 
 # doesn't work / not used
-class TraceLogger(logger_class):  # type: ignore
-    def trace(self, msg: str, *args: Any, **kwargs: Any) -> None:
-        self.log(TRACE, msg, *args, **kwargs)
+# class TraceLogger(logger_class):  # type: ignore
+#     def trace(self, msg: str, *args: Any, **kwargs: Any) -> None:
+#         self.log(TRACE, msg, *args, **kwargs)
 
 
-logging.setLoggerClass(TraceLogger)
+# logging.setLoggerClass(TraceLogger)
 logger = logging.getLogger()
 logger.setLevel("DEBUG")
 fmt = logging.Formatter("{levelname} {module}:{lineno}: {message}", style="{")
@@ -92,10 +96,10 @@ UPLOAD = DOWNLOAD = not get_secret("NO_DOWNLOAD")
 MEMFS = not get_secret("NO_MEMFS")
 
 if get_secret("LOGFILES") or not LOCAL:
-    tracelog = logging.FileHandler("trace.log")
-    tracelog.setLevel(TRACE)
-    tracelog.setFormatter(fmt)
-    logger.addHandler(tracelog)
+    # tracelog = logging.FileHandler("trace.log")
+    # tracelog.setLevel(TRACE)
+    # tracelog.setFormatter(fmt)
+    # logger.addHandler(tracelog)
     handler = logging.FileHandler("debug.log")
     handler.setLevel("DEBUG")
     handler.setFormatter(fmt)
