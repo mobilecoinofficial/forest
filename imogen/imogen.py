@@ -15,8 +15,11 @@ import base58
 import aiohttp
 import aioredis
 from aiohttp import web
+import openai
 from forest import utils
-from forest.core import Bot, Message, Response, app
+from forest.core import Bot, JSON, Message, Response, app
+
+openai.api_key = utils.get_secret("OPENAI_API_KEY")
 
 if not utils.LOCAL:
     aws_cred = utils.get_secret("AWS_CREDENTIALS")
@@ -38,11 +41,13 @@ url = (
     or utils.get_secret("FLY_REDIS_CACHE_URL")
     or "redis://:***REMOVED***@***REMOVED***:10079"
 )
-#password, rest = url.removeprefix("redis://:").split("@")
-#host, port = rest.split(":")
-#redis = aioredis.Redis(host=host, port=int(port), password=password)
+# password, rest = url.removeprefix("redis://:").split("@")
+# host, port = rest.split(":")
+# redis = aioredis.Redis(host=host, port=int(port), password=password)
 
-redis =  aioredis.Redis(host="forest-redis.fly.dev", port="10000", password="speak-friend-and-enter")
+redis = aioredis.Redis(
+    host="forest-redis.fly.dev", port=10000, password="speak-friend-and-enter"
+)
 instance_id = "aws ec2 describe-instances --region us-east-1 | jq -r .Reservations[].Instances[].InstanceId"
 status = "aws ec2 describe-instances --region us-east-1| jq -r '..|.State?|.Name?|select(.!=null)'"
 start = "aws ec2 start-instances --region us-east-1 --instance-ids {}"
@@ -83,7 +88,7 @@ class Imogen(Bot):
             "about-emoji": "\N{Artist Palette}",
             "family-name": "",
         }
-        await self.signalcli_input_queue.put(profile)
+        await self.auxincli_input_queue.put(profile)
         logging.info(profile)
 
     async def do_get_cost(self, _: Message) -> str:
@@ -117,8 +122,17 @@ class Imogen(Bot):
             destination = base58.b58encode(msg.group).decode()
         else:
             destination = msg.source
+        params: JSON = {}
+        # if msg.attachments:
+        #     attachment = msg.attachments[0]
+        #     key = attachment["id"] + "-" + attachment["filename"]
+        #     params["init_image"] = key
+        #     await redis.set(
+        #         key, open(Path("./attachments") / attachment["id"], "rb").read()
+        #     )
         await redis.rpush(
-            "prompt_queue", json.dumps({"prompt": msg.text, "callback": destination})
+            "prompt_queue",
+            json.dumps({"prompt": msg.text, "callback": destination, "params": params}),
         )
         timed = await redis.llen("prompt_queue")
         return f"you are #{timed} in line"
@@ -132,7 +146,10 @@ class Imogen(Bot):
         # await self.mobster.put_usd_tx(msg.sender, self.image_rate_cents, msg.text[:32])
         if state in ("stopped", "stopping"):
             # if not, turn it on
-            logging.info(await get_output(start.format(self.worker_instance_id)))
+            output = await get_output(start.format(self.worker_instance_id))
+            logging.info(output)
+            if "InsufficientInstanceCapacity" in output:
+                resp += ".\nsorry, andy jassy hates us. no gpu for us"
             # asyncio.create_task(really_start_worker())
         return resp
 
@@ -162,6 +179,38 @@ class Imogen(Bot):
             logging.info(await get_output(start.format(self.worker_instance_id)))
         return f"you are #{timed} in line"
 
+    async def do_c(self, msg: Message) -> str:
+        prompt = (
+            "The following is a conversation with an AI assistant. "
+            "The assistant is helpful, creative, clever, funny, very friendly, an artist and anarchist\n\n"
+            "Human: Hello, who are you?\nAI: My name is Imogen, I'm an AI that makes dream-like images. How can I help you today?\n"
+            f"Human: {msg.text}\nAI: "
+        )
+        response = openai.Completion.create(  # type: ignore
+            engine="davinci",
+            prompt=prompt,
+            temperature=0.9,
+            max_tokens=140,
+            top_p=1,
+            frequency_penalty=0.0,
+            presence_penalty=0.6,
+            stop=["\n", " Human:", " AI:"],
+        )
+        return response["choices"][0]["text"].strip()
+
+    async def do_gpt(self, msg: Message) -> str:
+        response = openai.Completion.create(  # type: ignore
+            engine="davinci",
+            prompt=msg.text,
+            temperature=0.9,
+            max_tokens=120,
+            top_p=1,
+            frequency_penalty=0.01,
+            presence_penalty=0.6,
+            stop=["\n", " Human:", " AI:"],
+        )
+        return response["choices"][0]["text"].strip()
+
     async def do_stop(self, _: Message) -> str:
         return await get_output(stop.format(self.worker_instance_id))
 
@@ -188,22 +237,13 @@ class Imogen(Bot):
             prompts.append(str(json.loads(item)["prompt"]))
         return prompts
 
-    async def payment_response(self, _: Message) -> None:
-        return None
+    # async def payment_response(self, _: Message, _: int) -> None:
+    #     return None
 
     # eh
     # async def async_shutdown(self):
     #    await redis.disconnect()
     #    super().async_shutdown()
-
-
-async def admin_handler(request: web.Request) -> web.Response:
-    bot = request.app.get("bot")
-    if not bot:
-        return web.Response(status=504, text="Sorry, no live workers.")
-    msg = urllib.parse.unquote(request.query.get("message", ""))
-    await bot.send_message(utils.get_secret("ADMIN"), msg)
-    return web.Response(text="OK")
 
 
 async def store_image_handler(request: web.Request) -> web.Response:
@@ -246,7 +286,7 @@ async def store_image_handler(request: web.Request) -> web.Response:
 
 
 app.add_routes([web.post("/attachment", store_image_handler)])
-app.add_routes([web.post("/admin", admin_handler)])
+app.add_routes([])
 
 
 if __name__ == "__main__":

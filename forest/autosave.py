@@ -25,7 +25,6 @@ async def start_memfs(app: web.Application) -> None:
     this means we can log signal-cli's interactions with fs,
     and store them in mem_queue.
     """
-    # refactor this whole mess into some sort of more general "figure out where we are before downloading"
     logging.info("starting memfs")
     app["mem_queue"] = mem_queue = aioprocessing.AioQueue()
     if not os.path.exists("/dev/fuse"):
@@ -44,11 +43,8 @@ async def start_memfs(app: web.Application) -> None:
 
     def memfs_proc(path: str = "data") -> Any:
         """Start the memfs process"""
-        pid = os.getpid()
         mountpath = Path(utils.ROOT_DIR) / path
-        logging.info(
-            "Starting memfs with PID: %s on dir: %s", os.getpid(), mountpath
-        )
+        logging.info("Starting memfs with PID: %s on dir: %s", os.getpid(), mountpath)
         backend = mem.Memory(logqueue=mem_queue)  # type: ignore
         logging.info("mountpoint already exists: %s", mountpath.exists())
         Path(utils.ROOT_DIR).mkdir(exist_ok=True, parents=True)

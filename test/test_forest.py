@@ -3,12 +3,13 @@
 # Copyright (c) 2021 The Forest Team
 
 # pylint: disable=redefined-outer-name
-from typing import Iterator, Optional, Any
-from collections import defaultdict
-from subprocess import Popen, PIPE
-import pathlib
 import json
 import logging
+import pathlib
+from collections import defaultdict
+from subprocess import PIPE, Popen
+from typing import Any, Iterator, Optional
+
 import pytest
 
 SIGNAL_CLI = "./signal-cli --config . -o json stdio".split()

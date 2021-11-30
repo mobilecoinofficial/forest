@@ -5,15 +5,13 @@ name = "pypi"
 
 [packages]
 aioprocessing = "*"
-pyqrcode = "*"
-pynacl = "*"
 asyncpg = "*"
-aiohttp = {extras = [ "speedups",], version = "*"}
 mobilecoin = "*"
 base58 = "*"
-# sylv additions
 phonenumbers = "*"
 termcolor = "*"
+prometheus_async = "*"
+prometheus_client = "*"
 
 [requires]
 python_version = "3.9"
@@ -22,9 +20,12 @@ python_version = "3.9"
 allow_prereleases = true
 
 [dev-packages]
-pytest = "*"
+black = "*"
 mypy = "*"
 pylint = "*"
-isort = "*"
-black = "*"
+types-termcolor = "*"
+types-protobuf = "*"
 
+[packages.aiohttp]
+extras = [ "speedups",]
+version = "*"
