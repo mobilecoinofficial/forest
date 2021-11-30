@@ -7,7 +7,7 @@ import os
 import functools
 from asyncio.subprocess import PIPE, create_subprocess_exec
 from contextlib import asynccontextmanager
-from typing import Any, AsyncIterator, Optional, cast
+from typing import AsyncIterator, Optional, cast
 import phonenumbers as pn
 from phonenumbers import NumberParseException
 
@@ -21,18 +21,18 @@ def FuckAiohttp(record: logging.LogRecord) -> bool:
     return True
 
 
-TRACE = logging.DEBUG - 10
-logging.addLevelName(TRACE, "TRACE")
+# TRACE = logging.DEBUG - 10
+# logging.addLevelName(TRACE, "TRACE")
 
 logger_class = logging.getLoggerClass()
 
 # doesn't work / not used
-class TraceLogger(logger_class):  # type: ignore
-    def trace(self, msg: str, *args: Any, **kwargs: Any) -> None:
-        self.log(TRACE, msg, *args, **kwargs)
+# class TraceLogger(logger_class):  # type: ignore
+#     def trace(self, msg: str, *args: Any, **kwargs: Any) -> None:
+#         self.log(TRACE, msg, *args, **kwargs)
 
 
-logging.setLoggerClass(TraceLogger)
+# logging.setLoggerClass(TraceLogger)
 logger = logging.getLogger()
 logger.setLevel("DEBUG")
 fmt = logging.Formatter("{levelname} {module}:{lineno}: {message}", style="{")
@@ -53,7 +53,11 @@ def load_secrets(env: Optional[str] = None, overwrite: bool = False) -> None:
         env = os.environ.get("ENV", "dev")
     try:
         logging.info("loading secrets from %s_secrets", env)
-        secrets = [line.strip().split("=", 1) for line in open(f"{env}_secrets")]
+        secrets = [
+            line.strip().split("=", 1)
+            for line in open(f"{env}_secrets")
+            if line and not line.startswith("#")
+        ]
         can_be_a_dict = cast(list[tuple[str, str]], secrets)
         if overwrite:
             new_env = dict(can_be_a_dict)
@@ -79,6 +83,8 @@ def get_secret(key: str, env: Optional[str] = None) -> str:
     return secret
 
 
+SIGNAL = get_secret("SIGNAL") or "auxin"
+AUXIN = SIGNAL.lower() == "auxin"
 HOSTNAME = open("/etc/hostname").read().strip()  #  FLY_ALLOC_ID
 APP_NAME = os.getenv("FLY_APP_NAME", HOSTNAME)
 URL = os.getenv("URL_OVERRIDE", f"https://{APP_NAME}.fly.dev")
@@ -86,15 +92,14 @@ LOCAL = APP_NAME is None
 ROOT_DIR = (
     "." if get_secret("NO_DOWNLOAD") else "/tmp/local-signal" if LOCAL else "/app"
 )
-
 UPLOAD = DOWNLOAD = not get_secret("NO_DOWNLOAD")
 MEMFS = not get_secret("NO_MEMFS")
 
 if get_secret("LOGFILES") or not LOCAL:
-    tracelog = logging.FileHandler("trace.log")
-    tracelog.setLevel(TRACE)
-    tracelog.setFormatter(fmt)
-    logger.addHandler(tracelog)
+    # tracelog = logging.FileHandler("trace.log")
+    # tracelog.setLevel(TRACE)
+    # tracelog.setFormatter(fmt)
+    # logger.addHandler(tracelog)
     handler = logging.FileHandler("debug.log")
     handler.setLevel("DEBUG")
     handler.setFormatter(fmt)
