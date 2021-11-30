@@ -307,7 +307,9 @@ class Tiamat(Bot):
                     endsession=step.message.endsession,
                     attachments=[
                         attachment["id"] for attachment in step.message.attachments
-                    ],
+                    ]
+                    if step.message.attachments
+                    else None,
                     content=step.message.content,
                 )
                 await asyncio.sleep(step.delay)
