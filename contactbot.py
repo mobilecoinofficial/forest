@@ -1,4 +1,7 @@
 #!/usr/bin/python3.9
+# Copyright (c) 2021 MobileCoin Inc.
+# Copyright (c) 2021 The Forest Team
+
 import logging
 from typing import Union, cast
 
@@ -6,11 +9,11 @@ from aiohttp import web
 
 import teli
 from forest import utils
-from forest.core import Bot, Message, Response, app
+from forest.core import PayBot, Message, Response, app
 from forest_tables import GroupRoutingManager, PaymentsManager, RoutingManager
 
 
-class Forest(Bot):
+class Forest(PayBot):
     def __init__(self, *args: str) -> None:
         self.teli = teli.Teli()
         self.payments_manager = PaymentsManager()
@@ -54,22 +57,6 @@ class Forest(Bot):
         If it's a payment, deal with that separately.
         Otherwise, use the default Bot do_x method dispatch
         """
-        if "group" in message.blob:
-            # SMS with {number} via {number}
-            their, our = message.blob["name"].removeprefix("SMS with ").split(" via ")
-            # TODO: this needs to use number[0]
-            await GroupRoutingManager().set_sms_route_for_group(
-                teli.teli_format(their),
-                teli.teli_format(our),
-                message.blob["group"],
-            )
-            # cmd = {
-            #     "command": "updateGroup",
-            #     "group": message.blob["group"],
-            #     "admin": message.source,
-            # }
-            logging.info("made a new group route from %s", message.blob)
-            return None
         numbers = await self.get_user_numbers(message)
         if numbers and message.group and message.text:
             group = await self.group_routing_manager.get_sms_route_for_group(
@@ -105,7 +92,7 @@ class Forest(Bot):
                 return response
             await self.send_reaction(message, "\N{Cross Mark}")
             return "Couldn't send that reply"
-        return await Bot.handle_message(self, message)
+        return await super().handle_message(message)
 
     async def do_help(self, _: Message) -> str:
         # TODO: https://github.com/forestcontact/forest-draft/issues/14
@@ -149,15 +136,24 @@ class Forest(Bot):
             return "no"
         if not target_number:
             return ""
-        cmd = {
-            "output": "json",
-            "command": "updateGroup",
-            "member": [message.source],
-            "admin": [message.source],
-            "name": f"SMS with {target_number} via {numbers[0]}",
-        }
-        await self.auxincli_input_queue.put(cmd)
         await self.send_reaction(message, "\N{Busts In Silhouette}")
+        group_resp = await self.auxin_req(
+            "updateGroup",
+            member=[message.source],
+            admin=[message.source],
+            name=f"SMS with {target_number} via {numbers[0]}",
+        )
+        await self.group_routing_manager.set_sms_route_for_group(
+            teli.teli_format(target_number),
+            teli.teli_format(numbers[0]),
+            group_resp.group,
+        )
+        logging.info(
+            "created a group route: %s -> %s -> %s",
+            target_number,
+            numbers[0],
+            group_resp.group,
+        )
         return "invited you to a group"
 
     do_query = do_mkgroup
@@ -315,7 +311,7 @@ class Forest(Bot):
         for row in rows if rows else []:
             if not utils.LOCAL:
                 await self.teli.set_sms_url(row.get("id"), utils.URL + "/inbound")
-            if (dest := row.get("destination")) :
+            if dest := row.get("destination"):
                 new_dest = utils.signal_format(dest)
                 await self.routing_manager.set_destination(row.get("id"), new_dest)
         await self.datastore.account_interface.migrate()
@@ -366,7 +362,7 @@ async def inbound_sms_handler(request: web.Request) -> web.Response:
         msg_data[
             "note"
         ] = "fallback, signal destination not found for this sms destination"
-        if (agent := request.headers.get("User-Agent")) :
+        if agent := request.headers.get("User-Agent"):
             msg_data["user-agent"] = agent
         # send the admin the full post body, not just the user-friendly part
         await bot.send_message(recipient, msg_data)

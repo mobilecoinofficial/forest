@@ -1,0 +1,31 @@
+name: checks
+'on':
+  - push
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v1
+        with:
+          fetch-depth: 1
+      - name: Set up Python 3.9
+        uses: actions/setup-python@v1
+        with:
+          python-version: 3.9
+      - name: Install pipenv
+        run: python -m pip install --upgrade pipenv wheel
+      - id: cache-pipenv
+        uses: actions/cache@v1
+        with:
+          path: ~/.local/share/virtualenvs
+          key: '${{ runner.os }}-pipenv-${{ hashFiles(''**/Pipfile.lock'') }}'
+      - name: Install dependencies
+        if: steps.cache-pipenv.outputs.cache-hit != 'true'
+        run: pipenv install --deploy --dev
+      - name: Black
+        run: pipenv run black . --check 
+      - name: Mypy
+        run: pipenv run mypy *py other_bots mc_util forest
+      - name: Pylint
+        run: pipenv run pylint *py other_bots mc_util forest
+

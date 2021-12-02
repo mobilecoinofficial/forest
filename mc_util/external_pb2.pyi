@@ -652,7 +652,7 @@ class TxIn(google.protobuf.message.Message):
     ) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[
         global___TxOut
     ]:
-        """"Ring" of inputs, one of which is actually being spent."""
+        """ "Ring" of inputs, one of which is actually being spent."""
         pass
     @property
     def proofs(

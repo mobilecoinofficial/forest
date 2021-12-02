@@ -1,4 +1,6 @@
 # pylint: skip-file
+# Copyright (c) 2021 MobileCoin Inc.
+# Copyright (c) 2021 The Forest Team
 from decimal import Decimal
 import zlib
 import base64
@@ -46,15 +48,31 @@ def b64_public_address_to_b58_wrapper(b64_string: str) -> str:
     return base58.b58encode(checksum_and_wrapper_bytes).decode("utf-8")
 
 
-def b58_wrapper_to_b64_public_address(b58_string: str) -> str:
-    """Convert a b58-encoded PrintableWrapper address into a b64-encoded PublicAddress protobuf"""
+# via https://github.com/mobilecoinfoundation/mobilecoin/blob/master/api/proto/printable.proto
+# message TransferPayload
+# > Message encoding a private key and a UTXO, for the purpose of
+# > giving someone access to an output. This would most likely be
+# > used for gift cards.
+# message PrintableWrapper
+# > This wraps [external.PublicAddress, payment_request, TransferPayload] using "oneof", allowing us to
+# > have a single encoding scheme and extend as necessary simply by adding
+# > new messages without breaking backwards compatibility
+
+# this can be used to import a gift card's entropy into full-service
+def b58_wrapper_to_protobuf(b58_string: str) -> printable_pb2.PrintableWrapper:
+    """Convert a b58-encoded PrintableWrapper into a protobuf
+    It could be a public address, a gift code, or a payment request"""
     checksum_and_wrapper_bytes = base58.b58decode(b58_string)
     wrapper_bytes = checksum_and_wrapper_bytes[4:]
-
     wrapper = printable_pb2.PrintableWrapper()
     wrapper.ParseFromString(wrapper_bytes)
-    public_address = wrapper.public_address
+    return wrapper
 
+
+def b58_wrapper_to_b64_public_address(b58_string: str) -> str:
+    """Convert a b58-encoded PrintableWrapper address into a b64-encoded PublicAddress protobuf"""
+    wrapper = b58_wrapper_to_protobuf(b58_string)
+    public_address = wrapper.public_address
     public_address_bytes = public_address.SerializeToString()
     return base64.b64encode(public_address_bytes).decode("utf-8")
 

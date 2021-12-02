@@ -1,4 +1,7 @@
 #!/usr/bin/python3.9
+# Copyright (c) 2021 MobileCoin Inc.
+# Copyright (c) 2021 The Forest Team
+
 """
 The core chatbot framework: Message, Signal, Bot, and app
 """
@@ -30,7 +33,7 @@ from prometheus_client import Histogram, Summary
 # framework
 import mc_util
 from forest import autosave, datastore, payments_monitor, pghelp, utils
-from forest.message import AuxinMessage, Message
+from forest.message import AuxinMessage, Message, StdioMessage
 
 JSON = dict[str, Any]
 Response = Union[str, list, dict[str, str], None]
@@ -38,9 +41,19 @@ Response = Union[str, list, dict[str, str], None]
 roundtrip_histogram = Histogram("roundtrip_h", "Roundtrip message response time")
 roundtrip_summary = Summary("roundtrip_s", "Roundtrip message response time")
 
+MessageParser = AuxinMessage if utils.AUXIN else StdioMessage
+logging.info("Using message parser: %s", MessageParser)
 
-def rpc(method: str, _id: str = "1", **params: Any) -> dict:
-    return {"jsonrpc": "2.0", "method": method, "id": _id, "params": params}
+
+def rpc(
+    method: str, param_dict: Optional[dict] = None, _id: str = "1", **params: Any
+) -> dict:
+    return {
+        "jsonrpc": "2.0",
+        "method": method,
+        "id": _id,
+        "params": (param_dict or {}) | params,
+    }
 
 
 def fmt_ms(ts: int) -> str:
@@ -90,7 +103,11 @@ class Signal:
         RESTART_TIME = 2  # move somewhere else maybe
         restart_count = 0
         while self.sigints == 0 and not self.exiting:
-            command = f"{utils.ROOT_DIR}/auxin-cli --config {utils.ROOT_DIR} --user {self.bot_number} jsonRpc".split()
+            path = (
+                utils.get_secret("SIGNAL_CLI_PATH")
+                or f"{utils.ROOT_DIR}/{'auxin' if utils.AUXIN else 'signal'}-cli"
+            )
+            command = f"{path} --config {utils.ROOT_DIR} --user {self.bot_number} jsonRpc".split()
             logging.info(command)
             proc_launch_time = time.time()
             self.proc = await asyncio.create_subprocess_exec(
@@ -172,9 +189,28 @@ class Signal:
             await self.handle_auxincli_raw_line(line)
         logging.info("stopped reading auxin-cli stdout")
 
+    async def enqueue_blob_messages(self, blob: JSON) -> None:
+        message_blob: Optional[JSON] = None
+        if "params" in blob:
+            if isinstance(blob["params"], list):
+                for msg in blob["params"]:
+                    if not blob.get("content", {}).get("receipt_message", {}):
+                        await self.auxincli_output_queue.put(MessageParser(msg))
+            message_blob = blob["params"]
+        if "result" in blob:
+            if isinstance(blob["result"], list):
+                # idt this happens anymore, remove?
+                logging.info("results list code path")
+                for msg in blob["result"]:
+                    if not blob.get("content", {}).get("receipt_message", {}):
+                        await self.auxincli_output_queue.put(MessageParser(msg))
+            message_blob = blob
+        if message_blob:
+            return await self.auxincli_output_queue.put(MessageParser(message_blob))
+
     async def handle_auxincli_raw_line(self, line: str) -> None:
         if '{"jsonrpc":"2.0","result":[],"id":"receive"}' not in line:
-            pass  # logging.debug("auxin: %s", line)
+            logging.debug("auxin: %s", line)
         try:
             blob = json.loads(line)
         except json.JSONDecodeError:
@@ -186,28 +222,18 @@ class Signal:
             logging.error(
                 json.dumps(blob).replace(error, termcolor.colored(error, "red"))
             )
+            if "traceback" in blob:
+                exception, *tb = blob["traceback"].split("\n")
+                logging.error(termcolor.colored(exception, "red"))
+                # maybe also send this to admin as a signal message
+                for _line in tb:
+                    logging.error(_line)
+        # {"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"+16176088864","sourceNumber":"+16176088864","sourceUuid":"412e180d-c500-4c60-b370-14f6693d8ea7","sourceName":"sylv","sourceDevice":3,"timestamp":1637290344242,"dataMessage":{"timestamp":1637290344242,"message":"/ping","expiresInSeconds":0,"viewOnce":false}},"account":"+447927948360"}}
         try:
-            if "params" in blob:
-                if isinstance(blob["params"], list):
-                    for msg in blob["params"]:
-                        if not blob.get("content", {}).get("receipt_message", {}):
-                            await self.auxincli_output_queue.put(AuxinMessage(msg))
-                    return
-                await self.auxincli_output_queue.put(AuxinMessage(blob["params"]))
-            if "result" in blob:
-                if isinstance(blob.get("result"), list):
-                    # idt this happens anymore, remove?
-                    logging.info("results list code path")
-                    for msg in blob.get("result"):
-                        if not blob.get("content", {}).get("receipt_message", {}):
-                            await self.auxincli_output_queue.put(AuxinMessage(msg))
-                    return
-                msg = AuxinMessage(blob)
-                await self.auxincli_output_queue.put(msg)
+            await self.enqueue_blob_messages(blob)
         except KeyError:
             logging.info("auxin parse error: %s", line)
             traceback.print_exception(*sys.exc_info())
-            return
         return
 
     # i'm tempted to refactor these into handle_messages
@@ -295,7 +321,10 @@ class Signal:
 
         if isinstance(msg, list):
             # return the last stamp
-            return [await self.send_message(recipient, m) for m in msg][-1]
+            return [
+                await self.send_message(recipient, m, group, endsession, attachments)
+                for m in msg
+            ][-1]
         if isinstance(msg, dict):
             msg = "\n".join((f"{key}:\t{value}" for key, value in msg.items()))
 
@@ -307,7 +336,9 @@ class Signal:
         if content:
             params["content"] = content
         if group:
-            params["group"] = group
+            if utils.AUXIN:
+                logging.error("setting a group message, but auxin doesn't support this")
+            params["group-id"] = group
         elif recipient:
             try:
                 assert recipient == utils.signal_format(recipient)
@@ -321,7 +352,7 @@ class Signal:
                         e,
                     )
                     return ""
-        params["destination"] = str(recipient)
+            params["destination" if utils.AUXIN else "recipient"] = str(recipient)
         # maybe use rpc() instead
         future_key = f"send-{int(time.time()*1000)}-{hex(hash(msg))[-4:]}"
         json_command: JSON = {
@@ -339,11 +370,10 @@ class Signal:
 
     async def respond(self, target_msg: Message, msg: Response) -> str:
         """Respond to a message depending on whether it's a DM or group"""
+        logging.info(target_msg.source)
         if not target_msg.source:
             logging.error(target_msg.blob)
-        if not utils.AUXIN and isinstance(
-            target_msg.group, str
-        ):  # and it's a valid b64
+        if not utils.AUXIN and target_msg.group:
             return await self.send_message(None, msg, group=target_msg.group)
         destination = target_msg.source or target_msg.uuid
         return await self.send_message(destination, msg)
@@ -351,17 +381,21 @@ class Signal:
     # FIXME: disable for auxin
     async def send_reaction(self, target_msg: Message, emoji: str) -> None:
         """Send a reaction. Protip: you can use e.g. \N{GRINNING FACE} in python"""
+        # rip rpc syntax and invalid python variable names
         react = {
-            "command": "sendReaction",
-            "emoji": emoji,
             "target-author": target_msg.source,
             "target-timestamp": target_msg.timestamp,
         }
         if target_msg.group:
             react["group"] = target_msg.group
-        else:
-            react["recipient"] = [target_msg.source]
-        await self.auxincli_input_queue.put(react)
+        await self.auxincli_input_queue.put(
+            rpc(
+                "sendReaction",
+                param_dict=react,
+                emoji=emoji,
+                recipient=target_msg.source,
+            )
+        )
 
     async def auxincli_input_iter(self) -> AsyncIterator[dict]:
         """Provides an asynchronous iterator over pending auxin-cli commands"""
@@ -392,12 +426,12 @@ class Bot(Signal):
     Subclass this with your own commands.
     """
 
-    def __init__(self, *args: str) -> None:
+    def __init__(self, bot_number: Optional[str] = None) -> None:
         """Creates AND STARTS a bot that routes commands to do_x handlers"""
         self.client_session = aiohttp.ClientSession()
         self.mobster = payments_monitor.Mobster()
         self.pongs: dict[str, str] = {}
-        super().__init__(*args)
+        super().__init__(bot_number)
         self.pending_response_tasks: list[asyncio.Task] = []
         self.restart_task = asyncio.create_task(
             self.start_process()
@@ -722,6 +756,13 @@ app.add_routes(
         web.get("/csv_metrics", metrics),
     ]
 )
+
+
+# order of operations:
+# 1. start memfs
+# 2. instanciate Bot, which calls setup_tmpdir
+# 3. download
+# 4. start process
 
 if utils.MEMFS:
     app.on_startup.append(autosave.start_memfs)

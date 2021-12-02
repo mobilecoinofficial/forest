@@ -20,7 +20,7 @@ class Message:
 
     timestamp: int
     text: str
-    attachments: list[str]
+    attachments: list[dict[str, str]]
     group: Optional[str]
     quoted_text: str
     source: str
@@ -46,7 +46,7 @@ class Message:
         """
         properties = {}
         for attr in dir(self):
-            if not (attr.startswith("_") or attr in ("blob", "full_text")):
+            if not (attr.startswith("_") or attr in ("blob", "full_text", "envelope")):
                 val = getattr(self, attr)
                 if val and not callable(val):
                     # if attr == "text":
@@ -80,7 +80,7 @@ class AuxinMessage(Message):
         content = blob.get("content", {})
         msg = (content.get("source") or {}).get("dataMessage") or {}
         self.text = self.full_text = msg.get("body") or ""
-        self.attachments = msg.get("attachments", [])
+        self.attachments: list[dict[str, str]] = msg.get("attachments", [])
         self.group = msg.get("group") or msg.get("groupV2") or ""
         maybe_quote = msg.get("quote")
         self.address = blob.get("Address", {})
@@ -119,19 +119,25 @@ class StdioMessage(Message):
     """Represents a Message received from signal-cli, optionally containing a command with arguments."""
 
     def __init__(self, blob: dict) -> None:
-        super().__init__(blob)
+        self.id = blob.get("id")
+        result = blob.get("result", {})
         self.envelope = envelope = blob.get("envelope", {})
-        # {'envelope': {'source': '+15133278483', 'sourceDevice': 2, 'timestamp': 1621402445257, 'receiptMessage': {'when': 1621402445257, 'isDelivery': True, 'isRead': False, 'timestamps': [1621402444517]}}}
-
-        # envelope data
+        # {"envelope":{"source":"+16176088864","sourceNumber":"+16176088864","sourceUuid":"412e180d-c500-4c60-b370-14f6693d8ea7","sourceName":"sylv","sourceDevice":3,"timestamp":1637290589910,"dataMessage":{"timestamp":1637290589910,"message":"/ping","expiresInSeconds":0,"viewOnce":false}},"account":"+447927948360"}
         self.source: str = envelope.get("source")
         self.name: str = envelope.get("sourceName") or self.source
-        self.timestamp = envelope.get("timestamp")
+        self.timestamp = envelope.get("timestamp") or result.get("timestamp")
 
         # msg data
         msg = envelope.get("dataMessage", {})
+        # "attachments":[{"contentType":"image/png","filename":"image.png","id":"1484072582431702699","size":2496}]}
+        self.attachments: list[dict[str, str]] = msg.get("attachments")
         self.full_text = self.text = msg.get("message", "")
-        self.group: Optional[str] = msg.get("groupInfo", {}).get("groupId") or ""
+        self.group: Optional[str] = msg.get("groupInfo", {}).get(
+            "groupId"
+        ) or result.get("groupId")
         self.quoted_text = msg.get("quote", {}).get("text")
         self.payment = msg.get("payment")
         # self.reactions: dict[str, str] = {}
+        if self.text:
+            logging.info(self)  # "parsed a message with body: '%s'", self.text)
+        super().__init__(blob)

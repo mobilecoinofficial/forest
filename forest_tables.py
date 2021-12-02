@@ -1,3 +1,5 @@
+# Copyright (c) 2021 MobileCoin Inc.
+# Copyright (c) 2021 The Forest Team
 from forest import utils
 from forest.pghelp import Loop, PGExpressions, PGInterface
 

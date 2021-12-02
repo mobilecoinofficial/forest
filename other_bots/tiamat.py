@@ -77,7 +77,7 @@ class TestMessage:
     message: Optional[str] = None
     group: Optional[str] = None
     endsession: bool = False
-    attachments: Optional[list[str]] = None
+    attachments: Optional[list[dict[str, str]]] = None
     content: str = ""
     sender: Optional[str] = None
     payment: Optional[tuple[str, Optional[float]]] = None
@@ -296,7 +296,6 @@ class TestResult:
         if self.test_account != "tester" and isinstance(self.test_account, str):
             self.set_recipient(self.test_account)
 
-
     def set_recipient(self, number: str) -> None:
         """
         Sets recipient for TestResult object + any expected receipts
@@ -304,7 +303,9 @@ class TestResult:
         Args:
           number (str): Number of the bot performing the test
         """
-        logging.info(f"Setting payment recipient as test orchestration account: {number}")
+        logging.info(
+            f"Setting payment recipient as test orchestration account: {number}"
+        )
         self.test_account = number
         if self.expected_receipts:
             for pair in self.expected_receipts:
@@ -320,7 +321,9 @@ class TestResult:
         """
 
         receipts = self.payment_receipts
-        result = [True if receipt.confirmation_timestamp else False for receipt in receipts]
+        result = [
+            True if receipt.confirmation_timestamp else False for receipt in receipts
+        ]
         if result:
             return all(result)
         return False
@@ -435,8 +438,12 @@ def script_test(name: str, recipient: str, script: list[tuple[str, str]]) -> Tes
 def payments_test(
     name: str,
     recipient: str,
-    script: list[tuple[tuple[str, Optional[float]], tuple[Optional[str],
-        Optional[float], Optional[str]]]],
+    script: list[
+        tuple[
+            tuple[str, Optional[float]],
+            tuple[Optional[str], Optional[float], Optional[str]],
+        ]
+    ],
 ) -> Test:
     steps = []
     for step in script:
@@ -446,10 +453,7 @@ def payments_test(
         receipt = None
         if receive_amount:
             receipt = PaymentReceipt(
-                    sender=recipient, 
-                    recipient="tester",
-                    amount=receive_amount,
-                    note=note
+                sender=recipient, recipient="tester", amount=receive_amount, note=note
             )
 
         payment = None
@@ -468,9 +472,6 @@ def payments_test(
         )
 
     return Test(name, name, recipient, steps=steps)
-
-
-
 
 
 imogen = "+12406171474"  # "+12406171657"
@@ -507,6 +508,10 @@ redis_test = script_test(
         ("/list_queue", "queue empty"),
     ],
 )
+# todo: /send <number> across two contactbot instances or one with multiple accounts,
+# check for reaction
+
+# maybe a signal-cli based test for groups
 
 load_test = send_n_messages(
     name="send_3_messages",
@@ -595,25 +600,19 @@ class Tiamat(PayBot):
             return True
         return False
 
-    async def set_profile(self) -> None: 
+    async def set_profile(self) -> None:
         profile = {
-            "jsonrpc":"2.0",
+            "jsonrpc": "2.0",
             "method": "setProfile",
             "id": 666,
-            "params":
-            {
-                "profile_fields":{
-                "name":
-                {
-                    "givenName":"tiamat",
-                    "familyName":""
-                },
-                "mobilecoinAddress": get_secret("MOBADDRESS"),
-                "about": "The many headed dragon helps",
-                "about_emoji": "\N{Rainbow}",
+            "params": {
+                "profile_fields": {
+                    "name": {"givenName": "tiamat", "familyName": ""},
+                    "mobilecoinAddress": get_secret("MOBADDRESS"),
+                    "about": "The many headed dragon helps",
+                    "about_emoji": "\N{Rainbow}",
                 }
-            }
-
+            },
         }
         await self.auxincli_input_queue.put(profile)
         logging.info(profile)
@@ -750,7 +749,6 @@ class Tiamat(PayBot):
 
             for step in self.test.steps:
                 await asyncio.sleep(step.delay)
-
                 logging.debug(f"starting step: {step}")
                 step_result = StepResult(
                     uid=step.uid,
@@ -791,12 +789,16 @@ class Tiamat(PayBot):
                 logging.info("awaiting remaining test message responses")
                 await self.monitor
             if self.test.validate_payments:
-                if not self.payment_tasks:
-                    wait = 45
-                    logging.info(f"waiting for payment receipts to be sent for {wait} seconds")     
+                if not self.payment_tasks and self.test.has_payments():
+                    wait = 20
+                    logging.info(
+                        f"waiting for payment receipts to be sent for {wait} seconds"
+                    )
                     await asyncio.sleep(wait)
                     if not self.payment_tasks:
-                        logging.warning("No payment notifications received during wait!")
+                        logging.warning(
+                            "No payment notifications received during wait!"
+                        )
                 await asyncio.gather(*self.payment_tasks)
 
         else:
@@ -820,7 +822,6 @@ class Tiamat(PayBot):
         if not isinstance(self.test_result, TestResult):
             raise ValueError("test_result must be initialized prior to test")
 
-
         logging.info(f"payment message received {message}")
         try:
             receipt = PaymentReceipt(
@@ -829,7 +830,9 @@ class Tiamat(PayBot):
                 signal_timestamp=time.time(),
                 note=message.payment.get("note"),
             )
-            logging.info(f"receipt is {receipt}, attempting to confirm on the mobilecoin blockchain")
+            logging.info(
+                f"receipt is {receipt}, attempting to confirm on the mobilecoin blockchain"
+            )
             amount_pmob = await wait_for(
                 self.mobster.get_receipt_amount_pmob(message.payment["receipt"]),
                 timeout,
@@ -838,7 +841,7 @@ class Tiamat(PayBot):
             receipt.amount, receipt.confirmation_timestamp = amount_pmob, time.time()
             self.test_result.payment_receipts.append(receipt)
             logging.info(f"payment confirmed on mobilecoin blockchain, {receipt}")
-            #create_task(self.write_receipt_to_db(amount_pmob, message))
+            # create_task(self.write_receipt_to_db(amount_pmob, message))
         except (asyncio.TimeoutError, asyncio.CancelledError):
             receipt.timeout, receipt.timeout_timestamp = (True, time.time())
             self.test_result.payment_receipts.append(receipt)
@@ -947,10 +950,7 @@ class Tiamat(PayBot):
             )
             return "failed"
         if test_result.expected_receipts:
-            if (
-                test.validate_payments
-                and not test_result.all_receipts_confirmed()
-            ):
+            if test.validate_payments and not test_result.all_receipts_confirmed():
                 return "failed"
             if not test_result.receipts_match(test.payment_validation_strategy):
                 return "failed"
@@ -992,7 +992,7 @@ class Tiamat(PayBot):
             result.end_time = time.time()
             if result.start_time != -1:
                 result.runtime = result.end_time - result.start_time
-            
+
             logging.info(result)
             final_result = deepcopy(result)
             self.test_result_log.append(final_result)
@@ -1042,7 +1042,7 @@ class Tiamat(PayBot):
             self.cleanup_test()
         except asyncio.CancelledError:
             logging.warning("Test being stopped early")
-        except Exception: # pylint: disable=broad-except 
+        except Exception:  # pylint: disable=broad-except
             logging.exception("Test execution encountered an error")
             self.cleanup_test()
 
@@ -1148,6 +1148,7 @@ class Tiamat(PayBot):
         logging.info(f"admin {message.source} setting profile")
         await self.set_profile()
 
+
 class FakeMessage(Message):
     def __init__(self, **kwargs: Any) -> None:  # pylint: disable=super-init-not-called
         self.__dict__.update(kwargs)
@@ -1162,8 +1163,13 @@ if __name__ == "__main__":
     async def start_wrapper(our_app: web.Application) -> None:
         our_app["bot"] = Tiamat(
             admin=test_admin,
-            available_tests=[load_test, ping_test, acceptance_test, redis_test,
-                pay_test],
+            available_tests=[
+                load_test,
+                ping_test,
+                acceptance_test,
+                redis_test,
+                pay_test,
+            ],
         )
 
     web.run_app(app, port=8080, host="0.0.0.0")
