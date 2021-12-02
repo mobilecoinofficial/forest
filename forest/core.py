@@ -289,7 +289,6 @@ class Signal:
         await self.auxincli_input_queue.put(rpc("setProfile", params, future_key))
         return future_key
         # {"jsonrpc": "2.0", "method": "setProfile", "params":{"profile_fields":{"name": {"givenName":"TestBotFriend"}}}, "id":"SetName2"}
-        logging.info(profile)
 
     # this should maybe yield a future (eep) and/or use auxin_req
     async def send_message(  # pylint: disable=too-many-arguments
