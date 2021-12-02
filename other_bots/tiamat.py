@@ -321,9 +321,7 @@ class TestResult:
         """
 
         receipts = self.payment_receipts
-        result = [
-            True if receipt.confirmation_timestamp else False for receipt in receipts
-        ]
+        result = [bool(receipt.confirmation_timestamp) for receipt in receipts]
         if result:
             return all(result)
         return False
@@ -350,10 +348,10 @@ class TestResult:
             return False
 
         if strategy == "notification_order":
-            paid = sorted(paid, key=lambda x: x.signal_timestamp)
+            paid = sorted(paid, key=lambda x: x.signal_timestamp or 0)
         if strategy == "amount":
-            paid = sorted(paid, key=lambda x: x.amount)
-            expected = sorted(expected, key=lambda x: x[1].amount)
+            paid = sorted(paid, key=lambda x: x.amount or 0)
+            expected = sorted(expected, key=lambda x: x[1].amount or 0)
 
         result = [paid[i] == expected[i][1] for i in range(len(paid))]
         if result:
@@ -730,7 +728,7 @@ class Tiamat(PayBot):
             "sequential" order in the test definition. Future implementations
             may implement other test step orderings.
         """
-
+        assert self.test
         logging.info("Validating test definition & Tiamat pre-test configuration")
         if not self.is_test_ready():
             return None
@@ -743,7 +741,7 @@ class Tiamat(PayBot):
             except Exception:  # pylint: disable=broad-except
                 logging.exception("Test monitor task failed, aborting test")
                 self.cleanup_test("failed")
-
+        assert self.test_result
         self.test_result.start_time = time.time()
         if self.test.order == "sequential":
 
