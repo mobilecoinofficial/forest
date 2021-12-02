@@ -53,6 +53,7 @@ If things seem wrong, you can use `fly suspend`, the above to sync, use signal-c
 - `ADMIN`: primarily fallback recipient for invalid webhooks; may also be used to send error messages
 - `DATABASE_URL`: Postgres DB
 - `TELI_KEY`: token to authenticate with teli
+- `URL_OVERRIDE`: url teli should post sms to. needed if not running on fly
 
 ## Binary flags
 - `NO_DOWNLOAD`: don't download a signal-cli datastore, instead use what's in the current working directory
