@@ -28,4 +28,4 @@ types-protobuf = "*"
 
 [packages.aiohttp]
 extras = [ "speedups",]
-version = "*"
+version = "==3.8.1"
