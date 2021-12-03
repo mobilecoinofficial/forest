@@ -896,7 +896,7 @@ class Tiamat(PayBot):
           message (Message): message payment was sent in
         """
         amount_mob = float(mc_util.pmob2mob(amount_pmob))
-        amount_usd_cents = round(amount_mob * await self.mobster.get_rate() * 1000)
+        amount_usd_cents = round(amount_mob * await self.mobster.get_rate() * 100)
         await self.mobster.ledger_manager.put_mob_tx(
             message.source,
             amount_usd_cents,

@@ -93,7 +93,6 @@ class Mobster:
                 utils.get_secret("FULL_SERVICE_URL")
                 or "http://full-service.fly.dev/wallet"
             )
-        self.session = aiohttp.ClientSession()
         self.ledger_manager = LedgerManager()
         self.invoice_manager = InvoiceManager()
         logging.info("full-service url: %s", url)
@@ -108,7 +107,7 @@ class Mobster:
 
     async def req(self, data: dict) -> dict:
         better_data = {"jsonrpc": "2.0", "id": 1, **data}
-        logging.info("url is %s is there a space?", self.url)
+        logging.debug("url is %s is there a space?", self.url)
         conn = aiohttp.TCPConnector(ssl_context=ssl_context)
         mob_req = aiohttp.ClientSession(connector=conn).post(
             self.url,
