@@ -16,9 +16,9 @@ from forest import utils
 from forest.pghelp import Loop, PGExpressions, PGInterface
 
 ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-ssl_context.load_verify_locations(f"rootcrt.pem")
+ssl_context.load_verify_locations("rootcrt.pem")
 ssl_context.verify_mode = ssl.CERT_REQUIRED
-ssl_context.load_cert_chain(certfile=f"client.full.pem")
+ssl_context.load_cert_chain(certfile="client.full.pem")
 
 
 DATABASE_URL = utils.get_secret("DATABASE_URL")
@@ -108,7 +108,7 @@ class Mobster:
 
     async def req(self, data: dict) -> dict:
         better_data = {"jsonrpc": "2.0", "id": 1, **data}
-        logging.info("url is: " + self.url + " is there a space?")
+        logging.info("url is %s is there a space?", self.url)
         conn = aiohttp.TCPConnector(ssl_context=ssl_context)
         mob_req = aiohttp.ClientSession(connector=conn).post(
             self.url,

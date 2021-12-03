@@ -53,6 +53,23 @@ class PaymentReceipt:
             )
         return False
 
+    def __repr__(self) -> str:
+        msg = (
+            f"{new_line}"
+            f"Amount: {self.amount}{new_line}"
+            f"Note: {self.note}{new_line}"
+        )
+        if self.timeout:
+            return msg + "Timeout before txo confirmation"
+        if isinstance(self.confirmation_timestamp, float):
+            assert self.signal_timestamp
+            msg = (
+                msg
+                + f"Txo Confirmation Delta: {round(self.confirmation_timestamp - self.signal_timestamp,2)}{new_line}"
+            )
+
+        return msg
+
 
 @dataclass
 class TestMessage:
@@ -77,10 +94,10 @@ class TestMessage:
     message: Optional[str] = None
     group: Optional[str] = None
     endsession: bool = False
-    attachments: Optional[list[dict[str, str]]] = None
+    attachments: Optional[Union[list[dict[str, str]], list[str]]] = None
     content: str = ""
     sender: Optional[str] = None
-    payment: Optional[tuple[str, Optional[float]]] = None
+    payment: Optional[tuple[str, Optional[int]]] = None
 
 
 @dataclass
@@ -288,6 +305,20 @@ class TestResult:
     end_time: float = -1.0
     runtime: float = -1.0
 
+    def __repr__(self) -> str:
+        msg = (
+            f"Test: {self.test.name}{new_line}"
+            f"Result: {self.result}{new_line}"
+            f"Payments:{new_line}"
+            f"expected receipts:{new_line}"
+            f"{[receipt[1] for receipt in self.expected_receipts]}{new_line}"
+            f"actual receipts:{new_line}"
+            f"{self.payment_receipts}{new_line}"
+            f"Runtime: {round(self.runtime, 2)} seconds"
+        )
+
+        return msg
+
     def __post_init__(self) -> None:
         self.name = self.test.name
         for step in self.test.steps:
@@ -438,8 +469,8 @@ def payments_test(
     recipient: str,
     script: list[
         tuple[
-            tuple[str, Optional[float]],
-            tuple[Optional[str], Optional[float], Optional[str]],
+            tuple[str, Optional[int]],
+            tuple[Optional[str], Optional[int], Optional[str]],
         ]
     ],
 ) -> Test:
@@ -489,7 +520,7 @@ pay_test = payments_test(
             ("/pay", None),
             (
                 "receipt sent!",
-                1000000000.0,
+                1000000000,
                 "check out this java-free payment notification",
             ),
         ),
@@ -703,6 +734,52 @@ class Tiamat(PayBot):
             return False
         return True
 
+    async def send_sequential_messages(self) -> None:
+        """
+        Executes sending of messages within the loaded test definition
+        """
+        assert self.test
+        assert self.test_result
+
+        for step in self.test.steps:
+            await asyncio.sleep(step.delay)
+            logging.debug(f"starting step: {step}")
+            step_result = StepResult(
+                uid=step.uid,
+                message_sent=step.message,
+                expected_response=step.expected_response,
+            )
+            step_result.python_timestamp = time.time()
+
+            if step.message.payment:
+                recipient, amount = step.message.payment
+                assert amount
+                send_receipt = await self.send_payment(
+                    recipient, amount, ""
+                )  # Type checked when test created
+            else:
+                rpc_id = await self.send_message(
+                    recipient=step.message.recipient,
+                    msg=step.message.message,
+                    group=step.message.group,
+                    endsession=step.message.endsession,
+                    attachments=step.message.attachments,  # type: ignore
+                    content=step.message.content,
+                )
+                send_receipt = await self.pending_requests[rpc_id]
+
+            logging.info(f"send receipt is {send_receipt}")
+            if isinstance(send_receipt, Message):
+                step_result.auxin_timestamp = send_receipt.timestamp / 1000
+                step_result.auxin_roundtrip_latency = (
+                    step_result.auxin_timestamp - step_result.python_timestamp
+                )
+            if self.test.validate_responses:
+                await self.pending_step_results.put(step_result)
+            else:
+                self.test_result.step_results.append(step_result)
+        logging.info(f"all steps in {self.test.name} executed")
+
     async def launch_test(self) -> Optional[TestResult]:
         """
         Coroutine that launches a defined test by executing the steps defined
@@ -745,43 +822,7 @@ class Tiamat(PayBot):
         self.test_result.start_time = time.time()
         if self.test.order == "sequential":
 
-            for step in self.test.steps:
-                await asyncio.sleep(step.delay)
-                logging.debug(f"starting step: {step}")
-                step_result = StepResult(
-                    uid=step.uid,
-                    message_sent=step.message,
-                    expected_response=step.expected_response,
-                )
-                step_result.python_timestamp = time.time()
-
-                if step.message.payment:
-                    recipient, amount = step.message.payment
-                    send_receipt = await self.send_payment(
-                        recipient, amount, ""
-                    )  # Type checked when test created
-                else:
-                    rpc_id = await self.send_message(
-                        recipient=step.message.recipient,
-                        msg=step.message.message,
-                        group=step.message.group,
-                        endsession=step.message.endsession,
-                        attachments=step.message.attachments,
-                        content=step.message.content,
-                    )
-                    send_receipt = await self.pending_requests[rpc_id]
-
-                logging.info(f"send receipt is {send_receipt}")
-                if isinstance(send_receipt, Message):
-                    step_result.auxin_timestamp = send_receipt.timestamp / 1000
-                    step_result.auxin_roundtrip_latency = (
-                        step_result.auxin_timestamp - step_result.python_timestamp
-                    )
-                if self.test.validate_responses:
-                    await self.pending_step_results.put(step_result)
-                else:
-                    self.test_result.step_results.append(step_result)
-            logging.info(f"all steps in {self.test.name} executed")
+            await self.send_sequential_messages()
 
             if self.test.validate_responses and isinstance(self.monitor, Task):
                 logging.info("awaiting remaining test message responses")
