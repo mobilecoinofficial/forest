@@ -70,6 +70,8 @@ class AuxinMessage(Message):
             self.id = outer_blob["id"]
             self.error = outer_blob.get("error", {})
             blob = outer_blob.get("result", {})
+            if not isinstance(blob, dict):
+                blob = {}
         else:
             self.id = _id
             blob = outer_blob
