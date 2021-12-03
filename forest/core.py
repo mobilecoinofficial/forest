@@ -276,7 +276,19 @@ class Signal:
             "avatar": "avatar.png",
         }
         await self.auxincli_input_queue.put(profile)
-        logging.info(profile)
+
+    async def set_profile_auxin(
+        self, given_name: str, family_name: str = "", payment_address: str = ""
+    ) -> str:
+        params: JSON = {"profile_fields": {"name": {"givenName": given_name}}}
+        if family_name:
+            params["profile_fields"]["name"]["familyName"] = family_name
+        if payment_address:
+            params["profile_fields"]["mobilecoinAddress"] = payment_address
+        future_key = f"setProfile-{int(time.time()*1000)}"
+        await self.auxincli_input_queue.put(rpc("setProfile", params, future_key))
+        return future_key
+        # {"jsonrpc": "2.0", "method": "setProfile", "params":{"profile_fields":{"name": {"givenName":"TestBotFriend"}}}, "id":"SetName2"}
 
     # this should maybe yield a future (eep) and/or use auxin_req
     async def send_message(  # pylint: disable=too-many-arguments
@@ -631,6 +643,12 @@ class PayBot(Bot):
     async def do_address(self, msg: Message) -> Response:
         address = await self.get_address(msg.source)
         return address or "sorry, couldn't get your MobileCoin address"
+
+    async def do_rename(self, msg: Message) -> Response:
+        if msg.tokens and len(msg.tokens) > 1:
+            await self.set_profile_auxin(*msg.tokens)
+            return "OK"
+        return "pass arguments for set_profile_auxin"
 
     async def mob_request(self, method: str, **params: Any) -> dict:
         result = await self.mobster.req_(method, **params)
