@@ -14,7 +14,6 @@ import logging
 import os
 import signal
 import sys
-import typing
 import time
 import traceback
 import urllib
@@ -24,10 +23,9 @@ from asyncio.subprocess import PIPE
 from copy import copy
 from functools import wraps
 from textwrap import dedent
-from typing import Any, AsyncIterator, Coroutine, Callable, Optional, Union
+from typing import Any, AsyncIterator, Callable, Optional, Union
 
 import aiohttp
-import phonenumbers as pn
 import termcolor
 from aiohttp import web
 from phonenumbers import NumberParseException
@@ -434,23 +432,20 @@ class Signal:
 
 
 Datapoint = tuple[int, str, float]  # timestamp in ms, command/info, latency in seconds
-BotSubtype = typing.TypeVar("B", bound="Bot")
-Command = Callable[[typing.Type[BotSubtype], Message], Coroutine[Any, Any, Response]]
 
 
-def requires_admin(command: Command) -> Command:
+def requires_admin(command: Callable) -> Callable:
     @wraps(command)
     async def wrapped_command(self: "Bot", msg: Message) -> Response:
         if msg.source == utils.get_secret("ADMIN"):
             return await command(self, msg)
         return "you must be an admin to use this command"
 
-    reveal_type(wrapped_command)
     wrapped_command.admin = True  # type: ignore
     return wrapped_command
 
 
-def hide(command: Command) -> Command:
+def hide(command: Callable) -> Callable:
     hidden_command = copy(command)
     hidden_command.hide = True  # type: ignore
     return hidden_command
@@ -541,7 +536,7 @@ class Bot(Signal):
             return resp
         return None
 
-    def do_help(self, msg: Message) -> str:
+    async def do_help(self, msg: Message) -> Response:
         """
         /help [command]. see the documentation for command, or all commands
         """
@@ -642,9 +637,8 @@ class PayBot(Bot):
             return "OK"
         return "pass arguments for set_profile_auxin"
 
-    @requires_admin
-    async def mob_request(self, method: str, **params: Any) -> dict:  
-        result = await self.mobster.req_(method, **params)  
+    async def mob_request(self, method: str, **params: Any) -> dict:
+        result = await self.mobster.req_(method, **params)
         if "error" in result:
             await self.admin(f"{params}\n{result}")
         return result
@@ -681,7 +675,7 @@ class PayBot(Bot):
         # TODO: add a lock around two-part build/submit Or
         # TODO: add explicit utxo handling
         # TODO: add task which keeps full-service filled
-        raw_prop = await self.mob_request( # type: ignore
+        raw_prop = await self.mob_request(
             "build_transaction",
             account_id=await self.mobster.get_account(),
             recipient_public_address=address,

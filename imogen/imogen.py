@@ -7,17 +7,16 @@ import base64
 import datetime
 import json
 import logging
-import urllib
 import time
+import urllib
 from pathlib import Path
-from typing import Optional
-import base58
-import aiohttp
+from typing import Callable, Optional
 import aioredis
-from aiohttp import web
+import base58
 import openai
+from aiohttp import web
 from forest import utils
-from forest.core import Bot, JSON, Message, Response, app, hide
+from forest.core import JSON, Bot, Message, Response, app, hide
 
 openai.api_key = utils.get_secret("OPENAI_API_KEY")
 
@@ -151,12 +150,12 @@ class Imogen(Bot):
             # asyncio.create_task(really_start_worker())
         return resp
 
-    def make_prefix(prefix: str) -> Callable:  # type: ignore
-        async def wrapped(self, msg: Message) -> str:
-            f"/{prefix} <prompt>: imagine it with {prefix} style"
+    def make_prefix(prefix: str) -> Callable:  # type: ignore # pylint: disable=no-self-argument
+        async def wrapped(self: "Imogen", msg: Message) -> str:
             msg.text = f"{prefix} {msg.text}"
             return await self.do_imagine(msg)
 
+        wrapped.__doc__ = f"/{prefix} <prompt>: imagine it with {prefix} style"
         return wrapped
 
     do_mythical = make_prefix("mythical")
@@ -170,6 +169,7 @@ class Imogen(Bot):
     do_steampunk = make_prefix("steampunk")
     do_ukiyo = make_prefix("ukiyo")
     do_synthwave = make_prefix("synthwave")
+    del make_prefix  # shouldn't be used after class definition is over
 
     async def do_paint(self, msg: Message) -> str:
         """/paint <prompt>"""

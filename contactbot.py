@@ -113,7 +113,7 @@ class Forest(PayBot):
             return "Couldn't send that reply"
         return await super().handle_message(message)
 
-    async def do_help(self, _: Message) -> str:
+    async def do_help(self, _: Message) -> Response:
         # TODO: https://github.com/forestcontact/forest-draft/issues/14
         return (
             "Welcome to the Forest.contact Pre-Release!\n"
