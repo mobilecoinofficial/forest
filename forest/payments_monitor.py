@@ -2,23 +2,31 @@
 # Copyright (c) 2021 MobileCoin Inc.
 # Copyright (c) 2021 The Forest Team
 
-import ssl
 import asyncio
 import json
 import logging
+import random
+import ssl
 import time
 from typing import Optional
-import random
-import asyncpg
+
 import aiohttp
+import asyncpg
+
 import mc_util
 from forest import utils
 from forest.pghelp import Loop, PGExpressions, PGInterface
 
-ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-ssl_context.load_verify_locations("rootcrt.pem")
-ssl_context.verify_mode = ssl.CERT_REQUIRED
-ssl_context.load_cert_chain(certfile="client.full.pem")
+if not utils.get_secret("ROOTCRT"):
+    ssl_context: Optional[ssl.SSLContext] = None
+else:
+    ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    open("rootcrt.pem", "w").write(utils.get_secret("ROOTCRT"))
+    open("client.full.pem", "w").write(utils.get_secret("CLIENTCRT"))
+
+    ssl_context.load_verify_locations("rootcrt.pem")
+    ssl_context.verify_mode = ssl.CERT_REQUIRED
+    ssl_context.load_cert_chain(certfile="client.full.pem")
 
 
 DATABASE_URL = utils.get_secret("DATABASE_URL")
@@ -108,7 +116,7 @@ class Mobster:
     async def req(self, data: dict) -> dict:
         better_data = {"jsonrpc": "2.0", "id": 1, **data}
         logging.debug("url is %s is there a space?", self.url)
-        conn = aiohttp.TCPConnector(ssl_context=ssl_context)
+        conn = aiohttp.TCPConnector(ssl=ssl_context)
         mob_req = aiohttp.ClientSession(connector=conn).post(
             self.url,
             data=json.dumps(better_data),
