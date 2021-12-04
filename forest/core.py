@@ -14,13 +14,17 @@ import logging
 import os
 import signal
 import sys
+import typing
 import time
 import traceback
 import urllib
 import uuid
 from asyncio import Queue, StreamReader, StreamWriter
 from asyncio.subprocess import PIPE
-from typing import Any, AsyncIterator, Optional, Union
+from copy import copy
+from functools import wraps
+from textwrap import dedent
+from typing import Any, AsyncIterator, Coroutine, Callable, Optional, Union
 
 import aiohttp
 import phonenumbers as pn
@@ -430,6 +434,26 @@ class Signal:
 
 
 Datapoint = tuple[int, str, float]  # timestamp in ms, command/info, latency in seconds
+BotSubtype = typing.TypeVar("B", bound="Bot")
+Command = Callable[[typing.Type[BotSubtype], Message], Coroutine[Any, Any, Response]]
+
+
+def requires_admin(command: Command) -> Command:
+    @wraps(command)
+    async def wrapped_command(self: "Bot", msg: Message) -> Response:
+        if msg.source == utils.get_secret("ADMIN"):
+            return await command(self, msg)
+        return "you must be an admin to use this command"
+
+    reveal_type(wrapped_command)
+    wrapped_command.admin = True  # type: ignore
+    return wrapped_command
+
+
+def hide(command: Command) -> Command:
+    hidden_command = copy(command)
+    hidden_command.hide = True  # type: ignore
+    return hidden_command
 
 
 class Bot(Signal):
@@ -449,7 +473,6 @@ class Bot(Signal):
             self.start_process()
         )  # maybe cancel on sigint?
         self.queue_task = asyncio.create_task(self.handle_messages())
-        self.response_metrics: list[Datapoint] = []
         self.auxin_roundtrip_latency: list[Datapoint] = []
         if utils.get_secret("MONITOR_WALLET"):
             # currently spams and re-credits the same invoice each reboot
@@ -483,8 +506,6 @@ class Bot(Signal):
             )
         python_delta = round(time.time() - start_time, 3)
         note = message.command or ""
-        if python_delta:
-            self.response_metrics.append((int(start_time), note, python_delta))
         if future_key:
             logging.debug("awaiting future %s", future_key)
             result = await self.wait_resp(future_key=future_key)
@@ -520,37 +541,27 @@ class Bot(Signal):
             return resp
         return None
 
-    # gross
-    async def do_average_metric(self, _: Message) -> Response:
-        avg = sum(metric[-1] for metric in self.auxin_roundtrip_latency) / len(
-            self.auxin_roundtrip_latency
-        )
-        return str(round(avg, 4))
-
-    async def do_dump_metric_csv(self, _: Message) -> Response:
-        return "start_time, command, delta\n" + "\n".join(
-            f"{fmt_ms(t)}, {cmd}, {delta}" for t, cmd, delta in self.response_metrics
-        )
-
-    async def do_dump_roundtrip(self, _: Message) -> Response:
-        return "start_time, command, delta\n" + "\n".join(
-            f"{fmt_ms(t)}, {cmd}, {delta}"
-            for t, cmd, delta in self.auxin_roundtrip_latency
-        )
-
-    async def do_help(self, message: Message) -> str:
-        """List available commands. /help <command> gives you that command's documentation, if available"""
-        if message.arg1:
-            if hasattr(self, "do_" + message.arg1):
-                cmd = getattr(self, "do_" + message.arg1)
-                if cmd.__doc__:
-                    return cmd.__doc__
-                return f"Sorry, {message.arg1} isn't documented"
-        # TODO: filter aliases and indicate which commands are undocumented
-
-        return "commands: " + ", ".join(
-            k.removeprefix("do_") for k in dir(self) if k.startswith("do_")
-        )
+    def do_help(self, msg: Message) -> str:
+        """
+        /help [command]. see the documentation for command, or all commands
+        """
+        if msg.arg1:
+            try:
+                doc = getattr(self, f"do_{msg.arg1}").__doc__
+                if doc:
+                    return dedent(doc).strip()
+                return f"{msg.arg1} isn't documented, sorry :("
+            except AttributeError:
+                return f"no such command '{msg.arg1}'"
+        else:
+            resp = "documented commands: " + ", ".join(
+                name.removeprefix("do_")
+                for name in dir(self)
+                if name.startswith("do_")
+                and not hasattr(getattr(self, name), "admin")
+                and not hasattr(getattr(self, name), "hide")
+            )
+        return resp
 
     async def do_printerfact(self, _: Message) -> str:
         "Learn a fact about printers"
@@ -569,26 +580,6 @@ class Bot(Signal):
             self.pongs[message.text] = message.text
             return f"OK, stashing {message.text}"
         return "OK"
-
-    async def check_target_number(self, msg: Message) -> Optional[str]:
-        """Check if arg1 is a valid number. If it isn't, let the user know and return None"""
-        try:
-            logging.debug("checking %s", msg.arg1)
-            assert msg.arg1
-            parsed = pn.parse(msg.arg1, "US")  # fixme: use PhoneNumberMatcher
-            assert pn.is_valid_number(parsed)
-            number = pn.format_number(parsed, pn.PhoneNumberFormat.E164)
-            return number
-        except (pn.phonenumberutil.NumberParseException, AssertionError):
-            await self.send_message(
-                msg.source,
-                f"{msg.arg1} doesn't look a valid number or user. "
-                "did you include the country code?",
-            )
-            return None
-
-    async def do_exception(self, message: Message) -> None:
-        raise Exception("You asked for it!")
 
 
 class PayBot(Bot):
@@ -644,14 +635,16 @@ class PayBot(Bot):
         address = await self.get_address(msg.source)
         return address or "sorry, couldn't get your MobileCoin address"
 
+    @requires_admin
     async def do_rename(self, msg: Message) -> Response:
         if msg.tokens and len(msg.tokens) > 1:
             await self.set_profile_auxin(*msg.tokens)
             return "OK"
         return "pass arguments for set_profile_auxin"
 
-    async def mob_request(self, method: str, **params: Any) -> dict:
-        result = await self.mobster.req_(method, **params)
+    @requires_admin
+    async def mob_request(self, method: str, **params: Any) -> dict:  
+        result = await self.mobster.req_(method, **params)  
         if "error" in result:
             await self.admin(f"{params}\n{result}")
         return result
@@ -685,10 +678,10 @@ class PayBot(Bot):
                 recipient, "sorry, couldn't get your MobileCoin address"
             )
             return None
-        # TODO: add a lock around two-part build/submit OR
+        # TODO: add a lock around two-part build/submit Or
         # TODO: add explicit utxo handling
         # TODO: add task which keeps full-service filled
-        raw_prop = await self.mob_request(
+        raw_prop = await self.mob_request( # type: ignore
             "build_transaction",
             account_id=await self.mobster.get_account(),
             recipient_public_address=address,

@@ -3,14 +3,33 @@
 # Copyright (c) 2021 The Forest Team
 
 import logging
-from typing import Union, cast
-
+from functools import wraps
+from typing import Callable, Union, cast
 from aiohttp import web
-
 import teli
+import phonenumbers as pn
 from forest import utils
-from forest.core import PayBot, Message, Response, app
+from forest.core import Message, PayBot, Response, app
 from forest_tables import GroupRoutingManager, PaymentsManager, RoutingManager
+
+
+def takes_number(command: Callable) -> Callable:
+    @wraps(command)  # keeps original name and docstring for /help
+    async def wrapped_command(self: "PayBot", msg: Message) -> str:
+        try:
+            # todo: parse (123) 456-6789 if it's multiple tokens
+            assert msg.arg1
+            parsed = pn.parse(msg.arg1, "US")
+            assert pn.is_valid_number(parsed)
+            target_number = pn.format_number(parsed, pn.PhoneNumberFormat.E164)
+            return await command(self, msg, target_number)
+        except (pn.phonenumberutil.NumberParseException, AssertionError):
+            return (
+                f"{msg.arg1} doesn't look a valid number or user. "
+                "did you include the country code?"
+            )
+
+    return wrapped_command
 
 
 class Forest(PayBot):
@@ -103,14 +122,12 @@ class Forest(PayBot):
             ""
         )
 
-    async def do_send(self, message: Message) -> Union[str, dict]:
+    @takes_number
+    async def do_send(self, message: Message, sms_dest: str) -> Union[str, dict]:
         """Send an SMS message. Usage: /send <destination> <message>"""
         numbers = await self.get_user_numbers(message)
         if not numbers:
             return "You don't have any numbers. Register with /register"
-        sms_dest = await self.check_target_number(message)
-        if not sms_dest:
-            return "Couldn't parse that number"
         response = await self.send_sms(
             source=numbers[0],
             destination=sms_dest,
@@ -124,18 +141,16 @@ class Forest(PayBot):
 
     do_msg = do_send
 
-    async def do_mkgroup(self, message: Message) -> str:
+    @takes_number
+    async def do_mkgroup(self, message: Message, target_number: str) -> str:
         """Create a group for your SMS messages with a given recipient.
         Messages from that recipient will be posted in that group instead of sent to you.
         Messages sent in that group will be sent to that recipient.
         You can add other Signal users; they'll be able to use your number as well
         """
         numbers = await self.get_user_numbers(message)
-        target_number = await self.check_target_number(message)
         if not numbers:
             return "no"
-        if not target_number:
-            return ""
         await self.send_reaction(message, "\N{Busts In Silhouette}")
         group_resp = await self.auxin_req(
             "updateGroup",
