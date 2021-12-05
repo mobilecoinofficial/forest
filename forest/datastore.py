@@ -387,7 +387,7 @@ if __name__ == "__main__":
         if args.number:
             num = args.number
         else:
-            num = os.listdir("data")[0]
+            num = sorted(os.listdir("data"))[0]
         store = SignalDatastore(num)
         asyncio.run(store.upload())
     else:
