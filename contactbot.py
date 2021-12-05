@@ -162,7 +162,7 @@ class Forest(PayBot):
 
     async def payment_response(self, msg: Message, amount_pmob: int) -> str:
         del amount_pmob
-        diff = await self.get_balance(msg.source) - self.usd_price
+        diff = await self.get_user_balance(msg.source) - self.usd_price
         if diff < 0:
             return f"Please send another {abs(diff)} USD to buy a phone number"
         if diff == 0:
@@ -182,7 +182,7 @@ class Forest(PayBot):
         if numbers:
             return f"Hi {message.name}! We found several numbers {numbers} registered for your user. Try '/send {message.source} Hello from Forest Contact via {numbers[0]}!'."
         # paid but not registered
-        if await self.get_balance(message.source) > 0 and not numbers:
+        if await self.get_user_balance(message.source) > 0 and not numbers:
             return [
                 "Welcome to the beta! Thank you for your payment. Please contact support to finish setting up your account by requesting to join this group. We will reach out within 12 hours.",
                 "https://signal.group/#CjQKINbHvfKoeUx_pPjipkXVspTj5HiTiUjoNQeNgmGvCmDnEhCTYgZZ0puiT-hUG0hUUwlS",
@@ -214,13 +214,13 @@ class Forest(PayBot):
             "Upon payment, you will be able to select the area code for your new phone number!",
         ]
 
-    async def get_balance(self, account: str) -> float:
+    async def get_user_balance(self, account: str) -> float:
         res = await self.mobster.ledger_manager.get_usd_balance(account)
         return float(round(res[0].get("balance"), 2))
 
     async def do_balance(self, message: Message) -> str:
         """Check your balance"""
-        balance = await self.get_balance(message.source)
+        balance = await self.get_user_balance(message.source)
         return f"Your balance is {balance} USD"
 
     async def do_pay(self, message: Message) -> str:
@@ -237,7 +237,7 @@ class Forest(PayBot):
         """Usage: /order <area code>"""
         if not (msg.arg1 and len(msg.arg1) == 3 and msg.arg1.isnumeric()):
             return """Usage: /order <area code>"""
-        diff = await self.get_balance(msg.source) - self.usd_price
+        diff = await self.get_user_balance(msg.source) - self.usd_price
         if diff < 0:
             return "Make a payment with Signal Pay or /register first"
         await self.routing_manager.sweep_expired_destinations()
