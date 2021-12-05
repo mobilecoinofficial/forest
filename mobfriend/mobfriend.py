@@ -9,7 +9,9 @@ from prometheus_async import aio
 from prometheus_async.aio import time
 from prometheus_client import Summary
 
-from forest.core import PayBot, Message, Response, app
+from forest.core import PayBot, Message, Response, app, requires_admin, hide
+from forest import utils
+
 from decimal import Decimal
 
 FEE = int(1e12 * 0.0004)
@@ -17,7 +19,7 @@ FEE = int(1e12 * 0.0004)
 REQUEST_TIME = Summary("request_processing_seconds", "Time spent processing request")
 
 
-class PayFriend(PayBot):
+class MobFriend(PayBot):
     no_repay: list[str] = []
     exchanging_cash_code: list[str] = []
 
@@ -35,7 +37,13 @@ class PayFriend(PayBot):
         self.exchanging_cash_code.append(msg.source)
         return "Your next transaction will be converted into a MobileCoin Cash Code that can be redeemed in other wallets."
 
+    @hide
+    async def do_exception(self, _: Message):
+        raise Exception("You asked for it!")
+        return None
+
     @time(REQUEST_TIME)  # type: ignore
+    @hide
     async def do_pay(self, msg: Message) -> Response:
         if msg.arg1:
             payment_notif_sent = await self.send_payment(
@@ -64,31 +72,41 @@ class PayFriend(PayBot):
             return None
         elif msg.source in self.exchanging_cash_code:
             resp = await self.build_cash_code(msg.source, amount_pmob)
-            self.exchanging_cash_code.pop(msg.source)
-            self.no_repay.pop(msg.source)
-            return resp
+            self.exchanging_cash_code.remove(msg.source)
+            self.no_repay.remove(msg.source)
+            if resp:
+                return resp  # type: ignore
+            return "No response from build_cash_code. This should not happen."
         else:
             return f"Received {mc_util.pmob2mob(amount_pmob)}MOB"
 
+    @hide
+    @requires_admin
     async def do_eval(self, msg: Message) -> Response:
+        """Evaluates a few lines of Python. Preface with "return" to reply with result."""
         import ast
 
-        async def async_exec(stmts, env=None):
+        async def async_exec(stmts, env=None):  # type: ignore
             parsed_stmts = ast.parse(stmts)
             fn_name = "_async_exec_f"
             fn = f"async def {fn_name}(): pass"
             parsed_fn = ast.parse(fn)
             for node in parsed_stmts.body:
                 ast.increment_lineno(node)
-            parsed_fn.body[0].body = parsed_stmts.body
+            parsed_fn.body[0].body = parsed_stmts.body  # type: ignore
             exec(compile(parsed_fn, filename="<ast>", mode="exec"), env)
             return await eval(f"{fn_name}()", env)
 
-        return str(await async_exec(" ".join(msg.tokens), locals()))
+        if msg.tokens and len(msg.tokens):
+            return str(await async_exec(" ".join(msg.tokens), locals()))  # type: ignore
+        return None
 
+    @hide
+    @requires_admin
     async def do_balance(self, msg: Message) -> Response:
         return str(await self.mobster.get_balance())
 
+    @hide
     async def do_check_balance(self, msg: Message) -> Response:
         if msg.arg1:
             status = await self.mobster.req_(
@@ -103,23 +121,24 @@ class PayFriend(PayBot):
         else:
             return "/check_balance <b58>"
 
+    @hide
     async def do_check_b58_type(self, msg: Message) -> Response:
         if not msg.arg1:
             return "/check_b58_type <b58>"
         status = await self.mobster.req_("check_b58_type", b58_code=msg.arg1)
-        if status.get("result", {}).get("b58_type") == "PaymentRequest":
+        if status and status.get("result", {}).get("b58_type") == "PaymentRequest":
             status["result"]["data"]["type"] = "PaymentRequest"
             status["result"]["data"]["value"] = str(
                 mc_util.pmob2mob(status["result"]["data"]["value"])
             )
-            return status.get("result").get("data")
-        elif status.get("result", {}).get("b58_type") == "TransferPayload":
+            return status.get("result", {}).get("data")
+        elif status and status.get("result", {}).get("b58_type") == "TransferPayload":
             return await self.do_check_balance(msg)
         else:
             return status.get("result")
 
-    do_check58 = do_check_b58_type
     do_check = do_check_b58_type
+    do_check58 = do_check_b58_type
 
     async def do_create_payment_request(self, msg: Message) -> Response:
         address = await self.get_address(msg.source)
@@ -129,10 +148,13 @@ class PayFriend(PayBot):
         payload.payment_request.public_address.CopyFrom(
             mc_util.b58_wrapper_to_transfer_payload(address).public_address
         )
-        if not (len(msg.tokens) > 0 and msg.tokens[0].replace(".", "0", 1).isnumeric()):
+        if msg.tokens and not (
+            len(msg.tokens) > 0 and msg.tokens[0].replace(".", "0", 1).isnumeric()
+        ):
             return "Sorry, you need to provide a price (in MOB)!"
-        payload.payment_request.value = mc_util.mob2pmob(float(msg.tokens[0]))
-        if len(msg.tokens) > 1:
+        if msg.tokens and len(msg.tokens):
+            payload.payment_request.value = mc_util.mob2pmob(float(msg.tokens[0]))
+        if msg.tokens and len(msg.tokens) > 1:
             payload.payment_request.memo = " ".join(msg.tokens[1:])
         payment_request_b58 = mc_util.add_checksum_and_b58(payload.SerializeToString())
         pyqrcode.QRCode(payment_request_b58).png(
@@ -146,7 +168,7 @@ class PayFriend(PayBot):
         return payment_request_b58
 
     async def do_qr(self, msg: Message) -> Response:
-        if len(msg.tokens):
+        if msg.tokens and len(msg.tokens):
             payload = " ".join(msg.tokens)
             pyqrcode.QRCode(payload).png(
                 f"/tmp/{msg.timestamp}.png", scale=5, quiet_zone=10
@@ -162,17 +184,30 @@ class PayFriend(PayBot):
 
     do_payme = do_create_payment_request
 
+    @requires_admin
+    @hide
     async def do_fsr(self, msg: Message) -> Response:
+        """Make a request to the Full-Service instance behind the bot. Admin-only."""
+        if not msg.tokens or not len(msg.tokens):
+            return "/fsr <command> (<arg1> <val1>( <arg2> <val2>))"
+        quotes_indexes = [i for (i, token) in enumerate(msg.tokens) if isinstance(token, str) and '"' in token]
         msg.tokens = [
-            token if not token.isnumeric() else int(token) for token in msg.tokens
+            str(token) if not token.isnumeric() else int(token) for token in msg.tokens  # type: ignore
         ]
+        # if we have quote indexes and an even number of them....
+        if len(quotes_indexes) and (len(quotes_indexes) % 2 == 0):
+            msg.tokens = [
+                *msg.tokens[0 : quotes_indexes[0]],
+                " ".join(msg.tokens[quotes_indexes[0] : quotes_indexes[1] + 1]),
+            ]
+            return await self.do_fsr(msg)
         if len(msg.tokens) == 1:
             return await self.mobster.req(dict(method=msg.tokens[0]))
-        if len(msg.tokens) == 3:
+        elif len(msg.tokens) == 3:
             return str(
                 await self.mobster.req_(msg.tokens[0], **{msg.tokens[1]: msg.tokens[2]})
             )
-        if len(msg.tokens) == 5:
+        elif len(msg.tokens) == 5:
             return str(
                 await self.mobster.req_(
                     msg.tokens[0],
@@ -182,6 +217,14 @@ class PayFriend(PayBot):
         else:
             return "/fsr <command> (<arg1> <val1>( <arg2> <val2>))"
 
+    @hide
+    async def do_printerfact(self, _: Message) -> str:
+        "Learn a fact about something._"
+        async with self.client_session.get(utils.get_secret("FACT_SOURCE")) as resp:
+            fact = await resp.text()
+            return fact.strip()
+
+    @hide
     async def do_claim_balance(self, msg: Message) -> Response:
         if msg.arg1:
             status = await self.mobster.req_(
@@ -213,6 +256,6 @@ if __name__ == "__main__":
 
     @app.on_startup.append
     async def start_wrapper(out_app: web.Application) -> None:
-        out_app["bot"] = PayFriend()
+        out_app["bot"] = MobFriend()
 
     web.run_app(app, port=8080, host="0.0.0.0", access_log=None)
