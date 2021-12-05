@@ -1,13 +1,12 @@
 #!/usr/bin/python3.9
 # Copyright (c) 2021 MobileCoin Inc.
 # Copyright (c) 2021 The Forest Team
-
 import logging
 from functools import wraps
 from typing import Callable, Union, cast
+import phonenumbers as pn
 from aiohttp import web
 import teli
-import phonenumbers as pn
 from forest import utils
 from forest.core import Message, PayBot, Response, app
 from forest_tables import GroupRoutingManager, PaymentsManager, RoutingManager
