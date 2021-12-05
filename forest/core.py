@@ -43,7 +43,7 @@ roundtrip_summary = Summary("roundtrip_s", "Roundtrip message response time")
 
 MessageParser = AuxinMessage if utils.AUXIN else StdioMessage
 logging.info("Using message parser: %s", MessageParser)
-
+fee_pmob = int(1e12 * 0.0004)
 
 def rpc(
     method: str, param_dict: Optional[dict] = None, _id: str = "1", **params: Any
@@ -680,14 +680,11 @@ class PayBot(Bot):
         self, recipient: str, amount_pmob: int
     ) -> Optional[Message]:
         """Builds a cash code and sends to a recipient, given a recipient as phone number and amount in pMOB."""
-        # TODO: add a lock around two-part build/submit OR
-        # TODO: add explicit utxo handling
-        # TODO: add task which keeps full-service filled
         raw_prop = await self.mob_request(
             "build_gift_code",
             account_id=await self.mobster.get_account(),
             value_pmob=str(int(amount_pmob)),
-            fee=str(int(1e12 * 0.0004)),
+            fee=str(fee_pmob),
             memo="Cash code built with MOBot!",
         )
         prop = raw_prop["result"]["tx_proposal"]
@@ -699,10 +696,9 @@ class PayBot(Bot):
             from_account_id=await self.mobster.get_account(),
         )
         b58 = submitted.get("result", {}).get("gift_code", {}).get("gift_code_b58")
-        FEE_PMOB = mc_util.pmob2mob("0.0004")
         await self.send_message(
             recipient,
-            f"Built Cash Code {b58} redeemable for {str(mc_util.pmob2mob(amount_pmob-FEE_PMOB)).rstrip('0')} MOB",
+            f"Built Cash Code {b58} redeemable for {str(mc_util.pmob2mob(amount_pmob-fee_pmob)).rstrip('0')} MOB",
         )
         return None
 
