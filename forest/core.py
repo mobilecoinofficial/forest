@@ -679,7 +679,7 @@ class PayBot(Bot):
     async def build_cash_code(
         self, recipient: str, amount_pmob: int
     ) -> Optional[Message]:
-        """ Builds a cash code and sends to a recipient, given a recipient as phone number and amount in pMOB. """
+        """Builds a cash code and sends to a recipient, given a recipient as phone number and amount in pMOB."""
         # TODO: add a lock around two-part build/submit OR
         # TODO: add explicit utxo handling
         # TODO: add task which keeps full-service filled
@@ -704,7 +704,6 @@ class PayBot(Bot):
             f"Built Cash Code {b58} redeemable for {str(mc_util.pmob2mob(amount_pmob-FEE_PMOB)).rstrip('0')} MOB",
         )
         return None
-
 
     async def send_payment(
         self, recipient: str, amount_pmob: int, receipt_message: str = "receipt sent!"
