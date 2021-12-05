@@ -12,6 +12,7 @@ from typing import Optional
 
 import aiohttp
 import asyncpg
+import base64
 
 import mc_util
 from forest import utils
@@ -21,12 +22,16 @@ if not utils.get_secret("ROOTCRT"):
     ssl_context: Optional[ssl.SSLContext] = None
 else:
     ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-    open("rootcrt.pem", "w").write(utils.get_secret("ROOTCRT"))
-    open("client.full.pem", "w").write(utils.get_secret("CLIENTCRT"))
+    root = open("/app/rootcrt.pem", "wb")
+    root.write(base64.b64decode(utils.get_secret("ROOTCRT")))
+    root.flush()
+    client = open("/app/client.full.pem", "wb")
+    client.write(base64.b64decode(utils.get_secret("CLIENTCRT")))
+    client.flush()
 
-    ssl_context.load_verify_locations("rootcrt.pem")
+    ssl_context.load_verify_locations("/app/rootcrt.pem")
     ssl_context.verify_mode = ssl.CERT_REQUIRED
-    ssl_context.load_cert_chain(certfile="client.full.pem")
+    ssl_context.load_cert_chain(certfile="/app/client.full.pem")
 
 
 DATABASE_URL = utils.get_secret("DATABASE_URL")
