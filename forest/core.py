@@ -45,6 +45,7 @@ MessageParser = AuxinMessage if utils.AUXIN else StdioMessage
 logging.info("Using message parser: %s", MessageParser)
 fee_pmob = int(1e12 * 0.0004)
 
+
 def rpc(
     method: str, param_dict: Optional[dict] = None, _id: str = "1", **params: Any
 ) -> dict:
