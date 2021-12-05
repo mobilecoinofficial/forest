@@ -573,6 +573,7 @@ class Bot(Signal):
             return f"/pong {message.text}"
         return "/pong"
 
+    @hide
     async def do_pong(self, message: Message) -> str:
         if message.text:
             self.pongs[message.text] = message.text
@@ -635,7 +636,7 @@ class PayBot(Bot):
 
     @requires_admin
     async def do_rename(self, msg: Message) -> Response:
-        if msg.tokens and len(msg.tokens) > 1:
+        if msg.tokens and len(msg.tokens) > 0:
             await self.set_profile_auxin(*msg.tokens)
             return "OK"
         return "pass arguments for set_profile_auxin"
