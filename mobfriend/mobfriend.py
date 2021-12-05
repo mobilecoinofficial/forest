@@ -134,9 +134,7 @@ class PayFriend(PayBot):
         payload.payment_request.value = mc_util.mob2pmob(float(msg.tokens[0]))
         if len(msg.tokens) > 1:
             payload.payment_request.memo = " ".join(msg.tokens[1:])
-        payment_request_b58 = mc_util.add_checksum_and_b58(
-            payload.SerializeToString()
-        ).decode()
+        payment_request_b58 = mc_util.add_checksum_and_b58(payload.SerializeToString())
         pyqrcode.QRCode(payment_request_b58).png(
             f"/tmp/{msg.timestamp}.png", scale=5, quiet_zone=10
         )
