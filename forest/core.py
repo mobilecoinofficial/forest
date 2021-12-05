@@ -699,6 +699,7 @@ class PayBot(Bot):
             from_account_id=await self.mobster.get_account(),
         )
         b58 = submitted.get("result", {}).get("gift_code", {}).get("gift_code_b58")
+        FEE_PMOB = mc_util.pmob2mob("0.0004")
         await self.send_message(
             recipient,
             f"Built Cash Code {b58} redeemable for {str(mc_util.pmob2mob(amount_pmob-FEE_PMOB)).rstrip('0')} MOB",
