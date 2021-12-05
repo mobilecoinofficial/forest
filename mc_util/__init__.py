@@ -77,10 +77,10 @@ def b58_wrapper_to_b64_public_address(b58_string: str) -> str:
     return base64.b64encode(public_address_bytes).decode("utf-8")
 
 
-def add_checksum_and_b58(wrapper_bytes):
+def add_checksum_and_b58(wrapper_bytes: bytes) -> str:
     new_checksum = zlib.crc32(wrapper_bytes)
     new_checksum_bytes = new_checksum.to_bytes(4, byteorder="little")
-    return base58.b58encode(new_checksum_bytes + wrapper_bytes)
+    return base58.b58encode(new_checksum_bytes + wrapper_bytes).decode()
 
 
 # def b58_string_is_public_address(b58_string):
