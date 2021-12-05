@@ -1,6 +1,20 @@
 TODO:
-- use jsonRpc (requires graal payments against mainline)
 - migrate the forest module into your-signal-bot or something like it
+
+## 1.0.0
+
+- `@requires_admin`, `@hide`, `@takes_number` decorators (#43)
+- full-service ssl (#38)
+- tiamat integration testing, including payments (#39, #29) 
+- workflow checks!
+- use mainline signal-cli's jsonRpc
+- use auxin!!! with sending payments! (#36)
+- PayBot to handle payments
+- prometheus metrics at <forest-prom.fly.dev>, grafana at <auge.fly.dev>  (#31)
+- recover from exceptions and send them to admin
+- /ping /pong and pong_handler could be also be used for integration tests (#27, #22)
+- imogen: wikiart model, style prefixes
+
 
 ## 0.5.3
 
