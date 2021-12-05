@@ -102,7 +102,7 @@ class Imogen(Bot):
         out = await get_output(get_all_cost.replace("{end}", str(tomorrow)))
         return json.loads(out)
 
-    do_get_costs = do_get_all_costs = do_get_all_cost
+    do_get_costs = do_get_all_costs = hide(do_get_all_cost)
 
     async def do_status(self, _: Message) -> str:
         "shows the GPU instance state (not the program) and queue size"

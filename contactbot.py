@@ -8,7 +8,7 @@ import phonenumbers as pn
 from aiohttp import web
 import teli
 from forest import utils
-from forest.core import Message, PayBot, Response, app
+from forest.core import Message, PayBot, Response, app, requires_admin
 from forest_tables import GroupRoutingManager, PaymentsManager, RoutingManager
 
 
@@ -285,6 +285,7 @@ class Forest(PayBot):
             return f"You are now the proud owner of {number}"
         return "Database error?"
 
+    @requires_admin
     async def do_make_rule(self, msg: Message) -> Response:
         """creates or updates a routing rule.
         usage: /make_rule <teli number> <signal destination number>"""
