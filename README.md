@@ -8,20 +8,19 @@ you'll need to grab [https://github.com/forestcontact/signal-cli], check out the
 
 you also need to register an account -- you can use https://github.com/forestcontact/go_ham/blob/main/register.py or https://github.com/forestcontact/message-in-a-bottle as a starting point. you can also grab one from the DB if you have access to secrets.
 
-you can use `python3.9 -m forest.datastore upload --number` or `python3.9 -m forest.datastore sync --number` to mess with the DB. your secrets file should be named {prod,staging,dev}_secrets.
+you can use `forest/datastore.py upload --number` or `forest/datastore.py sync --number` to mess with the DB. your secrets file should be named {prod,staging,dev}_secrets.
 
-you can use `ENV=prod python3.9 -m forest.datastore` to select said file accordingly. <- deprecated? "ENV=x" alone in the pipenv seems to do the right thing.
+you can use `forest/datastore.py` to select said file accordingly. Use `ENV=prod forest..` to use prod_secrets, etc.
 
 ## Running Forestbot Locally
 
 You'll need your signal-cli symlinked to the forest-draft directory. `ln -s ~/signal-cli/build/install/signal-cli/bin/signal-cli .`
 
-If you have secrets, `python3.9 -m forest.datastore list_accounts` should show your available accounts. Then you can start it with an available number: `python3.9 contactbot.py +5555555555`
+If you have secrets, `forest/datastore.py list_accounts` should show your available accounts. Then you can start it with an available number: `python3.9 contactbot.py +5555555555`
 
 If you have credentials locally and do not wish to have the datatore updated, the `core` forestbot can be launched with this command.
 
 > sh -c 'DEBUG=true LOGFILES= BOT_NUMBER=+12406171474 NO_MEMFS=true NO_DOWNLOAD=true $(which python3) -m forest.core'
-
 
 
 ## Running in Docker Locally
@@ -54,6 +53,11 @@ If things seem wrong, you can use `fly suspend`, the above to sync, use signal-c
 - `DATABASE_URL`: Postgres DB
 - `TELI_KEY`: token to authenticate with teli
 - `URL_OVERRIDE`: url teli should post sms to. needed if not running on fly
+- `CLIENTCRT`: client certificate to connect to ssl-enabled full-service
+- `ROOTCRT`: certificate to validate full-service
+- `FULL_SERVICE_URL`: url for full-service instance to use
+- `MNEMONIC`: account to import for full-service. insecure
+- `SIGNAL`: which signal client to use. can be 'signal' for signal-cli or 'auxin' for auxin-cli
 
 ## Binary flags
 - `NO_DOWNLOAD`: don't download a signal-cli datastore, instead use what's in the current working directory
@@ -66,14 +70,7 @@ If things seem wrong, you can use `fly suspend`, the above to sync, use signal-c
 - `ORDER`: allow users to buy phonenumbers with `/order` and `/pay shibboleth`
 - `GROUPS`: use group routes, allowing `/mkgroup` (aka `/query`), using groups to manage to/from context
 - `ADMIN_METRICS`: send python and roundtrip timedeltas for each command to ADMIN
-- 
+
 ## Other stuff
 
 Code style: `mypy *py` and `pylint *py` should not have errors when you push. run `black`. prefer verbose, easier to read names over conciser ones.
-
-TODO: elaborate on
-
-- things we hold evident
-- design considerations
-- experiments tried
-
