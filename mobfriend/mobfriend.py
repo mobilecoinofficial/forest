@@ -37,9 +37,9 @@ class PayFriend(PayBot):
 
     @time(REQUEST_TIME)  # type: ignore
     async def do_pay(self, msg: Message) -> Response:
-        if msg.tokens:
+        if msg.arg1:
             payment_notif_sent = await self.send_payment(
-                msg.source, mc_util.mob2pmob(msg.tokens[0])
+                msg.source, mc_util.mob2pmob(float(msg.arg1))
             )
         else:
             payment_notif_sent = await self.send_payment(
@@ -90,9 +90,9 @@ class PayFriend(PayBot):
         return str(await self.mobster.get_balance())
 
     async def do_check_balance(self, msg: Message) -> Response:
-        if len(msg.tokens):
+        if msg.arg1:
             status = await self.mobster.req_(
-                "check_gift_code_status", gift_code_b58=msg.tokens[0]
+                "check_gift_code_status", gift_code_b58=msg.arg1
             )
             pmob = status.get("result", {}).get("gift_code_value")
             if pmob:
@@ -104,12 +104,14 @@ class PayFriend(PayBot):
             return "/check_balance <b58>"
 
     async def do_check_b58_type(self, msg: Message) -> Response:
-        status = await self.mobster.req_(
-            "check_b58_type", b58_code=msg.tokens[0]
-        )
+        if not msg.arg1:
+            return "/check_b58_type <b58>"
+        status = await self.mobster.req_("check_b58_type", b58_code=msg.arg1)
         if status.get("result", {}).get("b58_type") == "PaymentRequest":
             status["result"]["data"]["type"] = "PaymentRequest"
-            status["result"]["data"]["value"] = str(mc_util.pmob2mob(status["result"]["data"]["value"]))
+            status["result"]["data"]["value"] = str(
+                mc_util.pmob2mob(status["result"]["data"]["value"])
+            )
             return status.get("result").get("data")
         elif status.get("result", {}).get("b58_type") == "TransferPayload":
             return await self.do_check_balance(msg)
@@ -124,22 +126,38 @@ class PayFriend(PayBot):
         if not address:
             return "Unable to retrieve your MobileCoin address!"
         payload = mc_util.printable_pb2.PrintableWrapper()
-        payload.payment_request.public_address.CopyFrom(mc_util.b58_wrapper_to_transfer_payload(address).public_address)
+        payload.payment_request.public_address.CopyFrom(
+            mc_util.b58_wrapper_to_transfer_payload(address).public_address
+        )
         if not (len(msg.tokens) > 0 and msg.tokens[0].replace(".", "0", 1).isnumeric()):
             return "Sorry, you need to provide a price (in MOB)!"
         payload.payment_request.value = mc_util.mob2pmob(float(msg.tokens[0]))
         if len(msg.tokens) > 1:
             payload.payment_request.memo = " ".join(msg.tokens[1:])
-        payment_request_b58 = mc_util.add_checksum_and_b58(payload.SerializeToString()).decode()
-        pyqrcode.QRCode(payment_request_b58).png(f"/tmp/{msg.timestamp}.png", scale=5, quiet_zone=10)
-        await self.send_message(recipient=msg.source, attachments=[f"/tmp/{msg.timestamp}.png"], msg="Scan me in the Mobile Wallet!")
+        payment_request_b58 = mc_util.add_checksum_and_b58(
+            payload.SerializeToString()
+        ).decode()
+        pyqrcode.QRCode(payment_request_b58).png(
+            f"/tmp/{msg.timestamp}.png", scale=5, quiet_zone=10
+        )
+        await self.send_message(
+            recipient=msg.source,
+            attachments=[f"/tmp/{msg.timestamp}.png"],
+            msg="Scan me in the Mobile Wallet!",
+        )
         return payment_request_b58
 
     async def do_qr(self, msg: Message) -> Response:
         if len(msg.tokens):
             payload = " ".join(msg.tokens)
-            pyqrcode.QRCode(payload).png(f"/tmp/{msg.timestamp}.png", scale=5, quiet_zone=10)
-            await self.send_message(recipient=msg.source, attachments=[f"/tmp/{msg.timestamp}.png"], msg="Scan me!")
+            pyqrcode.QRCode(payload).png(
+                f"/tmp/{msg.timestamp}.png", scale=5, quiet_zone=10
+            )
+            await self.send_message(
+                recipient=msg.source,
+                attachments=[f"/tmp/{msg.timestamp}.png"],
+                msg="Scan me!",
+            )
             return None
         else:
             return "Usage: /qr <value>"
@@ -147,7 +165,9 @@ class PayFriend(PayBot):
     do_payme = do_create_payment_request
 
     async def do_fsr(self, msg: Message) -> Response:
-        msg.tokens = [token if not token.isnumeric() else int(token) for token in msg.tokens]
+        msg.tokens = [
+            token if not token.isnumeric() else int(token) for token in msg.tokens
+        ]
         if len(msg.tokens) == 1:
             return await self.mobster.req(dict(method=msg.tokens[0]))
         if len(msg.tokens) == 3:
@@ -165,14 +185,14 @@ class PayFriend(PayBot):
             return "/fsr <command> (<arg1> <val1>( <arg2> <val2>))"
 
     async def do_claim_balance(self, msg: Message) -> Response:
-        if len(msg.tokens):
+        if msg.arg1:
             status = await self.mobster.req_(
-                "check_gift_code_status", gift_code_b58=msg.tokens[0]
+                "check_gift_code_status", gift_code_b58=msg.arg1
             )
             amount_pmob = status.get("result", {}).get("gift_code_value")
             status = await self.mobster.req_(
                 "claim_gift_code",
-                gift_code_b58=msg.tokens[0],
+                gift_code_b58=msg.arg1,
                 account_id=await self.mobster.get_account(),
             )
             # pmob = status.get("result", {}).get("gift_code_value")
