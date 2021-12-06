@@ -25,18 +25,31 @@ class MobFriend(PayBot):
     exchanging_cash_code: list[str] = []
 
     async def handle_message(self, message: Message) -> Response:
-        if "hook me up" in message.text.lower():
-            return await self.do_pay(message)
         return await super().handle_message(message)
 
+    @hide
     async def do_make_cash_code(self, msg: Message) -> Response:
-        if msg.source in self.no_repay:
+        if msg.source in self.exchanging_cash_code:
             self.exchanging_cash_code.remove(msg.source)
             self.no_repay.remove(msg.source)
             return "Okay, nevermind about that cash code."
         self.no_repay.append(msg.source)
         self.exchanging_cash_code.append(msg.source)
         return "Your next transaction will be converted into a MobileCoin Cash Code that can be redeemed in other wallets."
+
+    do_makegift = do_make_cash_code
+
+    async def do_tip(self, msg: Message) -> Response:
+        self.no_repay.append(msg.source)
+        self.exchanging_cash_code.append(msg.source)
+        return "Your next transaction will be a tip, not refunded!\nThank you!\n(/no_tip cancels)"
+
+    @hide
+    async def do_no_tip(self, _: Message) -> Response:
+        """Cancels a tip in progress."""
+        if msg.source in self.no_repay:
+            self.no_repay.remove(msg.source)
+            return "Okay, nevermind about that tip."
 
     @hide
     async def do_exception(self, _: Message):
@@ -53,7 +66,7 @@ class MobFriend(PayBot):
     async def do_pay(self, msg: Message) -> Response:
         if msg.arg1:
             payment_notif_sent = await self.send_payment(
-                msg.source, mc_util.mob2pmob(float(msg.arg1))
+                msg.source, mc_util.mob2pmob(Decimal(msg.arg1))
             )
         else:
             payment_notif_sent = await self.send_payment(
@@ -74,15 +87,12 @@ class MobFriend(PayBot):
                 return None
             delta = (payment_notif.timestamp - msg.timestamp) / 1000
             self.auxin_roundtrip_latency.append((msg.timestamp, "repayment", delta))
-            await self.admin(f"repayment delta: {delta}")
             return None
         elif msg.source in self.exchanging_cash_code:
-            resp = await self.build_cash_code(msg.source, amount_pmob)
+            await self.build_cash_code(msg.source, amount_pmob - FEE)
             self.exchanging_cash_code.remove(msg.source)
             self.no_repay.remove(msg.source)
-            if resp:
-                return resp  # type: ignore
-            return "No response from build_cash_code. This should not happen."
+            return None
         else:
             return f"Received {mc_util.pmob2mob(amount_pmob)}MOB"
 
@@ -110,7 +120,8 @@ class MobFriend(PayBot):
     @hide
     @requires_admin
     async def do_balance(self, msg: Message) -> Response:
-        return str(await self.mobster.get_balance())
+        """Returns bot balance in MOB."""
+        return f"Bot has balance of {mc_util.pmob2mob(await self.mobster.get_balance()).quantize(Decimal('1.0000'))} MOB"
 
     @hide
     async def do_check_balance(self, msg: Message) -> Response:
@@ -118,10 +129,16 @@ class MobFriend(PayBot):
             status = await self.mobster.req_(
                 "check_gift_code_status", gift_code_b58=msg.arg1
             )
-            pmob = status.get("result", {}).get("gift_code_value")
+            pmob = Decimal(status.get("result", {}).get("gift_code_value")) - Decimal(
+                fee
+            )
             if pmob:
                 mob_amt = mc_util.pmob2mob(pmob)
-                return f"Found a giftcard redeemable for {(mob_amt-Decimal(0.0004)).quantize(Decimal('1.0000'))}MOB."
+                claimed = status.get("result", {}).get("gift_code_status", "")
+                memo = status.get("result", {}).get("gift_code_memo") or "None"
+                if claimed:
+                    return "This gift code has already been redeemed!"
+                return f"Gift code can be redeemed for {(mob_amt-Decimal(0.0004)).quantize(Decimal('1.0000'))}MOB. ({pmob} picoMOB)\nMemo: {memo}"
             else:
                 return f"Sorry, that doesn't look like a valid code.\nDEBUG: {status.get('result')}"
         else:
@@ -144,16 +161,15 @@ class MobFriend(PayBot):
             return status.get("result")
 
     do_check = do_check_b58_type
-    do_check58 = do_check_b58_type
 
     @hide
     async def do_create_payment_request(self, msg: Message) -> Response:
-        """ Creates a payment request (as QR code and b58 code to copy and paste.)
+        """Creates a payment request (as QR code and b58 code to copy and paste.)
         ie) /payme 1.0 "Pay me a MOB!"
         will create a payment request with
             * the memo "Pay me a MOB!",
             * a 1MOB value,
-            * and the address of the requester's Signal account. """
+            * and the address of the requester's Signal account."""
         address = await self.get_address(msg.source)
         if not address:
             return "Unable to retrieve your MobileCoin address!"
@@ -183,8 +199,10 @@ class MobFriend(PayBot):
         )
         return payment_request_b58
 
+    do_payme = do_create_payment_request
+
     async def do_qr(self, msg: Message) -> Response:
-        """ Creates a basic QR code for the provided content. """
+        """Creates a basic QR code for the provided content."""
         if msg.tokens and len(msg.tokens):
             payload = " ".join(msg.tokens)
             pyqrcode.QRCode(payload).png(
@@ -199,13 +217,11 @@ class MobFriend(PayBot):
         else:
             return "Usage: /qr <value>"
 
-    do_payme = do_create_payment_request
-
     @requires_admin
     @hide
     async def do_fsr(self, msg: Message) -> Response:
         """Make a request to the Full-Service instance behind the bot. Admin-only.
-       ie) /fsr <command> (<arg1> <val1>( <arg2> <val2>)...) """
+        ie) /fsr <command> (<arg1> <val1>( <arg2> <val2>)...)"""
         if not msg.tokens or not len(msg.tokens):
             return "/fsr <command> (<arg1> <val1>( <arg2> <val2>))"
         if len(msg.tokens) == 1:
@@ -221,41 +237,41 @@ class MobFriend(PayBot):
 
     @hide
     async def do_echo(self, msg: Message) -> Response:
-        """ Returns a representation of the input message for debugging parse errors. """
+        """Returns a representation of the input message for debugging parse errors."""
         return msg.blob
 
     @hide
     async def do_printerfact(self, _: Message) -> str:
-        """ Learn a fact about something. """
+        """Learn a fact about something."""
         async with self.client_session.get(utils.get_secret("FACT_SOURCE")) as resp:
             fact = await resp.text()
             return fact.strip()
 
-    @hide
-    async def do_claim_balance(self, msg: Message) -> Response:
-        """ Claims a Gift Code! """
+    async def do_claim(self, msg: Message) -> Response:
+        """Claims a gift code! Redeems a provided code to the bot's wallet and sends the redeemed balance."""
         if msg.arg1:
             status = await self.mobster.req_(
                 "check_gift_code_status", gift_code_b58=msg.arg1
             )
             amount_pmob = status.get("result", {}).get("gift_code_value")
+            claimed = status.get("result", {}).get("gift_code_status", "")
             status = await self.mobster.req_(
                 "claim_gift_code",
                 gift_code_b58=msg.arg1,
                 account_id=await self.mobster.get_account(),
             )
-            if amount_pmob:
+            if amount_pmob and "Claimed" not in claimed:
                 payment_notif = await self.send_payment(msg.source, amount_pmob - FEE)
-                amount_mob = mc_util.pmob2mob(amount_pmob)
-                return (
-                    f"Claimed a giftcard containing {str(float(amount_mob)-0.0004).rstrip('0')}MOB."
-                    + "\n"
-                    + str(status)
+                amount_mob = mc_util.pmob2mob(amount_pmob - FEE).quantize(
+                    Decimal("1.0000")
                 )
+                return f"Claimed a giftcode containing {amount_mob}MOB.\nTransaction ID: {status.get('result', {}).get('txo_id')}"
+            elif "Claimed" in claimed:
+                return "Sorry, that giftcode has already been redeemed!"
             else:
                 return f"Sorry, that doesn't look like a valid code.\nDEBUG: {status.get('result')}"
         else:
-            return "/check_balance <b58>"
+            return "/claim <b58>"
 
 
 if __name__ == "__main__":
