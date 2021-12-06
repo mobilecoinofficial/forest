@@ -27,26 +27,30 @@ class MobFriend(PayBot):
     async def handle_message(self, message: Message) -> Response:
         return await super().handle_message(message)
 
-    @hide
-    async def do_make_cash_code(self, msg: Message) -> Response:
+    async def do_makegift(self, msg: Message) -> Response:
         if msg.source in self.exchanging_cash_code:
             self.exchanging_cash_code.remove(msg.source)
             self.no_repay.remove(msg.source)
             return "Okay, nevermind about that cash code."
-        self.no_repay.append(msg.source)
-        self.exchanging_cash_code.append(msg.source)
+        if msg.source not in self.no_repay:
+            self.no_repay.append(msg.source)
+        if msg.source not in self.exchanging_cash_code:
+            self.exchanging_cash_code.append(msg.source)
         return "Your next transaction will be converted into a MobileCoin Cash Code that can be redeemed in other wallets."
 
-    do_makegift = do_make_cash_code
-
     async def do_tip(self, msg: Message) -> Response:
-        self.no_repay.append(msg.source)
-        self.exchanging_cash_code.append(msg.source)
+        if msg.source not in self.no_repay:
+            self.no_repay.append(msg.source)
+
+        if msg.source in self.exchanging_cash_code:
+            self.exchanging_cash_code.remove(msg.source)
         return "Your next transaction will be a tip, not refunded!\nThank you!\n(/no_tip cancels)"
 
     @hide
     async def do_no_tip(self, msg: Message) -> Response:
         """Cancels a tip in progress."""
+        if msg.source in self.exchanging_cash_code:
+            self.exchanging_cash_code.remove(msg.source)
         if msg.source in self.no_repay:
             self.no_repay.remove(msg.source)
             return "Okay, nevermind about that tip."
@@ -80,20 +84,23 @@ class MobFriend(PayBot):
 
     @time(REQUEST_TIME)  # type: ignore
     async def payment_response(self, msg: Message, amount_pmob: int) -> Response:
-        if msg.source not in self.no_repay:
+        if msg.source in self.exchanging_cash_code:
+            await self.build_cash_code(msg.source, amount_pmob - FEE)
+            self.exchanging_cash_code.remove(msg.source)
+            if msg.source in self.no_repay:
+                self.no_repay.remove(msg.source)
+            return None
+        elif msg.source not in self.no_repay:
             payment_notif = await self.send_payment(msg.source, amount_pmob - FEE)
             if not payment_notif:
                 return None
             delta = (payment_notif.timestamp - msg.timestamp) / 1000
             self.auxin_roundtrip_latency.append((msg.timestamp, "repayment", delta))
             return None
-        elif msg.source in self.exchanging_cash_code:
-            await self.build_cash_code(msg.source, amount_pmob - FEE)
-            self.exchanging_cash_code.remove(msg.source)
-            self.no_repay.remove(msg.source)
-            return None
         else:
-            return f"Received {pmob2mob(amount_pmob)}MOB"
+            return f"Received {str(pmob2mob(amount_pmob)).rstrip('0')}MOB. Thank you for the tip!"
+            if msg.source in self.no_repay:
+                self.no_repay.remove(msg.source)
 
     @requires_admin
     async def do_eval(self, msg: Message) -> Response:
@@ -257,7 +264,9 @@ class MobFriend(PayBot):
                 account_id=await self.mobster.get_account(),
             )
             if amount_pmob and "Claimed" not in claimed:
-                payment_notif = await self.send_payment(msg.source, amount_pmob - FEE)
+                payment_notif = await self.send_payment(
+                    msg.source, amount_pmob - FEE, "Gift code has been redeemed!"
+                )
                 amount_mob = pmob2mob(amount_pmob - FEE).quantize(Decimal("1.0000"))
                 return f"Claimed a giftcode containing {amount_mob}MOB.\nTransaction ID: {status.get('result', {}).get('txo_id')}"
             elif "Claimed" in claimed:
@@ -266,6 +275,8 @@ class MobFriend(PayBot):
                 return f"Sorry, that doesn't look like a valid code.\nDEBUG: {status.get('result')}"
         else:
             return "/claim <b58>"
+
+    do_redeem = do_claim
 
 
 if __name__ == "__main__":
