@@ -87,6 +87,7 @@ class Signal:
         self.auxincli_output_queue: Queue[Message] = Queue()
         self.auxincli_input_queue: Queue[dict] = Queue()
         self.exiting = False
+        self.start_time = time.time()
 
     async def start_process(self) -> None:
         """
@@ -572,6 +573,9 @@ class Bot(Signal):
         if message.text:
             return f"/pong {message.text}"
         return "/pong"
+
+    async def do_uptime(self, _: Message) -> str:
+        return f"Uptime: {int(time.time() - self.start_time)}sec"
 
     @hide
     async def do_pong(self, message: Message) -> str:
