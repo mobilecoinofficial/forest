@@ -82,6 +82,7 @@ def add_checksum_and_b58(wrapper_bytes: bytes) -> str:
     new_checksum_bytes = new_checksum.to_bytes(4, byteorder="little")
     return base58.b58encode(new_checksum_bytes + wrapper_bytes).decode()
 
+
 def b58_wrapper_to_transfer_payload(b58_string: str) -> printable_pb2.PrintableWrapper:
     """ Convert a b58-encoded something into a PrintableWrapper. """
     checksum_and_wrapper_bytes = base58.b58decode(b58_string)
@@ -89,7 +90,6 @@ def b58_wrapper_to_transfer_payload(b58_string: str) -> printable_pb2.PrintableW
     wrapper = printable_pb2.PrintableWrapper()
     wrapper.ParseFromString(wrapper_bytes)
     return wrapper
-
 
 
 # def b58_string_is_public_address(b58_string):

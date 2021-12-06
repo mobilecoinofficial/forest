@@ -1,22 +1,18 @@
 #!/usr/bin/python3.9
-import logging
-import mc_util
-
 import asyncio
+import logging
+from decimal import Decimal
 import pyqrcode
-
 from aiohttp import web
 from prometheus_async import aio
 from prometheus_async.aio import time
 from prometheus_client import Summary
-
-from forest.core import PayBot, Message, Response, app, requires_admin, hide
+import mc_util
 from forest import utils
-from mc_util import pmob2mob, mob2pmob
-from decimal import Decimal
+from forest.core import Message, PayBot, Response, app, hide, requires_admin
+from mc_util import mob2pmob, pmob2mob
 
 FEE = int(1e12 * 0.0004)
-
 REQUEST_TIME = Summary("request_processing_seconds", "Time spent processing request")
 
 
@@ -62,12 +58,12 @@ class MobFriend(PayBot):
         return "Couldn't find a tip in process to cancel!"
 
     @hide
-    async def do_exception(self, _: Message):
+    async def do_exception(self, _: Message) -> None:
         raise Exception("You asked for it!")
         return None
 
     @hide
-    async def do_wait(self, _: Message):
+    async def do_wait(self, _: Message) -> str:
         await asyncio.sleep(60)
         return "waited!"
 
@@ -134,28 +130,24 @@ class MobFriend(PayBot):
 
     @hide
     async def do_check_balance(self, msg: Message) -> Response:
-        if msg.arg1:
-            status = await self.mobster.req_(
-                "check_gift_code_status", gift_code_b58=msg.arg1
-            )
-            pmob = Decimal(status.get("result", {}).get("gift_code_value")) - Decimal(
-                FEE
-            )
-            if pmob:
-                mob_amt = pmob2mob(pmob)  # type: ignore
-                claimed = status.get("result", {}).get("gift_code_status", "")
-                memo = status.get("result", {}).get("gift_code_memo") or "None"
-                if "Claimed" in claimed:
-                    return "This gift code has already been redeemed!"
-                return f"Gift code can be redeemed for {(mob_amt-Decimal(0.0004)).quantize(Decimal('1.0000'))}MOB. ({pmob} picoMOB)\nMemo: {memo}"
-            else:
-                return f"Sorry, that doesn't look like a valid code.\nDEBUG: {status.get('result')}"
-        else:
+        if not msg.arg1:
             return "/check_balance [gift code b58]"
+        status = await self.mobster.req_(
+            "check_gift_code_status", gift_code_b58=msg.arg1
+        )
+        pmob = Decimal(status.get("result", {}).get("gift_code_value")) - Decimal(FEE)
+        if not pmob:
+            return f"Sorry, that doesn't look like a valid code.\nDEBUG: {status.get('result')}"
+        mob_amt = pmob2mob(pmob)  # type: ignore
+        claimed = status.get("result", {}).get("gift_code_status", "")
+        memo = status.get("result", {}).get("gift_code_memo") or "None"
+        if "Claimed" in claimed:
+            return "This gift code has already been redeemed!"
+        return f"Gift code can be redeemed for {(mob_amt-Decimal(0.0004)).quantize(Decimal('1.0000'))}MOB. ({pmob} picoMOB)\nMemo: {memo}"
 
     async def do_check(self, msg: Message) -> Response:
         """/check [base58 code]
-        Helps identify a b58 code. If it's a gift code, it will return the balance. """
+        Helps identify a b58 code. If it's a gift code, it will return the balance."""
         if not msg.arg1:
             return "/do_check [base58 code]"
         status = await self.mobster.req_("check_b58_type", b58_code=msg.arg1)
@@ -165,10 +157,9 @@ class MobFriend(PayBot):
                 pmob2mob(status["result"]["data"]["value"])
             )
             return status.get("result", {}).get("data")
-        elif status and status.get("result", {}).get("b58_type") == "TransferPayload":
+        if status and status.get("result", {}).get("b58_type") == "TransferPayload":
             return await self.do_check_balance(msg)
-        else:
-            return status.get("result")
+        return status.get("result")
 
     @hide
     async def do_create_payment_request(self, msg: Message) -> Response:

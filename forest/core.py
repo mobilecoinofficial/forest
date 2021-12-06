@@ -533,7 +533,7 @@ class Bot(Signal):
             return "signal session reset"
         return await self.default(message)
 
-    def documented_commands(self) -> list[str]:
+    def documented_commands(self) -> str:
         commands = ", ".join(
             name.replace("do_", "/")
             for name in dir(self)

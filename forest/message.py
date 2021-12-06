@@ -10,6 +10,7 @@ from forest.utils import logging
 
 import shlex
 
+
 class Message:
     """
     Base message type
