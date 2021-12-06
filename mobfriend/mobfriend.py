@@ -98,9 +98,9 @@ class MobFriend(PayBot):
             self.auxin_roundtrip_latency.append((msg.timestamp, "repayment", delta))
             return None
         else:
-            return f"Received {str(pmob2mob(amount_pmob)).rstrip('0')}MOB. Thank you for the tip!"
             if msg.source in self.no_repay:
                 self.no_repay.remove(msg.source)
+            return f"Received {str(pmob2mob(amount_pmob)).rstrip('0')}MOB. Thank you for the tip!"
 
     @requires_admin
     async def do_eval(self, msg: Message) -> Response:
