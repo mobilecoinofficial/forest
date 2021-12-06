@@ -12,7 +12,7 @@ from prometheus_client import Summary
 
 from forest.core import PayBot, Message, Response, app, requires_admin, hide
 from forest import utils
-
+from mc_util import pmob2mob, mob2pmob
 from decimal import Decimal
 
 FEE = int(1e12 * 0.0004)
@@ -50,6 +50,7 @@ class MobFriend(PayBot):
         if msg.source in self.no_repay:
             self.no_repay.remove(msg.source)
             return "Okay, nevermind about that tip."
+        return "Couldn't find a tip in process to cancel!"
 
     @hide
     async def do_exception(self, _: Message):
@@ -66,12 +67,10 @@ class MobFriend(PayBot):
     async def do_pay(self, msg: Message) -> Response:
         if msg.arg1:
             payment_notif_sent = await self.send_payment(
-                msg.source, mc_util.mob2pmob(Decimal(msg.arg1))
+                msg.source, mob2pmob(Decimal(msg.arg1))  # type: ignore
             )
         else:
-            payment_notif_sent = await self.send_payment(
-                msg.source, mc_util.mob2pmob(0.001)
-            )
+            payment_notif_sent = await self.send_payment(msg.source, mob2pmob(0.001))
         if payment_notif_sent:
             logging.info(payment_notif_sent)
             delta = (payment_notif_sent.timestamp - msg.timestamp) / 1000
@@ -94,7 +93,7 @@ class MobFriend(PayBot):
             self.no_repay.remove(msg.source)
             return None
         else:
-            return f"Received {mc_util.pmob2mob(amount_pmob)}MOB"
+            return f"Received {pmob2mob(amount_pmob)}MOB"
 
     @requires_admin
     async def do_eval(self, msg: Message) -> Response:
@@ -119,7 +118,7 @@ class MobFriend(PayBot):
     @requires_admin
     async def do_balance(self, msg: Message) -> Response:
         """Returns bot balance in MOB."""
-        return f"Bot has balance of {mc_util.pmob2mob(await self.mobster.get_balance()).quantize(Decimal('1.0000'))} MOB"
+        return f"Bot has balance of {pmob2mob(await self.mobster.get_balance()).quantize(Decimal('1.0000'))} MOB"  # type: ignore
 
     @hide
     async def do_check_balance(self, msg: Message) -> Response:
@@ -128,10 +127,10 @@ class MobFriend(PayBot):
                 "check_gift_code_status", gift_code_b58=msg.arg1
             )
             pmob = Decimal(status.get("result", {}).get("gift_code_value")) - Decimal(
-                fee
+                FEE
             )
             if pmob:
-                mob_amt = mc_util.pmob2mob(pmob)
+                mob_amt = pmob2mob(pmob)  # type: ignore
                 claimed = status.get("result", {}).get("gift_code_status", "")
                 memo = status.get("result", {}).get("gift_code_memo") or "None"
                 if claimed:
@@ -150,7 +149,7 @@ class MobFriend(PayBot):
         if status and status.get("result", {}).get("b58_type") == "PaymentRequest":
             status["result"]["data"]["type"] = "PaymentRequest"
             status["result"]["data"]["value"] = str(
-                mc_util.pmob2mob(status["result"]["data"]["value"])
+                pmob2mob(status["result"]["data"]["value"])
             )
             return status.get("result", {}).get("data")
         elif status and status.get("result", {}).get("b58_type") == "TransferPayload":
@@ -183,7 +182,7 @@ class MobFriend(PayBot):
         ):
             return "Sorry, you need to provide a price (in MOB)!"
         if msg.tokens and len(msg.tokens):
-            payload.payment_request.value = mc_util.mob2pmob(float(msg.tokens[0]))
+            payload.payment_request.value = mob2pmob(float(msg.tokens[0]))
         if msg.tokens and len(msg.tokens) > 1:
             payload.payment_request.memo = " ".join(msg.tokens[1:])
         payment_request_b58 = mc_util.add_checksum_and_b58(payload.SerializeToString())
@@ -259,9 +258,7 @@ class MobFriend(PayBot):
             )
             if amount_pmob and "Claimed" not in claimed:
                 payment_notif = await self.send_payment(msg.source, amount_pmob - FEE)
-                amount_mob = mc_util.pmob2mob(amount_pmob - FEE).quantize(
-                    Decimal("1.0000")
-                )
+                amount_mob = pmob2mob(amount_pmob - FEE).quantize(Decimal("1.0000"))
                 return f"Claimed a giftcode containing {amount_mob}MOB.\nTransaction ID: {status.get('result', {}).get('txo_id')}"
             elif "Claimed" in claimed:
                 return "Sorry, that giftcode has already been redeemed!"
