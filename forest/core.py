@@ -216,7 +216,7 @@ class Signal:
 
     async def handle_auxincli_raw_line(self, line: str) -> None:
         if '{"jsonrpc":"2.0","result":[],"id":"receive"}' not in line:
-            logging.debug("auxin: %s", line)
+            pass # logging.debug("auxin: %s", line)
         try:
             blob = json.loads(line)
         except json.JSONDecodeError:
@@ -542,10 +542,10 @@ class Bot(Signal):
             and not hasattr(getattr(self, name), "hide")
             and hasattr(getattr(self, name), "__doc__")
         )
-        return "Documented commands: {commands}\n\nFor more info about a command, try /help [command]"
+        return f"Documented commands: {commands}\n\nFor more info about a command, try /help [command]"
 
     async def default(self, message: Message) -> Response:
-        resp = "That didn't look like a valid command!" + self.documented_commands()
+        resp = "That didn't look like a valid command!\n" + self.documented_commands()
         # if it messages an echoserver, don't get in a loop (or groups)
         if message.text and not (message.group or message.text == resp):
             return resp
@@ -643,7 +643,8 @@ class PayBot(Bot):
         return address
 
     async def do_address(self, msg: Message) -> Response:
-        """/address
+        """
+        /address
         Check your MobileCoin address (in standard b58 format.)"""
         address = await self.get_address(msg.source)
         return address or "Sorry, couldn't get your MobileCoin address"

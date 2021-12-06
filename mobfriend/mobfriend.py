@@ -24,7 +24,8 @@ class MobFriend(PayBot):
         return await super().handle_message(message)
 
     async def do_makegift(self, msg: Message) -> Response:
-        """/makegift
+        """
+        /makegift
         I'll use your next payment to make a MobileCoin Cash Code that can be redeemed in other wallets.
         Be sure to includ ean extra 0.0008 MOB to pay the network fees!"""
         if msg.source in self.exchanging_cash_code:
@@ -38,7 +39,8 @@ class MobFriend(PayBot):
         return "Your next transaction will be converted into a MobileCoin Cash Code that can be redeemed in other wallets.\nBe sure to include an extra 0.0008MOB to pay the network fees!"
 
     async def do_tip(self, msg: Message) -> Response:
-        """/tip
+        """
+        /tip
         Records the next payment as a tip, not intended to make a giftcode, or as an accident."""
         if msg.source not in self.no_repay:
             self.no_repay.append(msg.source)
@@ -146,7 +148,8 @@ class MobFriend(PayBot):
         return f"Gift code can be redeemed for {(mob_amt-Decimal(0.0004)).quantize(Decimal('1.0000'))}MOB. ({pmob} picoMOB)\nMemo: {memo}"
 
     async def do_check(self, msg: Message) -> Response:
-        """/check [base58 code]
+        """
+        /check [base58 code]
         Helps identify a b58 code. If it's a gift code, it will return the balance."""
         if not msg.arg1:
             return "/do_check [base58 code]"
@@ -204,7 +207,8 @@ class MobFriend(PayBot):
     do_payme = do_create_payment_request
 
     async def do_qr(self, msg: Message) -> Response:
-        """/qr [gift card, url, etc]
+        """
+        /qr [gift card, url, etc]
         Creates a basic QR code for the provided content."""
         if msg.tokens and len(msg.tokens):
             payload = " ".join(msg.tokens)
@@ -222,7 +226,8 @@ class MobFriend(PayBot):
 
     @requires_admin
     async def do_fsr(self, msg: Message) -> Response:
-        """Make a request to the Full-Service instance behind the bot. Admin-only.
+        """
+        Make a request to the Full-Service instance behind the bot. Admin-only.
         ie) /fsr [command] ([arg1] [val1]( [arg2] [val2])...)"""
         if not msg.tokens or not len(msg.tokens):
             return "/fsr [command] ([arg1] [val1]( [arg2] [val2]))"
@@ -250,7 +255,8 @@ class MobFriend(PayBot):
             return fact.strip()
 
     async def do_claim(self, msg: Message) -> Response:
-        """/claim [base58 gift code]
+        """
+        /claim [base58 gift code]
         Claims a gift code! Redeems a provided code to the bot's wallet and sends the redeemed balance."""
         if msg.arg1:
             status = await self.mobster.req_(
