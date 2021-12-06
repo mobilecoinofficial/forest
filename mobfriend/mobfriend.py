@@ -146,7 +146,14 @@ class MobFriend(PayBot):
     do_check = do_check_b58_type
     do_check58 = do_check_b58_type
 
+    @hide
     async def do_create_payment_request(self, msg: Message) -> Response:
+        """ Creates a payment request (as QR code and b58 code to copy and paste.)
+        ie) /payme 1.0 "Pay me a MOB!"
+        will create a payment request with
+            * the memo "Pay me a MOB!",
+            * a 1MOB value,
+            * and the address of the requester's Signal account. """
         address = await self.get_address(msg.source)
         if not address:
             return "Unable to retrieve your MobileCoin address!"
@@ -177,6 +184,7 @@ class MobFriend(PayBot):
         return payment_request_b58
 
     async def do_qr(self, msg: Message) -> Response:
+        """ Creates a basic QR code for the provided content. """
         if msg.tokens and len(msg.tokens):
             payload = " ".join(msg.tokens)
             pyqrcode.QRCode(payload).png(
@@ -212,17 +220,19 @@ class MobFriend(PayBot):
 
     @hide
     async def do_echo(self, msg: Message) -> Response:
-        return str(msg)
+        """ Returns a representation of the input message for debugging parse errors. """
+        return msg.blob
 
     @hide
     async def do_printerfact(self, _: Message) -> str:
-        "Learn a fact about something._"
+        """ Learn a fact about something. """
         async with self.client_session.get(utils.get_secret("FACT_SOURCE")) as resp:
             fact = await resp.text()
             return fact.strip()
 
     @hide
     async def do_claim_balance(self, msg: Message) -> Response:
+        """ Claims a Gift Code! """
         if msg.arg1:
             status = await self.mobster.req_(
                 "check_gift_code_status", gift_code_b58=msg.arg1
@@ -233,7 +243,6 @@ class MobFriend(PayBot):
                 gift_code_b58=msg.arg1,
                 account_id=await self.mobster.get_account(),
             )
-            # pmob = status.get("result", {}).get("gift_code_value")
             if amount_pmob:
                 payment_notif = await self.send_payment(msg.source, amount_pmob - FEE)
                 amount_mob = mc_util.pmob2mob(amount_pmob)
