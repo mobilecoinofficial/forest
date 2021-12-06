@@ -576,10 +576,12 @@ class Bot(Signal):
 
     @hide
     async def do_uptime(self, _: Message) -> str:
+        """ Returns a message containing the bot uptime (in seconds). """
         return f"Uptime: {int(time.time() - self.start_time)}sec"
 
     @hide
     async def do_pong(self, message: Message) -> str:
+        """ Stashes the message in context so it's accessible externally. """
         if message.text:
             self.pongs[message.text] = message.text
             return f"OK, stashing {message.text}"
@@ -636,11 +638,13 @@ class PayBot(Bot):
         return address
 
     async def do_address(self, msg: Message) -> Response:
+        """ Returns the requester's MobileCoin Address (in standard b58 format.) """
         address = await self.get_address(msg.source)
         return address or "sorry, couldn't get your MobileCoin address"
 
     @requires_admin
     async def do_rename(self, msg: Message) -> Response:
+        """ Renames bot (requires admin) - accepts first name, last name, and address. """
         if msg.tokens and len(msg.tokens) > 0:
             await self.set_profile_auxin(*msg.tokens)
             return "OK"
