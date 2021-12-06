@@ -204,7 +204,8 @@ class MobFriend(PayBot):
     @requires_admin
     @hide
     async def do_fsr(self, msg: Message) -> Response:
-        """Make a request to the Full-Service instance behind the bot. Admin-only."""
+        """Make a request to the Full-Service instance behind the bot. Admin-only.
+       ie) /fsr <command> (<arg1> <val1>( <arg2> <val2>)...) """
         if not msg.tokens or not len(msg.tokens):
             return "/fsr <command> (<arg1> <val1>( <arg2> <val2>))"
         if len(msg.tokens) == 1:
