@@ -45,7 +45,7 @@ class MobFriend(PayBot):
         return "Your next transaction will be a tip, not refunded!\nThank you!\n(/no_tip cancels)"
 
     @hide
-    async def do_no_tip(self, _: Message) -> Response:
+    async def do_no_tip(self, msg: Message) -> Response:
         """Cancels a tip in progress."""
         if msg.source in self.no_repay:
             self.no_repay.remove(msg.source)
@@ -96,7 +96,6 @@ class MobFriend(PayBot):
         else:
             return f"Received {mc_util.pmob2mob(amount_pmob)}MOB"
 
-    @hide
     @requires_admin
     async def do_eval(self, msg: Message) -> Response:
         """Evaluates a few lines of Python. Preface with "return" to reply with result."""
@@ -117,7 +116,6 @@ class MobFriend(PayBot):
             return str(await async_exec(" ".join(msg.tokens), locals()))  # type: ignore
         return None
 
-    @hide
     @requires_admin
     async def do_balance(self, msg: Message) -> Response:
         """Returns bot balance in MOB."""
@@ -218,7 +216,6 @@ class MobFriend(PayBot):
             return "Usage: /qr <value>"
 
     @requires_admin
-    @hide
     async def do_fsr(self, msg: Message) -> Response:
         """Make a request to the Full-Service instance behind the bot. Admin-only.
         ie) /fsr <command> (<arg1> <val1>( <arg2> <val2>)...)"""
