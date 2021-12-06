@@ -2,6 +2,7 @@
 import logging
 import mc_util
 
+import asyncio
 import pyqrcode
 
 from aiohttp import web
@@ -41,6 +42,11 @@ class MobFriend(PayBot):
     async def do_exception(self, _: Message):
         raise Exception("You asked for it!")
         return None
+
+    @hide
+    async def do_wait(self, _: Message):
+        await asyncio.sleep(60)
+        return "waited!"
 
     @time(REQUEST_TIME)  # type: ignore
     @hide
@@ -149,7 +155,10 @@ class MobFriend(PayBot):
             mc_util.b58_wrapper_to_transfer_payload(address).public_address
         )
         if msg.tokens and not (
-            len(msg.tokens) > 0 and msg.tokens[0].replace(".", "0", 1).isnumeric()
+            isinstance(msg.tokens[0], str)
+            and len(msg.tokens) > 0
+            and isinstance(msg.tokens[0], str)
+            and msg.tokens[0].replace(".", "0", 1).isnumeric()
         ):
             return "Sorry, you need to provide a price (in MOB)!"
         if msg.tokens and len(msg.tokens):
@@ -190,32 +199,20 @@ class MobFriend(PayBot):
         """Make a request to the Full-Service instance behind the bot. Admin-only."""
         if not msg.tokens or not len(msg.tokens):
             return "/fsr <command> (<arg1> <val1>( <arg2> <val2>))"
-        quotes_indexes = [i for (i, token) in enumerate(msg.tokens) if isinstance(token, str) and '"' in token]
-        msg.tokens = [
-            str(token) if not token.isnumeric() else int(token) for token in msg.tokens  # type: ignore
-        ]
-        # if we have quote indexes and an even number of them....
-        if len(quotes_indexes) and (len(quotes_indexes) % 2 == 0):
-            msg.tokens = [
-                *msg.tokens[0 : quotes_indexes[0]],
-                " ".join(msg.tokens[quotes_indexes[0] : quotes_indexes[1] + 1]),
-            ]
-            return await self.do_fsr(msg)
         if len(msg.tokens) == 1:
             return await self.mobster.req(dict(method=msg.tokens[0]))
-        elif len(msg.tokens) == 3:
-            return str(
-                await self.mobster.req_(msg.tokens[0], **{msg.tokens[1]: msg.tokens[2]})
-            )
-        elif len(msg.tokens) == 5:
-            return str(
-                await self.mobster.req_(
-                    msg.tokens[0],
-                    **{msg.tokens[1]: msg.tokens[2], msg.tokens[3]: msg.tokens[4]},
-                )
-            )
+        elif (len(msg.tokens) % 2) == 1:
+            fsr_command = msg.tokens[0]
+            fsr_keys = msg.tokens[1::2]
+            fsr_values = msg.tokens[2::2]
+            params = {k: v for (k, v) in zip(fsr_keys, fsr_values)}
+            return str(await self.mobster.req_(fsr_command, **params))
         else:
-            return "/fsr <command> (<arg1> <val1>( <arg2> <val2>))"
+            return "/fsr <command> (<arg1> <val1>( <arg2> <val2>)...)"
+
+    @hide
+    async def do_echo(self, msg: Message) -> Response:
+        return str(msg)
 
     @hide
     async def do_printerfact(self, _: Message) -> str:
