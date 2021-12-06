@@ -36,7 +36,7 @@ class MobFriend(PayBot):
             self.no_repay.append(msg.source)
         if msg.source not in self.exchanging_cash_code:
             self.exchanging_cash_code.append(msg.source)
-        return "Your next transaction will be converted into a MobileCoin Cash Code that can be redeemed in other wallets.\nBe sure to include an extra 0.0004MOB to pay the receiver's fees!"
+        return "Your next transaction will be converted into a MobileCoin Cash Code that can be redeemed in other wallets.\nBe sure to include an extra 0.0008MOB to pay the network fees!"
 
     async def do_tip(self, msg: Message) -> Response:
         """Records the next payment as a tip, not intended to make a giftcode, or as an accident."""
