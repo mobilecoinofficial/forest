@@ -141,7 +141,7 @@ class MobFriend(PayBot):
                 mob_amt = pmob2mob(pmob)  # type: ignore
                 claimed = status.get("result", {}).get("gift_code_status", "")
                 memo = status.get("result", {}).get("gift_code_memo") or "None"
-                if claimed:
+                if "Claimed" in claimed:
                     return "This gift code has already been redeemed!"
                 return f"Gift code can be redeemed for {(mob_amt-Decimal(0.0004)).quantize(Decimal('1.0000'))}MOB. ({pmob} picoMOB)\nMemo: {memo}"
             else:
@@ -150,6 +150,7 @@ class MobFriend(PayBot):
             return "/check_balance <b58>"
 
     async def do_check(self, msg: Message) -> Response:
+        """ Helps identify a b58 code. If it's a gift code, it will return the balance. """
         if not msg.arg1:
             return "/check_b58_type <b58>"
         status = await self.mobster.req_("check_b58_type", b58_code=msg.arg1)
