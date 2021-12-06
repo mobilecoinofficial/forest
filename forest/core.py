@@ -574,6 +574,7 @@ class Bot(Signal):
             return f"/pong {message.text}"
         return "/pong"
 
+    @hide
     async def do_uptime(self, _: Message) -> str:
         return f"Uptime: {int(time.time() - self.start_time)}sec"
 
