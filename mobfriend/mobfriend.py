@@ -28,6 +28,9 @@ class MobFriend(PayBot):
         return await super().handle_message(message)
 
     async def do_makegift(self, msg: Message) -> Response:
+        """/makegift
+        I'll use your next payment to make a MobileCoin Cash Code that can be redeemed in other wallets.
+        Be sure to includ ean extra 0.0008 MOB to pay the network fees!"""
         if msg.source in self.exchanging_cash_code:
             self.exchanging_cash_code.remove(msg.source)
             self.no_repay.remove(msg.source)
@@ -39,7 +42,8 @@ class MobFriend(PayBot):
         return "Your next transaction will be converted into a MobileCoin Cash Code that can be redeemed in other wallets.\nBe sure to include an extra 0.0008MOB to pay the network fees!"
 
     async def do_tip(self, msg: Message) -> Response:
-        """Records the next payment as a tip, not intended to make a giftcode, or as an accident."""
+        """/tip
+        Records the next payment as a tip, not intended to make a giftcode, or as an accident."""
         if msg.source not in self.no_repay:
             self.no_repay.append(msg.source)
 
@@ -147,12 +151,13 @@ class MobFriend(PayBot):
             else:
                 return f"Sorry, that doesn't look like a valid code.\nDEBUG: {status.get('result')}"
         else:
-            return "/check_balance <b58>"
+            return "/check_balance [gift code b58]"
 
     async def do_check(self, msg: Message) -> Response:
-        """ Helps identify a b58 code. If it's a gift code, it will return the balance. """
+        """/check [base58 code]
+        Helps identify a b58 code. If it's a gift code, it will return the balance. """
         if not msg.arg1:
-            return "/check_b58_type <b58>"
+            return "/do_check [base58 code]"
         status = await self.mobster.req_("check_b58_type", b58_code=msg.arg1)
         if status and status.get("result", {}).get("b58_type") == "PaymentRequest":
             status["result"]["data"]["type"] = "PaymentRequest"
@@ -167,8 +172,11 @@ class MobFriend(PayBot):
 
     @hide
     async def do_create_payment_request(self, msg: Message) -> Response:
-        """Creates a payment request (as QR code and b58 code to copy and paste.)
-        ie) /payme 1.0 "Pay me a MOB!"
+        """
+        /create_payment_request [amount] [memo]
+
+        Creates a payment request (as QR code and b58 code to copy and paste.)
+        For example, /payme 1.0 "Pay me a MOB!"
         will create a payment request with
             * the memo "Pay me a MOB!",
             * a 1MOB value,
@@ -205,7 +213,8 @@ class MobFriend(PayBot):
     do_payme = do_create_payment_request
 
     async def do_qr(self, msg: Message) -> Response:
-        """Creates a basic QR code for the provided content."""
+        """/qr [gift card, url, etc]
+        Creates a basic QR code for the provided content."""
         if msg.tokens and len(msg.tokens):
             payload = " ".join(msg.tokens)
             pyqrcode.QRCode(payload).png(
@@ -218,14 +227,14 @@ class MobFriend(PayBot):
             )
             return None
         else:
-            return "Usage: /qr <value>"
+            return "Usage: /qr [gift card, url, etc]"
 
     @requires_admin
     async def do_fsr(self, msg: Message) -> Response:
         """Make a request to the Full-Service instance behind the bot. Admin-only.
-        ie) /fsr <command> (<arg1> <val1>( <arg2> <val2>)...)"""
+        ie) /fsr [command] ([arg1] [val1]( [arg2] [val2])...)"""
         if not msg.tokens or not len(msg.tokens):
-            return "/fsr <command> (<arg1> <val1>( <arg2> <val2>))"
+            return "/fsr [command] ([arg1] [val1]( [arg2] [val2]))"
         if len(msg.tokens) == 1:
             return await self.mobster.req(dict(method=msg.tokens[0]))
         elif (len(msg.tokens) % 2) == 1:
@@ -235,7 +244,7 @@ class MobFriend(PayBot):
             params = {k: v for (k, v) in zip(fsr_keys, fsr_values)}
             return str(await self.mobster.req_(fsr_command, **params))
         else:
-            return "/fsr <command> (<arg1> <val1>( <arg2> <val2>)...)"
+            return "/fsr [command] ([arg1] [val1]( [arg2] [val2])...)"
 
     @hide
     async def do_echo(self, msg: Message) -> Response:
@@ -250,7 +259,8 @@ class MobFriend(PayBot):
             return fact.strip()
 
     async def do_claim(self, msg: Message) -> Response:
-        """Claims a gift code! Redeems a provided code to the bot's wallet and sends the redeemed balance."""
+        """/claim [base58 gift code]
+        Claims a gift code! Redeems a provided code to the bot's wallet and sends the redeemed balance."""
         if msg.arg1:
             status = await self.mobster.req_(
                 "check_gift_code_status", gift_code_b58=msg.arg1
@@ -273,9 +283,9 @@ class MobFriend(PayBot):
             else:
                 return f"Sorry, that doesn't look like a valid code.\nDEBUG: {status.get('result')}"
         else:
-            return "/claim <b58>"
+            return "/claim [base58 gift code]"
 
-    do_redeem = do_claim
+    do_redeem = hide(do_claim)
 
 
 if __name__ == "__main__":

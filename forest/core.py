@@ -533,17 +533,20 @@ class Bot(Signal):
             return "signal session reset"
         return await self.default(message)
 
-    async def default(self, message: Message) -> Response:
-        resp = "That didn't look like a valid command!"
-        resp += "\n\nDocumented commands: " + ", ".join(
-            name.removeprefix("do_")
+    def documented_commands(self) -> list[str]:
+        commands = ", ".join(
+            name.replace("do_", "/")
             for name in dir(self)
             if name.startswith("do_")
             and not hasattr(getattr(self, name), "admin")
             and not hasattr(getattr(self, name), "hide")
+            and hasattr(getattr(self, name), "__doc__")
         )
-        resp += "\n\nFor more info about a command, try /help <command>."
-        # if it messages an echoserver, don't get in a loop
+        return "Documented commands: {commands}\n\nFor more info about a command, try /help [command]"
+
+    async def default(self, message: Message) -> Response:
+        resp = "That didn't look like a valid command!" + self.documented_commands()
+        # if it messages an echoserver, don't get in a loop (or groups)
         if message.text and not (message.group or message.text == resp):
             return resp
         return None
@@ -559,15 +562,9 @@ class Bot(Signal):
                     return dedent(doc).strip()
                 return f"{msg.arg1} isn't documented, sorry :("
             except AttributeError:
-                return f"no such command '{msg.arg1}'"
+                return f"No such command '{msg.arg1}'"
         else:
-            resp = "documented commands: " + ", ".join(
-                name.removeprefix("do_")
-                for name in dir(self)
-                if name.startswith("do_")
-                and not hasattr(getattr(self, name), "admin")
-                and not hasattr(getattr(self, name), "hide")
-            )
+            resp = self.documented_commands()
         return resp
 
     async def do_printerfact(self, _: Message) -> str:
@@ -646,9 +643,10 @@ class PayBot(Bot):
         return address
 
     async def do_address(self, msg: Message) -> Response:
-        """Returns the requester's MobileCoin Address (in standard b58 format.)"""
+        """/address
+        Check your MobileCoin address (in standard b58 format.)"""
         address = await self.get_address(msg.source)
-        return address or "sorry, couldn't get your MobileCoin address"
+        return address or "Sorry, couldn't get your MobileCoin address"
 
     @requires_admin
     async def do_rename(self, msg: Message) -> Response:
@@ -659,6 +657,7 @@ class PayBot(Bot):
         return "pass arguments for set_profile_auxin"
 
     async def mob_request(self, method: str, **params: Any) -> dict:
+        """Pass a request through to full-service, but send a message to an admin in case of error"""
         result = await self.mobster.req_(method, **params)
         if "error" in result:
             await self.admin(f"{params}\n{result}")
