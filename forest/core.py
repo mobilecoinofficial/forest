@@ -534,15 +534,15 @@ class Bot(Signal):
         return await self.default(message)
 
     async def default(self, message: Message) -> Response:
-        resp = "That didn't look like a valid command"
-        resp += "\nDocumented commands: " + ", ".join(
+        resp = "That didn't look like a valid command!"
+        resp += "\n\nDocumented commands: " + ", ".join(
             name.removeprefix("do_")
             for name in dir(self)
             if name.startswith("do_")
             and not hasattr(getattr(self, name), "admin")
             and not hasattr(getattr(self, name), "hide")
         )
-        resp += "\nFor more info about a command, try /help <command>."
+        resp += "\n\nFor more info about a command, try /help <command>."
         # if it messages an echoserver, don't get in a loop
         if message.text and not (message.group or message.text == resp):
             return resp

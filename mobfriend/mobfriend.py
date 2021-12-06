@@ -36,10 +36,10 @@ class MobFriend(PayBot):
             self.no_repay.append(msg.source)
         if msg.source not in self.exchanging_cash_code:
             self.exchanging_cash_code.append(msg.source)
-        return "Your next transaction will be converted into a MobileCoin Cash Code that can be redeemed in other wallets."
+        return "Your next transaction will be converted into a MobileCoin Cash Code that can be redeemed in other wallets.\nBe sure to include an extra 0.0004MOB to pay the receiver's fees!"
 
     async def do_tip(self, msg: Message) -> Response:
-        """Records the next payment as a tip, not to make a giftcode or as an accident."""
+        """Records the next payment as a tip, not intended to make a giftcode, or as an accident."""
         if msg.source not in self.no_repay:
             self.no_repay.append(msg.source)
 
@@ -149,8 +149,7 @@ class MobFriend(PayBot):
         else:
             return "/check_balance <b58>"
 
-    @hide
-    async def do_check_b58_type(self, msg: Message) -> Response:
+    async def do_check(self, msg: Message) -> Response:
         if not msg.arg1:
             return "/check_b58_type <b58>"
         status = await self.mobster.req_("check_b58_type", b58_code=msg.arg1)
@@ -164,8 +163,6 @@ class MobFriend(PayBot):
             return await self.do_check_balance(msg)
         else:
             return status.get("result")
-
-    do_check = do_check_b58_type
 
     @hide
     async def do_create_payment_request(self, msg: Message) -> Response:

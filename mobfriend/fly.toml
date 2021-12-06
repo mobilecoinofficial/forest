@@ -5,8 +5,6 @@ kill_timeout = 5
 [env]
 LOGLEVEL="DEBUG"
 BOT_NUMBER="+12232222922"
-MONITOR_WALLET=""
-FULL_SERVICE_URL="https://perfect-erase-pond-gather.fly.dev"
 RUST_LOG="WARN"
 RUST_BACKTRACE="full"
 
