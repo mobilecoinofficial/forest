@@ -282,7 +282,7 @@ class MobFriend(PayBot):
         else:
             return "/claim [base58 gift code]"
 
-    do_redeem = hide(do_claim)
+    do_redeem = do_claim
 
 
 if __name__ == "__main__":

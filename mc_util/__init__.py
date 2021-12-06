@@ -84,7 +84,7 @@ def add_checksum_and_b58(wrapper_bytes: bytes) -> str:
 
 
 def b58_wrapper_to_transfer_payload(b58_string: str) -> printable_pb2.PrintableWrapper:
-    """ Convert a b58-encoded something into a PrintableWrapper. """
+    """Convert a b58-encoded something into a PrintableWrapper."""
     checksum_and_wrapper_bytes = base58.b58decode(b58_string)
     wrapper_bytes = checksum_and_wrapper_bytes[4:]
     wrapper = printable_pb2.PrintableWrapper()
