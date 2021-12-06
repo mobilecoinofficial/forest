@@ -708,7 +708,12 @@ class PayBot(Bot):
         b58 = submitted.get("result", {}).get("gift_code", {}).get("gift_code_b58")
         await self.send_message(
             recipient,
-            f"Built Cash Code {b58} redeemable for {str(mc_util.pmob2mob(amount_pmob-fee_pmob)).rstrip('0')} MOB",
+            f"Built Cash Code",
+        )
+        await self.send_message(recipient, f"{b58}")
+        await self.send_message(
+            recipient,
+            f"redeemable for {str(mc_util.pmob2mob(amount_pmob-fee_pmob)).rstrip('0')} MOB",
         )
         return None
 
