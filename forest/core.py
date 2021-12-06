@@ -656,14 +656,14 @@ class PayBot(Bot):
             await self.admin(f"{params}\n{result}")
         return result
 
-    async def fs_receipt_to_payment_message_content(self, fs_receipt: dict) -> str:
+    async def fs_receipt_to_payment_message_content(self, fs_receipt: dict, note: str = "") -> str:
         full_service_receipt = fs_receipt["result"]["receiver_receipts"][0]
         # this gets us a Receipt protobuf
         b64_receipt = mc_util.full_service_receipt_to_b64_receipt(full_service_receipt)
         # serde expects bytes to be u8[], not b64
         u8_receipt = [int(char) for char in base64.b64decode(b64_receipt)]
         tx = {"mobileCoin": {"receipt": u8_receipt}}
-        note = "check out this java-free payment notification"
+        note = note or "check out this java-free payment notification"
         payment = {"Item": {"notification": {"note": note, "Transaction": tx}}}
         # SignalServiceMessageContent protobuf represented as JSON (spicy)
         # destination is outside the content so it doesn't matter,
@@ -703,7 +703,7 @@ class PayBot(Bot):
         return None
 
     async def send_payment(
-        self, recipient: str, amount_pmob: int, receipt_message: str = "receipt sent!"
+        self, recipient: str, amount_pmob: int, receipt_message: str = "Transaction sent!"
     ) -> Optional[Message]:
         address = await self.get_address(recipient)
         if not address:
@@ -728,7 +728,7 @@ class PayBot(Bot):
             tx_proposal=prop,
             account_id=await self.mobster.get_account(),
         )
-        content = await self.fs_receipt_to_payment_message_content(receipt_resp)
+        content = await self.fs_receipt_to_payment_message_content(receipt_resp, receipt_message)
         # pass our beautifully composed spicy JSON content to auxin.
         # message body is ignored in this case.
         payment_notif = await self.send_message(recipient, "", content=content)
