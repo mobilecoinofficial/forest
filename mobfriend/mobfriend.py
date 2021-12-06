@@ -39,6 +39,7 @@ class MobFriend(PayBot):
         return "Your next transaction will be converted into a MobileCoin Cash Code that can be redeemed in other wallets."
 
     async def do_tip(self, msg: Message) -> Response:
+        """Records the next payment as a tip, not to make a giftcode or as an accident."""
         if msg.source not in self.no_repay:
             self.no_repay.append(msg.source)
 
