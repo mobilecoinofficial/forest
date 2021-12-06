@@ -535,6 +535,14 @@ class Bot(Signal):
 
     async def default(self, message: Message) -> Response:
         resp = "That didn't look like a valid command"
+        resp += "\nDocumented commands: " + ", ".join(
+            name.removeprefix("do_")
+            for name in dir(self)
+            if name.startswith("do_")
+            and not hasattr(getattr(self, name), "admin")
+            and not hasattr(getattr(self, name), "hide")
+        )
+        resp += "\nFor more info about a command, try /help <command>."
         # if it messages an echoserver, don't get in a loop
         if message.text and not (message.group or message.text == resp):
             return resp
@@ -576,12 +584,12 @@ class Bot(Signal):
 
     @hide
     async def do_uptime(self, _: Message) -> str:
-        """ Returns a message containing the bot uptime (in seconds). """
+        """Returns a message containing the bot uptime (in seconds)."""
         return f"Uptime: {int(time.time() - self.start_time)}sec"
 
     @hide
     async def do_pong(self, message: Message) -> str:
-        """ Stashes the message in context so it's accessible externally. """
+        """Stashes the message in context so it's accessible externally."""
         if message.text:
             self.pongs[message.text] = message.text
             return f"OK, stashing {message.text}"
@@ -638,13 +646,13 @@ class PayBot(Bot):
         return address
 
     async def do_address(self, msg: Message) -> Response:
-        """ Returns the requester's MobileCoin Address (in standard b58 format.) """
+        """Returns the requester's MobileCoin Address (in standard b58 format.)"""
         address = await self.get_address(msg.source)
         return address or "sorry, couldn't get your MobileCoin address"
 
     @requires_admin
     async def do_rename(self, msg: Message) -> Response:
-        """ Renames bot (requires admin) - accepts first name, last name, and address. """
+        """Renames bot (requires admin) - accepts first name, last name, and address."""
         if msg.tokens and len(msg.tokens) > 0:
             await self.set_profile_auxin(*msg.tokens)
             return "OK"
@@ -656,7 +664,9 @@ class PayBot(Bot):
             await self.admin(f"{params}\n{result}")
         return result
 
-    async def fs_receipt_to_payment_message_content(self, fs_receipt: dict, note: str = "") -> str:
+    async def fs_receipt_to_payment_message_content(
+        self, fs_receipt: dict, note: str = ""
+    ) -> str:
         full_service_receipt = fs_receipt["result"]["receiver_receipts"][0]
         # this gets us a Receipt protobuf
         b64_receipt = mc_util.full_service_receipt_to_b64_receipt(full_service_receipt)
@@ -703,7 +713,10 @@ class PayBot(Bot):
         return None
 
     async def send_payment(
-        self, recipient: str, amount_pmob: int, receipt_message: str = "Transaction sent!"
+        self,
+        recipient: str,
+        amount_pmob: int,
+        receipt_message: str = "Transaction sent!",
     ) -> Optional[Message]:
         address = await self.get_address(recipient)
         if not address:
@@ -728,7 +741,9 @@ class PayBot(Bot):
             tx_proposal=prop,
             account_id=await self.mobster.get_account(),
         )
-        content = await self.fs_receipt_to_payment_message_content(receipt_resp, receipt_message)
+        content = await self.fs_receipt_to_payment_message_content(
+            receipt_resp, receipt_message
+        )
         # pass our beautifully composed spicy JSON content to auxin.
         # message body is ignored in this case.
         payment_notif = await self.send_message(recipient, "", content=content)
