@@ -562,9 +562,21 @@ class Bot(Signal):
                     return dedent(doc).strip()
                 return f"{msg.arg1} isn't documented, sorry :("
             except AttributeError:
+<<<<<<< HEAD
                 return f"No such command '{msg.arg1}'"
         else:
             resp = self.documented_commands()
+=======
+                return f"no such command '{msg.arg1}'"
+        else:
+            resp = "documented commands: " + ", ".join(
+                name.removeprefix("do_")
+                for name in dir(self)
+                if name.startswith("do_")
+                and not hasattr(getattr(self, name), "admin")
+                and not hasattr(getattr(self, name), "hide")
+            )
+>>>>>>> main
         return resp
 
     async def do_printerfact(self, _: Message) -> str:
