@@ -708,7 +708,7 @@ class PayBot(Bot):
         b58 = submitted.get("result", {}).get("gift_code", {}).get("gift_code_b58")
         await self.send_message(
             recipient,
-            f"Built Cash Code",
+            "Built Cash Code",
         )
         await self.send_message(recipient, f"{b58}")
         await self.send_message(

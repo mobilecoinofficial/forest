@@ -3,6 +3,7 @@
 # Copyright (c) 2021 The Forest Team
 
 import asyncio
+import base64
 import json
 import logging
 import random
@@ -12,7 +13,6 @@ from typing import Optional
 
 import aiohttp
 import asyncpg
-import base64
 
 import mc_util
 from forest import utils
