@@ -78,7 +78,7 @@ class MobFriend(PayBot):
     async def do_pay(self, msg: Message) -> Response:
         if msg.arg1:
             payment_notif_sent = await self.send_payment(
-                msg.source, mob2pmob(Decimal(msg.arg1))  
+                msg.source, mob2pmob(Decimal(msg.arg1))
             )
         else:
             payment_notif_sent = await self.send_payment(msg.source, mob2pmob(0.001))
@@ -190,9 +190,8 @@ class MobFriend(PayBot):
         if not address:
             return "Unable to retrieve your MobileCoin address!"
         payload = mc_util.printable_pb2.PrintableWrapper()
-        payload.payment_request.public_address.CopyFrom(
-            mc_util.b58_wrapper_to_transfer_payload(address).public_address
-        )
+        address_proto = mc_util.b58_wrapper_to_protobuf(address).public_address
+        payload.payment_request.public_address.CopyFrom(address_proto)
         if msg.tokens and not (
             isinstance(msg.tokens[0], str)
             and len(msg.tokens) > 0
