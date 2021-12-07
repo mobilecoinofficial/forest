@@ -26,9 +26,9 @@ jobs:
         run: pipenv run black . --check
         continue-on-error: true
       - name: Mypy
-        run: pipenv run mypy *py other_bots mc_util forest
+        run: pipenv run mypy *py other_bots mc_util forest mobfriend
         continue-on-error: true
       - name: Pylint
-        run: pipenv run pylint *py other_bots mc_util forest
+        run: pipenv run pylint *py other_bots mc_util forest mobfriend/mobfriend.py
         continue-on-error: true
 

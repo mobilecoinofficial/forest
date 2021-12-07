@@ -6,7 +6,7 @@ from prometheus_async import aio
 from prometheus_async.aio import time
 from prometheus_client import Summary
 
-from forest.core import PayBot, Message, Response, app
+from forest.core import Message, PayBot, Response, app
 
 britbot = "+447888866969"
 fee = int(1e12 * 0.0004)

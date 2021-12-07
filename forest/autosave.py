@@ -6,9 +6,10 @@ import asyncio
 import logging
 import os
 import time
+from pathlib import Path
 from subprocess import PIPE, Popen
 from typing import Any
-from pathlib import Path
+
 import aioprocessing
 from aiohttp import web
 

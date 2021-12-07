@@ -4,7 +4,9 @@ We're using this because you can have `{"attachments": null}` in JSON, which
 breaks our typing if we expect Message.attachments to be list[str].
 Using `or` like this is a bit of a hack, but it's what we've got.
 """
+import shlex
 from typing import Optional
+
 from forest.utils import logging
 
 
@@ -32,7 +34,7 @@ class Message:
         self.command: Optional[str] = None
         self.tokens: Optional[list[str]] = None
         if self.text and self.text.startswith("/"):
-            command, *self.tokens = self.text.split(" ")
+            command, *self.tokens = shlex.split(self.text)
             self.command = command[1:]  # remove /
             self.arg1 = self.tokens[0] if self.tokens else None
             self.text = " ".join(self.tokens)
