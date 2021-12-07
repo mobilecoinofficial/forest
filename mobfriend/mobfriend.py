@@ -119,7 +119,7 @@ class MobFriend(PayBot):
             parsed_fn = ast.parse(fn)
             for node in parsed_stmts.body:
                 ast.increment_lineno(node)
-            assert isinstance(parsed_fn.body[0], ast.FunctionDef)
+            assert isinstance(parsed_fn.body[0], ast.AsyncFunctionDef)
             parsed_fn.body[0].body = parsed_stmts.body
             code = compile(parsed_fn, filename="<ast>", mode="exec")
             exec(code, env)  # pylint: disable=exec-used
