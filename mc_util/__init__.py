@@ -2,6 +2,7 @@
 # Copyright (c) 2021 MobileCoin Inc.
 # Copyright (c) 2021 The Forest Team
 from decimal import Decimal
+from typing import Union
 import zlib
 import base64
 
@@ -14,7 +15,7 @@ from . import printable_pb2
 PMOB = Decimal("1e12")
 
 
-def mob2pmob(x: float) -> int:
+def mob2pmob(x: Union[Decimal, float]) -> int:
     """Convert from MOB to picoMOB."""
     return round(Decimal(x) * PMOB)
 

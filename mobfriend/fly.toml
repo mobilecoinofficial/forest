@@ -1,0 +1,50 @@
+app = "mobfriend"
+kill_signal = "SIGINT" 
+kill_timeout = 5
+
+[env]
+LOGLEVEL="DEBUG"
+BOT_NUMBER="+12232222922"
+RUST_LOG="WARN"
+RUST_BACKTRACE="full"
+
+[experimental]
+  allowed_public_ports = []
+  auto_rollback = false
+
+[metrics]
+port = 8080
+path = "/metrics"
+
+[[services]]
+  internal_port = 8080
+  protocol = "tcp"
+  script_checks = []
+
+  [services.concurrency]
+    hard_limit = 25
+    soft_limit = 20
+    type = "connections"
+
+  [[services.ports]]
+    handlers = ["http"]
+    port = 80
+
+  [[services.ports]]
+    handlers = ["tls", "http"]
+    port = 443
+
+  [[services.tcp_checks]]
+    grace_period = "1s"
+    interval = "15s"
+    restart_limit = 6
+    timeout = "2s"
+
+  # [[services.http_checks]]
+  #   interval = 10000
+  #   grace_period = "120s"
+  #   method = "get"
+  #   path = "/ping"
+  #   protocol = "http"
+  #   timeout = 2000
+  #   tls_skip_verify = false

@@ -20,7 +20,6 @@ import urllib
 import uuid
 from asyncio import Queue, StreamReader, StreamWriter
 from asyncio.subprocess import PIPE
-from copy import copy
 from functools import wraps
 from textwrap import dedent
 from typing import Any, AsyncIterator, Callable, Optional, Union
@@ -87,6 +86,7 @@ class Signal:
         self.auxincli_output_queue: Queue[Message] = Queue()
         self.auxincli_input_queue: Queue[dict] = Queue()
         self.exiting = False
+        self.start_time = time.time()
 
     async def start_process(self) -> None:
         """
@@ -215,7 +215,7 @@ class Signal:
 
     async def handle_auxincli_raw_line(self, line: str) -> None:
         if '{"jsonrpc":"2.0","result":[],"id":"receive"}' not in line:
-            logging.debug("auxin: %s", line)
+            pass  # logging.debug("auxin: %s", line)
         try:
             blob = json.loads(line)
         except json.JSONDecodeError:
@@ -439,17 +439,20 @@ Datapoint = tuple[int, str, float]  # timestamp in ms, command/info, latency in 
 
 def requires_admin(command: Callable) -> Callable:
     @wraps(command)
-    async def wrapped_command(self: "Bot", msg: Message) -> Response:
+    async def admin_command(self: "Bot", msg: Message) -> Response:
         if msg.source == utils.get_secret("ADMIN"):
             return await command(self, msg)
         return "you must be an admin to use this command"
 
-    wrapped_command.admin = True  # type: ignore
-    return wrapped_command
+    admin_command.admin = True  # type: ignore
+    return admin_command
 
 
 def hide(command: Callable) -> Callable:
-    hidden_command = copy(command)
+    @wraps(command)
+    async def hidden_command(self: "Bot", msg: Message) -> Response:
+        return await command(self, msg)
+
     hidden_command.hide = True  # type: ignore
     return hidden_command
 
@@ -532,9 +535,20 @@ class Bot(Signal):
             return "signal session reset"
         return await self.default(message)
 
+    def documented_commands(self) -> str:
+        commands = ", ".join(
+            name.replace("do_", "/")
+            for name in dir(self)
+            if name.startswith("do_")
+            and not hasattr(getattr(self, name), "admin")
+            and not hasattr(getattr(self, name), "hide")
+            and hasattr(getattr(self, name), "__doc__")
+        )
+        return f"Documented commands: {commands}\n\nFor more info about a command, try /help [command]"
+
     async def default(self, message: Message) -> Response:
-        resp = "That didn't look like a valid command"
-        # if it messages an echoserver, don't get in a loop
+        resp = "That didn't look like a valid command!\n" + self.documented_commands()
+        # if it messages an echoserver, don't get in a loop (or groups)
         if message.text and not (message.group or message.text == resp):
             return resp
         return None
@@ -550,15 +564,9 @@ class Bot(Signal):
                     return dedent(doc).strip()
                 return f"{msg.arg1} isn't documented, sorry :("
             except AttributeError:
-                return f"no such command '{msg.arg1}'"
+                return f"No such command '{msg.arg1}'"
         else:
-            resp = "documented commands: " + ", ".join(
-                name.removeprefix("do_")
-                for name in dir(self)
-                if name.startswith("do_")
-                and not hasattr(getattr(self, name), "admin")
-                and not hasattr(getattr(self, name), "hide")
-            )
+            resp = self.documented_commands()
         return resp
 
     async def do_printerfact(self, _: Message) -> str:
@@ -573,7 +581,14 @@ class Bot(Signal):
             return f"/pong {message.text}"
         return "/pong"
 
+    @hide
+    async def do_uptime(self, _: Message) -> str:
+        """Returns a message containing the bot uptime (in seconds)."""
+        return f"Uptime: {int(time.time() - self.start_time)}sec"
+
+    @hide
     async def do_pong(self, message: Message) -> str:
+        """Stashes the message in context so it's accessible externally."""
         if message.text:
             self.pongs[message.text] = message.text
             return f"OK, stashing {message.text}"
@@ -630,30 +645,37 @@ class PayBot(Bot):
         return address
 
     async def do_address(self, msg: Message) -> Response:
+        """
+        /address
+        Check your MobileCoin address (in standard b58 format.)"""
         address = await self.get_address(msg.source)
-        return address or "sorry, couldn't get your MobileCoin address"
+        return address or "Sorry, couldn't get your MobileCoin address"
 
     @requires_admin
     async def do_rename(self, msg: Message) -> Response:
-        if msg.tokens and len(msg.tokens) > 1:
+        """Renames bot (requires admin) - accepts first name, last name, and address."""
+        if msg.tokens and len(msg.tokens) > 0:
             await self.set_profile_auxin(*msg.tokens)
             return "OK"
         return "pass arguments for set_profile_auxin"
 
     async def mob_request(self, method: str, **params: Any) -> dict:
+        """Pass a request through to full-service, but send a message to an admin in case of error"""
         result = await self.mobster.req_(method, **params)
         if "error" in result:
             await self.admin(f"{params}\n{result}")
         return result
 
-    async def fs_receipt_to_payment_message_content(self, fs_receipt: dict) -> str:
+    async def fs_receipt_to_payment_message_content(
+        self, fs_receipt: dict, note: str = ""
+    ) -> str:
         full_service_receipt = fs_receipt["result"]["receiver_receipts"][0]
         # this gets us a Receipt protobuf
         b64_receipt = mc_util.full_service_receipt_to_b64_receipt(full_service_receipt)
         # serde expects bytes to be u8[], not b64
         u8_receipt = [int(char) for char in base64.b64decode(b64_receipt)]
         tx = {"mobileCoin": {"receipt": u8_receipt}}
-        note = "check out this java-free payment notification"
+        note = note or "check out this java-free payment notification"
         payment = {"Item": {"notification": {"note": note, "Transaction": tx}}}
         # SignalServiceMessageContent protobuf represented as JSON (spicy)
         # destination is outside the content so it doesn't matter,
@@ -666,16 +688,14 @@ class PayBot(Bot):
         content_skeletor["dataMessage"]["payment"] = payment
         return json.dumps(content_skeletor)
 
-    async def build_cash_code(
-        self, recipient: str, amount_pmob: int
-    ) -> Optional[Message]:
-        """Builds a cash code and sends to a recipient, given a recipient as phone number and amount in pMOB."""
+    async def build_gift_code(self, amount_pmob: int) -> Response:
+        """Builds a gift code and returns a list of messages to send, given an amount in pMOB."""
         raw_prop = await self.mob_request(
             "build_gift_code",
             account_id=await self.mobster.get_account(),
             value_pmob=str(int(amount_pmob)),
             fee=str(fee_pmob),
-            memo="Cash code built with MOBot!",
+            memo="Gift code built with MOBot!",
         )
         prop = raw_prop["result"]["tx_proposal"]
         b58_code = raw_prop["result"]["gift_code_b58"]
@@ -686,14 +706,17 @@ class PayBot(Bot):
             from_account_id=await self.mobster.get_account(),
         )
         b58 = submitted.get("result", {}).get("gift_code", {}).get("gift_code_b58")
-        await self.send_message(
-            recipient,
-            f"Built Cash Code {b58} redeemable for {str(mc_util.pmob2mob(amount_pmob-fee_pmob)).rstrip('0')} MOB",
-        )
-        return None
+        return [
+            "Built Gift Code",
+            b58,
+            f"redeemable for {str(mc_util.pmob2mob(amount_pmob-fee_pmob)).rstrip('0')} MOB",
+        ]
 
     async def send_payment(
-        self, recipient: str, amount_pmob: int, receipt_message: str = "receipt sent!"
+        self,
+        recipient: str,
+        amount_pmob: int,
+        receipt_message: str = "Transaction sent!",
     ) -> Optional[Message]:
         address = await self.get_address(recipient)
         if not address:
@@ -718,7 +741,9 @@ class PayBot(Bot):
             tx_proposal=prop,
             account_id=await self.mobster.get_account(),
         )
-        content = await self.fs_receipt_to_payment_message_content(receipt_resp)
+        content = await self.fs_receipt_to_payment_message_content(
+            receipt_resp, receipt_message
+        )
         # pass our beautifully composed spicy JSON content to auxin.
         # message body is ignored in this case.
         payment_notif = await self.send_message(recipient, "", content=content)
