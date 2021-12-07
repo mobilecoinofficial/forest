@@ -20,7 +20,6 @@ import urllib
 import uuid
 from asyncio import Queue, StreamReader, StreamWriter
 from asyncio.subprocess import PIPE
-from copy import copy
 from functools import wraps
 from textwrap import dedent
 from typing import Any, AsyncIterator, Callable, Optional, Union
@@ -689,8 +688,8 @@ class PayBot(Bot):
         content_skeletor["dataMessage"]["payment"] = payment
         return json.dumps(content_skeletor)
 
-    async def build_gift_code(self, recipient: str, amount_pmob: int) -> Response:
-        """Builds a gift code and sends to a recipient, given a recipient as phone number and amount in pMOB."""
+    async def build_gift_code(self, amount_pmob: int) -> Response:
+        """Builds a gift code and returns a list of messages to send, given an amount in pMOB."""
         raw_prop = await self.mob_request(
             "build_gift_code",
             account_id=await self.mobster.get_account(),

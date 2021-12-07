@@ -92,7 +92,7 @@ class MobFriend(PayBot):
     @time(REQUEST_TIME)  # type: ignore
     async def payment_response(self, msg: Message, amount_pmob: int) -> Response:
         if msg.source in self.exchanging_gift_code:
-            resp = await self.build_gift_code(msg.source, amount_pmob - FEE)
+            resp = await self.build_gift_code(amount_pmob - FEE)
             self.exchanging_gift_code.remove(msg.source)
             if msg.source in self.no_repay:
                 self.no_repay.remove(msg.source)
