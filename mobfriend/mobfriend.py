@@ -18,7 +18,7 @@ REQUEST_TIME = Summary("request_processing_seconds", "Time spent processing requ
 
 class MobFriend(PayBot):
     no_repay: list[str] = []
-    exchanging_cash_code: list[str] = []
+    exchanging_gift_code: list[str] = []
 
     async def handle_message(self, message: Message) -> Response:
         return await super().handle_message(message)
@@ -26,17 +26,17 @@ class MobFriend(PayBot):
     async def do_makegift(self, msg: Message) -> Response:
         """
         /makegift
-        I'll use your next payment to make a MobileCoin Cash Code that can be redeemed in other wallets.
-        Be sure to includ ean extra 0.0008 MOB to pay the network fees!"""
-        if msg.source in self.exchanging_cash_code:
-            self.exchanging_cash_code.remove(msg.source)
+        I'll use your next payment to make a MobileCoin Gift Code that can be redeemed in other wallets.
+        Be sure to include an extra 0.0008 MOB to pay the network fees!"""
+        if msg.source in self.exchanging_gift_code:
+            self.exchanging_gift_code.remove(msg.source)
             self.no_repay.remove(msg.source)
-            return "Okay, nevermind about that cash code."
+            return "Okay, nevermind about that gift code."
         if msg.source not in self.no_repay:
             self.no_repay.append(msg.source)
-        if msg.source not in self.exchanging_cash_code:
-            self.exchanging_cash_code.append(msg.source)
-        return "Your next transaction will be converted into a MobileCoin Cash Code that can be redeemed in other wallets.\nBe sure to include an extra 0.0008MOB to pay the network fees!"
+        if msg.source not in self.exchanging_gift_code:
+            self.exchanging_gift_code.append(msg.source)
+        return "Your next transaction will be converted into a MobileCoin Gift Code that can be redeemed in other wallets.\nBe sure to include an extra 0.0008MOB to pay the network fees!"
 
     async def do_tip(self, msg: Message) -> Response:
         """
@@ -45,15 +45,15 @@ class MobFriend(PayBot):
         if msg.source not in self.no_repay:
             self.no_repay.append(msg.source)
 
-        if msg.source in self.exchanging_cash_code:
-            self.exchanging_cash_code.remove(msg.source)
+        if msg.source in self.exchanging_gift_code:
+            self.exchanging_gift_code.remove(msg.source)
         return "Your next transaction will be a tip, not refunded!\nThank you!\n(/no_tip cancels)"
 
     @hide
     async def do_no_tip(self, msg: Message) -> Response:
         """Cancels a tip in progress."""
-        if msg.source in self.exchanging_cash_code:
-            self.exchanging_cash_code.remove(msg.source)
+        if msg.source in self.exchanging_gift_code:
+            self.exchanging_gift_code.remove(msg.source)
         if msg.source in self.no_repay:
             self.no_repay.remove(msg.source)
             return "Okay, nevermind about that tip."
@@ -87,9 +87,9 @@ class MobFriend(PayBot):
 
     @time(REQUEST_TIME)  # type: ignore
     async def payment_response(self, msg: Message, amount_pmob: int) -> Response:
-        if msg.source in self.exchanging_cash_code:
-            await self.build_cash_code(msg.source, amount_pmob - FEE)
-            self.exchanging_cash_code.remove(msg.source)
+        if msg.source in self.exchanging_gift_code:
+            await self.build_gift_code(msg.source, amount_pmob - FEE)
+            self.exchanging_gift_code.remove(msg.source)
             if msg.source in self.no_repay:
                 self.no_repay.remove(msg.source)
             return None
@@ -122,7 +122,14 @@ class MobFriend(PayBot):
             return await eval(f"{fn_name}()", env)
 
         if msg.tokens and len(msg.tokens):
-            return str(await async_exec(" ".join(msg.tokens), locals()))  # type: ignore
+            source_blob = (
+                msg.blob.get("content", {})
+                .get("text_message", "")
+                .replace("/eval", "", 1)
+                .lstrip(" ")
+            )
+            if source_blob:
+                return str(await async_exec(source_blob, locals()))  # type: ignore
         return None
 
     @requires_admin
@@ -274,9 +281,9 @@ class MobFriend(PayBot):
                     msg.source, amount_pmob - FEE, "Gift code has been redeemed!"
                 )
                 amount_mob = pmob2mob(amount_pmob - FEE).quantize(Decimal("1.0000"))
-                return f"Claimed a giftcode containing {amount_mob}MOB.\nTransaction ID: {status.get('result', {}).get('txo_id')}"
+                return f"Claimed a gift code containing {amount_mob}MOB.\nTransaction ID: {status.get('result', {}).get('txo_id')}"
             elif "Claimed" in claimed:
-                return "Sorry, that giftcode has already been redeemed!"
+                return "Sorry, that gift code has already been redeemed!"
             else:
                 return f"Sorry, that doesn't look like a valid code.\nDEBUG: {status.get('result')}"
         else:

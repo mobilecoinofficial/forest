@@ -686,16 +686,16 @@ class PayBot(Bot):
         content_skeletor["dataMessage"]["payment"] = payment
         return json.dumps(content_skeletor)
 
-    async def build_cash_code(
+    async def build_gift_code(
         self, recipient: str, amount_pmob: int
     ) -> Optional[Message]:
-        """Builds a cash code and sends to a recipient, given a recipient as phone number and amount in pMOB."""
+        """Builds a gift code and sends to a recipient, given a recipient as phone number and amount in pMOB."""
         raw_prop = await self.mob_request(
             "build_gift_code",
             account_id=await self.mobster.get_account(),
             value_pmob=str(int(amount_pmob)),
             fee=str(fee_pmob),
-            memo="Cash code built with MOBot!",
+            memo="Gift code built with MOBot!",
         )
         prop = raw_prop["result"]["tx_proposal"]
         b58_code = raw_prop["result"]["gift_code_b58"]
@@ -708,7 +708,7 @@ class PayBot(Bot):
         b58 = submitted.get("result", {}).get("gift_code", {}).get("gift_code_b58")
         await self.send_message(
             recipient,
-            "Built Cash Code",
+            "Built Gift Code",
         )
         await self.send_message(recipient, f"{b58}")
         await self.send_message(
