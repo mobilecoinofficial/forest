@@ -440,17 +440,20 @@ Datapoint = tuple[int, str, float]  # timestamp in ms, command/info, latency in 
 
 def requires_admin(command: Callable) -> Callable:
     @wraps(command)
-    async def wrapped_command(self: "Bot", msg: Message) -> Response:
+    async def admin_command(self: "Bot", msg: Message) -> Response:
         if msg.source == utils.get_secret("ADMIN"):
             return await command(self, msg)
         return "you must be an admin to use this command"
 
-    wrapped_command.admin = True  # type: ignore
-    return wrapped_command
+    admin_command.admin = True  # type: ignore
+    return admin_command
 
 
 def hide(command: Callable) -> Callable:
-    hidden_command = copy(command)
+    @wraps(command)
+    async def hidden_command(self: "Bot", msg: Message) -> Response:
+        return await command(self, msg)
+
     hidden_command.hide = True  # type: ignore
     return hidden_command
 
@@ -686,9 +689,7 @@ class PayBot(Bot):
         content_skeletor["dataMessage"]["payment"] = payment
         return json.dumps(content_skeletor)
 
-    async def build_gift_code(
-        self, recipient: str, amount_pmob: int
-    ) -> Optional[Message]:
+    async def build_gift_code(self, recipient: str, amount_pmob: int) -> Response:
         """Builds a gift code and sends to a recipient, given a recipient as phone number and amount in pMOB."""
         raw_prop = await self.mob_request(
             "build_gift_code",
@@ -706,16 +707,11 @@ class PayBot(Bot):
             from_account_id=await self.mobster.get_account(),
         )
         b58 = submitted.get("result", {}).get("gift_code", {}).get("gift_code_b58")
-        await self.send_message(
-            recipient,
+        return [
             "Built Gift Code",
-        )
-        await self.send_message(recipient, f"{b58}")
-        await self.send_message(
-            recipient,
+            b58,
             f"redeemable for {str(mc_util.pmob2mob(amount_pmob-fee_pmob)).rstrip('0')} MOB",
-        )
-        return None
+        ]
 
     async def send_payment(
         self,

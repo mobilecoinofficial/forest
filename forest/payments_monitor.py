@@ -227,8 +227,8 @@ class Mobster:
             ]["account_ids"][0]
         return self.account_id
 
-    async def get_balance(self) -> str:
-        return (
+    async def get_balance(self) -> int:
+        value = (
             await self.req(
                 {
                     "method": "get_balance_for_account",
@@ -236,6 +236,7 @@ class Mobster:
                 }
             )
         )["result"]["balance"]["unspent_pmob"]
+        return int(value)
 
     async def get_transactions(self, account_id: str) -> dict[str, dict[str, str]]:
         return (
