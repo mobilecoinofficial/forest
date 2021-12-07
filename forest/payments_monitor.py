@@ -3,6 +3,7 @@
 # Copyright (c) 2021 The Forest Team
 
 import asyncio
+import base64
 import json
 import logging
 import random
@@ -21,8 +22,12 @@ if not utils.get_secret("ROOTCRT"):
     ssl_context: Optional[ssl.SSLContext] = None
 else:
     ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-    open("rootcrt.pem", "w").write(utils.get_secret("ROOTCRT"))
-    open("client.full.pem", "w").write(utils.get_secret("CLIENTCRT"))
+    root = open("rootcrt.pem", "wb")
+    root.write(base64.b64decode(utils.get_secret("ROOTCRT")))
+    root.flush()
+    client = open("client.full.pem", "wb")
+    client.write(base64.b64decode(utils.get_secret("CLIENTCRT")))
+    client.flush()
 
     ssl_context.load_verify_locations("rootcrt.pem")
     ssl_context.verify_mode = ssl.CERT_REQUIRED
@@ -222,8 +227,8 @@ class Mobster:
             ]["account_ids"][0]
         return self.account_id
 
-    async def get_balance(self) -> str:
-        return (
+    async def get_balance(self) -> int:
+        value = (
             await self.req(
                 {
                     "method": "get_balance_for_account",
@@ -231,6 +236,7 @@ class Mobster:
                 }
             )
         )["result"]["balance"]["unspent_pmob"]
+        return int(value)
 
     async def get_transactions(self, account_id: str) -> dict[str, dict[str, str]]:
         return (

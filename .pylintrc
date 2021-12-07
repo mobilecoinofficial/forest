@@ -15,6 +15,8 @@ disable=
     format,
     line-too-long
 
+[TYPECHECK]
+ignored-classes=PrintableWrapper
 
 [VARIABLES]
 dummy-variables-rgx=(_|dummy|unused|i)

@@ -3,12 +3,11 @@
 # Copyright (c) 2021 The Forest Team
 
 import asyncio
+import copy
 import logging
 import os
-import copy
 from contextlib import asynccontextmanager
-from typing import Any, Callable, Union, Optional, AsyncGenerator
-
+from typing import Any, AsyncGenerator, Callable, Optional, Union
 
 try:
     import asyncpg

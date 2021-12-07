@@ -7,17 +7,16 @@ import base64
 import datetime
 import json
 import logging
-import urllib
 import time
+import urllib
 from pathlib import Path
-from typing import Optional
-import base58
-import aiohttp
+from typing import Callable, Optional
 import aioredis
-from aiohttp import web
+import base58
 import openai
+from aiohttp import web
 from forest import utils
-from forest.core import Bot, JSON, Message, Response, app
+from forest.core import JSON, Bot, Message, Response, app, hide
 
 openai.api_key = utils.get_secret("OPENAI_API_KEY")
 
@@ -36,10 +35,8 @@ if not utils.LOCAL:
         logging.info("couldn't find creds")
     ssh_key = utils.get_secret("SSH_KEY")
     open("id_rsa", "w").write(base64.b64decode(ssh_key).decode())
-url = (
-    "redis://:speak-friend-and-enter@forest-redis.fly.dev:10000"
-    or utils.get_secret("FLY_REDIS_CACHE_URL")
-    or "redis://:ImVqcG9uMTdqMjc2MWRncjQi8a6c817565c7926c7c7e971b4782cf96a705bb20@forest-dev.redis.fly.io:10079"
+url = "redis://:speak-friend-and-enter@forest-redis.fly.dev:10000" or utils.get_secret(
+    "FLY_REDIS_CACHE_URL"
 )
 # password, rest = url.removeprefix("redis://:").split("@")
 # host, port = rest.split(":")
@@ -105,7 +102,7 @@ class Imogen(Bot):
         out = await get_output(get_all_cost.replace("{end}", str(tomorrow)))
         return json.loads(out)
 
-    do_get_costs = do_get_all_costs = do_get_all_cost
+    do_get_costs = do_get_all_costs = hide(do_get_all_cost)
 
     async def do_status(self, _: Message) -> str:
         "shows the GPU instance state (not the program) and queue size"
@@ -153,6 +150,27 @@ class Imogen(Bot):
             # asyncio.create_task(really_start_worker())
         return resp
 
+    def make_prefix(prefix: str) -> Callable:  # type: ignore # pylint: disable=no-self-argument
+        async def wrapped(self: "Imogen", msg: Message) -> str:
+            msg.text = f"{prefix} {msg.text}"
+            return await self.do_imagine(msg)
+
+        wrapped.__doc__ = f"/{prefix} <prompt>: imagine it with {prefix} style"
+        return wrapped
+
+    do_mythical = make_prefix("mythical")
+    do_festive = make_prefix("festive")
+    do_dark_fantasy = make_prefix("dark fantasy")
+    do_psychic = make_prefix("psychic")
+    do_pastel = make_prefix("pastel")
+    do_hd = make_prefix("hd")
+    do_vibrant = make_prefix("vibrant")
+    do_fantasy = make_prefix("fantasy")
+    do_steampunk = make_prefix("steampunk")
+    do_ukiyo = make_prefix("ukiyo")
+    do_synthwave = make_prefix("synthwave")
+    del make_prefix  # shouldn't be used after class definition is over
+
     async def do_paint(self, msg: Message) -> str:
         """/paint <prompt>"""
         logging.info(msg.full_text)
@@ -198,6 +216,7 @@ class Imogen(Bot):
         )
         return response["choices"][0]["text"].strip()
 
+    @hide
     async def do_gpt(self, msg: Message) -> str:
         response = openai.Completion.create(  # type: ignore
             engine="davinci",
@@ -227,7 +246,7 @@ class Imogen(Bot):
         except json.JSONDecodeError:
             return "json decode error?"
 
-    do_list_prompts = do_listqueue = do_queue = do_list_queue
+    do_list_prompts = do_listqueue = do_queue = hide(do_list_queue)
 
     async def do_dump_queue(self, _: Message) -> Response:
         prompts = []

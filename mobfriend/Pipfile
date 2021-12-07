@@ -12,6 +12,8 @@ phonenumbers = "*"
 termcolor = "*"
 prometheus_async = "*"
 prometheus_client = "*"
+pyqrcode = "*"
+pypng = "*"
 
 [requires]
 python_version = "3.9"
@@ -25,7 +27,7 @@ mypy = "*"
 pylint = "*"
 types-termcolor = "*"
 types-protobuf = "*"
-pyqrcode = "*" # putting it here because pylint needs it to check mobfriend but it's not needed in prod
+
 [packages.aiohttp]
 extras = [ "speedups",]
 version = "==3.8.1"

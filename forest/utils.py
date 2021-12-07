@@ -2,12 +2,13 @@
 # Copyright (c) 2021 MobileCoin Inc.
 # Copyright (c) 2021 The Forest Team
 
+import functools
 import logging
 import os
-import functools
 from asyncio.subprocess import PIPE, create_subprocess_exec
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, Optional, cast
+
 import phonenumbers as pn
 from phonenumbers import NumberParseException
 
