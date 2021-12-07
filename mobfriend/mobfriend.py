@@ -156,7 +156,7 @@ class MobFriend(PayBot):
         memo = status.get("result", {}).get("gift_code_memo") or "None"
         if "Claimed" in claimed:
             return "This gift code has already been redeemed!"
-        return f"Gift code can be redeemed for {(mob_amt-Decimal(0.0004)).quantize(Decimal('1.0000'))}MOB. ({pmob} picoMOB)\nMemo: {memo}"
+        return f"Gift code can be redeemed for {(mob_amt).quantize(Decimal('1.0000'))}MOB. ({pmob} picoMOB)\nMemo: {memo}"
 
     async def do_check(self, msg: Message) -> Response:
         """
