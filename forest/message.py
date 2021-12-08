@@ -117,6 +117,14 @@ class AuxinMessage(Message):
         super().__init__(blob)
 
 
+class Reaction:
+    def __init__(self, reaction: dict) -> None:
+        assert reaction
+        self.emoji = reaction["emoji"]
+        self.author = reaction["targetAuthor"]
+        self.ts = round(reaction["targetTimestamp"] / 1000)
+
+
 class StdioMessage(Message):
     """Represents a Message received from signal-cli, optionally containing a command with arguments."""
 
@@ -139,7 +147,11 @@ class StdioMessage(Message):
         ) or result.get("groupId")
         self.quoted_text = msg.get("quote", {}).get("text")
         self.payment = msg.get("payment")
-        # self.reactions: dict[str, str] = {}
+        try:
+            self.reaction: Optional[Reaction] = Reaction(msg.get("reaction"))
+        except (AssertionError, KeyError):
+            self.reaction = None
+        self.reactions: dict[str, str] = {}
         if self.text:
             logging.info(self)  # "parsed a message with body: '%s'", self.text)
         super().__init__(blob)

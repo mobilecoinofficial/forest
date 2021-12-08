@@ -42,14 +42,16 @@ class DatastoreError(Exception):
 AccountPGExpressions = pghelp.PGExpressions(
     table="signal_accounts",
     # rename="ALTAR TABLE IF EXISTS prod_users RENAME TO {self.table}",
-    migrate="ALTER TABLE IF EXISTS {self.table} ADD IF NOT EXISTS datastore BYTEA, ADD IF NOT EXISTS notes TEXT",
+    migrate="""ALTER TABLE IF EXISTS {self.table} ADD IF NOT EXISTS datastore BYTEA, ADD IF NOT EXISTS notes TEXT,
+        IF NOT EXISTS uuid TEXT""",
     create_table="CREATE TABLE IF NOT EXISTS {self.table} \
             (id TEXT PRIMARY KEY, \
             datastore BYTEA, \
             last_update_ms BIGINT, \
             last_claim_ms BIGINT, \
             active_node_name TEXT, \
-            notes TEXT);",
+            notes TEXT, \
+            uuid TEXT);",
     is_registered="SELECT datastore is not null as registered FROM {self.table} WHERE id=$1",
     get_datastore=get_datastore,
     get_claim="SELECT active_node_name FROM {self.table} WHERE id=$1",
