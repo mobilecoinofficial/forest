@@ -20,6 +20,7 @@ import urllib
 import uuid
 from asyncio import Queue, StreamReader, StreamWriter
 from asyncio.subprocess import PIPE
+from collections import defaultdict
 from functools import wraps
 from textwrap import dedent
 from typing import Any, AsyncIterator, Callable, Optional, Type, Union
@@ -34,7 +35,7 @@ from prometheus_client import Histogram, Summary
 # framework
 import mc_util
 from forest import autosave, datastore, payments_monitor, pghelp, utils
-from forest.message import AuxinMessage, Message, StdioMessage
+from forest.message import AuxinMessage, Message, StdioMessage, Reaction
 
 JSON = dict[str, Any]
 Response = Union[str, list, dict[str, str], None]
@@ -218,7 +219,7 @@ class Signal:
 
     async def handle_auxincli_raw_line(self, line: str) -> None:
         if '{"jsonrpc":"2.0","result":[],"id":"receive"}' not in line:
-            pass  # logging.debug("auxin: %s", line)
+            logging.debug("auxin: %s", line)
         try:
             blob = json.loads(line)
         except json.JSONDecodeError:
@@ -307,6 +308,7 @@ class Signal:
         endsession: bool = False,
         attachments: Optional[list[str]] = None,
         content: str = "",
+        **other_params: str,
     ) -> str:
         """
         Builds send command for the specified recipient in jsonrpc format and
@@ -342,7 +344,9 @@ class Signal:
         if isinstance(msg, list):
             # return the last stamp
             return [
-                await self.send_message(recipient, m, group, endsession, attachments)
+                await self.send_message(
+                    recipient, m, group, endsession, attachments, **other_params
+                )
                 for m in msg
             ][-1]
         if isinstance(msg, dict):
@@ -379,7 +383,7 @@ class Signal:
             "jsonrpc": "2.0",
             "id": future_key,
             "method": "send",
-            "params": params,
+            "params": params | other_params,
         }
         self.pending_requests[future_key] = asyncio.Future()
         await self.auxincli_input_queue.put(json_command)
@@ -471,6 +475,8 @@ class Bot(Signal):
         self.client_session = aiohttp.ClientSession()
         self.mobster = payments_monitor.Mobster()
         self.pongs: dict[str, str] = {}
+        self.received_messages: dict[int, dict[str, Message]] = defaultdict(dict)
+        self.sent_messages: dict[int, dict[str, Message]] = defaultdict(dict)
         super().__init__(bot_number)
         self.pending_response_tasks: list[asyncio.Task] = []
         self.restart_task = asyncio.create_task(
@@ -525,10 +531,45 @@ class Bot(Signal):
                     f"command: {note}. python delta: {python_delta}s. roundtrip delta: {roundtrip_delta}s",
                 )
 
+    async def handle_reaction(self, msg: Message) -> None:
+        """
+        route a reaction to the original message.
+        #if the number of reactions that message has is a fibonacci number, notify the message's author
+        this is probably flakey, because signal only gives us timestamps and
+        not message IDs
+        """
+        assert isinstance(msg.reaction, Reaction)
+        react = msg.reaction
+        logging.debug("reaction from %s targeting %s", msg.sender, react.ts)
+        self.received_messages[msg.ts][msg.sender] = msg
+        if react.author != self.bot_number or react.ts not in self.sent_messages:
+            return
+        target_msg = self.sent_messages[react.ts][msg.sender]
+        logging.debug("found target message %s", target_msg.text)
+        target_msg.reactions[msg.sender_name] = react.emoji
+        logging.debug("reactions: %s", repr(target_msg.reactions))
+        current_reaction_count = len(target_msg.reactions)
+        # of notifications that have received, what is the average number of reactions?
+        reaction_counts = [
+            len(message.reactions)
+            for timestamp, senders in self.sent_messages.items()
+            for sender, message in senders.items()
+            if message.reactions  # and timestamp > 1000*(time.time() - 3600)
+        ]
+        average_reaction_count = sum(reaction_counts) / len(reaction_counts)
+        if current_reaction_count <= average_reaction_count:
+            return
+        logging.debug("sending reaction notif")
+        await self.send_message(
+            target_msg.sender, f"Your prompt got {count} reactions. Congrats!"
+        )
+        # await self.send_payment_using_linked_device(target_msg.sender)
+
     async def handle_message(self, message: Message) -> Response:
         """Method dispatch to do_x commands and goodies.
         Overwrite this to add your own non-command logic,
         but call super().handle_message(message) at the end"""
+
         if message.command:
             if hasattr(self, "do_" + message.command):
                 return await getattr(self, "do_" + message.command)(message)
@@ -836,10 +877,10 @@ if utils.MEMFS:
 
 
 def run_bot(bot: Type[Bot], local_app: web.Application = app) -> None:
-    @local_app.on_startup.append
     async def start_wrapper(our_app: web.Application) -> None:
         our_app["bot"] = bot()
 
+    local_app.on_startup.append(start_wrapper)
     web.run_app(app, port=8080, host="0.0.0.0")
 
 

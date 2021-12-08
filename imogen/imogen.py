@@ -120,16 +120,23 @@ class Imogen(Bot):
         else:
             destination = msg.source
         params: JSON = {}
-        # if msg.attachments:
-        #     attachment = msg.attachments[0]
-        #     key = attachment["id"] + "-" + attachment["filename"]
-        #     params["init_image"] = key
-        #     await redis.set(
-        #         key, open(Path("./attachments") / attachment["id"], "rb").read()
-        #     )
+        if msg.attachments:
+            attachment = msg.attachments[0]
+            key = attachment["id"] + "-" + attachment["filename"]
+            params["init_image"] = key
+            await redis.set(
+                key, open(Path("./attachments") / attachment["id"], "rb").read()
+            )
+        blob = {
+            "prompt": msg.text,
+            "callback": destination,
+            "params": params,
+            "timestamp": msg.timestamp,
+            "author": msg.source,
+        }
         await redis.rpush(
             "prompt_queue",
-            json.dumps({"prompt": msg.text, "callback": destination, "params": params}),
+            json.dumps(blob),
         )
         timed = await redis.llen("prompt_queue")
         return f"you are #{timed} in line"
@@ -150,7 +157,7 @@ class Imogen(Bot):
             # asyncio.create_task(really_start_worker())
         return resp
 
-    def make_prefix(prefix: str) -> Callable:  # type: ignore # pylint: disable=no-self-argument
+    def make_prefix(prefix: str) -> Callable:  # type: ignore  # pylint: disable=no-self-argument
         async def wrapped(self: "Imogen", msg: Message) -> str:
             msg.text = f"{prefix} {msg.text}"
             return await self.do_imagine(msg)
@@ -288,7 +295,10 @@ async def store_image_handler(request: web.Request) -> web.Response:
                 f.write(chunk)
     message = urllib.parse.unquote(request.query.get("message", ""))
     destination = urllib.parse.unquote(request.query.get("destination", ""))
+    ts = int(urllib.parse.unquote(request.query.get("timestamp", "")))
+    author = urllib.parse.unquote(request.query.get("author", ""))
     recipient = utils.signal_format(str(destination))
+    quote = {"quote-timestamp": ts, "quote-author": author, "quote-message": "prompt"}
     if destination and not recipient:
         try:
             group = base58.b58decode(destination).decode()
@@ -296,9 +306,11 @@ async def store_image_handler(request: web.Request) -> web.Response:
             # like THtg80Gi2jvgOEFhQjT2Cm+6plNGXTSBJg2HSnhJyH4=
             group = destination
     if recipient:
-        await bot.send_message(recipient, message, attachments=[str(path)])
+        await bot.send_message(recipient, message, attachments=[str(path)], **quote)
     else:
-        await bot.send_message(None, message, attachments=[str(path)], group=group)
+        await bot.send_message(
+            None, message, attachments=[str(path)], group=group, **quote
+        )
     info = f"{filename} sized of {size} sent"
     logging.info(info)
     return web.Response(text=info)
