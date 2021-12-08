@@ -175,7 +175,6 @@ class MobFriend(PayBot):
             return await self.do_check_balance(msg)
         return status.get("result")
 
-
     async def do_show_details(self, msg: Message) -> Response:
         """
         /show_details [base58 code]
