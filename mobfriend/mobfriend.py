@@ -175,6 +175,16 @@ class MobFriend(PayBot):
             return await self.do_check_balance(msg)
         return status.get("result")
 
+
+    async def do_show_details(self, msg: Message) -> Response:
+        """
+        /show_details [base58 code]
+        Returns detailed information about a base58 code."""
+        try:
+            return str(mc_util.b58_wrapper_to_protobuf(msg.arg1))
+        except:
+            return "b58 could not be parsed!"
+
     @hide
     async def do_create_payment_request(self, msg: Message) -> Response:
         """
