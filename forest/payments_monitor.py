@@ -248,6 +248,107 @@ class Mobster:
             )
         )["result"]["transaction_log_map"]
 
+    async def build_single_txo_proposal(self, recipient: str, amount: str) -> dict:
+        """
+        Build proposal for single txo to single recipient.
+
+        args:
+          recipient (str): Base58 mobilecoin address of recipient
+          amount (int): Amount in picomob to send to address
+
+        returns:
+          dict: Resulting proposal from mobilecoin
+        """
+
+        account_id = await self.get_account()
+        tx_proposal = dict(
+            method="build_transaction",
+            params=dict(
+                account_id=account_id,
+                recipient_public_address=recipient,
+                value_pmob=str(amount),
+                log_tx_proposal=True,
+            ),
+        )
+
+        return await self.req(tx_proposal)
+
+    async def build_multi_txo_proposal(
+        self, txo_proposals: list[tuple[str, str]]
+    ) -> dict:
+        """
+        Submit a multiple txo transaction proposal to full-service api. Txos may
+        be sent to a single address or multiple addresses.
+
+        args:
+          txo_proposals (list[tuple[str, int]]): List of (address, picomob) pairs
+
+        Returns:
+          dict: result of multi-output proposal
+        """
+
+        account_id = await self.get_account()
+        tx_proposal = dict(
+            method="build_transaction",
+            params=dict(
+                account_id=account_id,
+                addresses_and_values=txo_proposals,
+                log_tx_proposal=True,
+            ),
+        )
+
+        return await self.req(tx_proposal)
+
+    async def get_all_transaction_logs_by_block(self) -> dict:
+        """
+        Get all transactions for an account ordered by block
+
+        Returns:
+          dict: transaction records ordered by block
+        """
+
+        request = dict(method="get_all_transaction_logs_ordered_by_block")
+        return await self.req(request)
+
+    async def get_block(self, block: int) -> dict:
+        """
+        Get basic global statistics and statistics about specified block
+
+        args:
+          block (int): Mobilecoin block number
+
+        Returns:
+          dict: block information
+        """
+
+        request = dict(method="get_block", params=dict(block_index=str(block)))
+        return await self.req(request)
+
+    async def get_pending_transactions(self, from_block: int = 2) -> list[dict]:
+        """
+        Get pending transactions within account, optionally counting from a specific
+        block
+
+        args:
+          from_block (int):
+
+        Return:
+          list[dict]: list of pending transactions
+        """
+
+        pending_transactions: list[dict] = []
+        tx_logs = await self.get_all_transaction_logs_by_block()
+        tx_logs = tx_logs.get("result", {}).get("transaction_log_map", {})
+        for _, log in tx_logs.items():
+            if log.get("status") == "tx_status_pending":
+                try:
+                    if int(log.get("submitted_block_index")) >= from_block:
+                        pending_transactions.append(log)
+                except (ValueError, TypeError):
+                    continue
+
+        return pending_transactions
+
     async def monitor_wallet(self) -> None:
         last_transactions: dict[str, dict[str, str]] = {}
         account_id = await self.get_account()
