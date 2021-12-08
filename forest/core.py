@@ -22,7 +22,7 @@ from asyncio import Queue, StreamReader, StreamWriter
 from asyncio.subprocess import PIPE
 from functools import wraps
 from textwrap import dedent
-from typing import Any, AsyncIterator, Callable, Optional, Union
+from typing import Any, AsyncIterator, Callable, Optional, Type, Union
 
 import aiohttp
 import termcolor
@@ -209,7 +209,10 @@ class Signal:
                 for msg in blob["result"]:
                     if not blob.get("content", {}).get("receipt_message", {}):
                         await self.auxincli_output_queue.put(MessageParser(msg))
-            message_blob = blob
+            elif isinstance(blob["result"], dict):
+                message_blob = blob
+            else:
+                logging.warning(blob["result"])
         if message_blob:
             return await self.auxincli_output_queue.put(MessageParser(message_blob))
 
@@ -602,6 +605,10 @@ class PayBot(Bot):
             return None
         return await super().handle_message(message)
 
+    async def get_user_balance(self, account: str) -> float:
+        res = await self.mobster.ledger_manager.get_usd_balance(account)
+        return float(round(res[0].get("balance"), 2))
+
     async def handle_payment(self, message: Message) -> None:
         """Decode the receipt, then update balances.
         Blocks on transaction completion, run concurrently"""
@@ -819,7 +826,7 @@ app.add_routes(
 
 # order of operations:
 # 1. start memfs
-# 2. instanciate Bot, which calls setup_tmpdir
+# 2. instanciate Bot, which may call setup_tmpdir
 # 3. download
 # 4. start process
 
@@ -827,12 +834,14 @@ if utils.MEMFS:
     app.on_startup.append(autosave.start_memfs)
     app.on_startup.append(autosave.start_memfs_monitor)
 
-app.add_routes([])
 
-if __name__ == "__main__":
-
-    @app.on_startup.append
+def run_bot(bot: Type[Bot], local_app: web.Application = app) -> None:
+    @local_app.on_startup.append
     async def start_wrapper(our_app: web.Application) -> None:
-        our_app["bot"] = Bot()
+        our_app["bot"] = bot()
 
     web.run_app(app, port=8080, host="0.0.0.0")
+
+
+if __name__ == "__main__":
+    run_bot(Bot)
