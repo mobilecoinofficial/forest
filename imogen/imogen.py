@@ -11,12 +11,22 @@ import time
 import urllib
 from pathlib import Path
 from typing import Callable, Optional
+
 import aioredis
 import base58
 import openai
 from aiohttp import web
+
 from forest import utils
-from forest.core import JSON, Bot, Message, Response, app, hide
+from forest.core import (
+    JSON,
+    Message,
+    PayBot,
+    Reaction,
+    Response,
+    app,
+    hide,
+)
 
 openai.api_key = utils.get_secret("OPENAI_API_KEY")
 
@@ -70,7 +80,7 @@ async def get_output(cmd: str) -> str:
     return stdout.decode().strip() or stderr.decode().strip()
 
 
-class Imogen(Bot):
+class Imogen(PayBot):
     worker_instance_id: Optional[str] = None
 
     async def start_process(self) -> None:
@@ -88,6 +98,42 @@ class Imogen(Bot):
         await self.auxincli_input_queue.put(profile)
         logging.info(profile)
 
+    # this is a really ugly non-cooperative inheritence
+    async def handle_reaction(self, msg: Message) -> Response:
+        """
+        route a reaction to the original message.
+        #if the number of reactions that message has is a fibonacci number, notify the message's author
+        this is probably flakey, because signal only gives us timestamps and
+        not message IDs
+        """
+        assert isinstance(msg.reaction, Reaction)
+        react = msg.reaction
+        logging.debug("reaction from %s targeting %s", msg.sender, react.ts)
+        self.received_messages[msg.ts][msg.sender] = msg
+        if react.author != self.bot_number or react.ts not in self.sent_messages:
+            return None
+        target_msg = self.sent_messages[react.ts][msg.sender]
+        logging.debug("found target message %s", target_msg.text)
+        target_msg.reactions[msg.sender_name] = react.emoji
+        logging.debug("reactions: %s", repr(target_msg.reactions))
+        current_reaction_count = len(target_msg.reactions)
+        # of notifications that have received, what is the average number of reactions?
+        reaction_counts = [
+            len(message.reactions)
+            for timestamp, senders in self.sent_messages.items()
+            for sender, message in senders.items()
+            if isinstance(
+                message.reactions, dict
+            )  # and timestamp > 1000*(time.time() - 3600)
+        ]
+        average_reaction_count = sum(reaction_counts) / len(reaction_counts)
+        if current_reaction_count <= average_reaction_count:
+            return None
+        logging.debug("sending reaction notif")
+        return f"Your prompt got {current_reaction_count} reactions. Congrats!"
+        # await self.send_payment_using_linked_device(target_msg.sender)
+
+    @hide
     async def do_get_cost(self, _: Message) -> str:
         today = datetime.date.today()
         tomorrow = today + datetime.timedelta(1)
@@ -182,18 +228,27 @@ class Imogen(Bot):
         """/paint <prompt>"""
         logging.info(msg.full_text)
         destination = base58.b58encode(msg.group).decode() if msg.group else msg.source
+        params: JSON = {
+            "vqgan_config": "wikiart_16384.yaml",
+            "vqgan_checkpoint": "wikiart_16384.ckpt",
+        }
+        if msg.attachments:
+            attachment = msg.attachments[0]
+            key = attachment["id"] + "-" + attachment["filename"]
+            params["init_image"] = key
+            await redis.set(
+                key, open(Path("./attachments") / attachment["id"], "rb").read()
+            )
+        blob = {
+            "prompt": msg.text,
+            "callback": destination,
+            "params": params,
+            "timestamp": msg.timestamp,
+            "author": msg.source,
+        }
         await redis.rpush(
             "prompt_queue",
-            json.dumps(
-                {
-                    "prompt": msg.text,
-                    "callback": destination,
-                    "params": {
-                        "vqgan_config": "wikiart_16384.yaml",
-                        "vqgan_checkpoint": "wikiart_16384.ckpt",
-                    },
-                }
-            ),
+            json.dumps(blob),
         )
         timed = await redis.llen("prompt_queue")
         state = await get_output(status)
@@ -237,6 +292,7 @@ class Imogen(Bot):
         )
         return response["choices"][0]["text"].strip()
 
+    @hide
     async def do_stop(self, _: Message) -> str:
         return await get_output(stop.format(self.worker_instance_id))
 
@@ -255,6 +311,7 @@ class Imogen(Bot):
 
     do_list_prompts = do_listqueue = do_queue = hide(do_list_queue)
 
+    @hide
     async def do_dump_queue(self, _: Message) -> Response:
         prompts = []
         while 1:
@@ -272,12 +329,13 @@ class Imogen(Bot):
     #    super().async_shutdown()
 
 
-async def store_image_handler(request: web.Request) -> web.Response:
+async def store_image_handler(  # pylint: disable=too-many-locals
+    request: web.Request,
+) -> web.Response:
     bot = request.app.get("bot")
     if not bot:
         return web.Response(status=504, text="Sorry, no live workers.")
-    reader = await request.multipart()
-    async for field in reader:
+    async for field in await request.multipart():
         logging.info(field)
         logging.info("multipart field name: %s", field.name)
         filename = field.filename or f"attachment-{time.time()}.jpg"
@@ -295,10 +353,14 @@ async def store_image_handler(request: web.Request) -> web.Response:
                 f.write(chunk)
     message = urllib.parse.unquote(request.query.get("message", ""))
     destination = urllib.parse.unquote(request.query.get("destination", ""))
-    ts = int(urllib.parse.unquote(request.query.get("timestamp", "")))
+    ts = int(urllib.parse.unquote(request.query.get("timestamp", "0")))
     author = urllib.parse.unquote(request.query.get("author", ""))
     recipient = utils.signal_format(str(destination))
-    quote = {"quote-timestamp": ts, "quote-author": author, "quote-message": "prompt"}
+    quote = (
+        {"quote-timestamp": ts, "quote-author": author, "quote-message": "prompt"}
+        if author and ts
+        else {}
+    )
     if destination and not recipient:
         try:
             group = base58.b58decode(destination).decode()
