@@ -27,6 +27,7 @@ class Message:
     quoted_text: str
     source: str
     payment: dict
+    reactions: dict[str, str]
 
     def __init__(self, blob: dict) -> None:
         self.blob = blob

@@ -220,10 +220,12 @@ class SignalDatastore:
 
 
 def setup_tmpdir() -> None:
+    logging.info("setup tmpdir")
     if not utils.LOCAL:
+        logging.warning("not setting up tmpdir, running on fly")
         return
     if utils.ROOT_DIR == ".":
-        logging.warning("not setting up tmpdir")
+        logging.warning("not setting up tmpdir, using current directory")
         return
     if utils.ROOT_DIR == "/tmp/local-signal/" and not utils.MEMFS:
         try:

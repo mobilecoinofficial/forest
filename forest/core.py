@@ -531,7 +531,7 @@ class Bot(Signal):
                     f"command: {note}. python delta: {python_delta}s. roundtrip delta: {roundtrip_delta}s",
                 )
 
-    async def handle_reaction(self, msg: Message) -> None:
+    async def handle_reaction(self, msg: Message) -> Response:
         """
         route a reaction to the original message.
         #if the number of reactions that message has is a fibonacci number, notify the message's author
@@ -543,33 +543,19 @@ class Bot(Signal):
         logging.debug("reaction from %s targeting %s", msg.sender, react.ts)
         self.received_messages[msg.ts][msg.sender] = msg
         if react.author != self.bot_number or react.ts not in self.sent_messages:
-            return
+            return None
         target_msg = self.sent_messages[react.ts][msg.sender]
         logging.debug("found target message %s", target_msg.text)
         target_msg.reactions[msg.sender_name] = react.emoji
         logging.debug("reactions: %s", repr(target_msg.reactions))
-        current_reaction_count = len(target_msg.reactions)
-        # of notifications that have received, what is the average number of reactions?
-        reaction_counts = [
-            len(message.reactions)
-            for timestamp, senders in self.sent_messages.items()
-            for sender, message in senders.items()
-            if message.reactions  # and timestamp > 1000*(time.time() - 3600)
-        ]
-        average_reaction_count = sum(reaction_counts) / len(reaction_counts)
-        if current_reaction_count <= average_reaction_count:
-            return
-        logging.debug("sending reaction notif")
-        await self.send_message(
-            target_msg.sender, f"Your prompt got {count} reactions. Congrats!"
-        )
-        # await self.send_payment_using_linked_device(target_msg.sender)
+        return None
 
     async def handle_message(self, message: Message) -> Response:
         """Method dispatch to do_x commands and goodies.
         Overwrite this to add your own non-command logic,
         but call super().handle_message(message) at the end"""
-
+        if message.reaction:
+            return await self.handle_reaction(self, message)
         if message.command:
             if hasattr(self, "do_" + message.command):
                 return await getattr(self, "do_" + message.command)(message)
