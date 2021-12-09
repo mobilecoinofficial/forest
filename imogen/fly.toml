@@ -10,7 +10,7 @@ processes = []
 BOT_NUMBER="+12406171657"
 SIGNAL="signal-cli"
 LOGLEVEL="DEBUG"
-
+ADMIN_GROUP="0om6G+Yj9Kv0LH5Z0992pucLPXTk2qyIYPwBpjhbZO4="
 
 [experimental]
   allowed_public_ports = []
