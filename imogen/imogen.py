@@ -22,7 +22,6 @@ from forest.core import (
     JSON,
     Message,
     PayBot,
-    Reaction,
     Response,
     app,
     hide,
@@ -106,33 +105,30 @@ class Imogen(PayBot):
         this is probably flakey, because signal only gives us timestamps and
         not message IDs
         """
-        logging.info("imogen handling reacti0on")
-        assert isinstance(msg.reaction, Reaction)
-        react = msg.reaction
-        logging.info("reaction from %s targeting %s", msg.source, react.ts)
-        self.received_messages[msg.ts][msg.source] = msg
-        if react.author != self.bot_number or react.ts not in self.sent_messages:
+        await super().handle_reaction(msg)
+        assert msg.reaction
+        if not msg.reaction.ts in self.sent_messages:
+            logging.info("oh no")
             return None
-        target_msg = self.sent_messages[react.ts][msg.source]
-        logging.info("found target message %s", target_msg.text)
-        target_msg.reactions[msg.source] = react.emoji
-        logging.info("reactions: %s", repr(target_msg.reactions))
-        current_reaction_count = len(target_msg.reactions)
-        # of notifications that have received, what is the average number of reactions?
+        message_blob = self.sent_messages[msg.reaction.ts]
+        current_reaction_count = len(message_blob["reactions"])
         reaction_counts = [
-            len(message.reactions)
-            for timestamp, senders in self.sent_messages.items()
-            for sender, message in senders.items()
-            if isinstance(
-                message.reactions, dict
-            )  # and timestamp > 1000*(time.time() - 3600)
+            len(some_message_blob["reactions"])
+            for timestamp, some_message_blob in self.sent_messages.items()
+            # if timestamp > 1000*(time.time() - 3600)
         ]
-        average_reaction_count = sum(reaction_counts) / len(reaction_counts) if reaction_counts else 0
+        average_reaction_count = (
+            sum(reaction_counts) / len(reaction_counts) if reaction_counts else 0
+        )
         if current_reaction_count < average_reaction_count:
+            logging.info("average prompt count")
             return None
         logging.debug("sending reaction notif")
-        return f"Your prompt got {current_reaction_count} reactions. Congrats!"
-        # await self.send_payment_using_linked_device(target_msg.sender)
+        prompt_author = message_blob.get("author")
+        if not prompt_author:
+            return None
+        return f"{prompt_author}, your prompt got {current_reaction_count} reactions. Congrats!"
+        # await self.send_payment_using_linked_device(prompt_author, await self.mobster.get_balance() * 0.1)
 
     @hide
     async def do_get_cost(self, _: Message) -> str:
@@ -321,10 +317,9 @@ class Imogen(PayBot):
             prompts.append(str(json.loads(item)["prompt"]))
         return prompts
 
-    async def payment_response(self, msg: Message, amnt: int) -> None:
-        del msg, amnt
+    async def payment_response(self, msg: Message, amount_pmob: int) -> None:
+        del msg, amount_pmob
         return None
-
 
     # eh
     # async def async_shutdown(self):

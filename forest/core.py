@@ -20,7 +20,6 @@ import urllib
 import uuid
 from asyncio import Queue, StreamReader, StreamWriter
 from asyncio.subprocess import PIPE
-from collections import defaultdict
 from functools import wraps
 from textwrap import dedent
 from typing import Any, AsyncIterator, Callable, Optional, Type, Union
@@ -88,6 +87,7 @@ class Signal:
         self.auxincli_input_queue: Queue[dict] = Queue()
         self.exiting = False
         self.start_time = time.time()
+        self.sent_messages: dict[int, JSON] = {}
 
     async def start_process(self) -> None:
         """
@@ -299,6 +299,12 @@ class Signal:
         return future_key
         # {"jsonrpc": "2.0", "method": "setProfile", "params":{"profile_fields":{"name": {"givenName":"TestBotFriend"}}}, "id":"SetName2"}
 
+    async def save_sent_message(self, rpc_id: str, params: dict[str, str]) -> None:
+        result = await self.pending_requests[rpc_id]
+        logging.info("got timestamp %s for blob %s", result.timestamp, params)
+        self.sent_messages[result.timestamp] = params
+        self.sent_messages[result.timestamp]["reactions"] = {}
+
     # this should maybe yield a future (eep) and/or use auxin_req
     async def send_message(  # pylint: disable=too-many-arguments
         self,
@@ -352,7 +358,7 @@ class Signal:
         if isinstance(msg, dict):
             msg = "\n".join((f"{key}:\t{value}" for key, value in msg.items()))
 
-        params: JSON = {"message": msg}
+        params: JSON = {"message": msg, **other_params}
         if endsession:
             params["end_session"] = True
         if attachments:
@@ -383,10 +389,11 @@ class Signal:
             "jsonrpc": "2.0",
             "id": future_key,
             "method": "send",
-            "params": params | other_params,
+            "params": params,
         }
         self.pending_requests[future_key] = asyncio.Future()
         await self.auxincli_input_queue.put(json_command)
+        asyncio.create_task(self.save_sent_message(future_key, params))
         return future_key
 
     async def admin(self, msg: Response) -> None:
@@ -475,8 +482,6 @@ class Bot(Signal):
         self.client_session = aiohttp.ClientSession()
         self.mobster = payments_monitor.Mobster()
         self.pongs: dict[str, str] = {}
-        self.received_messages: dict[int, dict[str, Message]] = defaultdict(dict)
-        self.sent_messages: dict[int, dict[str, Message]] = defaultdict(dict)
         super().__init__(bot_number)
         self.pending_response_tasks: list[asyncio.Task] = []
         self.restart_task = asyncio.create_task(
@@ -541,13 +546,14 @@ class Bot(Signal):
         assert isinstance(msg.reaction, Reaction)
         react = msg.reaction
         logging.debug("reaction from %s targeting %s", msg.sender, react.ts)
-        self.received_messages[msg.ts][msg.sender] = msg
+        logging.info(self.sent_messages)
         if react.author != self.bot_number or react.ts not in self.sent_messages:
             return None
-        target_msg = self.sent_messages[react.ts][msg.sender]
-        logging.debug("found target message %s", target_msg.text)
-        target_msg.reactions[msg.sender_name] = react.emoji
-        logging.debug("reactions: %s", repr(target_msg.reactions))
+        self.sent_messages[react.ts]["reactions"][msg.source] = react.emoji
+        logging.debug(
+            "found target message %s", self.sent_messages[react.ts]["message"]
+        )
+        logging.debug("reactions: %s", repr(self.sent_messages[react.ts]["reactions"]))
         return None
 
     async def handle_message(self, message: Message) -> Response:
