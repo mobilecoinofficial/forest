@@ -13,7 +13,7 @@ class LinkedAuxin(PayBot):
     async def default(self, message: Message) -> None:
         return None
 
-async def handle_pay(req: web.Request) -> web.Response:
+async def pay_handler(req: web.Request) -> web.Response:
     bot = request.app.get("bot")
     if not bot:
         return web.Response(status=504, text="Sorry, no live workers.")
@@ -24,9 +24,10 @@ async def handle_pay(req: web.Request) -> web.Response:
         return web.Response(status=200)
     return web.Response(status=400) 
 
+app.add_routes([web.post("/pay", pay_handler)])
 
 if __name__ == "__main__":
-    app.add_routes([web.put)])
+    app.add_routes([web.push()])
 
     @app.on_startup.append
     async def start_wrapper(out_app: web.Application) -> None:
