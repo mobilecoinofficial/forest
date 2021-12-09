@@ -397,7 +397,10 @@ class Signal:
         return future_key
 
     async def admin(self, msg: Response) -> None:
-        await self.send_message(utils.get_secret("ADMIN"), msg)
+        if utils.get_secret("ADMIN_GROUP") and not utils.AUXIN:
+            await self.send_message(None, msg, group=utils.get_secret("ADMIN_GROUP"))
+        else:
+            await self.send_message(utils.get_secret("ADMIN"), msg)
 
     async def respond(self, target_msg: Message, msg: Response) -> str:
         """Respond to a message depending on whether it's a DM or group"""
@@ -454,7 +457,9 @@ Datapoint = tuple[int, str, float]  # timestamp in ms, command/info, latency in 
 def requires_admin(command: Callable) -> Callable:
     @wraps(command)
     async def admin_command(self: "Bot", msg: Message) -> Response:
-        if msg.source == utils.get_secret("ADMIN"):
+        if msg.source == utils.get_secret("ADMIN") or msg.group == utils.get_secret(
+            "ADMIN_GROUP"
+        ):
             return await command(self, msg)
         return "you must be an admin to use this command"
 

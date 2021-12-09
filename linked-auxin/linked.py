@@ -9,9 +9,11 @@ from forest import utils
 from forest.core import Message, PayBot, Response, app, hide, requires_admin
 from mc_util import mob2pmob, pmob2mob
 
+
 class LinkedAuxin(PayBot):
     async def default(self, message: Message) -> None:
         return None
+
 
 async def pay_handler(req: web.Request) -> web.Response:
     bot = request.app.get("bot")
@@ -20,9 +22,10 @@ async def pay_handler(req: web.Request) -> web.Response:
     amount = urllib.parse.unquote(request.query.get("amount", "0"))
     destination = urllib.parse.unquote(request.query.get("destination", ""))
     if amount and destination:
-        await bot.send_payment(destination, mob2pmob(float(amount))
+        await bot.send_payment(destination, mob2pmob(float(amount)))
         return web.Response(status=200)
-    return web.Response(status=400) 
+    return web.Response(status=400)
+
 
 app.add_routes([web.post("/pay", pay_handler)])
 
