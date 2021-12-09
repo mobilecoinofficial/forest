@@ -25,6 +25,7 @@ from forest.core import (
     Response,
     app,
     hide,
+    requires_admin,
 )
 
 openai.api_key = utils.get_secret("OPENAI_API_KEY")
@@ -260,7 +261,7 @@ class Imogen(PayBot):
         prompt = (
             "The following is a conversation with an AI assistant. "
             "The assistant is helpful, creative, clever, funny, very friendly, an artist and anarchist\n\n"
-            "Human: Hello, who are you?\nAI: My name is Imogen, I'm an AI that makes dream-like images. How can I help you today?\n"
+            "Human: Hello, who are you?\nAI: My name is Imogen, I'm an AI that makes dream-like images. What's up?\n"
             f"Human: {msg.text}\nAI: "
         )
         response = openai.Completion.create(  # type: ignore
@@ -320,6 +321,10 @@ class Imogen(PayBot):
     async def payment_response(self, msg: Message, amount_pmob: int) -> None:
         del msg, amount_pmob
         return None
+
+    @requires_admin
+    async def do_exception(self, msg: Message) -> None:
+        raise Exception("You asked for it~!")
 
     # eh
     # async def async_shutdown(self):
