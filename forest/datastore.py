@@ -95,7 +95,7 @@ class SignalDatastore:
         else:
             formatted_number = utils.signal_format(number)
             if isinstance(formatted_number, str):
-                self.number = formatted_number # type:ignore
+                self.number = formatted_number
             else:
                 raise Exception("not a valid number")
         logging.info("SignalDatastore number is %s", self.number)

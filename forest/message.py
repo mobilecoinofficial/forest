@@ -123,7 +123,7 @@ class Reaction:
         assert reaction
         self.emoji = reaction["emoji"]
         self.author = reaction["targetAuthorNumber"]
-        self.ts = round(reaction["targetSentTimestamp"] / 1000)
+        self.ts = reaction["targetSentTimestamp"]
 
 
 class StdioMessage(Message):
