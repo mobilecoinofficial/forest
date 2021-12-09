@@ -320,8 +320,8 @@ class Imogen(PayBot):
             prompts.append(str(json.loads(item)["prompt"]))
         return prompts
 
-    # async def payment_response(self, _: Message, _: int) -> None:
-    #     return None
+    async def payment_response(self, _: Message, _: int) -> None:
+        return None
 
     # eh
     # async def async_shutdown(self):

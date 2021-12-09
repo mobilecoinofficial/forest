@@ -81,7 +81,7 @@ class Signal:
             except IndexError:
                 bot_number = utils.get_secret("BOT_NUMBER")
         logging.debug("bot number: %s", bot_number)
-        self.bot_number = bot_number
+        self.bot_number = bot_number.split("_", 1)[0]
         self.datastore = datastore.SignalDatastore(bot_number)
         self.proc: Optional[subprocess.Process] = None
         self.auxincli_output_queue: Queue[Message] = Queue()
