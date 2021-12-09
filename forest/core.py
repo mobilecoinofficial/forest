@@ -555,7 +555,8 @@ class Bot(Signal):
         Overwrite this to add your own non-command logic,
         but call super().handle_message(message) at the end"""
         if message.reaction:
-            return await self.handle_reaction(self, message)
+            logging.info("saw a reaction")
+            return await self.handle_reaction(message)
         if message.command:
             if hasattr(self, "do_" + message.command):
                 return await getattr(self, "do_" + message.command)(message)
