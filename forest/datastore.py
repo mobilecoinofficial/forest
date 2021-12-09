@@ -90,11 +90,14 @@ class SignalDatastore:
 
     def __init__(self, number: str):
         self.account_interface = get_account_interface()
-        formatted_number = utils.signal_format(number)
-        if isinstance(formatted_number, str):
-            self.number: str = formatted_number
+        if utils.get_secret("IGNORE_FORMAT"):
+            self.number = number
         else:
-            raise Exception("not a valid number")
+            formatted_number = utils.signal_format(number)
+            if isinstance(formatted_number, str):
+                self.number: str = formatted_number
+            else:
+                raise Exception("not a valid number")
         logging.info("SignalDatastore number is %s", self.number)
         self.filepath = "data/" + number
         # await self.account_interface.create_table()
