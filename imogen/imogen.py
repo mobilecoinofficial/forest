@@ -106,16 +106,17 @@ class Imogen(PayBot):
         this is probably flakey, because signal only gives us timestamps and
         not message IDs
         """
+        logging.info("imogen handling reacti0on")
         assert isinstance(msg.reaction, Reaction)
         react = msg.reaction
-        logging.debug("reaction from %s targeting %s", msg.sender, react.ts)
-        self.received_messages[msg.ts][msg.sender] = msg
+        logging.info("reaction from %s targeting %s", msg.source, react.ts)
+        self.received_messages[msg.ts][msg.source] = msg
         if react.author != self.bot_number or react.ts not in self.sent_messages:
             return None
-        target_msg = self.sent_messages[react.ts][msg.sender]
-        logging.debug("found target message %s", target_msg.text)
-        target_msg.reactions[msg.sender_name] = react.emoji
-        logging.debug("reactions: %s", repr(target_msg.reactions))
+        target_msg = self.sent_messages[react.ts][msg.source]
+        logging.info("found target message %s", target_msg.text)
+        target_msg.reactions[msg.source] = react.emoji
+        logging.info("reactions: %s", repr(target_msg.reactions))
         current_reaction_count = len(target_msg.reactions)
         # of notifications that have received, what is the average number of reactions?
         reaction_counts = [
@@ -126,8 +127,8 @@ class Imogen(PayBot):
                 message.reactions, dict
             )  # and timestamp > 1000*(time.time() - 3600)
         ]
-        average_reaction_count = sum(reaction_counts) / len(reaction_counts)
-        if current_reaction_count <= average_reaction_count:
+        average_reaction_count = sum(reaction_counts) / len(reaction_counts) if reaction_counts else 0
+        if current_reaction_count < average_reaction_count:
             return None
         logging.debug("sending reaction notif")
         return f"Your prompt got {current_reaction_count} reactions. Congrats!"
@@ -320,8 +321,10 @@ class Imogen(PayBot):
             prompts.append(str(json.loads(item)["prompt"]))
         return prompts
 
-    async def payment_response(self, _: Message, _: int) -> None:
+    async def payment_response(self, msg: Message, amnt: int) -> None:
+        del msg, amnt
         return None
+
 
     # eh
     # async def async_shutdown(self):

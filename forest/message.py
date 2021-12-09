@@ -122,8 +122,8 @@ class Reaction:
     def __init__(self, reaction: dict) -> None:
         assert reaction
         self.emoji = reaction["emoji"]
-        self.author = reaction["targetAuthor"]
-        self.ts = round(reaction["targetTimestamp"] / 1000)
+        self.author = reaction["targetAuthorNumber"]
+        self.ts = round(reaction["targetSentTimestamp"] / 1000)
 
 
 class StdioMessage(Message):
