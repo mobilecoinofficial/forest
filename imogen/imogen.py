@@ -121,13 +121,14 @@ class Imogen(PayBot):
         average_reaction_count = (
             sum(reaction_counts) / len(reaction_counts) if reaction_counts else 0
         )
-        if current_reaction_count < average_reaction_count:
+        if current_reaction_count < average_reaction_count and not message_blob.get("paid"):
             logging.info("average prompt count")
             return None
-        logging.debug("sending reaction notif")
         prompt_author = message_blob.get("author")
         if not prompt_author:
             return None
+        logging.debug("sending reaction notif")
+        self.sent_messages[msg.reaction.ts]["paid"] = True
         return f"{prompt_author}, your prompt got {current_reaction_count} reactions. Congrats!"
         # await self.send_payment_using_linked_device(prompt_author, await self.mobster.get_balance() * 0.1)
 
