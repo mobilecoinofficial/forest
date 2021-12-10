@@ -62,7 +62,6 @@ def fmt_ms(ts: int) -> str:
     return datetime.datetime.utcfromtimestamp(ts / 1000).isoformat()
 
 
-
 class Signal:
     """
     Represents a auxin-cli session.
@@ -220,7 +219,7 @@ class Signal:
 
     async def handle_auxincli_raw_line(self, line: str) -> None:
         if '{"jsonrpc":"2.0","result":[],"id":"receive"}' not in line:
-            logging.debug("auxin: %s", line)
+            pass # logging.debug("auxin: %s", line)
         try:
             blob = json.loads(line)
         except json.JSONDecodeError:
@@ -556,9 +555,7 @@ class Bot(Signal):
         if react.author != self.bot_number or react.ts not in self.sent_messages:
             return None
         self.sent_messages[react.ts]["reactions"][msg.source] = react.emoji
-        logging.debug(
-            "found target message %s", repr(self.sent_messages[react.ts])
-        )
+        logging.debug("found target message %s", repr(self.sent_messages[react.ts]))
         return None
 
     async def handle_message(self, message: Message) -> Response:
@@ -591,7 +588,11 @@ class Bot(Signal):
     async def default(self, message: Message) -> Response:
         resp = "That didn't look like a valid command!\n" + self.documented_commands()
         # if it messages an echoserver, don't get in a loop (or groups)
-        if message.text and not (message.group or message.text == resp):
+        if message.text and not (
+            message.group
+            or "Documented commands" in message.text
+            or resp == message.text
+        ):
             return resp
         return None
 
