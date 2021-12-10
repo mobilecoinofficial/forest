@@ -126,7 +126,7 @@ class Imogen(PayBot):
             average_reaction_count,
             current_reaction_count,
         )
-        if not message_blob.get("paid"):
+        if message_blob.get("paid"):
             logging.info("already notified about current reaction")
             return None
         if current_reaction_count < average_reaction_count:
