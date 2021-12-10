@@ -556,9 +556,8 @@ class Bot(Signal):
             return None
         self.sent_messages[react.ts]["reactions"][msg.source] = react.emoji
         logging.debug(
-            "found target message %s", self.sent_messages[react.ts]["message"]
+            "found target message %s", repr(self.sent_messages[react.ts])
         )
-        logging.debug("reactions: %s", repr(self.sent_messages[react.ts]["reactions"]))
         return None
 
     async def handle_message(self, message: Message) -> Response:
