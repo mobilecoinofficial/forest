@@ -244,7 +244,14 @@ class Imogen(PayBot):
     del make_prefix  # shouldn't be used after class definition is over
 
     async def do_quick(self, msg: Message) -> str:
-        blob = {"prompt": msg.text, "feedforward": True}
+        destination = base58.b58encode(msg.group).decode() if msg.group else msg.source
+        blob = {
+            "prompt": msg.text,
+            "callback": destination,
+            "feedforward": True,
+            "timestamp": msg.timestamp,
+            "author": msg.source,
+        }
         await redis.rpush(
             "prompt_queue",
             json.dumps(blob),
