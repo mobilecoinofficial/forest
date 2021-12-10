@@ -146,9 +146,9 @@ class Imogen(PayBot):
             "quote-message": message_blob["message"],
         }
         if msg.group:
-            await bot.send_message(None, message, group=msg.group, **quote)
+            await self.send_message(None, message, group=msg.group, **quote)
         else:
-            await bot.send_message(msg.source, message, **quote)
+            await self.send_message(msg.source, message, **quote)
         # await self.send_payment_using_linked_device(prompt_author, await self.mobster.get_balance() * 0.1)
         return None
 
