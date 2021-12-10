@@ -134,11 +134,23 @@ class Imogen(PayBot):
             return None
         prompt_author = message_blob.get("quote-author")
         if not prompt_author:
+            logging.info("message doesn't appear to be quoting anything")
             return None
         logging.debug("sending reaction notif")
         message_blob["paid"] = True
-        return f"{prompt_author}, your prompt got {current_reaction_count} reactions. Congrats!"
+        # ideally mention? that's... mention=f"0:1:{prompt_author}"
+        message = f"{prompt_author}, your prompt got {current_reaction_count} reactions. Congrats!"
+        quote = {
+            "quote-timestamp": msg.reaction.ts,
+            "quote-author": self.bot_number,
+            "quote-message": message_blob["message"],
+        }
+        if msg.group:
+            await bot.send_message(None, message, group=msg.group, **quote)
+        else:
+            await bot.send_message(msg.source, message, **quote)
         # await self.send_payment_using_linked_device(prompt_author, await self.mobster.get_balance() * 0.1)
+        return None
 
     @hide
     async def do_get_cost(self, _: Message) -> str:
@@ -230,6 +242,15 @@ class Imogen(PayBot):
     do_ukiyo = make_prefix("ukiyo")
     do_synthwave = make_prefix("synthwave")
     del make_prefix  # shouldn't be used after class definition is over
+
+    async def do_quick(self, msg: Message) -> str:
+        blob = {"prompt": msg.text, "feedforward": True}
+        await redis.rpush(
+            "prompt_queue",
+            json.dumps(blob),
+        )
+        timed = await redis.llen("prompt_queue")
+        return f"you are #{timed} in line"
 
     async def do_paint(self, msg: Message) -> str:
         """/paint <prompt>"""
