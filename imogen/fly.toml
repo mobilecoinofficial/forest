@@ -1,16 +1,18 @@
 # fly.toml file generated for imogen on 2021-10-13T00:08:41-04:00
 
-app = "imogen"
+app = "imogen-renaissance"
 
 kill_signal = "SIGINT"
 kill_timeout = 5
 processes = []
 
 [env]
-BOT_NUMBER="+12406171657"
+
+BOT_NUMBER="+12692069506"
 SIGNAL="signal-cli"
 LOGLEVEL="DEBUG"
 ADMIN_GROUP="0om6G+Yj9Kv0LH5Z0992pucLPXTk2qyIYPwBpjhbZO4="
+FULL_SERVICE_URL="https://full-service-imogen.fly.dev/wallet"
 
 [experimental]
   allowed_public_ports = []

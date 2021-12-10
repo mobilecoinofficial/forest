@@ -8,6 +8,7 @@ import datetime
 import json
 import logging
 import time
+import random
 import urllib
 from pathlib import Path
 from typing import Callable, Optional
@@ -116,10 +117,11 @@ class Imogen(PayBot):
         reaction_counts = [
             len(some_message_blob["reactions"])
             for timestamp, some_message_blob in self.sent_messages.items()
-            # if timestamp > 1000*(time.time() - 3600)
+            if len(some_message_blob["reactions"])
+            # and timestamp > 1000*(time.time() - 3600)
         ]
-        average_reaction_count = (
-            sum(reaction_counts) / len(reaction_counts) if reaction_counts else 1
+        average_reaction_count = max(
+            sum(reaction_counts) / len(reaction_counts) if reaction_counts else 0, 2
         )
         logging.info(
             "average reaction count: %s, current: %s",
@@ -133,18 +135,18 @@ class Imogen(PayBot):
             logging.info("average prompt count")
             return None
         prompt_author = message_blob.get("quote-author")
-        if not prompt_author:
+        if not prompt_author or prompt_author == self.bot_number:
             logging.info("message doesn't appear to be quoting anything")
             return None
         logging.debug("seding reaction notif")
         logging.info("setting paid=True")
         message_blob["paid"] = True
-        # ideally mention? that's... mention=f"0:1:{prompt_author}"
-        message = f"{prompt_author}, your prompt got {current_reaction_count} reactions. Congrats!"
+        message = f" , your prompt got {current_reaction_count} reactions. Congrats!"
         quote = {
             "quote-timestamp": msg.reaction.ts,
             "quote-author": self.bot_number,
             "quote-message": message_blob["message"],
+            "mention": f"0:1:{prompt_author}",
         }
         if msg.group:
             await self.send_message(None, message, group=msg.group, **quote)
@@ -199,6 +201,7 @@ class Imogen(PayBot):
             "params": params,
             "timestamp": msg.timestamp,
             "author": msg.source,
+            "url": utils.URL,
         }
         await redis.rpush(
             "prompt_queue",
@@ -252,6 +255,7 @@ class Imogen(PayBot):
             "feedforward": True,
             "timestamp": msg.timestamp,
             "author": msg.source,
+            "url": utils.URL,
         }
         await redis.rpush(
             "prompt_queue",
@@ -281,6 +285,7 @@ class Imogen(PayBot):
             "params": params,
             "timestamp": msg.timestamp,
             "author": msg.source,
+            "url": utils.URL,
         }
         await redis.rpush(
             "prompt_queue",
@@ -370,6 +375,11 @@ class Imogen(PayBot):
     #    super().async_shutdown()
 
 
+tip_message = """Please help Imogen pay for her art with Signal Pay.
+Let Imogen know if you like her work by adding a reaction ❤️ to your favorite results.
+Imogen shares tips with her collaborators."""
+
+
 async def store_image_handler(  # pylint: disable=too-many-locals
     request: web.Request,
 ) -> web.Response:
@@ -387,7 +397,7 @@ async def store_image_handler(  # pylint: disable=too-many-locals
             logging.info("writing file")
             while True:
                 chunk = await field.read_chunk()  # 8192 bytes by default.
-                logging.info("read chunk")
+                #logging.info("read chunk")
                 if not chunk:
                     break
                 size += len(chunk)
@@ -410,10 +420,13 @@ async def store_image_handler(  # pylint: disable=too-many-locals
             group = destination
     if recipient:
         await bot.send_message(recipient, message, attachments=[str(path)], **quote)
+
     else:
         await bot.send_message(
             None, message, attachments=[str(path)], group=group, **quote
         )
+        if random.random() < 0.15:
+            await bot.send_message(None, tip_message, group=group)
     info = f"{filename} sized of {size} sent"
     logging.info(info)
     return web.Response(text=info)

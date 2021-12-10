@@ -99,7 +99,7 @@ class SignalDatastore:
             else:
                 raise Exception("not a valid number")
         logging.info("SignalDatastore number is %s", self.number)
-        self.filepath = "data/" + number
+        self.filepath = "data/" + number.split("_")[0]
         # await self.account_interface.create_table()
         setup_tmpdir()  # shouldn't do anything if not running locally
 
