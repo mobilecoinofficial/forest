@@ -1,0 +1,5 @@
+__pycache__
+dev_secrets
+data
+*log
+.idea
