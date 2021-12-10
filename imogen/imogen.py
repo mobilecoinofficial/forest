@@ -136,7 +136,8 @@ class Imogen(PayBot):
         if not prompt_author:
             logging.info("message doesn't appear to be quoting anything")
             return None
-        logging.debug("sending reaction notif")
+        logging.debug("seding reaction notif")
+        logging.info("setting paid=True")
         message_blob["paid"] = True
         # ideally mention? that's... mention=f"0:1:{prompt_author}"
         message = f"{prompt_author}, your prompt got {current_reaction_count} reactions. Congrats!"
