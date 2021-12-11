@@ -152,6 +152,7 @@ class Imogen(PayBot):
             await self.send_message(None, message, group=msg.group, **quote)
         else:
             await self.send_message(msg.source, message, **quote)
+        await self.admin(f"need to pay {prompt_author}")
         # await self.send_payment_using_linked_device(prompt_author, await self.mobster.get_balance() * 0.1)
         return None
 
@@ -425,7 +426,7 @@ async def store_image_handler(  # pylint: disable=too-many-locals
         await bot.send_message(
             None, message, attachments=[str(path)], group=group, **quote
         )
-        if random.random() < 0.15:
+        if random.random() < 0.05:
             await bot.send_message(None, tip_message, group=group)
     info = f"{filename} sized of {size} sent"
     logging.info(info)
