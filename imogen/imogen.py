@@ -191,7 +191,7 @@ class Imogen(PayBot):
         params: JSON = {}
         if msg.attachments:
             attachment = msg.attachments[0]
-            key = attachment["id"] + "-" + attachment["filename"]
+            key = attachment["id"] + "-" + (attachment.get("filename") or ".jpg")
             params["init_image"] = key
             await redis.set(
                 key, open(Path("./attachments") / attachment["id"], "rb").read()
@@ -398,7 +398,7 @@ async def store_image_handler(  # pylint: disable=too-many-locals
             logging.info("writing file")
             while True:
                 chunk = await field.read_chunk()  # 8192 bytes by default.
-                #logging.info("read chunk")
+                # logging.info("read chunk")
                 if not chunk:
                     break
                 size += len(chunk)
