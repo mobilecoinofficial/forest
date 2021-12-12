@@ -183,8 +183,7 @@ class MobFriend(PayBot):
             details = mc_util.b58_wrapper_to_protobuf(msg.arg1)
             if details:
                 return str(details)
-            else:
-                return "Sorry, the provided code has an invalid checksum."
+            return "Sorry, the provided code has an invalid checksum."
         else:
             return "Please provide a base58 code!"
 
@@ -256,8 +255,7 @@ class MobFriend(PayBot):
         payload.payment_request.public_address.CopyFrom(address_proto.public_address)
         if not amount or not amount.replace(".", "0", 1).isnumeric():
             return "Sorry, you need to provide a price (in MOB)!"
-        else:
-            payload.payment_request.value = mob2pmob(Decimal(amount))
+        payload.payment_request.value = mob2pmob(Decimal(amount))
         payload.payment_request.memo = memo
         payment_request_b58 = mc_util.add_checksum_and_b58(payload.SerializeToString())
         pyqrcode.QRCode(payment_request_b58).png(
