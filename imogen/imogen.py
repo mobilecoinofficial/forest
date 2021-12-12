@@ -171,7 +171,6 @@ class Imogen(Bot):
         out = await get_output(get_all_cost.replace("{end}", str(tomorrow)))
         return json.loads(out)
 
-    @hide
     do_get_costs = do_get_all_costs = hide(do_get_all_cost)
 
     @hide
@@ -179,7 +178,8 @@ class Imogen(Bot):
         "shows the GPU instance state (not the program) and queue size"
         state = await get_output(status)
         queue_size = await redis.llen("prompt_queue")
-        return f"worker state: {state}, queue size: {queue_size}"
+        # return f"worker state: {state}, queue size: {queue_size}"
+        return f"queue size: {queue_size}"
 
     image_rate_cents = 5
 
@@ -219,15 +219,15 @@ class Imogen(Bot):
         # check if worker is up
         resp = await self.do_imagine_nostart(msg)
         state = await get_output(status)
-        logging.info("worker state: %s", state)
-        # await self.mobster.put_usd_tx(msg.sender, self.image_rate_cents, msg.text[:32])
-        if state in ("stopped", "stopping"):
-            # if not, turn it on
-            output = await get_output(start.format(self.worker_instance_id))
-            logging.info(output)
-            if "InsufficientInstanceCapacity" in output:
-                resp += ".\nsorry, andy jassy hates us. no gpu for us"
-            # asyncio.create_task(really_start_worker())
+        # logging.info("worker state: %s", state)
+        # # await self.mobster.put_usd_tx(msg.sender, self.image_rate_cents, msg.text[:32])
+        # if state in ("stopped", "stopping"):
+        #     # if not, turn it on
+        #     output = await get_output(start.format(self.worker_instance_id))
+        #     logging.info(output)
+        #     if "InsufficientInstanceCapacity" in output:
+        #         resp += ".\nsorry, andy jassy hates us. no gpu for us"
+        #     # asyncio.create_task(really_start_worker())
         return resp
 
     def make_prefix(prefix: str) -> Callable:  # type: ignore  # pylint: disable=no-self-argument
@@ -296,12 +296,12 @@ class Imogen(Bot):
             json.dumps(blob),
         )
         timed = await redis.llen("prompt_queue")
-        state = await get_output(status)
-        logging.info("worker state: %s", state)
-        # await self.mobster.put_usd_tx(msg.sender, self.image_rate_cents, msg.text[:32])
-        if state in ("stopped", "stopping"):
-            # if not, turn it on
-            logging.info(await get_output(start.format(self.worker_instance_id)))
+        # state = await get_output(status)
+        # logging.info("worker state: %s", state)
+        # # await self.mobster.put_usd_tx(msg.sender, self.image_rate_cents, msg.text[:32])
+        # if state in ("stopped", "stopping"):
+        #     # if not, turn it on
+        #     logging.info(await get_output(start.format(self.worker_instance_id)))
         return f"you are #{timed} in line"
 
     @hide
@@ -370,9 +370,19 @@ class Imogen(Bot):
         del msg, amount_pmob
         return None
 
+    @hide
+    async def do_poke(self, _: Message) -> str:
+        return "poke"
+
     @requires_admin
     async def do_exception(self, msg: Message) -> None:
         raise Exception("You asked for it~!")
+
+    async def default(self, message: Message) -> Response:
+        if message.text and message.text.startswith("/"):
+            message.text = message.text.removeprefix("/")
+            return await self.do_imagine(message)
+        return await super().default(message)
 
     # eh
     # async def async_shutdown(self):
@@ -413,10 +423,16 @@ async def store_image_handler(  # pylint: disable=too-many-locals
     author = urllib.parse.unquote(request.query.get("author", ""))
     recipient = utils.signal_format(str(destination))
     quote = (
-        {"quote-timestamp": ts, "quote-author": author, "quote-message": "prompt"}
+        {
+            "quote-timestamp": ts,
+            "quote-author": author,
+            "quote-message": "prompt",
+            "mention": f"0:1:{author}",
+        }
         if author and ts
         else {}
     )
+    message = "  " + message 
     if destination and not recipient:
         try:
             group = base58.b58decode(destination).decode()
