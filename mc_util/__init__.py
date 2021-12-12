@@ -77,9 +77,11 @@ def b58_wrapper_to_protobuf(
 def b58_wrapper_to_b64_public_address(b58_string: str) -> str:
     """Convert a b58-encoded PrintableWrapper address into a b64-encoded PublicAddress protobuf"""
     wrapper = b58_wrapper_to_protobuf(b58_string)
-    public_address = wrapper.public_address
-    public_address_bytes = public_address.SerializeToString()
-    return base64.b64encode(public_address_bytes).decode("utf-8")
+    if wrapper:
+        public_address = wrapper.public_address
+        public_address_bytes = public_address.SerializeToString()
+        return base64.b64encode(public_address_bytes).decode("utf-8")
+    return None
 
 
 def add_checksum_and_b58(wrapper_bytes: bytes) -> str:
