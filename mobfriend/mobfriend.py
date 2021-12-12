@@ -204,9 +204,13 @@ class MobFriend(PayBot):
         payload = mc_util.printable_pb2.PrintableWrapper()
         address_proto = mc_util.b58_wrapper_to_protobuf(address)
         if address_proto:
-            payload.payment_request.public_address.CopyFrom(address_proto.public_address)
+            payload.payment_request.public_address.CopyFrom(
+                address_proto.public_address
+            )
         else:
-            return "Sorry, could not parse a valid MobileCoin address from your profile!"
+            return (
+                "Sorry, could not parse a valid MobileCoin address from your profile!"
+            )
         if msg.tokens and not (
             isinstance(msg.tokens[0], str)
             and len(msg.tokens) > 0
