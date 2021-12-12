@@ -184,8 +184,7 @@ class MobFriend(PayBot):
             if details:
                 return str(details)
             return "Sorry, the provided code has an invalid checksum."
-        else:
-            return "Please provide a base58 code!"
+        return "Please provide a base58 code!"
 
     async def do_payme(self, msg: Message) -> Response:
         """
