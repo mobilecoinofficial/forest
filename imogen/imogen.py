@@ -22,7 +22,7 @@ from forest import utils
 from forest.core import (
     JSON,
     Message,
-    PayBot,
+    Bot,
     Response,
     app,
     hide,
@@ -81,7 +81,7 @@ async def get_output(cmd: str) -> str:
     return stdout.decode().strip() or stderr.decode().strip()
 
 
-class Imogen(PayBot):
+class Imogen(Bot):
     worker_instance_id: Optional[str] = None
 
     async def start_process(self) -> None:
@@ -121,7 +121,7 @@ class Imogen(PayBot):
             # and timestamp > 1000*(time.time() - 3600)
         ]
         average_reaction_count = max(
-            sum(reaction_counts) / len(reaction_counts) if reaction_counts else 0, 2
+            sum(reaction_counts) / len(reaction_counts) if reaction_counts else 0, 4
         )
         logging.info(
             "average reaction count: %s, current: %s",
@@ -171,8 +171,10 @@ class Imogen(PayBot):
         out = await get_output(get_all_cost.replace("{end}", str(tomorrow)))
         return json.loads(out)
 
+    @hide
     do_get_costs = do_get_all_costs = hide(do_get_all_cost)
 
+    @hide
     async def do_status(self, _: Message) -> str:
         "shows the GPU instance state (not the program) and queue size"
         state = await get_output(status)
@@ -181,6 +183,7 @@ class Imogen(PayBot):
 
     image_rate_cents = 5
 
+    @hide
     async def do_imagine_nostart(self, msg: Message) -> str:
         logging.info(msg.full_text)
         logging.info(msg.text)
@@ -301,6 +304,7 @@ class Imogen(PayBot):
             logging.info(await get_output(start.format(self.worker_instance_id)))
         return f"you are #{timed} in line"
 
+    @hide
     async def do_c(self, msg: Message) -> str:
         prompt = (
             "The following is a conversation with an AI assistant. "
