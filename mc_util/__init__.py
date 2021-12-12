@@ -74,7 +74,7 @@ def b58_wrapper_to_protobuf(
     return wrapper
 
 
-def b58_wrapper_to_b64_public_address(b58_string: str) -> str:
+def b58_wrapper_to_b64_public_address(b58_string: str) -> Optional[str]:
     """Convert a b58-encoded PrintableWrapper address into a b64-encoded PublicAddress protobuf"""
     wrapper = b58_wrapper_to_protobuf(b58_string)
     if wrapper:
