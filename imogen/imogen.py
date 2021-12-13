@@ -268,6 +268,23 @@ class Imogen(Bot):
         timed = await redis.llen("prompt_queue")
         return f"you are #{timed} in line"
 
+    async def do_fast(self, msg: Message) -> str:
+        destination = base58.b58encode(msg.group).decode() if msg.group else msg.source
+        blob = {
+            "prompt": msg.text,
+            "callback": destination,
+            "feedforward_fast": True,
+            "timestamp": msg.timestamp,
+            "author": msg.source,
+            "url": utils.URL,
+        }
+        await redis.rpush(
+            "prompt_queue",
+            json.dumps(blob),
+        )
+        timed = await redis.llen("prompt_queue")
+        return f"you are #{timed} in line"
+
     async def do_paint(self, msg: Message) -> str:
         """/paint <prompt>"""
         logging.info(msg.full_text)
