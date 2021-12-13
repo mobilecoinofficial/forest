@@ -278,7 +278,7 @@ class Imogen(Bot):
         }
         if msg.attachments:
             attachment = msg.attachments[0]
-            key = attachment["id"] + "-" + attachment["filename"]
+            key = attachment["id"] + "-" + (attachment.get("filename") or ".jpg")
             params["init_image"] = key
             await redis.set(
                 key, open(Path("./attachments") / attachment["id"], "rb").read()
@@ -432,7 +432,7 @@ async def store_image_handler(  # pylint: disable=too-many-locals
         if author and ts
         else {}
     )
-    message = "  " + message 
+    message = "   " + message
     if destination and not recipient:
         try:
             group = base58.b58decode(destination).decode()
