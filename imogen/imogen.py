@@ -413,6 +413,10 @@ tip_message = """Please help Imogen pay for her art with Signal Pay.
 Let Imogen know if you like her work by adding a reaction ❤️ to your favorite results.
 Imogen shares tips with her collaborators."""
 
+# How to use Signal Payments:
+    # 1. Update Signal app: https://signal.org/install/
+    # 2. Open Signal, tap on the icon in the top left for Settings. If you don’t see *Payments*, reboot your phone. It can take a few hours.
+    # 3. Tap *Payments* and *Activate Payments*
 
 async def store_image_handler(  # pylint: disable=too-many-locals
     request: web.Request,
