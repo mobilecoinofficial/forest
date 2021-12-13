@@ -194,7 +194,7 @@ class Imogen(Bot):
         params: JSON = {}
         if msg.attachments:
             attachment = msg.attachments[0]
-            key = attachment["id"] + "-" + (attachment.get("filename") or ".jpg")
+            key = "input/" + attachment["id"] + "-" + (attachment.get("filename") or ".jpg")
             params["init_image"] = key
             await redis.set(
                 key, open(Path("./attachments") / attachment["id"], "rb").read()
@@ -252,6 +252,7 @@ class Imogen(Bot):
     del make_prefix  # shouldn't be used after class definition is over
 
     async def do_quick(self, msg: Message) -> str:
+        """Generate a 512x512 image off from the last time this command was used"""
         destination = base58.b58encode(msg.group).decode() if msg.group else msg.source
         blob = {
             "prompt": msg.text,
@@ -269,6 +270,7 @@ class Imogen(Bot):
         return f"you are #{timed} in line"
 
     async def do_fast(self, msg: Message) -> str:
+        """Generate an image in a single pass"""
         destination = base58.b58encode(msg.group).decode() if msg.group else msg.source
         blob = {
             "prompt": msg.text,
@@ -295,7 +297,7 @@ class Imogen(Bot):
         }
         if msg.attachments:
             attachment = msg.attachments[0]
-            key = attachment["id"] + "-" + (attachment.get("filename") or ".jpg")
+            key = "input/" + attachment["id"] + "-" + (attachment.get("filename") or ".jpg")
             params["init_image"] = key
             await redis.set(
                 key, open(Path("./attachments") / attachment["id"], "rb").read()
