@@ -39,7 +39,7 @@ class Message:
                 command, *self.tokens = shlex.split(self.text)
             except ValueError:
                 command, *self.tokens = self.text.split(" ")
-            self.command = command[1:]  # remove /
+            self.command = command[1:].lower()  # remove /
             self.arg1 = self.tokens[0] if self.tokens else None
             self.text = " ".join(self.tokens)
         elif self.text and "help" in self.text.lower():

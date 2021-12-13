@@ -566,6 +566,7 @@ class Bot(Signal):
             logging.info("saw a reaction")
             return await self.handle_reaction(message)
         if message.command:
+            # todo: https://github.com/jazzband/docopt-ng/blob/63094d5fb82a0dcdea59b606b9fecbff0973b6cc/docopt.py#L49
             if hasattr(self, "do_" + message.command):
                 return await getattr(self, "do_" + message.command)(message)
             suggest_help = " Try /help." if hasattr(self, "do_help") else ""
