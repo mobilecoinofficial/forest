@@ -394,4 +394,4 @@ if __name__ == "__main__":
         our_app["routing"] = RoutingManager()
         our_app["group_routing"] = GroupRoutingManager()
 
-    web.run_app(app, port=8080, host="0.0.0.0")
+    web.run_app(app, port=8080, host="0.0.0.0", access_log=None)

@@ -120,7 +120,7 @@ class Mobster:
 
     async def req(self, data: dict) -> dict:
         better_data = {"jsonrpc": "2.0", "id": 1, **data}
-        logging.debug("url is %s is there a space?", self.url)
+        logging.debug("url is %s", self.url)
         conn = aiohttp.TCPConnector(ssl=ssl_context)
         mob_req = aiohttp.ClientSession(connector=conn).post(
             self.url,
