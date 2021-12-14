@@ -409,7 +409,7 @@ class Imogen(Bot):
     #    super().async_shutdown()
 
 
-tip_message = """Please help Imogen pay for her art with Signal Pay.
+tip_message = """Imogen costs $0.07/image. Please help Imogen pay for her art with Signal Pay. 
 Let Imogen know if you like her work by adding a reaction ❤️ to your favorite results.
 Imogen shares tips with her collaborators."""
 
