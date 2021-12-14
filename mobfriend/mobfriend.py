@@ -175,10 +175,20 @@ class MobFriend(PayBot):
             return await self.do_check_balance(msg)
         return status.get("result")
 
-    @hide
-    async def do_create_payment_request(self, msg: Message) -> Response:
+    async def do_show_details(self, msg: Message) -> Response:
         """
-        /create_payment_request [amount] [memo]
+        /show_details [base58 code]
+        Returns detailed information about a base58 code."""
+        if msg.arg1:
+            details = mc_util.b58_wrapper_to_protobuf(msg.arg1)
+            if details:
+                return str(details)
+            return "Sorry, the provided code has an invalid checksum."
+        return "Please provide a base58 code!"
+
+    async def do_payme(self, msg: Message) -> Response:
+        """
+        /payme [amount] [memo]
 
         Creates a payment request (as QR code and b58 code to copy and paste.)
         For example, /payme 1.0 "Pay me a MOB!"
@@ -190,8 +200,15 @@ class MobFriend(PayBot):
         if not address:
             return "Unable to retrieve your MobileCoin address!"
         payload = mc_util.printable_pb2.PrintableWrapper()
-        address_proto = mc_util.b58_wrapper_to_protobuf(address).public_address
-        payload.payment_request.public_address.CopyFrom(address_proto)
+        address_proto = mc_util.b58_wrapper_to_protobuf(address)
+        if address_proto:
+            payload.payment_request.public_address.CopyFrom(
+                address_proto.public_address
+            )
+        else:
+            return (
+                "Sorry, could not parse a valid MobileCoin address from your profile!"
+            )
         if msg.tokens and not (
             isinstance(msg.tokens[0], str)
             and len(msg.tokens) > 0
@@ -214,7 +231,41 @@ class MobFriend(PayBot):
         )
         return payment_request_b58
 
-    do_payme = hide(do_create_payment_request)
+    async def do_paywallet(self, msg: Message) -> Response:
+        """
+        /paywallet [b58address] [amount] [memo]
+
+        Creates a payment request (as QR code and b58 code to copy and paste.)
+        For example, /paywallet [address] 1.0 "Pay me a MOB!"
+        will create a payment request with
+            * the destination [b58address],
+            * a 1MOB value,
+            * the memo "Pay me a MOB!"
+        """
+        address = msg.arg1
+        amount = msg.arg2
+        memo = msg.arg3 or ""
+        if not address:
+            return "Please provide your b58 address as the first argument!"
+        payload = mc_util.printable_pb2.PrintableWrapper()
+        address_proto = mc_util.b58_wrapper_to_protobuf(address)
+        if not address_proto:
+            return "Sorry, could not find a valid address!"
+        payload.payment_request.public_address.CopyFrom(address_proto.public_address)
+        if not amount or not amount.replace(".", "0", 1).isnumeric():
+            return "Sorry, you need to provide a price (in MOB)!"
+        payload.payment_request.value = mob2pmob(Decimal(amount))
+        payload.payment_request.memo = memo
+        payment_request_b58 = mc_util.add_checksum_and_b58(payload.SerializeToString())
+        pyqrcode.QRCode(payment_request_b58).png(
+            f"/tmp/{msg.timestamp}.png", scale=5, quiet_zone=10
+        )
+        await self.send_message(
+            recipient=msg.source,
+            attachments=[f"/tmp/{msg.timestamp}.png"],
+            msg="Scan me in the Mobile Wallet!",
+        )
+        return payment_request_b58
 
     async def do_qr(self, msg: Message) -> Response:
         """
