@@ -236,7 +236,7 @@ class MobFriend(PayBot):
         /paywallet [b58address] [amount] [memo]
 
         Creates a payment request (as QR code and b58 code to copy and paste.)
-        For example, /payme [address] 1.0 "Pay me a MOB!"
+        For example, /paywallet [address] 1.0 "Pay me a MOB!"
         will create a payment request with
             * the destination [b58address],
             * a 1MOB value,
