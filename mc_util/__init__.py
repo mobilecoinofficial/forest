@@ -2,7 +2,7 @@
 # Copyright (c) 2021 MobileCoin Inc.
 # Copyright (c) 2021 The Forest Team
 from decimal import Decimal
-from typing import Union
+from typing import Union, Optional
 import zlib
 import base64
 
@@ -60,22 +60,28 @@ def b64_public_address_to_b58_wrapper(b64_string: str) -> str:
 # > new messages without breaking backwards compatibility
 
 # this can be used to import a gift card's entropy into full-service
-def b58_wrapper_to_protobuf(b58_string: str) -> printable_pb2.PrintableWrapper:
+def b58_wrapper_to_protobuf(
+    b58_string: str,
+) -> Optional[printable_pb2.PrintableWrapper]:
     """Convert a b58-encoded PrintableWrapper into a protobuf
     It could be a public address, a gift code, or a payment request"""
     checksum_and_wrapper_bytes = base58.b58decode(b58_string)
     wrapper_bytes = checksum_and_wrapper_bytes[4:]
+    if add_checksum_and_b58(wrapper_bytes) != b58_string:
+        return None
     wrapper = printable_pb2.PrintableWrapper()
     wrapper.ParseFromString(wrapper_bytes)
     return wrapper
 
 
-def b58_wrapper_to_b64_public_address(b58_string: str) -> str:
+def b58_wrapper_to_b64_public_address(b58_string: str) -> Optional[str]:
     """Convert a b58-encoded PrintableWrapper address into a b64-encoded PublicAddress protobuf"""
     wrapper = b58_wrapper_to_protobuf(b58_string)
-    public_address = wrapper.public_address
-    public_address_bytes = public_address.SerializeToString()
-    return base64.b64encode(public_address_bytes).decode("utf-8")
+    if wrapper:
+        public_address = wrapper.public_address
+        public_address_bytes = public_address.SerializeToString()
+        return base64.b64encode(public_address_bytes).decode("utf-8")
+    return None
 
 
 def add_checksum_and_b58(wrapper_bytes: bytes) -> str:
