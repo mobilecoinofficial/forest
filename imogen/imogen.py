@@ -11,6 +11,7 @@ import time
 import random
 import urllib
 from pathlib import Path
+from textwrap import dedent
 from typing import Callable, Optional
 
 import aioredis
@@ -176,7 +177,7 @@ class Imogen(Bot):
     @hide
     async def do_status(self, _: Message) -> str:
         "shows the GPU instance state (not the program) and queue size"
-        state = await get_output(status)
+        #state = await get_output(status)
         queue_size = await redis.llen("prompt_queue")
         # return f"worker state: {state}, queue size: {queue_size}"
         return f"queue size: {queue_size}"
@@ -194,7 +195,12 @@ class Imogen(Bot):
         params: JSON = {}
         if msg.attachments:
             attachment = msg.attachments[0]
-            key = "input/" + attachment["id"] + "-" + (attachment.get("filename") or ".jpg")
+            key = (
+                "input/"
+                + attachment["id"]
+                + "-"
+                + (attachment.get("filename") or ".jpg")
+            )
             params["init_image"] = key
             await redis.set(
                 key, open(Path("./attachments") / attachment["id"], "rb").read()
@@ -218,7 +224,7 @@ class Imogen(Bot):
         """/imagine <prompt>"""
         # check if worker is up
         resp = await self.do_imagine_nostart(msg)
-        state = await get_output(status)
+        # state = await get_output(status)
         # logging.info("worker state: %s", state)
         # # await self.mobster.put_usd_tx(msg.sender, self.image_rate_cents, msg.text[:32])
         # if state in ("stopped", "stopping"):
@@ -297,7 +303,12 @@ class Imogen(Bot):
         }
         if msg.attachments:
             attachment = msg.attachments[0]
-            key = "input/" + attachment["id"] + "-" + (attachment.get("filename") or ".jpg")
+            key = (
+                "input/"
+                + attachment["id"]
+                + "-"
+                + (attachment.get("filename") or ".jpg")
+            )
             params["init_image"] = key
             await redis.set(
                 key, open(Path("./attachments") / attachment["id"], "rb").read()
@@ -403,20 +414,37 @@ class Imogen(Bot):
             return await self.do_imagine(message)
         return await super().default(message)
 
+    async def do_tip(self, _: Message) -> str:
+        return dedent(
+            """
+        Thank you for collaborating with Imogen, if you'd like to support the project you can send her a tip of any amount with Signal Pay.
+
+        If you have payments activated, simply click on the plus sign and choose payment.
+
+        If you don't have Payments activated follow these instructions to activate it.
+
+        1. Update Signal app: https://signal.org/install/
+        2. Open Signal, tap on the icon in the top left for Settings. If you don’t see *Payments*, reboot your phone. It can take a few hours.
+        3. Tap *Payments* and *Activate Payments*
+
+        For more information on Signal Payments visit:
+
+        https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
+        )
+
     # eh
     # async def async_shutdown(self):
     #    await redis.disconnect()
     #    super().async_shutdown()
 
 
-tip_message = """Imogen costs $0.07/image. Please help Imogen pay for her art with Signal Pay. 
-Let Imogen know if you like her work by adding a reaction ❤️ to your favorite results.
-Imogen shares tips with her collaborators."""
+# by messaging her and sending a payment
+tip_message = """
+If you like Imogen's art, consider supporting her with a Signal Pay donation.
+Send Imogen a message with the command "/tip" for instructions on how to donate. It costs her 7 cents to generate each image.
+Imogen shares tips with collaborators! If you like an Imogen Imoge, react❤️  t️o it. Imoges with multiple reacts will award the prompt writer with a small tip (currently 0.1 MOB)
+"""
 
-# How to use Signal Payments:
-    # 1. Update Signal app: https://signal.org/install/
-    # 2. Open Signal, tap on the icon in the top left for Settings. If you don’t see *Payments*, reboot your phone. It can take a few hours.
-    # 3. Tap *Payments* and *Activate Payments*
 
 async def store_image_handler(  # pylint: disable=too-many-locals
     request: web.Request,
@@ -450,12 +478,12 @@ async def store_image_handler(  # pylint: disable=too-many-locals
             "quote-timestamp": ts,
             "quote-author": author,
             "quote-message": "prompt",
-            "mention": f"0:1:{author}",
+            "mention": f"{len(message)-1}:{len(message)}:{author}",
         }
         if author and ts
         else {}
     )
-    message = "   " + message
+    message += "\n  "
     if destination and not recipient:
         try:
             group = base58.b58decode(destination).decode()
