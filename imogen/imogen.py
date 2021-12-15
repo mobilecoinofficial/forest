@@ -182,12 +182,13 @@ class Imogen(Bot):
         # return f"worker state: {state}, queue size: {queue_size}"
         return f"queue size: {queue_size}"
 
-    image_rate_cents = 5
+    image_rate_cents = 10
 
     @hide
     async def do_imagine_nostart(self, msg: Message) -> str:
+        if not msg.text and not msg.attachments:
+            return "A prompt is required"
         logging.info(msg.full_text)
-        logging.info(msg.text)
         if msg.group:
             destination = base58.b58encode(msg.group).decode()
         else:
@@ -259,6 +260,8 @@ class Imogen(Bot):
 
     async def do_quick(self, msg: Message) -> str:
         """Generate a 512x512 image off from the last time this command was used"""
+        if not msg.text:
+            return "A prompt is required"
         destination = base58.b58encode(msg.group).decode() if msg.group else msg.source
         blob = {
             "prompt": msg.text,
@@ -277,6 +280,8 @@ class Imogen(Bot):
 
     async def do_fast(self, msg: Message) -> str:
         """Generate an image in a single pass"""
+        if not msg.text:
+            return "A prompt is required"
         destination = base58.b58encode(msg.group).decode() if msg.group else msg.source
         blob = {
             "prompt": msg.text,
@@ -295,6 +300,8 @@ class Imogen(Bot):
 
     async def do_paint(self, msg: Message) -> str:
         """/paint <prompt>"""
+        if not msg.text and not msg.attachments:
+            return "A prompt is required"
         logging.info(msg.full_text)
         destination = base58.b58encode(msg.group).decode() if msg.group else msg.source
         params: JSON = {
