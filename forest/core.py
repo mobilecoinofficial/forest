@@ -622,7 +622,7 @@ class Bot(Signal):
         return fact.strip()
 
     async def do_ping(self, message: Message) -> str:
-        """returns to /ping with /pong"""
+        """replies to /ping with /pong"""
         if message.text:
             return f"/pong {message.text}"
         return "/pong"
