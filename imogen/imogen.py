@@ -481,17 +481,17 @@ async def store_image_handler(  # pylint: disable=too-many-locals
     ts = int(urllib.parse.unquote(request.query.get("timestamp", "0")))
     author = urllib.parse.unquote(request.query.get("author", ""))
     recipient = utils.signal_format(str(destination))
+    message += "\n\N{Object Replacement Character}"
     quote = (
         {
             "quote-timestamp": ts,
             "quote-author": author,
             "quote-message": "prompt",
-            "mention": f"{len(message)-1}:{len(message)}:{author}",
+            "mention": f"{len(message)-1}:1:{author}",
         }
         if author and ts
         else {}
     )
-    message += "\n\N{Object Replacement Character}"
     if destination and not recipient:
         try:
             group = base58.b58decode(destination).decode()
