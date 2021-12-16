@@ -1,6 +1,32 @@
-This is the Git Repo for Mobilecoin/Forest, a framework for making Signal Bots with Signal Pay and Mobilecoin Integration.
+To get familiarised with deploying and running a forest bot, we've provided a short tutorial to teach you how to deploy hellobot.
 
-To get started and deploy your own forest bot, follow the following instructions:
+## Installing Prerequisites ##
 
-Install Python3.9
+### Python 3.9 ### 
 
+Please refer to the [official Python wiki](https://wiki.python.org/moin/BeginnersGuide/Download) for instructions 
+for instructions on installing Python 3.9 on your machine. On Debian/Ubuntu based systems you can simply run:
+
+```
+sudo apt install python3.9
+sudo apt install python3-pip
+```
+
+### Dependencies ###
+
+We use pipenv to handle dependencies, run:
+
+```
+python3.9 -m pip install pipenv
+```
+then 
+```
+pipenv install 
+```
+to install the prerequisites.
+
+### Signal-Cli ###
+
+To install Signal-Cli visit the official repo:
+
+## Running Hellobot ##
