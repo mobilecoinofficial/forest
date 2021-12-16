@@ -34,11 +34,16 @@ class Message:
         self.command: Optional[str] = None
         self.tokens: Optional[list[str]] = None
         if self.text and self.text.startswith("/"):
-            command, *self.tokens = shlex.split(self.text)
-            self.command = command[1:]  # remove /
+            try:
+                command, *self.tokens = shlex.split(self.text)
+            except ValueError:
+                command, *self.tokens = self.text.split(" ")
+            self.command = command[1:].lower()  # remove /
             self.arg1 = self.tokens[0] if self.tokens else None
             self.text = " ".join(self.tokens)
-        elif self.text and "help" in self.text.lower():
+        elif (
+            self.text and "help" in self.text.lower() and "Documented" not in self.text
+        ):
             self.command = "help"
 
     def to_dict(self) -> dict:
