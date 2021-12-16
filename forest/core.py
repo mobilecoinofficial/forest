@@ -601,6 +601,8 @@ class Bot(Signal):
         """
         /help [command]. see the documentation for command, or all commands
         """
+        if msg.text and "Documented commands" in msg.text:
+            return None
         if msg.arg1:
             try:
                 doc = getattr(self, f"do_{msg.arg1}").__doc__

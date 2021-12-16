@@ -58,6 +58,7 @@ redis = aioredis.Redis(
     host="forest-redis.fly.dev", port=10000, password="speak-friend-and-enter"
 )
 instance_id = "aws ec2 describe-instances --region us-east-1 | jq -r .Reservations[].Instances[].InstanceId"
+status = "gcloud --format json compute instances describe nvidia-gpu-cloud-image-1-vm | jq -r .status"
 status = "aws ec2 describe-instances --region us-east-1| jq -r '..|.State?|.Name?|select(.!=null)'"
 start = "aws ec2 start-instances --region us-east-1 --instance-ids {}"
 stop = "aws ec2 stop-instances --region us-east-1 --instance-ids {}"
@@ -142,7 +143,7 @@ class Imogen(Bot):
         logging.debug("seding reaction notif")
         logging.info("setting paid=True")
         message_blob["paid"] = True
-        message = f" , your prompt got {current_reaction_count} reactions. Congrats!"
+        message = f"\N{Object Replacement Character}, your prompt got {current_reaction_count} reactions. Congrats!"
         quote = {
             "quote-timestamp": msg.reaction.ts,
             "quote-author": self.bot_number,
@@ -401,7 +402,7 @@ class Imogen(Bot):
             if not (item := await redis.lpop("prompt_queue")):
                 break
             prompts.append(str(json.loads(item)["prompt"]))
-        return prompts
+        return ", ".join(prompts)
 
     async def payment_response(self, msg: Message, amount_pmob: int) -> None:
         del msg, amount_pmob
@@ -450,7 +451,7 @@ tip_message = """
 If you like Imogen's art, consider supporting her with a Signal Pay donation.
 Send Imogen a message with the command "/tip" for instructions on how to donate. It costs her 7 cents to generate each image.
 Imogen shares tips with collaborators! If you like an Imogen Imoge, react❤️  t️o it. Imoges with multiple reacts will award the prompt writer with a small tip (currently 0.1 MOB)
-"""
+""".strip()
 
 
 async def store_image_handler(  # pylint: disable=too-many-locals
@@ -490,7 +491,7 @@ async def store_image_handler(  # pylint: disable=too-many-locals
         if author and ts
         else {}
     )
-    message += "\n  "
+    message += "\n\N{Object Replacement Character}"
     if destination and not recipient:
         try:
             group = base58.b58decode(destination).decode()
