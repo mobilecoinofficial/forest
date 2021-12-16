@@ -42,7 +42,9 @@ class Message:
             self.command = command[1:].lower()  # remove /
             self.arg1 = self.tokens[0] if self.tokens else None
             self.text = " ".join(self.tokens)
-        elif self.text and "help" in self.text.lower():
+        elif (
+            self.text and "help" in self.text.lower() and "Documented" not in self.text
+        ):
             self.command = "help"
 
     def to_dict(self) -> dict:
