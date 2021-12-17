@@ -324,6 +324,57 @@ class Mobster:
         request = dict(method="get_block", params=dict(block_index=str(block)))
         return await self.req(request)
 
+    async def get_wallet_status(self) -> dict:
+        """
+        Get status of wallet, including block information
+
+        Returns:
+          dict: wallet data
+        """
+
+        request = dict(method="get_wallet_status")
+        return await self.req(request)
+
+    async def get_wallet_balance(self, convert_to_mob: bool=True) -> float:
+        """
+        Gets current wallet balance, defaults to converting to mob
+
+        args:
+          convert_to_mob (bool): convert balance to mob from pmob
+
+        Return:
+          float: balance in mob or pmob or -1.0 if error
+        """
+
+        data = await self.get_wallet_status()
+        wallet_balance = data.get("result",{}).get("wallet_status",{}).get("total_unspent_pmob", -1)
+        try:
+            wallet_balance = float(wallet_balance)
+            if convert_to_mob:
+                wallet_balance = float(mc_util.pmob2mob(wallet_balance))
+        except:
+            logging.warning("Could not get wallet balance, returning -1.0")
+            wallet_balance = -1.0
+        return wallet_balance
+    
+    async def get_current_network_block(self) -> int:
+        """
+        Gets current network block, returns -1 if error
+
+        Returns:
+          int: Current network block or -1 if error
+        """
+
+        data = await self.get_wallet_status()
+        start_block = data.get("result",{}).get("wallet_status",{}).get("network_block_index", -1)
+        try:
+            start_block = int(start_block)
+        except:
+            logging.warning("Could not get starting block, returning -1")
+            start_block = -1
+        return start_block
+
+
     async def get_pending_transactions(self, from_block: int = 2) -> list[dict]:
         """
         Get pending transactions within account, optionally counting from a specific

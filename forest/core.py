@@ -286,17 +286,28 @@ class Signal:
         await self.auxincli_input_queue.put(profile)
 
     async def set_profile_auxin(
-        self, given_name: str, family_name: str = "", payment_address: str = ""
+        self,
+        given_name: str,
+        family_name: str = "",
+        mobilecoin_address: str = "",
+        about="",
+        about_emoji: str = "",
+        avatar: list = "",
     ) -> str:
-        params: JSON = {"profile_fields": {"name": {"givenName": given_name}}}
-        if family_name:
-            params["profile_fields"]["name"]["familyName"] = family_name
-        if payment_address:
-            params["profile_fields"]["mobilecoinAddress"] = payment_address
+        params = dict(name=dict(given_name=given_name, family_name=family_name))
+        if mobilecoin_address:
+            params["mobilecoinAddress"] = mobilecoin_address
+        if about:
+            params["about"] = about
+        if about_emoji:
+            params["about_emoji"] = about_emoji
+        if avatar:
+            params["avatar"] = [avatar]
         future_key = f"setProfile-{int(time.time()*1000)}"
         await self.auxincli_input_queue.put(rpc("setProfile", params, future_key))
         return future_key
-        # {"jsonrpc": "2.0", "method": "setProfile", "params":{"profile_fields":{"name": {"givenName":"TestBotFriend"}}}, "id":"SetName2"}
+
+  
 
     # this should maybe yield a future (eep) and/or use auxin_req
     async def send_message(  # pylint: disable=too-many-arguments
