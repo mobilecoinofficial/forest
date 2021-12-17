@@ -560,6 +560,8 @@ class Bot(Signal):
         """
         /help [command]. see the documentation for command, or all commands
         """
+        if msg.text and "Documented commands" in msg.text:
+            return None
         if msg.arg1:
             try:
                 doc = getattr(self, f"do_{msg.arg1}").__doc__
@@ -579,7 +581,7 @@ class Bot(Signal):
         return fact.strip()
 
     async def do_ping(self, message: Message) -> str:
-        """returns to /ping with /pong"""
+        """replies to /ping with /pong"""
         if message.text:
             return f"/pong {message.text}"
         return "/pong"
@@ -836,11 +838,11 @@ if utils.MEMFS:
 
 
 def run_bot(bot: Type[Bot], local_app: web.Application = app) -> None:
-    @local_app.on_startup.append
     async def start_wrapper(our_app: web.Application) -> None:
         our_app["bot"] = bot()
 
-    web.run_app(app, port=8080, host="0.0.0.0")
+    local_app.on_startup.append(start_wrapper)
+    web.run_app(app, port=8080, host="0.0.0.0", access_log=None)
 
 
 if __name__ == "__main__":
