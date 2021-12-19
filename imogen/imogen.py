@@ -19,6 +19,7 @@ import base58
 import openai
 from aiohttp import web
 
+from forest import pghelp
 from forest import utils
 from forest.core import (
     JSON,
@@ -30,6 +31,23 @@ from forest.core import (
     requires_admin,
 )
 
+
+QueueExpressions = pghelp.PGExpressions(
+    table="prompt_queue",
+    create_table="""CREATE TABLE {self.table} (
+        id SERIAL PRIMARY KEY,
+        prompt TEXT,
+        paid BOOLEAN,
+        author TEXT,
+        signal_ts BIGINT,
+        group TEXT DEFAULT NULL,
+        status TEXT DEFAULT 'pending',
+        assigned_at TIMESTAMP DEFAULT null,
+        params TEXT DEFAULT null,
+        url TEXT DEFAULT 'https://imogen-renaissance.fly.dev/');""",
+    insert="""INSERT INTO {self.table} (prompt, paid, author, signal_ts, group, params, url) VALUES ($1, $2, $3, $4, $5, $6, $7);""",
+    length="SELECT count(id) AS len FROM {self.table} WHERE status <> 'done';",
+)
 openai.api_key = utils.get_secret("OPENAI_API_KEY")
 
 if not utils.LOCAL:
@@ -47,6 +65,7 @@ if not utils.LOCAL:
         logging.info("couldn't find creds")
     ssh_key = utils.get_secret("SSH_KEY")
     open("id_rsa", "w").write(base64.b64decode(ssh_key).decode())
+
 url = "redis://:speak-friend-and-enter@forest-redis.fly.dev:10000" or utils.get_secret(
     "FLY_REDIS_CACHE_URL"
 )
@@ -88,6 +107,10 @@ class Imogen(Bot):
 
     async def start_process(self) -> None:
         self.worker_instance_id = await get_output(instance_id)
+        self.queue = pghelp.PGInterface(
+            query_strings=QueueExpressions,
+            database=utils.get_secret("DATABASE_URL"),
+        )
         await super().start_process()
 
     async def set_profile(self) -> None:
@@ -178,17 +201,18 @@ class Imogen(Bot):
     @hide
     async def do_status(self, _: Message) -> str:
         "shows the GPU instance state (not the program) and queue size"
-        #state = await get_output(status)
+        # state = await get_output(status)
         queue_size = await redis.llen("prompt_queue")
         # return f"worker state: {state}, queue size: {queue_size}"
         return f"queue size: {queue_size}"
 
     image_rate_cents = 10
 
-    @hide
-    async def do_imagine_nostart(self, msg: Message) -> str:
+    async def do_imagine(self, msg: Message) -> str:
+        """/imagine [prompt]"""
         if not msg.text and not msg.attachments:
             return "A prompt is required"
+        # await self.mobster.put_usd_tx(msg.sender, self.image_rate_cents, msg.text[:32])
         logging.info(msg.full_text)
         if msg.group:
             destination = base58.b58encode(msg.group).decode()
@@ -207,36 +231,18 @@ class Imogen(Bot):
             await redis.set(
                 key, open(Path("./attachments") / attachment["id"], "rb").read()
             )
-        blob = {
-            "prompt": msg.text,
-            "callback": destination,
-            "params": params,
-            "timestamp": msg.timestamp,
-            "author": msg.source,
-            "url": utils.URL,
-        }
-        await redis.rpush(
-            "prompt_queue",
-            json.dumps(blob),
+        await self.query.execute(
+            """INSERT INTO queue (prompt, paid, author, signal_ts, group, params, url) VALUES ($1, $2, $3, $4, $5, $6, $7);""",
+            msg.text,
+            False,
+            msg.source,
+            msg.timestamp,
+            msg.group,
+            json.dumps(params),
+            utils.URL,
         )
-        timed = await redis.llen("prompt_queue")
-        return f"you are #{timed} in line"
-
-    async def do_imagine(self, msg: Message) -> str:
-        """/imagine <prompt>"""
-        # check if worker is up
-        resp = await self.do_imagine_nostart(msg)
-        # state = await get_output(status)
-        # logging.info("worker state: %s", state)
-        # # await self.mobster.put_usd_tx(msg.sender, self.image_rate_cents, msg.text[:32])
-        # if state in ("stopped", "stopping"):
-        #     # if not, turn it on
-        #     output = await get_output(start.format(self.worker_instance_id))
-        #     logging.info(output)
-        #     if "InsufficientInstanceCapacity" in output:
-        #         resp += ".\nsorry, andy jassy hates us. no gpu for us"
-        #     # asyncio.create_task(really_start_worker())
-        return resp
+        len = (await self.queue.length()).get("len")
+        return f"you are #{len} in line"
 
     def make_prefix(prefix: str) -> Callable:  # type: ignore  # pylint: disable=no-self-argument
         async def wrapped(self: "Imogen", msg: Message) -> str:
@@ -263,41 +269,35 @@ class Imogen(Bot):
         """Generate a 512x512 image off from the last time this command was used"""
         if not msg.text:
             return "A prompt is required"
-        destination = base58.b58encode(msg.group).decode() if msg.group else msg.source
-        blob = {
-            "prompt": msg.text,
-            "callback": destination,
-            "feedforward": True,
-            "timestamp": msg.timestamp,
-            "author": msg.source,
-            "url": utils.URL,
-        }
-        await redis.rpush(
-            "prompt_queue",
-            json.dumps(blob),
+        await self.query.execute(
+            """INSERT INTO queue (prompt, paid, author, signal_ts, group, params, url) VALUES ($1, $2, $3, $4, $5, $6, $7);""",
+            msg.text,
+            False,
+            msg.source,
+            msg.timestamp,
+            msg.group,
+            json.dumps({"feedforward": True}),
+            utils.URL,
         )
-        timed = await redis.llen("prompt_queue")
-        return f"you are #{timed} in line"
+        len = (await self.queue.length()).get("len")
+        return f"you are #{len} in line"
 
     async def do_fast(self, msg: Message) -> str:
         """Generate an image in a single pass"""
         if not msg.text:
             return "A prompt is required"
-        destination = base58.b58encode(msg.group).decode() if msg.group else msg.source
-        blob = {
-            "prompt": msg.text,
-            "callback": destination,
-            "feedforward_fast": True,
-            "timestamp": msg.timestamp,
-            "author": msg.source,
-            "url": utils.URL,
-        }
-        await redis.rpush(
-            "prompt_queue",
-            json.dumps(blob),
+        await self.query.execute(
+            """INSERT INTO queue (prompt, paid, author, signal_ts, group, params, url) VALUES ($1, $2, $3, $4, $5, $6, $7);""",
+            msg.text,
+            False,
+            msg.source,
+            msg.timestamp,
+            msg.group,
+            json.dumps({"feedforward_fast": True}),
+            utils.URL,
         )
-        timed = await redis.llen("prompt_queue")
-        return f"you are #{timed} in line"
+        len = (await self.queue.length()).get("len")
+        return f"you are #{len} in line"
 
     async def do_paint(self, msg: Message) -> str:
         """/paint <prompt>"""
@@ -321,26 +321,18 @@ class Imogen(Bot):
             await redis.set(
                 key, open(Path("./attachments") / attachment["id"], "rb").read()
             )
-        blob = {
-            "prompt": msg.text,
-            "callback": destination,
-            "params": params,
-            "timestamp": msg.timestamp,
-            "author": msg.source,
-            "url": utils.URL,
-        }
-        await redis.rpush(
-            "prompt_queue",
-            json.dumps(blob),
+        await self.query.execute(
+            """INSERT INTO queue (prompt, paid, author, signal_ts, group, params, url) VALUES ($1, $2, $3, $4, $5, $6, $7);""",
+            msg.text,
+            False,
+            msg.source,
+            msg.timestamp,
+            msg.group,
+            json.dumps(params),
+            utils.URL,
         )
-        timed = await redis.llen("prompt_queue")
-        # state = await get_output(status)
-        # logging.info("worker state: %s", state)
-        # # await self.mobster.put_usd_tx(msg.sender, self.image_rate_cents, msg.text[:32])
-        # if state in ("stopped", "stopping"):
-        #     # if not, turn it on
-        #     logging.info(await get_output(start.format(self.worker_instance_id)))
-        return f"you are #{timed} in line"
+        len = (await self.queue.length()).get("len")
+        return f"you are #{len} in line"
 
     @hide
     async def do_c(self, msg: Message) -> str:
@@ -380,6 +372,7 @@ class Imogen(Bot):
     async def do_stop(self, _: Message) -> str:
         return await get_output(stop.format(self.worker_instance_id))
 
+    @hide
     async def do_start(self, _: Message) -> str:
         return await get_output(start.format(self.worker_instance_id))
 
