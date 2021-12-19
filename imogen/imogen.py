@@ -178,7 +178,7 @@ class Imogen(Bot):
     @hide
     async def do_status(self, _: Message) -> str:
         "shows the GPU instance state (not the program) and queue size"
-        #state = await get_output(status)
+        # state = await get_output(status)
         queue_size = await redis.llen("prompt_queue")
         # return f"worker state: {state}, queue size: {queue_size}"
         return f"queue size: {queue_size}"
@@ -481,12 +481,16 @@ async def store_image_handler(  # pylint: disable=too-many-locals
     author = urllib.parse.unquote(request.query.get("author", ""))
     recipient = utils.signal_format(str(destination))
     message += "\n\N{Object Replacement Character}"
+    # needs to be String.length in Java, i.e. number of utf-16 code units,
+    # which are 2 bytes each. we need to specify any endianness to skip
+    # byte-order mark.
+    mention_start = len(message.encode("utf-16-be")) // 2 - 1
     quote = (
         {
             "quote-timestamp": ts,
             "quote-author": author,
             "quote-message": "prompt",
-            "mention": f"{len(message)-1}:1:{author}",
+            "mention": f"{mention_start}:1:{author}",
         }
         if author and ts
         else {}
