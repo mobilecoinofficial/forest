@@ -446,11 +446,10 @@ class Imogen(Bot):
     #    super().async_shutdown()
 
 
-# by messaging her and sending a payment
 tip_message = """
-If you like Imogen's art, consider supporting her with a Signal Pay donation.
-Send Imogen a message with the command "/tip" for instructions on how to donate. It costs her 7 cents to generate each image.
-Imogen shares tips with collaborators! If you like an Imogen Imoge, react❤️  t️o it. Imoges with multiple reacts will award the prompt writer with a small tip (currently 0.1 MOB)
+If you like Imogen's art, you can show your support by donating within Signal Payments.
+Send Imogen a message with the command "/tip" for donation instructions.  Every time she creates an image, it costs $0.07
+Imogen shares tips with collaborators! If you like an Imogen Imoge, react ❤️  t️o it. When an Imoge gets multiple reactions, the person who prompted the Imoge will be awarded a tip (currently 0.1 MOB).
 """.strip()
 
 
