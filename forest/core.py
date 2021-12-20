@@ -883,7 +883,7 @@ def run_bot(bot: Type[Bot], local_app: web.Application = app) -> None:
         our_app["bot"] = bot()
 
     local_app.on_startup.append(start_wrapper)
-    web.run_app(app, port=8080, host="0.0.0.0")
+    web.run_app(app, port=8080, host="0.0.0.0", access_log=None)
 
 
 if __name__ == "__main__":
