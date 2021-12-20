@@ -396,11 +396,11 @@ class Signal:
         asyncio.create_task(self.save_sent_message(future_key, params))
         return future_key
 
-    async def admin(self, msg: Response) -> None:
+    async def admin(self, msg: Response, **kwargs) -> None:
         if utils.get_secret("ADMIN_GROUP") and not utils.AUXIN:
-            await self.send_message(None, msg, group=utils.get_secret("ADMIN_GROUP"))
+            await self.send_message(None, msg, group=utils.get_secret("ADMIN_GROUP"), **kwargs)
         else:
-            await self.send_message(utils.get_secret("ADMIN"), msg)
+            await self.send_message(utils.get_secret("ADMIN"), msg, **kwargs)
 
     async def respond(self, target_msg: Message, msg: Response) -> str:
         """Respond to a message depending on whether it's a DM or group"""

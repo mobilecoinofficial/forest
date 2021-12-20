@@ -7,9 +7,10 @@ import base64
 import datetime
 import json
 import logging
-import time
 import random
+import time
 import urllib
+from dataclasses import dataclass
 from pathlib import Path
 from textwrap import dedent
 from typing import Callable, Optional
@@ -19,17 +20,40 @@ import base58
 import openai
 from aiohttp import web
 
-from forest import pghelp
-from forest import utils
-from forest.core import (
-    JSON,
-    Message,
-    Bot,
-    Response,
-    app,
-    hide,
-    requires_admin,
-)
+from forest import pghelp, utils
+from forest.core import JSON, Bot, Message, Response, app, hide, requires_admin
+
+# metrics to look for:
+# - gaurantee <10min default paid
+# - validations are based on estimates but final balance based on gpu runtime
+# - loss vs reactions
+# - "
+
+
+# @dataclass
+# class InsertedPrompt:
+#     prompt: str
+#     paid: bool
+#     author: str
+#     signal_ts: int
+#     group: str = ""
+#     params: str = "{}"
+#     url: str = utils.URL
+
+#     async def insert(self, queue: pghelp.PGInterface) -> None:
+#         async with queue.pool.acquire() as conn:
+#             await conn.execute(
+#                 """INSERT INTO queue (prompt, paid, author, signal_ts, group, params, url) VALUES ($1, $2, $3, $4, $5, $6, $7);""",
+#                 self.prompt,
+
+#                 msg.text,
+#                 False,
+#                 msg.source,
+#                 msg.timestamp,
+#                 msg.group,
+#                 json.dumps(params),
+#                 utils.URL,
+#             )
 
 
 QueueExpressions = pghelp.PGExpressions(
@@ -44,10 +68,13 @@ QueueExpressions = pghelp.PGExpressions(
         status TEXT DEFAULT 'pending',
         assigned_at TIMESTAMP DEFAULT null,
         params TEXT DEFAULT null,
-        sent_ts BIGINT DEFAULT null,
+        response_ts BIGINT DEFAULT null,
         reaction_count INTEGER DEFAULT 0,
         reaction_map JSONB DEFAULT jsonb '{}',
         elapsed_gpu INT DEFAULT null,
+        loss FLOAT DEFAULT null,
+        filepath TEXT DEFAULT null,
+        version TEXT DEFAULT null,
         url TEXT DEFAULT 'https://imogen-renaissance.fly.dev/');""",
     insert="""INSERT INTO {self.table} (prompt, paid, author, signal_ts, group, params, url) VALUES ($1, $2, $3, $4, $5, $6, $7);""",
     length="SELECT count(id) AS len FROM {self.table} WHERE status <> 'done';",
@@ -55,24 +82,15 @@ QueueExpressions = pghelp.PGExpressions(
 openai.api_key = utils.get_secret("OPENAI_API_KEY")
 
 if not utils.LOCAL:
-    aws_cred = utils.get_secret("AWS_CREDENTIALS")
-    if aws_cred:
-        aws_dir = Path("/root/.aws")
-        aws_dir.mkdir(parents=True, exist_ok=True)
-        with (aws_dir / "credentials").open("w") as creds:
-            creds.write(base64.b64decode(utils.get_secret("AWS_CREDENTIALS")).decode())
-        logging.info("wrote creds")
-        with (aws_dir / "config").open("w") as config:
-            config.write("[profile default]\nregion = us-east-1")
-        logging.info("writing config")
+    gcp_cred = utils.get_secret("GCP_CREDENTIALS")
+    if gcp_cred:
+        pass
     else:
         logging.info("couldn't find creds")
     ssh_key = utils.get_secret("SSH_KEY")
     open("id_rsa", "w").write(base64.b64decode(ssh_key).decode())
 
-url = "redis://:speak-friend-and-enter@forest-redis.fly.dev:10000" or utils.get_secret(
-    "FLY_REDIS_CACHE_URL"
-)
+# url = "redis://:speak-friend-and-enter@forest-redis.fly.dev:10000" or utils.get_secret("FLY_REDIS_CACHE_URL")
 # password, rest = url.removeprefix("redis://:").split("@")
 # host, port = rest.split(":")
 # redis = aioredis.Redis(host=host, port=int(port), password=password)
@@ -80,24 +98,24 @@ url = "redis://:speak-friend-and-enter@forest-redis.fly.dev:10000" or utils.get_
 redis = aioredis.Redis(
     host="forest-redis.fly.dev", port=10000, password="speak-friend-and-enter"
 )
-instance_id = "aws ec2 describe-instances --region us-east-1 | jq -r .Reservations[].Instances[].InstanceId"
-status = "gcloud --format json compute instances describe nvidia-gpu-cloud-image-1-vm | jq -r .status"
-status = "aws ec2 describe-instances --region us-east-1| jq -r '..|.State?|.Name?|select(.!=null)'"
-start = "aws ec2 start-instances --region us-east-1 --instance-ids {}"
-stop = "aws ec2 stop-instances --region us-east-1 --instance-ids {}"
-get_ip = "aws ec2 describe-instances --region us-east-1|jq -r .Reservations[].Instances[].PublicIpAddress"
+# instance_id = "aws ec2 describe-instances --region us-east-1 | jq -r .Reservations[].Instances[].InstanceId"
+# status = "aws ec2 describe-instances --region us-east-1| jq -r '..|.State?|.Name?|select(.!=null)'"
+# start = "aws ec2 start-instances --region us-east-1 --instance-ids {}"
+# stop = "aws ec2 stop-instances --region us-east-1 --instance-ids {}"
+# get_ip = "aws ec2 describe-instances --region us-east-1|jq -r .Reservations[].Instances[].PublicIpAddress"
 # start_worker = "ssh -i id_rsa -o ConnectTimeout=2 ubuntu@{} ~/ml/read_redis.py {}"
 
+status = "gcloud --format json compute instances describe nvidia-gpu-cloud-image-1-vm | jq -r .status"
 
-get_cost = (
-    "aws ce get-cost-and-usage --time-period Start={},End={} --granularity DAILY --metrics BlendedCost | "
-    "jq -r .ResultsByTime[0].Total.BlendedCost.Amount"
-)
+# get_cost = (
+#     "aws ce get-cost-and-usage --time-period Start={},End={} --granularity DAILY --metrics BlendedCost | "
+#     "jq -r .ResultsByTime[0].Total.BlendedCost.Amount"
+# )
 
-get_all_cost = (
-    "aws ce get-cost-and-usage --time-period Start=2021-10-01,End={end} --granularity DAILY --metrics BlendedCost | "
-    "jq '.ResultsByTime[] | {(.TimePeriod.Start): .Total.BlendedCost.Amount}' | jq -s add"
-)
+# get_all_cost = (
+#     "aws ce get-cost-and-usage --time-period Start=2021-10-01,End={end} --granularity DAILY --metrics BlendedCost | "
+#     "jq '.ResultsByTime[] | {(.TimePeriod.Start): .Total.BlendedCost.Amount}' | jq -s add"
+# )
 
 
 async def get_output(cmd: str) -> str:
@@ -110,7 +128,7 @@ class Imogen(Bot):
     worker_instance_id: Optional[str] = None
 
     async def start_process(self) -> None:
-        self.worker_instance_id = await get_output(instance_id)
+        # self.worker_instance_id = await get_output(instance_id)
         self.queue = pghelp.PGInterface(
             query_strings=QueueExpressions,
             database=utils.get_secret("DATABASE_URL"),
@@ -185,22 +203,22 @@ class Imogen(Bot):
         # await self.send_payment_using_linked_device(prompt_author, await self.mobster.get_balance() * 0.1)
         return None
 
-    @hide
-    async def do_get_cost(self, _: Message) -> str:
-        today = datetime.date.today()
-        tomorrow = today + datetime.timedelta(1)
-        out = await get_output(get_cost.format(today, tomorrow))
-        try:
-            return str(round(float(out), 2))
-        except ValueError:
-            return out
+    # @hide
+    # async def do_get_cost(self, _: Message) -> str:
+    #     today = datetime.date.today()
+    #     tomorrow = today + datetime.timedelta(1)
+    #     out = await get_output(get_cost.format(today, tomorrow))
+    #     try:
+    #         return str(round(float(out), 2))
+    #     except ValueError:
+    #         return out
 
-    async def do_get_all_cost(self, _: Message) -> str:
-        tomorrow = datetime.date.today() + datetime.timedelta(1)
-        out = await get_output(get_all_cost.replace("{end}", str(tomorrow)))
-        return json.loads(out)
+    # async def do_get_all_cost(self, _: Message) -> str:
+    #     tomorrow = datetime.date.today() + datetime.timedelta(1)
+    #     out = await get_output(get_all_cost.replace("{end}", str(tomorrow)))
+    #     return json.loads(out)
 
-    do_get_costs = do_get_all_costs = hide(do_get_all_cost)
+    # do_get_costs = do_get_all_costs = hide(do_get_all_cost)
 
     @hide
     async def do_status(self, _: Message) -> str:
@@ -235,7 +253,8 @@ class Imogen(Bot):
             await redis.set(
                 key, open(Path("./attachments") / attachment["id"], "rb").read()
             )
-        await self.query.execute(
+
+        await self.queue.execute(
             """INSERT INTO queue (prompt, paid, author, signal_ts, group, params, url) VALUES ($1, $2, $3, $4, $5, $6, $7);""",
             msg.text,
             False,
@@ -273,7 +292,7 @@ class Imogen(Bot):
         """Generate a 512x512 image off from the last time this command was used"""
         if not msg.text:
             return "A prompt is required"
-        await self.query.execute(
+        await self.queue.execute(
             """INSERT INTO queue (prompt, paid, author, signal_ts, group, params, url) VALUES ($1, $2, $3, $4, $5, $6, $7);""",
             msg.text,
             False,
@@ -290,7 +309,7 @@ class Imogen(Bot):
         """Generate an image in a single pass"""
         if not msg.text:
             return "A prompt is required"
-        await self.query.execute(
+        await self.queue.execute(
             """INSERT INTO queue (prompt, paid, author, signal_ts, group, params, url) VALUES ($1, $2, $3, $4, $5, $6, $7);""",
             msg.text,
             False,
@@ -325,7 +344,7 @@ class Imogen(Bot):
             await redis.set(
                 key, open(Path("./attachments") / attachment["id"], "rb").read()
             )
-        await self.query.execute(
+        await self.queue.execute(
             """INSERT INTO queue (prompt, paid, author, signal_ts, group, params, url) VALUES ($1, $2, $3, $4, $5, $6, $7);""",
             msg.text,
             False,
@@ -372,15 +391,16 @@ class Imogen(Bot):
         )
         return response["choices"][0]["text"].strip()
 
-    @hide
-    async def do_stop(self, _: Message) -> str:
-        return await get_output(stop.format(self.worker_instance_id))
+    # @hide
+    # async def do_stop(self, _: Message) -> str:
+    #     return await get_output(stop.format(self.worker_instance_id))
 
-    @hide
-    async def do_start(self, _: Message) -> str:
-        return await get_output(start.format(self.worker_instance_id))
+    # @hide
+    # async def do_start(self, _: Message) -> str:
+    #     return await get_output(start.format(self.worker_instance_id))
 
     async def do_list_queue(self, _: Message) -> str:
+        "select prompt from prompts where status='pending' order by signal_ts asc"
         try:
             q = "; ".join(
                 json.loads(item)["prompt"]
@@ -450,6 +470,17 @@ Imogen shares tips with collaborators! If you like an Imogen Imoge, react ❤️
 """.strip()
 
 
+@dataclass
+class Prompt:
+    prompt: str
+    author: str
+    signal_ts: int
+    group: str
+    loss: float
+    elapsed_gpu: int
+    version: str
+
+
 async def store_image_handler(  # pylint: disable=too-many-locals
     request: web.Request,
 ) -> web.Response:
@@ -472,37 +503,60 @@ async def store_image_handler(  # pylint: disable=too-many-locals
                     break
                 size += len(chunk)
                 f.write(chunk)
-    message = urllib.parse.unquote(request.query.get("message", ""))
-    destination = urllib.parse.unquote(request.query.get("destination", ""))
-    ts = int(urllib.parse.unquote(request.query.get("timestamp", "0")))
-    author = urllib.parse.unquote(request.query.get("author", ""))
-    recipient = utils.signal_format(str(destination))
+    prompt_id = request.query.get("id", "-1")
+
+    cols = ", ".join(Prompt.__annotations__)
+    row = await bot.queue.execute(
+        f"SELECT {cols} FROM prompt_queue WHERE id=$1", prompt_id
+    )
+    if not row:
+        await bot.admin("no prompt id found?", attachments=str(path))
+    prompt = Prompt(**row)
+    minutes, seconds = divmod(prompt.elapsed_gpu, 60)
+    message = f"{prompt.prompt}\nTook {minutes}m{seconds}s to generate,"
+    if prompt.loss:
+        message += f"{prompt.loss} loss,"
+    if prompt.version:
+        message += f" v{prompt.version}."
     message += "\n\N{Object Replacement Character}"
     quote = (
         {
-            "quote-timestamp": ts,
-            "quote-author": author,
-            "quote-message": "prompt",
-            "mention": f"{len(message)-1}:1:{author}",
+            "quote-timestamp": prompt.signal_ts,
+            "quote-author": prompt.author,
+            "quote-message": prompt.prompt,
+            "mention": f"{len(message)-1}:1:{prompt.author}",
         }
-        if author and ts
+        if prompt.author and prompt.signal_ts
         else {}
     )
-    if destination and not recipient:
-        try:
-            group = base58.b58decode(destination).decode()
-        except ValueError:
-            # like THtg80Gi2jvgOEFhQjT2Cm+6plNGXTSBJg2HSnhJyH4=
-            group = destination
-    if recipient:
-        await bot.send_message(recipient, message, attachments=[str(path)], **quote)
-
-    else:
-        await bot.send_message(
-            None, message, attachments=[str(path)], group=group, **quote
+    if prompt.group:
+        rpc_id = await bot.send_message(
+            None, message, attachments=[str(path)], group=prompt.group, **quote
         )
         if random.random() < 0.05:
-            await bot.send_message(None, tip_message, group=group)
+            asyncio.create_task(
+                await bot.send_message(None, tip_message, group=prompt.group)
+            )
+    else:
+        rpc_id = await bot.send_message(
+            prompt.author, message, attachments=[str(path)], **quote
+        )
+        if bot.author != utils.get_secret("ADMIN"):
+            asyncio.create_task(
+                bot.admin(message + f"author: {prompt.author}", attachments=[str(path)])
+            )
+
+    # bind variables to local scope for safety; hopefully bot can't change between requests
+    async def followup(rpc_id: str = rpc_id, prompt_id: str = prompt_id) -> None:
+        assert isinstance(bot, Imogen)
+        result = await bot.pending_requests[rpc_id]
+        await bot.queue.execute(
+            "UPDATE {self.table} SET sent_ts=$1 WHERE id=$2",
+            result.timestamp,
+            prompt_id,
+        )
+
+    asyncio.create_task(followup())
     info = f"{filename} sized of {size} sent"
     logging.info(info)
     return web.Response(text=info)
