@@ -130,9 +130,9 @@ class PGInterface:
     async def execute(
         self,
         qstring: str,
-        *args: str,
+        *args: Any,
     ) -> Optional[list[asyncpg.Record]]:
-        """Invoke the asyncpg connection's `execute` given a provided query string and set of arguments"""
+        """Invoke the asyncpg connection's `_execute` given a provided query string and set of arguments"""
         timeout: int = 180
         if not self.pool and not isinstance(self.database, dict):
             await self.connect_pg()
@@ -141,10 +141,12 @@ class PGInterface:
                 # try:
                 # except asyncpg.TooManyConnectionsError:
                 # await connection.execute(
-                #     """SELECT pg_terminate_backend(pg_stat_activity.pid)
+                #     """
+                #     SELECT pg_terminate_backend(pg_stat_activity.pid)
                 #     FROM pg_stat_activity
                 #     WHERE pg_stat_activity.datname = 'postgres'
-                #     AND pid <> pg_backend_pid();"""
+                #     AND pid <> pg_backend_pid();
+                #     """
                 # )
                 # return self.execute(qstring, *args, timeout=timeout)
                 # _execute takes query, args, limit, timeout
