@@ -29,11 +29,10 @@ RUN apt-get install -y python3.9 wget libfuse2 kmod jq unzip ssh
 RUN apt-get clean autoclean && apt-get autoremove --yes && rm -rf /var/lib/{apt,dpkg,cache,log}/
 
 # v5.12.2 for fly.io
-RUN wget -q -O awscli.zip "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" && unzip awscli.zip && rm awscli.zip && ./aws/install
-# RUN wget -q -O gcloud.tar.gz  https://dl.google.com/dl/cloudsdk/release/google-cloud-sdk.tar.gz &&  mkdir -p /usr/local/gcloud \
-#   && tar -C /usr/local/gcloud -xvf gcloud.tar.gz \
-#   && rm gcloud.tar.gz \
-#   && /usr/local/gcloud/google-cloud-sdk/install.sh
+RUN wget -q -O gcloud.tar.gz  https://dl.google.com/dl/cloudsdk/release/google-cloud-sdk.tar.gz &&  mkdir -p /usr/local/gcloud \
+  && tar -C /usr/local/gcloud -xvf gcloud.tar.gz \
+  && rm gcloud.tar.gz \
+  && /usr/local/gcloud/google-cloud-sdk/install.sh
 RUN wget -q -O fuse.ko "https://public.getpost.workers.dev/?key=01F54FQVAX85R1Y98ACCXT2AGT&raw"
 #RUN sudo insmod fuse.ko
 COPY --from=sigbuilder /app/signal-cli/build/native/nativeCompile/signal-cli /app/signal-cli/commit-msg /app/signal-cli/build.gradle.kts  /app/

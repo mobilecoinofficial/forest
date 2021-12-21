@@ -4,19 +4,16 @@
 
 import asyncio
 import base64
-import datetime
 import json
 import logging
 import random
 import time
-import urllib
 from dataclasses import dataclass
 from pathlib import Path
 from textwrap import dedent
 from typing import Callable, Optional
 
 import aioredis
-import base58
 import openai
 from aiohttp import web
 
@@ -77,7 +74,8 @@ QueueExpressions = pghelp.PGExpressions(
         sent_ts BIGINT DEFAULT null);""",
     insert="""INSERT INTO {self.table} (prompt, paid, author, signal_ts, group_id, params, url) VALUES ($1, $2, $3, $4, $5, $6, $7);""",
     length="SELECT count(id) AS len FROM {self.table} WHERE status <> 'done';",
-    list_queue="SELECT prompt FROM {self.table} WHERE status='pending' ORDER BY signal_ts ASC", 
+    list_queue="SELECT prompt FROM {self.table} WHERE status='pending' ORDER BY signal_ts ASC",
+    react="UPDATE {self.table} SET reaction_map = reaction_map || jsonb $2 WHERE signal_ts=$1;",
 )
 
 openai.api_key = utils.get_secret("OPENAI_API_KEY")
@@ -131,9 +129,11 @@ class Imogen(Bot):
         logging.info(profile)
 
     async def handle_reaction(self, msg: Message) -> Response:
-
         await super().handle_reaction(msg)
         assert msg.reaction
+        await self.queue.react(
+            msg.reaction.ts, json.dumps({msg.source: msg.reaction.emoji})
+        )
         if not msg.reaction.ts in self.sent_messages:
             logging.info("oh no")
             return None
@@ -181,7 +181,6 @@ class Imogen(Bot):
         # await self.send_payment_using_linked_device(prompt_author, await self.mobster.get_balance() * 0.1)
         return None
 
-
     async def do_status(self, _: Message) -> str:
         "shows queue size"
         queue_size = await redis.llen("prompt_queue")
@@ -195,10 +194,6 @@ class Imogen(Bot):
             return "A prompt is required"
         # await self.mobster.put_usd_tx(msg.sender, self.image_rate_cents, msg.text[:32])
         logging.info(msg.full_text)
-        if msg.group:
-            destination = base58.b58encode(msg.group).decode()
-        else:
-            destination = msg.source
         params: JSON = {}
         if msg.attachments:
             attachment = msg.attachments[0]
@@ -223,8 +218,8 @@ class Imogen(Bot):
             json.dumps(params),
             utils.URL,
         )
-        len = (await self.queue.length())[0].get("len")
-        return f"you are #{len} in line"
+        queue_length = (await self.queue.length())[0].get("len")
+        return f"you are #{queue_length} in line"
 
     def make_prefix(prefix: str) -> Callable:  # type: ignore  # pylint: disable=no-self-argument
         async def wrapped(self: "Imogen", msg: Message) -> str:
@@ -261,8 +256,8 @@ class Imogen(Bot):
             json.dumps({"feedforward": True}),
             utils.URL,
         )
-        len = (await self.queue.length()).get("len")
-        return f"you are #{len} in line"
+        queue_length = (await self.queue.length())[0].get("len")
+        return f"you are #{queue_length} in line"
 
     async def do_fast(self, msg: Message) -> str:
         """Generate an image in a single pass"""
@@ -278,15 +273,14 @@ class Imogen(Bot):
             json.dumps({"feedforward_fast": True}),
             utils.URL,
         )
-        len = (await self.queue.length()).get("len")
-        return f"you are #{len} in line"
+        queue_length = (await self.queue.length())[0].get("len")
+        return f"you are #{queue_length} in line"
 
     async def do_paint(self, msg: Message) -> str:
         """/paint <prompt>"""
         if not msg.text and not msg.attachments:
             return "A prompt is required"
         logging.info(msg.full_text)
-        destination = base58.b58encode(msg.group).decode() if msg.group else msg.source
         params: JSON = {
             "vqgan_config": "wikiart_16384.yaml",
             "vqgan_checkpoint": "wikiart_16384.ckpt",
@@ -313,8 +307,8 @@ class Imogen(Bot):
             json.dumps(params),
             utils.URL,
         )
-        len = (await self.queue.length()).get("len")
-        return f"you are #{len} in line"
+        queue_length = (await self.queue.length())[0].get("len")
+        return f"you are #{queue_length} in line"
 
     @hide
     async def do_c(self, msg: Message) -> str:
@@ -351,7 +345,7 @@ class Imogen(Bot):
         return response["choices"][0]["text"].strip()
 
     async def do_list_queue(self, _: Message) -> str:
-        q = "; ".join(prompt.get("prompt") for prompt in self.queue.list_prompts())
+        q = "; ".join(prompt.get("prompt") for prompt in await self.queue.list_queue())
         return q or "queue empty"
 
     do_list_prompts = do_listqueue = do_queue = hide(do_list_queue)
@@ -444,7 +438,7 @@ async def store_image_handler(  # pylint: disable=too-many-locals
                 f.write(chunk)
     prompt_id = int(request.query.get("id", "-1"))
 
-    cols = ", ".join(Prompt.__annotations__)
+    cols = ", ".join(Prompt.__annotations__) # pylint: disable=no-member
     row = await bot.queue.execute(
         f"SELECT {cols} FROM prompt_queue WHERE id=$1", prompt_id
     )
@@ -456,9 +450,9 @@ async def store_image_handler(  # pylint: disable=too-many-locals
 
     prompt = Prompt(**row[0])
     minutes, seconds = divmod(prompt.elapsed_gpu, 60)
-    message = f"{prompt.prompt}\nTook {minutes}m{seconds}s to generate,"
+    message = f"{prompt.prompt}\nTook {minutes}m{seconds}s to generate, "
     if prompt.loss:
-        message += f"{prompt.loss} loss,"
+        message += f"{prompt.loss} loss, "
     if prompt.version:
         message += f" v{prompt.version}."
     message += "\n\N{Object Replacement Character}"
@@ -490,7 +484,7 @@ async def store_image_handler(  # pylint: disable=too-many-locals
             )
 
     # bind variables to local scope for safety; hopefully bot can't change between requests
-    async def followup(rpc_id: str = rpc_id, prompt_id: int= prompt_id) -> None:
+    async def followup(rpc_id: str = rpc_id, prompt_id: int = prompt_id) -> None:
         assert isinstance(bot, Imogen)
         result = await bot.pending_requests[rpc_id]
         await bot.queue.execute(
