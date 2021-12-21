@@ -35,10 +35,8 @@ class Message:
         self.command: Optional[str] = None
         self.tokens: Optional[list[str]] = None
         if self.text and self.text.startswith("/"):
-            try:
-                command, *self.tokens = shlex.split(self.text)
-            except ValueError:
-                command, *self.tokens = self.text.split(" ")
+            # if you need tokens, do this yourself with shlex...
+            command, *self.tokens = self.text.split(" ")
             self.command = command[1:].lower()  # remove /
             self.arg1 = self.tokens[0] if self.tokens else None
             self.text = " ".join(self.tokens)
