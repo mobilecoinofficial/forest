@@ -238,7 +238,7 @@ def setup_tmpdir() -> None:
     if not utils.MEMFS:
         (Path(utils.ROOT_DIR) / "data").mkdir(exist_ok=True, parents=True)
     # assume we're running in the repo
-    sigcli = utils.get_secret("SIGNAL_CLI_PATH") or "auxin-cli"
+    sigcli = utils.get_secret("SIGNAL_CLI_PATH") or f"{utils.SIGNAL}-cli"
     sigcli_path = Path(sigcli).absolute()
     try:
         logging.info("symlinking %s to %s", sigcli_path, utils.ROOT_DIR)
