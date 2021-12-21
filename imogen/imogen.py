@@ -27,7 +27,6 @@ from forest.core import JSON, Bot, Message, Response, app, hide, requires_admin
 # - gaurantee <10min default paid
 # - validations are based on estimates but final balance based on gpu runtime
 # - loss vs reactions
-# - "
 
 
 # @dataclass
@@ -45,7 +44,6 @@ from forest.core import JSON, Bot, Message, Response, app, hide, requires_admin
 #             await conn.execute(
 #                 """INSERT INTO prompt_queue (prompt, paid, author, signal_ts, group, params, url) VALUES ($1, $2, $3, $4, $5, $6, $7);""",
 #                 self.prompt,
-
 #                 msg.text,
 #                 False,
 #                 msg.source,
@@ -75,10 +73,13 @@ QueueExpressions = pghelp.PGExpressions(
         loss FLOAT DEFAULT null,
         filepath TEXT DEFAULT null,
         version TEXT DEFAULT null,
-        url TEXT DEFAULT 'https://imogen-renaissance.fly.dev/');""",
+        url TEXT DEFAULT 'https://imogen-renaissance.fly.dev/',
+        sent_ts BIGINT DEFAULT null);""",
     insert="""INSERT INTO {self.table} (prompt, paid, author, signal_ts, group_id, params, url) VALUES ($1, $2, $3, $4, $5, $6, $7);""",
     length="SELECT count(id) AS len FROM {self.table} WHERE status <> 'done';",
+    list_queue="SELECT prompt FROM {self.table} WHERE status='pending' ORDER BY signal_ts ASC", 
 )
+
 openai.api_key = utils.get_secret("OPENAI_API_KEY")
 
 if not utils.LOCAL:
@@ -98,24 +99,8 @@ if not utils.LOCAL:
 redis = aioredis.Redis(
     host="forest-redis.fly.dev", port=10000, password="speak-friend-and-enter"
 )
-# instance_id = "aws ec2 describe-instances --region us-east-1 | jq -r .Reservations[].Instances[].InstanceId"
-# status = "aws ec2 describe-instances --region us-east-1| jq -r '..|.State?|.Name?|select(.!=null)'"
-# start = "aws ec2 start-instances --region us-east-1 --instance-ids {}"
-# stop = "aws ec2 stop-instances --region us-east-1 --instance-ids {}"
-# get_ip = "aws ec2 describe-instances --region us-east-1|jq -r .Reservations[].Instances[].PublicIpAddress"
-# start_worker = "ssh -i id_rsa -o ConnectTimeout=2 ubuntu@{} ~/ml/read_redis.py {}"
 
 status = "gcloud --format json compute instances describe nvidia-gpu-cloud-image-1-vm | jq -r .status"
-
-# get_cost = (
-#     "aws ce get-cost-and-usage --time-period Start={},End={} --granularity DAILY --metrics BlendedCost | "
-#     "jq -r .ResultsByTime[0].Total.BlendedCost.Amount"
-# )
-
-# get_all_cost = (
-#     "aws ce get-cost-and-usage --time-period Start=2021-10-01,End={end} --granularity DAILY --metrics BlendedCost | "
-#     "jq '.ResultsByTime[] | {(.TimePeriod.Start): .Total.BlendedCost.Amount}' | jq -s add"
-# )
 
 
 async def get_output(cmd: str) -> str:
@@ -128,7 +113,6 @@ class Imogen(Bot):
     worker_instance_id: Optional[str] = None
 
     async def start_process(self) -> None:
-        # self.worker_instance_id = await get_output(instance_id)
         self.queue = pghelp.PGInterface(
             query_strings=QueueExpressions,
             database=utils.get_secret("DATABASE_URL"),
@@ -146,14 +130,8 @@ class Imogen(Bot):
         await self.auxincli_input_queue.put(profile)
         logging.info(profile)
 
-    # this is a really ugly non-cooperative inheritence
     async def handle_reaction(self, msg: Message) -> Response:
-        """
-        route a reaction to the original message.
-        #if the number of reactions that message has is a fibonacci number, notify the message's author
-        this is probably flakey, because signal only gives us timestamps and
-        not message IDs
-        """
+
         await super().handle_reaction(msg)
         assert msg.reaction
         if not msg.reaction.ts in self.sent_messages:
@@ -203,29 +181,10 @@ class Imogen(Bot):
         # await self.send_payment_using_linked_device(prompt_author, await self.mobster.get_balance() * 0.1)
         return None
 
-    # @hide
-    # async def do_get_cost(self, _: Message) -> str:
-    #     today = datetime.date.today()
-    #     tomorrow = today + datetime.timedelta(1)
-    #     out = await get_output(get_cost.format(today, tomorrow))
-    #     try:
-    #         return str(round(float(out), 2))
-    #     except ValueError:
-    #         return out
 
-    # async def do_get_all_cost(self, _: Message) -> str:
-    #     tomorrow = datetime.date.today() + datetime.timedelta(1)
-    #     out = await get_output(get_all_cost.replace("{end}", str(tomorrow)))
-    #     return json.loads(out)
-
-    # do_get_costs = do_get_all_costs = hide(do_get_all_cost)
-
-    @hide
     async def do_status(self, _: Message) -> str:
-        "shows the GPU instance state (not the program) and queue size"
-        # state = await get_output(status)
+        "shows queue size"
         queue_size = await redis.llen("prompt_queue")
-        # return f"worker state: {state}, queue size: {queue_size}"
         return f"queue size: {queue_size}"
 
     image_rate_cents = 10
@@ -391,35 +350,15 @@ class Imogen(Bot):
         )
         return response["choices"][0]["text"].strip()
 
-    # @hide
-    # async def do_stop(self, _: Message) -> str:
-    #     return await get_output(stop.format(self.worker_instance_id))
-
-    # @hide
-    # async def do_start(self, _: Message) -> str:
-    #     return await get_output(start.format(self.worker_instance_id))
-
     async def do_list_queue(self, _: Message) -> str:
-        "select prompt from prompts where status='pending' order by signal_ts asc"
-        try:
-            q = "; ".join(
-                json.loads(item)["prompt"]
-                for item in await redis.lrange("prompt_queue", 0, -1)
-            )
-            return q or "queue empty"
-        except json.JSONDecodeError:
-            return "json decode error?"
+        q = "; ".join(prompt.get("prompt") for prompt in self.queue.list_prompts())
+        return q or "queue empty"
 
     do_list_prompts = do_listqueue = do_queue = hide(do_list_queue)
 
     @hide
     async def do_dump_queue(self, _: Message) -> Response:
-        prompts = []
-        while 1:
-            if not (item := await redis.lpop("prompt_queue")):
-                break
-            prompts.append(str(json.loads(item)["prompt"]))
-        return ", ".join(prompts)
+        raise NotImplementedError
 
     async def payment_response(self, msg: Message, amount_pmob: int) -> None:
         del msg, amount_pmob
@@ -485,6 +424,7 @@ async def store_image_handler(  # pylint: disable=too-many-locals
     request: web.Request,
 ) -> web.Response:
     bot = request.app.get("bot")
+    assert isinstance(bot, Imogen)
     if not bot:
         return web.Response(status=504, text="Sorry, no live workers.")
     async for field in await request.multipart():
@@ -498,19 +438,22 @@ async def store_image_handler(  # pylint: disable=too-many-locals
             logging.info("writing file")
             while True:
                 chunk = await field.read_chunk()  # 8192 bytes by default.
-                # logging.info("read chunk")
                 if not chunk:
                     break
                 size += len(chunk)
                 f.write(chunk)
-    prompt_id = request.query.get("id", "-1")
+    prompt_id = int(request.query.get("id", "-1"))
 
     cols = ", ".join(Prompt.__annotations__)
     row = await bot.queue.execute(
-        f"SELECT {cols} FROM prompt_queue WHERE id=$1", int(prompt_id)
+        f"SELECT {cols} FROM prompt_queue WHERE id=$1", prompt_id
     )
     if not row:
         await bot.admin("no prompt id found?", attachments=str(path))
+        info = f"prompt id now found, sent {filename} sized of {size} to admin"
+        logging.info(info)
+        return web.Response(text=info)
+
     prompt = Prompt(**row[0])
     minutes, seconds = divmod(prompt.elapsed_gpu, 60)
     message = f"{prompt.prompt}\nTook {minutes}m{seconds}s to generate,"
@@ -521,9 +464,9 @@ async def store_image_handler(  # pylint: disable=too-many-locals
     message += "\n\N{Object Replacement Character}"
     quote = (
         {
-            "quote-timestamp": prompt.signal_ts,
-            "quote-author": prompt.author,
-            "quote-message": prompt.prompt,
+            "quote-timestamp": int(prompt.signal_ts),
+            "quote-author": str(prompt.author),
+            "quote-message": str(prompt.prompt),
             "mention": f"{len(message)-1}:1:{prompt.author}",
         }
         if prompt.author and prompt.signal_ts
@@ -531,27 +474,27 @@ async def store_image_handler(  # pylint: disable=too-many-locals
     )
     if prompt.group_id:
         rpc_id = await bot.send_message(
-            None, message, attachments=[str(path)], group=prompt.group_id, **quote
+            None, message, attachments=[str(path)], group=prompt.group_id, **quote  # type: ignore
         )
         if random.random() < 0.05:
             asyncio.create_task(
-                await bot.send_message(None, tip_message, group=prompt.group_id)
+                bot.send_message(None, tip_message, group=prompt.group_id)
             )
     else:
         rpc_id = await bot.send_message(
-            prompt.author, message, attachments=[str(path)], **quote
+            prompt.author, message, attachments=[str(path)], **quote  # type: ignore
         )
-        if bot.author != utils.get_secret("ADMIN"):
+        if prompt.author != utils.get_secret("ADMIN"):
             asyncio.create_task(
                 bot.admin(message + f"author: {prompt.author}", attachments=[str(path)])
             )
 
     # bind variables to local scope for safety; hopefully bot can't change between requests
-    async def followup(rpc_id: str = rpc_id, prompt_id: str = prompt_id) -> None:
+    async def followup(rpc_id: str = rpc_id, prompt_id: int= prompt_id) -> None:
         assert isinstance(bot, Imogen)
         result = await bot.pending_requests[rpc_id]
         await bot.queue.execute(
-            "UPDATE {self.table} SET sent_ts=$1 WHERE id=$2",
+            "UPDATE prompt_queue SET sent_ts=$1 WHERE id=$2",
             result.timestamp,
             prompt_id,
         )

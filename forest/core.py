@@ -396,7 +396,7 @@ class Signal:
         asyncio.create_task(self.save_sent_message(future_key, params))
         return future_key
 
-    async def admin(self, msg: Response, **kwargs) -> None:
+    async def admin(self, msg: Response, **kwargs: Any) -> None:
         if utils.get_secret("ADMIN_GROUP") and not utils.AUXIN:
             await self.send_message(None, msg, group=utils.get_secret("ADMIN_GROUP"), **kwargs)
         else:
