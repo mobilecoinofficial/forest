@@ -123,7 +123,7 @@ class Imogen(Bot):
             # and timestamp > 1000*(time.time() - 3600)
         ]
         average_reaction_count = max(
-            sum(reaction_counts) / len(reaction_counts) if reaction_counts else 0, 4
+            sum(reaction_counts) / len(reaction_counts) if reaction_counts else 0, 5
         )
         logging.info(
             "average reaction count: %s, current: %s",
@@ -362,7 +362,7 @@ class Imogen(Bot):
         )
         return response["choices"][0]["text"].strip()
 
-    @hide
+    @requires_admin
     async def do_gpt(self, msg: Message) -> str:
         response = openai.Completion.create(  # type: ignore
             engine="davinci",
@@ -426,6 +426,8 @@ class Imogen(Bot):
         return dedent(
             """
         Thank you for collaborating with Imogen, if you'd like to support the project you can send her a tip of any amount with Signal Pay.
+
+        If you get "This person has not activated payments", try messagining me with /ping. 
 
         If you have payments activated, simply click on the plus sign and choose payment.
 
