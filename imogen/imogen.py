@@ -43,7 +43,7 @@ from forest.core import JSON, Bot, Message, Response, app, hide, requires_admin
 #     async def insert(self, queue: pghelp.PGInterface) -> None:
 #         async with queue.pool.acquire() as conn:
 #             await conn.execute(
-#                 """INSERT INTO queue (prompt, paid, author, signal_ts, group, params, url) VALUES ($1, $2, $3, $4, $5, $6, $7);""",
+#                 """INSERT INTO prompt_queue (prompt, paid, author, signal_ts, group, params, url) VALUES ($1, $2, $3, $4, $5, $6, $7);""",
 #                 self.prompt,
 
 #                 msg.text,
@@ -64,7 +64,7 @@ QueueExpressions = pghelp.PGExpressions(
         paid BOOLEAN,
         author TEXT,
         signal_ts BIGINT,
-        group TEXT DEFAULT null,
+        group_id TEXT DEFAULT null,
         status TEXT DEFAULT 'pending',
         assigned_at TIMESTAMP DEFAULT null,
         params TEXT DEFAULT null,
@@ -76,7 +76,7 @@ QueueExpressions = pghelp.PGExpressions(
         filepath TEXT DEFAULT null,
         version TEXT DEFAULT null,
         url TEXT DEFAULT 'https://imogen-renaissance.fly.dev/');""",
-    insert="""INSERT INTO {self.table} (prompt, paid, author, signal_ts, group, params, url) VALUES ($1, $2, $3, $4, $5, $6, $7);""",
+    insert="""INSERT INTO {self.table} (prompt, paid, author, signal_ts, group_id, params, url) VALUES ($1, $2, $3, $4, $5, $6, $7);""",
     length="SELECT count(id) AS len FROM {self.table} WHERE status <> 'done';",
 )
 openai.api_key = utils.get_secret("OPENAI_API_KEY")
@@ -255,7 +255,7 @@ class Imogen(Bot):
             )
 
         await self.queue.execute(
-            """INSERT INTO queue (prompt, paid, author, signal_ts, group, params, url) VALUES ($1, $2, $3, $4, $5, $6, $7);""",
+            """INSERT INTO prompt_queue (prompt, paid, author, signal_ts, group_id, params, url) VALUES ($1, $2, $3, $4, $5, $6, $7);""",
             msg.text,
             False,
             msg.source,
@@ -264,7 +264,7 @@ class Imogen(Bot):
             json.dumps(params),
             utils.URL,
         )
-        len = (await self.queue.length()).get("len")
+        len = (await self.queue.length())[0].get("len")
         return f"you are #{len} in line"
 
     def make_prefix(prefix: str) -> Callable:  # type: ignore  # pylint: disable=no-self-argument
@@ -293,7 +293,7 @@ class Imogen(Bot):
         if not msg.text:
             return "A prompt is required"
         await self.queue.execute(
-            """INSERT INTO queue (prompt, paid, author, signal_ts, group, params, url) VALUES ($1, $2, $3, $4, $5, $6, $7);""",
+            """INSERT INTO prompt_queue (prompt, paid, author, signal_ts, group_id, params, url) VALUES ($1, $2, $3, $4, $5, $6, $7);""",
             msg.text,
             False,
             msg.source,
@@ -310,7 +310,7 @@ class Imogen(Bot):
         if not msg.text:
             return "A prompt is required"
         await self.queue.execute(
-            """INSERT INTO queue (prompt, paid, author, signal_ts, group, params, url) VALUES ($1, $2, $3, $4, $5, $6, $7);""",
+            """INSERT INTO prompt_queue (prompt, paid, author, signal_ts, group_id, params, url) VALUES ($1, $2, $3, $4, $5, $6, $7);""",
             msg.text,
             False,
             msg.source,
@@ -345,7 +345,7 @@ class Imogen(Bot):
                 key, open(Path("./attachments") / attachment["id"], "rb").read()
             )
         await self.queue.execute(
-            """INSERT INTO queue (prompt, paid, author, signal_ts, group, params, url) VALUES ($1, $2, $3, $4, $5, $6, $7);""",
+            """INSERT INTO prompt_queue (prompt, paid, author, signal_ts, group_id, params, url) VALUES ($1, $2, $3, $4, $5, $6, $7);""",
             msg.text,
             False,
             msg.source,
@@ -475,10 +475,10 @@ class Prompt:
     prompt: str
     author: str
     signal_ts: int
-    group: str
-    loss: float
     elapsed_gpu: int
-    version: str
+    loss: float = 0.0
+    group_id: str = ""
+    version: str = ""
 
 
 async def store_image_handler(  # pylint: disable=too-many-locals
@@ -507,11 +507,11 @@ async def store_image_handler(  # pylint: disable=too-many-locals
 
     cols = ", ".join(Prompt.__annotations__)
     row = await bot.queue.execute(
-        f"SELECT {cols} FROM prompt_queue WHERE id=$1", prompt_id
+        f"SELECT {cols} FROM prompt_queue WHERE id=$1", int(prompt_id)
     )
     if not row:
         await bot.admin("no prompt id found?", attachments=str(path))
-    prompt = Prompt(**row)
+    prompt = Prompt(**row[0])
     minutes, seconds = divmod(prompt.elapsed_gpu, 60)
     message = f"{prompt.prompt}\nTook {minutes}m{seconds}s to generate,"
     if prompt.loss:
@@ -529,13 +529,13 @@ async def store_image_handler(  # pylint: disable=too-many-locals
         if prompt.author and prompt.signal_ts
         else {}
     )
-    if prompt.group:
+    if prompt.group_id:
         rpc_id = await bot.send_message(
-            None, message, attachments=[str(path)], group=prompt.group, **quote
+            None, message, attachments=[str(path)], group=prompt.group_id, **quote
         )
         if random.random() < 0.05:
             asyncio.create_task(
-                await bot.send_message(None, tip_message, group=prompt.group)
+                await bot.send_message(None, tip_message, group=prompt.group_id)
             )
     else:
         rpc_id = await bot.send_message(
