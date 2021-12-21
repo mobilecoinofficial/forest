@@ -146,7 +146,7 @@ class Imogen(Bot):
             # and timestamp > 1000*(time.time() - 3600)
         ]
         average_reaction_count = max(
-            sum(reaction_counts) / len(reaction_counts) if reaction_counts else 0, 4
+            sum(reaction_counts) / len(reaction_counts) if reaction_counts else 0, 5
         )
         logging.info(
             "average reaction count: %s, current: %s",
@@ -183,8 +183,8 @@ class Imogen(Bot):
 
     async def do_status(self, _: Message) -> str:
         "shows queue size"
-        queue_size = await redis.llen("prompt_queue")
-        return f"queue size: {queue_size}"
+        queue_length = (await self.queue.length())[0].get("len")
+        return f"queue size: {queue_length}"
 
     image_rate_cents = 10
 
@@ -330,7 +330,7 @@ class Imogen(Bot):
         )
         return response["choices"][0]["text"].strip()
 
-    @hide
+    @requires_admin
     async def do_gpt(self, msg: Message) -> str:
         response = openai.Completion.create(  # type: ignore
             engine="davinci",
@@ -377,6 +377,8 @@ class Imogen(Bot):
             """
         Thank you for collaborating with Imogen, if you'd like to support the project you can send her a tip of any amount with Signal Pay.
 
+        If you get "This person has not activated payments", try messagining me with /ping. 
+
         If you have payments activated, simply click on the plus sign and choose payment.
 
         If you don't have Payments activated follow these instructions to activate it.
@@ -398,7 +400,7 @@ class Imogen(Bot):
 
 tip_message = """
 If you like Imogen's art, you can show your support by donating within Signal Payments.
-Send Imogen a message with the command "/tip" for donation instructions.  Every time she creates an image, it costs $0.07
+Send Imogen a message with the command "/tip" for donation instructions.  Every time she creates an image, it costs $0.09
 Imogen shares tips with collaborators! If you like an Imogen Imoge, react ❤️  t️o it. When an Imoge gets multiple reactions, the person who prompted the Imoge will be awarded a tip (currently 0.1 MOB).
 """.strip()
 
@@ -456,12 +458,16 @@ async def store_image_handler(  # pylint: disable=too-many-locals
     if prompt.version:
         message += f" v{prompt.version}."
     message += "\n\N{Object Replacement Character}"
+    # needs to be String.length in Java, i.e. number of utf-16 code units,
+    # which are 2 bytes each. we need to specify any endianness to skip
+    # byte-order mark.
+    mention_start = len(message.encode("utf-16-be")) // 2 - 1
     quote = (
         {
             "quote-timestamp": int(prompt.signal_ts),
             "quote-author": str(prompt.author),
             "quote-message": str(prompt.prompt),
-            "mention": f"{len(message)-1}:1:{prompt.author}",
+            "mention": f"{mention_start}:1:{prompt.author}",
         }
         if prompt.author and prompt.signal_ts
         else {}
