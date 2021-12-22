@@ -396,6 +396,8 @@ if __name__ == "__main__":
         else:
             num = sorted(os.listdir("data"))[0]
         store = SignalDatastore(num)
+        if args.path:
+            os.chdir(args.path)
         asyncio.run(store.upload())
     else:
         print("not implemented")

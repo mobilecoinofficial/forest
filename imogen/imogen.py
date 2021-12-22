@@ -39,7 +39,8 @@ from forest.core import JSON, Bot, Message, Response, app, hide, requires_admin,
 #     async def insert(self, queue: pghelp.PGInterface) -> None:
 #         async with queue.pool.acquire() as conn:
 #             await conn.execute(
-#                 """INSERT INTO prompt_queue (prompt, paid, author, signal_ts, group, params, url) VALUES ($1, $2, $3, $4, $5, $6, $7);""",
+#                 """INSERT INTO prompt_queue (prompt, paid, author, signal_ts, group, params, url) VALUES ($1, $2, $3, $4, $5, $6, $7)
+#                 RETURNING (SELECT count(id) AS len FROM prompt_queue WHERE status <> 'done');""",
 #                 self.prompt,
 #                 msg.text,
 #                 False,
@@ -70,6 +71,7 @@ QueueExpressions = pghelp.PGExpressions(
         loss FLOAT DEFAULT null,
         filepath TEXT DEFAULT null,
         version TEXT DEFAULT null,
+        hostname TEXT DEFAULT null,
         url TEXT DEFAULT 'https://imogen-renaissance.fly.dev/',
         sent_ts BIGINT DEFAULT null);""",
     insert="""INSERT INTO {self.table} (prompt, paid, author, signal_ts, group_id, params, url) VALUES ($1, $2, $3, $4, $5, $6, $7);""",
@@ -413,10 +415,10 @@ Imogen shares tips with collaborators! If you like an Imogen Imoge, react ❤️
 @dataclass
 class Prompt:
     prompt: str
-    author: str
-    signal_ts: int
-    elapsed_gpu: int
+    elapsed_gpu: int = 0
     loss: float = 0.0
+    author: str = ""
+    signal_ts: int = -1
     group_id: str = ""
     version: str = ""
 
@@ -449,7 +451,7 @@ async def store_image_handler(  # pylint: disable=too-many-locals
     row = await bot.queue.execute(
         f"SELECT {cols} FROM prompt_queue WHERE id=$1", prompt_id
     )
-    if not row:
+    if not row or (not row[0].get("author") and not row[0].get("group_id")):
         await bot.admin("no prompt id found?", attachments=str(path))
         info = f"prompt id now found, sent {filename} sized of {size} to admin"
         logging.info(info)
