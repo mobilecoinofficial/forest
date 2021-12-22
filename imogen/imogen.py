@@ -18,7 +18,7 @@ import openai
 from aiohttp import web
 
 from forest import pghelp, utils
-from forest.core import JSON, Bot, Message, Response, app, hide, requires_admin
+from forest.core import JSON, Bot, Message, Response, app, hide, requires_admin, run_bot
 
 # metrics to look for:
 # - gaurantee <10min default paid
@@ -75,7 +75,7 @@ QueueExpressions = pghelp.PGExpressions(
     insert="""INSERT INTO {self.table} (prompt, paid, author, signal_ts, group_id, params, url) VALUES ($1, $2, $3, $4, $5, $6, $7);""",
     length="SELECT count(id) AS len FROM {self.table} WHERE status <> 'done';",
     list_queue="SELECT prompt FROM {self.table} WHERE status='pending' ORDER BY signal_ts ASC",
-    react="UPDATE {self.table} SET reaction_map = reaction_map || jsonb $2 WHERE signal_ts=$1;",
+    react="UPDATE {self.table} SET reaction_map = reaction_map || $2::jsonb WHERE sent_ts=$1;",
 )
 
 openai.api_key = utils.get_secret("OPENAI_API_KEY")
@@ -131,6 +131,11 @@ class Imogen(Bot):
     async def handle_reaction(self, msg: Message) -> Response:
         await super().handle_reaction(msg)
         assert msg.reaction
+        logging.info(
+            "updating %s with %s",
+            msg.reaction.ts,
+            json.dumps({msg.source: msg.reaction.emoji}),
+        )
         await self.queue.react(
             msg.reaction.ts, json.dumps({msg.source: msg.reaction.emoji})
         )
@@ -390,7 +395,7 @@ class Imogen(Bot):
         For more information on Signal Payments visit:
 
         https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
-        )
+        ).strip()
 
     # eh
     # async def async_shutdown(self):
@@ -440,7 +445,7 @@ async def store_image_handler(  # pylint: disable=too-many-locals
                 f.write(chunk)
     prompt_id = int(request.query.get("id", "-1"))
 
-    cols = ", ".join(Prompt.__annotations__) # pylint: disable=no-member
+    cols = ", ".join(Prompt.__annotations__)  # pylint: disable=no-member
     row = await bot.queue.execute(
         f"SELECT {cols} FROM prompt_queue WHERE id=$1", prompt_id
     )
@@ -510,9 +515,4 @@ app.add_routes([])
 
 
 if __name__ == "__main__":
-
-    @app.on_startup.append
-    async def start_wrapper(our_app: web.Application) -> None:
-        our_app["bot"] = Imogen()
-
-    web.run_app(app, port=8080, host="0.0.0.0")
+    run_bot(Imogen, app)

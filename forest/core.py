@@ -550,8 +550,7 @@ class Bot(Signal):
         """
         assert isinstance(msg.reaction, Reaction)
         react = msg.reaction
-        logging.debug("reaction from %s targeting %s", msg.sender, react.ts)
-        logging.info(self.sent_messages)
+        logging.debug("reaction from %s targeting %s", msg.source, react.ts)
         if react.author != self.bot_number or react.ts not in self.sent_messages:
             return None
         self.sent_messages[react.ts]["reactions"][msg.source] = react.emoji
