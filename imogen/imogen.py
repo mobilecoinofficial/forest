@@ -75,7 +75,7 @@ QueueExpressions = pghelp.PGExpressions(
         url TEXT DEFAULT 'https://imogen-renaissance.fly.dev/',
         sent_ts BIGINT DEFAULT null);""",
     insert="""INSERT INTO {self.table} (prompt, paid, author, signal_ts, group_id, params, url) VALUES ($1, $2, $3, $4, $5, $6, $7);""",
-    length="SELECT count(id) AS len FROM {self.table} WHERE status <> 'done';",
+    length="SELECT count(id) AS len FROM {self.table} WHERE status='pending';",
     list_queue="SELECT prompt FROM {self.table} WHERE status='pending' ORDER BY signal_ts ASC",
     react="UPDATE {self.table} SET reaction_map = reaction_map || $2::jsonb WHERE sent_ts=$1;",
 )
@@ -85,9 +85,9 @@ openai.api_key = utils.get_secret("OPENAI_API_KEY")
 if not utils.LOCAL:
     gcp_cred = utils.get_secret("GCP_CREDENTIALS")
     if gcp_cred:
-        pass
+        open("gcp-key-imogen.json", "w").write(base64.b64decode(gcp_cred).decode())
     else:
-        logging.info("couldn't find creds")
+        logging.info("couldn't find gcp creds")
     ssh_key = utils.get_secret("SSH_KEY")
     open("id_rsa", "w").write(base64.b64decode(ssh_key).decode())
 
@@ -117,6 +117,7 @@ class Imogen(Bot):
             query_strings=QueueExpressions,
             database=utils.get_secret("DATABASE_URL"),
         )
+        #get_output("gcloud auth activate-service-account -f gcp-key-imogen.json")
         await super().start_process()
 
     async def set_profile(self) -> None:
@@ -197,7 +198,7 @@ class Imogen(Bot):
 
     async def do_imagine(self, msg: Message) -> str:
         """/imagine [prompt]"""
-        if not msg.text and not msg.attachments:
+        if not msg.text.strip() and not msg.attachments:
             return "A prompt is required"
         # await self.mobster.put_usd_tx(msg.sender, self.image_rate_cents, msg.text[:32])
         logging.info(msg.full_text)
