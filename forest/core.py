@@ -18,6 +18,8 @@ import time
 import traceback
 import urllib
 import uuid
+import glob
+
 from asyncio import Queue, StreamReader, StreamWriter
 from asyncio.subprocess import PIPE
 from functools import wraps
@@ -286,11 +288,15 @@ class Signal:
         await self.auxincli_input_queue.put(profile)
 
     async def set_profile_auxin(
-        self, given_name: str = "", family_name: str = "", payment_address: str = "", profile_path: Optional[str] = None
+        self,
+        given_name: str = "",
+        family_name: Optional[str] = "",
+        payment_address: Optional[str] = "",
+        profile_path: Optional[str] = None,
     ) -> str:
-        if given_name:
-            params: JSON = {"name": {"givenName": given_name}}
-        if family_name:
+        params: JSON = {}
+        params["name"] = {"givenName": given_name}
+        if given_name and family_name:
             params["name"]["familyName"] = family_name
         if payment_address:
             params["mobilecoinAddress"] = payment_address
@@ -666,22 +672,24 @@ class PayBot(Bot):
     async def do_update(self, msg: Message) -> Response:
         """Renames bot (requires admin) - accepts first name, last name, and address."""
         user_image = None
-        if msg.attachments and msg.attachments:
+        if msg.attachments and len(msg.attachments):
             await asyncio.sleep(2)
             attachment_info = msg.attachments[0]
             attachment_path = attachment_info.get("fileName")
             timestamp = attachment_info.get("uploadTimestamp")
             if attachment_path == None:
-                attachment_paths = glob.glob(
-                    f"/tmp/unnamed_attachment_{timestamp}.*"
-                )
+                attachment_paths = glob.glob(f"/tmp/unnamed_attachment_{timestamp}.*")
                 if len(attachment_paths):
-                    attachment_path = attachment_paths.pop()
-                    user_image = f"{attachment_path}"
+                    user_image = attachment_paths.pop()
             else:
                 user_image = f"/tmp/{attachment_path}"
-        if msg.tokens and len(msg.tokens) > 0:
-            await self.set_profile_auxin(*msg.tokens, profile_path=user_image)
+        if user_image or (msg.tokens and len(msg.tokens) > 0):
+            await self.set_profile_auxin(
+                given_name=msg.arg1,
+                family_name=msg.arg2,
+                payment_address=msg.arg3,
+                profile_path=user_image,
+            )
             return "OK"
         return "pass arguments for rename"
 
