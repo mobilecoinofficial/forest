@@ -387,11 +387,4 @@ async def inbound_sms_handler(request: web.Request) -> web.Response:
 app.add_routes([web.post("/inbound", inbound_sms_handler)])
 
 if __name__ == "__main__":
-
-    @app.on_startup.append
-    async def start_wrapper(our_app: web.Application) -> None:
-        our_app["bot"] = Forest()
-        our_app["routing"] = RoutingManager()
-        our_app["group_routing"] = GroupRoutingManager()
-
-    web.run_app(app, port=8080, host="0.0.0.0", access_log=None)
+    run_bot(Imogen, app)
