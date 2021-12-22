@@ -113,6 +113,7 @@ class Signal:
             )
             if not utils.AUXIN:
                 path += " --trust-new-identities always"
+                path += " --verbose"
             command = f"{path} --config {utils.ROOT_DIR} --user {self.bot_number} jsonRpc".split()
             logging.info(command)
             proc_launch_time = time.time()
