@@ -18,6 +18,8 @@ import time
 import traceback
 import urllib
 import uuid
+import glob
+
 from asyncio import Queue, StreamReader, StreamWriter
 from asyncio.subprocess import PIPE
 from functools import wraps
@@ -286,17 +288,23 @@ class Signal:
         await self.auxincli_input_queue.put(profile)
 
     async def set_profile_auxin(
-        self, given_name: str, family_name: str = "", payment_address: str = ""
+        self,
+        given_name: str = "",
+        family_name: Optional[str] = "",
+        payment_address: Optional[str] = "",
+        profile_path: Optional[str] = None,
     ) -> str:
-        params: JSON = {"profile_fields": {"name": {"givenName": given_name}}}
-        if family_name:
-            params["profile_fields"]["name"]["familyName"] = family_name
+        params: JSON = {}
+        params["name"] = {"givenName": given_name}
+        if given_name and family_name:
+            params["name"]["familyName"] = family_name
         if payment_address:
-            params["profile_fields"]["mobilecoinAddress"] = payment_address
+            params["mobilecoinAddress"] = payment_address
+        if profile_path:
+            params["avatarFile"] = profile_path
         future_key = f"setProfile-{int(time.time()*1000)}"
         await self.auxincli_input_queue.put(rpc("setProfile", params, future_key))
         return future_key
-        # {"jsonrpc": "2.0", "method": "setProfile", "params":{"profile_fields":{"name": {"givenName":"TestBotFriend"}}}, "id":"SetName2"}
 
     # this should maybe yield a future (eep) and/or use auxin_req
     async def send_message(  # pylint: disable=too-many-arguments
@@ -661,12 +669,29 @@ class PayBot(Bot):
         return address or "Sorry, couldn't get your MobileCoin address"
 
     @requires_admin
-    async def do_rename(self, msg: Message) -> Response:
+    async def do_update(self, msg: Message) -> Response:
         """Renames bot (requires admin) - accepts first name, last name, and address."""
-        if msg.tokens and len(msg.tokens) > 0:
-            await self.set_profile_auxin(*msg.tokens)
+        user_image = None
+        if msg.attachments and len(msg.attachments):
+            await asyncio.sleep(2)
+            attachment_info = msg.attachments[0]
+            attachment_path = attachment_info.get("fileName")
+            timestamp = attachment_info.get("uploadTimestamp")
+            if attachment_path == None:
+                attachment_paths = glob.glob(f"/tmp/unnamed_attachment_{timestamp}.*")
+                if len(attachment_paths):
+                    user_image = attachment_paths.pop()
+            else:
+                user_image = f"/tmp/{attachment_path}"
+        if user_image or (msg.tokens and len(msg.tokens) > 0):
+            await self.set_profile_auxin(
+                given_name=msg.arg1,
+                family_name=msg.arg2,
+                payment_address=msg.arg3,
+                profile_path=user_image,
+            )
             return "OK"
-        return "pass arguments for set_profile_auxin"
+        return "pass arguments for rename"
 
     async def mob_request(self, method: str, **params: Any) -> dict:
         """Pass a request through to full-service, but send a message to an admin in case of error"""
