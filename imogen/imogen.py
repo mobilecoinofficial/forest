@@ -75,12 +75,22 @@ QueueExpressions = pghelp.PGExpressions(
         url TEXT DEFAULT 'https://imogen-renaissance.fly.dev/',
         sent_ts BIGINT DEFAULT null);""",
     insert="""INSERT INTO {self.table} (prompt, paid, author, signal_ts, group_id, params, url) VALUES ($1, $2, $3, $4, $5, $6, $7);""",
-    length="SELECT count(id) AS len FROM {self.table} WHERE status='pending';",
-    list_queue="SELECT prompt FROM {self.table} WHERE status='pending' ORDER BY signal_ts ASC",
+    length="SELECT count(id) AS len FROM {self.table} WHERE status='pending' OR status='assigned';",
+    list_queue="SELECT prompt FROM {self.table} WHERE status='pending' OR status='assigned' ORDER BY signal_ts ASC",
     react="UPDATE {self.table} SET reaction_map = reaction_map || $2::jsonb WHERE sent_ts=$1;",
 )
 
 openai.api_key = utils.get_secret("OPENAI_API_KEY")
+# gcloud beta compute instances create imogen-3 --project=sublime-coast-306000 --zone=us-central1-a
+# --machine-type=n1-standard-4 --network-interface=network-tier=PREMIUM,subnet=default
+# --metadata=google-monitoring-enable=0,google-logging-enable=0 --maintenance-policy=TERMINATE
+# --service-account=638601660045-compute@developer.gserviceaccount.com
+# --scopes=https://www.googleapis.com/auth/logging.write,https://www.googleapis.com/auth/monitoring.write,https://www.googleapis.com/auth/devstorage.read_only
+# --accelerator=count=1,type=nvidia-tesla-v100 --min-cpu-platform=Automatic
+# --tags=http-server,https-server --no-shielded-secure-boot --shielded-vtpm --shielded-integrity-monitoring
+# --labels=goog-dm=nvidia-gpu-cloud-image-1 --reservation-affinity=any --source-machine-image=bulky
+
+
 
 if not utils.LOCAL:
     gcp_cred = utils.get_secret("GCP_CREDENTIALS")
