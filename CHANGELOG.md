@@ -1,11 +1,15 @@
-TODO:
-- migrate the forest module into your-signal-bot or something like it
+## 1.0.2
+
+- Move contactbot to it's own subdirectory.
+- bugfixes from [PR 54](https://github.com/mobilecoinofficial/forest/pull/54/files)
+- add mobfriend bot source, deployed to +1(223)222-2922
+- add Code of Conduct for the project
 
 ## 1.0.0
 
 - `@requires_admin`, `@hide`, `@takes_number` decorators (#43)
 - full-service ssl (#38)
-- tiamat integration testing, including payments (#39, #29) 
+- tiamat integration testing, including payments (#39, #29)
 - workflow checks!
 - use mainline signal-cli's jsonRpc
 - use auxin!!! with sending payments! (#36)
@@ -14,7 +18,6 @@ TODO:
 - recover from exceptions and send them to admin
 - /ping /pong and pong_handler could be also be used for integration tests (#27, #22)
 - imogen: wikiart model, style prefixes
-
 
 ## 0.5.3
 
@@ -31,15 +34,15 @@ TODO:
 - fix logging to files
 - imogen: urldecode destinations and messages, b58encode groupIds, dump_queue (needs to actually send what was dumped)
 
-## 0.5.2 
+## 0.5.2
 
 - autosave.py is a separate file. datastore can be invoked directly again. tmpdir setup moved to a different function from start_memfs
 - example dockerfile that only downloads a datastore and does nothing else that could theoretically be included in other stuff
 
-## 0.5.1 
+## 0.5.1
 
-- payments code is moved into Bot and a new Mobster class that also handles the full-service http sesh, mob price, and financial tables 
-- invoice table maps unique amounts to users. registration payment monitoring code uncommented and mostly fixed, but rereads (with spam) the transaction log and re-credits 
+- payments code is moved into Bot and a new Mobster class that also handles the full-service http sesh, mob price, and financial tables
+- invoice table maps unique amounts to users. registration payment monitoring code uncommented and mostly fixed, but rereads (with spam) the transaction log and re-credits
 - /help: closes issue #14, though there are obvious improvements (see TODOs)
 - restarts signal-cli when it exits to mitigate memory leaks
 
@@ -57,7 +60,7 @@ TODO:
 - basic payments
 - script for deduplicating numbers across environments
 - datastore as a cli program; memfs and downloading are optional
-- trace loglevel 
+- trace loglevel
 - save last downloaded/uploaded timestamps to check if someone else has uploaded
 - /user/{number} webhook endpoint
 
