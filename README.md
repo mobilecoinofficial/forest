@@ -27,6 +27,27 @@ to install the prerequisites.
 
 ### Signal-Cli ###
 
-To install Signal-Cli visit the official repo:
+To install Signal-Cli clone the official repo, cd into it, and build the binary. You will need Java 17 or greater. For more detailed instructions visit the [Signal-cli repository](https://github.com/AsamK/signal-cli). If your build is failing, first ensure that you're using a version of Java 17 or highuer with `java --version`
+
+```
+git clone https://github.com/AsamK/signal-cli.git
+
+cd signal-cli
+
+./gradlew installDist
+```
+Verify the installation succeeded 
+
+```
+./build/install/signal-cli/bin/signal-cli --version
+signal-cli 0.10.0
+```
+
+## regteri
+
+
+
+
+
 
 ## Running Hellobot ##

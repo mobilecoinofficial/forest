@@ -8,11 +8,8 @@ from forest.core import Bot, Message, app
 
 
 class HelloBot(Bot):
-    async def do_hello(self, message) -> None:
-        async def concurrently() -> None:
-            return "Hello, world."
-
-        asyncio.create_task(concurrently())
+    async def do_hello(self, message) -> str:
+        return "Hello, world."
 
 
 if __name__ == "__main__":
