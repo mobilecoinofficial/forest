@@ -6,6 +6,7 @@ import asyncio
 import copy
 import logging
 import os
+import time
 from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator, Callable, Optional, Union
 
@@ -223,6 +224,7 @@ class PGInterface:
             def executer_with_args(*args: Any) -> Any:
                 """Closure over 'statement' in local state for application to arguments.
                 Allows deferred execution of f-strs, allowing PGExpresssions to operate on `args`."""
+                start_time = time.time()
                 rebuilt_statement = eval(f'f"{statement}"')  # pylint: disable=eval-used
                 if (
                     rebuilt_statement != statement
@@ -236,6 +238,7 @@ class PGInterface:
                 self.logger.debug(
                     f"{rebuilt_statement} {short_args} -> {short_strresp}"
                 )
+                logging.info("query %s took %s", self.truncate(rebuilt_statement), time.time() - start_time)
                 return resp
 
             return executer_with_args
