@@ -209,24 +209,11 @@ class Forest(PayBot):
             'try "/register" and following the instructions.'
         )
 
-    usd_price = 0.5
+    usd_price = 5
 
     async def do_register(self, message: Message) -> Response:
         """register for a phone number"""
-        if int(message.source[1:3]) in (44, 49, 33, 41):
-            # keep in sync with https://github.com/signalapp/Signal-Android/blob/master/app/build.gradle#L174
-            return "Please send {await self.mobster.usd2mob(self.usd_price)} via Signal Pay"
-        mob_price_exact = await self.mobster.create_invoice(
-            self.usd_price, message.source, "/register"
-        )
-        address = await self.mobster.get_address()
-        return [
-            f"The current price for a SMS number is {mob_price_exact}MOB/month. If you would like to continue, please send exactly...",
-            f"{mob_price_exact}",
-            "to",
-            address,
-            "Upon payment, you will be able to select the area code for your new phone number!",
-        ]
+        return f"Please send {await self.mobster.usd2mob(self.usd_price)} via Signal Pay"
 
     async def get_user_balance(self, account: str) -> float:
         res = await self.mobster.ledger_manager.get_usd_balance(account)
@@ -296,11 +283,12 @@ class Forest(PayBot):
         destination = utils.signal_format(signal_num)
         if not (_id and destination):
             return "that doesn't look like valid numbers"
-        return await self.routing_manager.execute(
+        await self.routing_manager.execute(
             "insert into routing (id, destination, status) "
             f"values ('{_id}', '{destination}', 'assigned') on conflict (id) do update "
             f"set destination='{destination}', status='assigned' "
         )
+        return f"Set {_id) -> {destination}"
 
     if not utils.get_secret("ORDER"):
         del do_order, do_pay
