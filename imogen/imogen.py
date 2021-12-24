@@ -73,7 +73,8 @@ QueueExpressions = pghelp.PGExpressions(
         version TEXT DEFAULT null,
         hostname TEXT DEFAULT null,
         url TEXT DEFAULT 'https://imogen-renaissance.fly.dev/',
-        sent_ts BIGINT DEFAULT null);""",
+        sent_ts BIGINT DEFAULT null,
+        errors INTEGER DEFAULT 0);""",
     insert="""INSERT INTO {self.table} (prompt, paid, author, signal_ts, group_id, params, url) VALUES ($1, $2, $3, $4, $5, $6, $7);""",
     length="SELECT count(id) AS len FROM {self.table} WHERE status='pending' OR status='assigned';",
     list_queue="SELECT prompt FROM {self.table} WHERE status='pending' OR status='assigned' ORDER BY signal_ts ASC",
@@ -89,7 +90,6 @@ openai.api_key = utils.get_secret("OPENAI_API_KEY")
 # --accelerator=count=1,type=nvidia-tesla-v100 --min-cpu-platform=Automatic
 # --tags=http-server,https-server --no-shielded-secure-boot --shielded-vtpm --shielded-integrity-monitoring
 # --labels=goog-dm=nvidia-gpu-cloud-image-1 --reservation-affinity=any --source-machine-image=bulky
-
 
 
 if not utils.LOCAL:
@@ -127,7 +127,7 @@ class Imogen(Bot):
             query_strings=QueueExpressions,
             database=utils.get_secret("DATABASE_URL"),
         )
-        #get_output("gcloud auth activate-service-account -f gcp-key-imogen.json")
+        # get_output("gcloud auth activate-service-account -f gcp-key-imogen.json")
         await super().start_process()
 
     async def set_profile(self) -> None:
@@ -215,6 +215,8 @@ class Imogen(Bot):
         params: JSON = {}
         if msg.attachments:
             attachment = msg.attachments[0]
+            if attachment.get("filename", "").endswith(".txt"):
+                return "your prompt is way too long"
             key = (
                 "input/"
                 + attachment["id"]
@@ -507,17 +509,13 @@ async def store_image_handler(  # pylint: disable=too-many-locals
                 bot.admin(message + f"author: {prompt.author}", attachments=[str(path)])
             )
 
-    # bind variables to local scope for safety; hopefully bot can't change between requests
-    async def followup(rpc_id: str = rpc_id, prompt_id: int = prompt_id) -> None:
-        assert isinstance(bot, Imogen)
-        result = await bot.pending_requests[rpc_id]
-        await bot.queue.execute(
-            "UPDATE prompt_queue SET sent_ts=$1 WHERE id=$2",
-            result.timestamp,
-            prompt_id,
-        )
+    result = await bot.pending_requests[rpc_id]
+    await bot.queue.execute(
+        "UPDATE prompt_queue SET sent_ts=$1 WHERE id=$2",
+        result.timestamp,
+        prompt_id,
+    )
 
-    asyncio.create_task(followup())
     info = f"{filename} sized of {size} sent"
     logging.info(info)
     return web.Response(text=info)
