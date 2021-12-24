@@ -34,7 +34,7 @@ from prometheus_client import Histogram, Summary
 # framework
 import mc_util
 from forest import autosave, datastore, payments_monitor, pghelp, utils
-from forest.message import AuxinMessage, Message, StdioMessage, Reaction
+from forest.message import AuxinMessage, Message, Reaction, StdioMessage
 
 JSON = dict[str, Any]
 Response = Union[str, list, dict[str, str], None]
@@ -118,14 +118,15 @@ class Signal:
             logging.info(command)
             proc_launch_time = time.time()
             self.proc = await asyncio.create_subprocess_exec(
-                *command, stdin=PIPE, stdout=PIPE
+                *command, stdin=PIPE, stdout=PIPE, stderr=PIPE
             )
             logging.info(
                 "started auxin-cli @ %s with PID %s",
                 self.bot_number,
                 self.proc.pid,
             )
-            assert self.proc.stdout and self.proc.stdin
+            assert self.proc.stdout and self.proc.stdin and self.proc.stderr
+            asyncio.create_task(self.handle_stderr(self.proc.stderr))
             asyncio.create_task(self.handle_auxincli_raw_output(self.proc.stdout))
             # prevent the previous auxin-cli's write task from stealing commands from the input queue
             if write_task:
@@ -186,6 +187,20 @@ class Signal:
         logging.info("called sys.exit but still running, trying os._exit")
         # call C fn _exit() without calling cleanup handlers, flushing stdio buffers, etc.
         os._exit(1)
+
+    async def handle_stderr(self, stream: StreamReader) -> None:
+        debug = ["TRACE", "DEBUG", "WARN"]
+        mute = ["PhoneNumberFormatter"]
+        while True:
+            line = (await stream.readline()).decode().strip()
+            if not like:
+                break
+            if any(word in line for word in mute):
+                pass
+            elif any(word in line for word in mute):
+                logging.debug("signal: %s", line)
+            else:
+                logging.info("signal: %s", line)
 
     async def handle_auxincli_raw_output(self, stream: StreamReader) -> None:
         """Read auxin-cli output but delegate handling it"""
