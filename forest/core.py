@@ -118,7 +118,7 @@ class Signal:
             logging.info(command)
             proc_launch_time = time.time()
             self.proc = await asyncio.create_subprocess_exec(
-                *command, stdin=PIPE, stdout=PIPE, stderr=PIPE
+                *command, stdin=PIPE, stdout=PIPE
             )
             logging.info(
                 "started auxin-cli @ %s with PID %s",
