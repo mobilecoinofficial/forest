@@ -397,6 +397,7 @@ if __name__ == "__main__":
             num = sorted(os.listdir("data"))[0]
         store = SignalDatastore(num)
         if args.path:
+            logging.info("chdir to %s", args.path)
             os.chdir(args.path)
         asyncio.run(store.upload())
     else:
