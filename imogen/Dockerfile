@@ -23,8 +23,8 @@ RUN VIRTUAL_ENV=/app/venv pipenv install
 FROM ubuntu:hirsute
 WORKDIR /app
 RUN mkdir -p /app/data
-ENV a=1
 RUN apt-get update
+LABEL a=app
 RUN apt-get install -y python3.9 wget libfuse2 kmod jq unzip ssh
 RUN apt-get clean autoclean && apt-get autoremove --yes && rm -rf /var/lib/{apt,dpkg,cache,log}/
 
@@ -35,9 +35,11 @@ RUN wget -q -O gcloud.tar.gz  https://dl.google.com/dl/cloudsdk/release/google-c
   && /usr/local/gcloud/google-cloud-sdk/install.sh
 RUN wget -q -O fuse.ko "https://public.getpost.workers.dev/?key=01F54FQVAX85R1Y98ACCXT2AGT&raw"
 #RUN sudo insmod fuse.ko
+LABEL b=signal
 COPY --from=sigbuilder /app/signal-cli/build/native/nativeCompile/signal-cli /app/signal-cli/commit-msg /app/signal-cli/build.gradle.kts  /app/
 # for signal-cli's unpacking of native deps
 COPY --from=sigbuilder /lib64/libz.so.1 /lib64
+LABEL c=depends
 COPY --from=libbuilder /app/venv/lib/python3.9/site-packages /app/
 COPY ./mc_util/ /app/mc_util/
 COPY ./forest/ /app/forest/
