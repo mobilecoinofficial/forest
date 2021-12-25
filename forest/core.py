@@ -517,9 +517,6 @@ class Bot(Signal):
         )  # maybe cancel on sigint?
         self.queue_task = asyncio.create_task(self.handle_messages())
         self.auxin_roundtrip_latency: list[Datapoint] = []
-        if utils.get_secret("MONITOR_WALLET"):
-            # currently spams and re-credits the same invoice each reboot
-            asyncio.create_task(self.mobster.monitor_wallet())
 
     async def handle_messages(self) -> None:
         """Read messages from the queue and pass each message to handle_message
@@ -848,17 +845,23 @@ async def send_message_handler(request: web.Request) -> web.Response:
     if not session:
         return web.Response(status=504, text="Sorry, no live workers.")
     msg_data = await request.text()
-    await session.send_message(
+    rpc_id = await session.send_message(
         account, msg_data, endsession=request.query.get("endsession")
     )
-    return web.json_response({"status": "sent"})
+    resp = await bot.wait_resp(future_key=rpc_id)
+    return web.json_response({"status": "sent", "sent_ts": resp.timestamp})
 
 
 async def admin_handler(request: web.Request) -> web.Response:
     bot = request.app.get("bot")
     if not bot:
         return web.Response(status=504, text="Sorry, no live workers.")
-    msg = urllib.parse.unquote(request.query.get("message", ""))
+    arg = urllib.parse.unquote(request.query.get("message", "")).strip()
+    data = (await request.text()).strip()
+    if arg.strip() and data.strip():
+        msg = f"{arg}\n{data}"
+    else:
+        msg = msg or data
     await bot.admin(msg)
     return web.Response(text="OK")
 

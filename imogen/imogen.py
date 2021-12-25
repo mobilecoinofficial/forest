@@ -164,7 +164,7 @@ class Imogen(Bot):
             # and timestamp > 1000*(time.time() - 3600)
         ]
         average_reaction_count = max(
-            sum(reaction_counts) / len(reaction_counts) if reaction_counts else 0, 5
+            sum(reaction_counts) / len(reaction_counts) if reaction_counts else 0, 6
         )
         logging.info(
             "average reaction count: %s, current: %s",

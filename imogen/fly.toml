@@ -1,14 +1,17 @@
 # fly.toml file generated for imogen on 2021-10-13T00:08:41-04:00
 
-app = "imogen-renaissance"
+#app = "imogen-renaissance"
+app = "imogen"
 
 kill_signal = "SIGINT"
 kill_timeout = 5
 processes = []
 
 [env]
-
-BOT_NUMBER="+12692462089"
+# renaissance
+# BOT_NUMBER="+12692462089"
+# imogen classic
+BOT_NUMBER="+12406171657"
 SIGNAL="signal-cli"
 LOGLEVEL="DEBUG"
 ADMIN_GROUP="0om6G+Yj9Kv0LH5Z0992pucLPXTk2qyIYPwBpjhbZO4="
