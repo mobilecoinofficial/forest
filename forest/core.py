@@ -737,6 +737,7 @@ class PayBot(Bot):
         recipient: str,
         amount_pmob: int,
         receipt_message: str = "Transaction sent!",
+        tx_comment: str = ""
     ) -> Optional[Message]:
         address = await self.get_address(recipient)
         if not address:
@@ -755,7 +756,11 @@ class PayBot(Bot):
             fee=str(int(1e12 * 0.0004)),
         )
         prop = raw_prop["result"]["tx_proposal"]
-        await self.mob_request("submit_transaction", tx_proposal=prop)
+        if tx_comment:
+            await self.mob_request("submit_transaction", tx_proposal=prop,
+                    comment=tx_comment)
+        else:
+            await self.mob_request("submit_transaction", tx_proposal=prop)
         receipt_resp = await self.mob_request(
             "create_receiver_receipts",
             tx_proposal=prop,

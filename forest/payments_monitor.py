@@ -9,7 +9,7 @@ import logging
 import random
 import ssl
 import time
-from typing import Optional
+from typing import Optional, Union
 
 import aiohttp
 import asyncpg
@@ -18,15 +18,21 @@ import mc_util
 from forest import utils
 from forest.pghelp import Loop, PGExpressions, PGInterface
 
+ROOTCRT, CLIENTCRT, FULL_SERVICE_URL = "ROOTCRT", "CLIENTCRT", "FULL_SERVICE_URL"
+if utils.get_secret("USE_TESTNET"):
+    ROOTCRT = "TESTNET_" + ROOTCRT
+    CLIENTCRT = "TESTNET_" + CLIENTCRT
+    FULL_SERVICE_URL = "TESTNET_" + FULL_SERVICE_URL
+    
 if not utils.get_secret("ROOTCRT"):
     ssl_context: Optional[ssl.SSLContext] = None
 else:
     ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     root = open("rootcrt.pem", "wb")
-    root.write(base64.b64decode(utils.get_secret("ROOTCRT")))
+    root.write(base64.b64decode(utils.get_secret(ROOTCRT)))
     root.flush()
     client = open("client.full.pem", "wb")
-    client.write(base64.b64decode(utils.get_secret("CLIENTCRT")))
+    client.write(base64.b64decode(utils.get_secret(CLIENTCRT)))
     client.flush()
 
     ssl_context.load_verify_locations("rootcrt.pem")
@@ -103,7 +109,7 @@ class Mobster:
     def __init__(self, url: str = "") -> None:
         if not url:
             url = (
-                utils.get_secret("FULL_SERVICE_URL")
+                utils.get_secret(FULL_SERVICE_URL)
                 or "http://full-service.fly.dev/wallet"
             )
         self.ledger_manager = LedgerManager()
@@ -238,7 +244,7 @@ class Mobster:
         )["result"]["balance"]["unspent_pmob"]
         return int(value)
 
-    async def get_transactions(self, account_id: str) -> dict[str, dict[str, str]]:
+    async def get_transactions(self, account_id: str) -> dict[str, dict[str,dict]]:
         return (
             await self.req(
                 {
@@ -248,33 +254,48 @@ class Mobster:
             )
         )["result"]["transaction_log_map"]
 
-    async def build_single_txo_proposal(self, recipient: str, amount: str) -> dict:
+    async def build_single_txo_proposal(self, recipient: str, amount: Union[int, str],
+            submit: bool = False, comment: str = "", log: bool = True) -> dict:
         """
         Build proposal for single txo to single recipient.
 
         args:
           recipient (str): Base58 mobilecoin address of recipient
           amount (int): Amount in picomob to send to address
-
+          submit (bool): if true, will submit the proposal immediately
+          comment (str): if proposal is set to submit, this comment will be logged in the wallet account's database
+          log (bool): if proposal is not set to submit, tx_proposal metadatn will be logged
+ 
         returns:
           dict: Resulting proposal from mobilecoin
         """
 
+        amount = str(amount)
+
+        method = "build_transaction"
+        if submit:
+            method = "build_and_submit_transaction"
         account_id = await self.get_account()
         tx_proposal = dict(
-            method="build_transaction",
+            method=method,
             params=dict(
                 account_id=account_id,
                 recipient_public_address=recipient,
                 value_pmob=str(amount),
-                log_tx_proposal=True,
             ),
         )
+        if submit and comment:
+            tx_proposal["params"]["comment"] = comment # type: ignore
+
+        if not submit and log:
+            tx_proposal["params"]["log_tx_proposal"] = log # type: ignore
+
 
         return await self.req(tx_proposal)
 
     async def build_multi_txo_proposal(
-        self, txo_proposals: list[tuple[str, str]]
+            self, txo_proposals: list[list[Union[str, int]]], submit: bool = False,
+            comment: str = "", log: bool = False
     ) -> dict:
         """
         Submit a multiple txo transaction proposal to full-service api. Txos may
@@ -282,14 +303,21 @@ class Mobster:
 
         args:
           txo_proposals (list[tuple[str, int]]): List of (address, picomob) pairs
-
+          submit (bool): if true, will submit the proposal immediately
+          comment (str): if proposal is set to submit, this comment will be logged in the wallet account's database
+          log (bool): if proposal is not set to submit, tx_proposal metadatn will be logged
         Returns:
           dict: result of multi-output proposal
         """
+        for prop in txo_proposals:
+            prop[1] = str(prop[1])
 
+        method = "build_transaction"
+        if submit:
+            method = "build_and_submit_transaction"
         account_id = await self.get_account()
         tx_proposal = dict(
-            method="build_transaction",
+            method=method,
             params=dict(
                 account_id=account_id,
                 addresses_and_values=txo_proposals,
@@ -297,7 +325,38 @@ class Mobster:
             ),
         )
 
+        if submit and comment:
+            tx_proposal["params"]["comment"] = comment # type: ignore
+
+        if not submit and log:
+            tx_proposal["params"]["log_tx_proposal"] = log # type: ignore
+
         return await self.req(tx_proposal)
+
+    async def submit_proposal(self, tx_prop: dict, account_id: str = "",
+            comment: str = "") -> dict:
+        """
+        Submit an already built txo. Meant to be used with the output of the
+        "build_transaction" method of full service. Do not attempt to build 
+        your own txo proposal.
+
+        args:
+          tx_prop (dict): tx_proposal output from "build_transaction" full service api call
+          account_id (str): id of the account the proposal is for
+          comment (str): comment to log in wallet account's database
+
+        Return:
+          dict: proposal submission result
+        """
+        request = dict(method="submit_transaction", params=dict(tx_prop=tx_prop))
+
+        if account_id:
+            request["params"]["account_id"] = account_id # type: ignore
+
+        if comment:
+            request["params"]["comment"] = comment # type: ignore
+
+        return await self.req(request)
 
     async def get_all_transaction_logs_by_block(self) -> dict:
         """
@@ -399,6 +458,20 @@ class Mobster:
                     continue
 
         return pending_transactions
+
+    async def create_account(self, name: str) -> dict:
+        """
+        Create new account in wallet
+
+        args:
+          name (str): nickname for the wallet
+
+        Returns:
+          dict: new account data
+        """
+        
+        request = dict(method="create_account", params=dict(name=name))
+        return await self.req(request)
 
     async def monitor_wallet(self) -> None:
         last_transactions: dict[str, dict[str, str]] = {}
