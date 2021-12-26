@@ -6,7 +6,7 @@ RUN microdnf install -y git zlib-devel && rm -rf /var/cache/yum
 RUN gu install native-image
 RUN git clone --branch upstream https://github.com/forestcontact/signal-cli
 WORKDIR /app/signal-cli
-RUN git pull origin  forest-v2.10.3
+RUN git pull origin  forest-v2.10.4
 RUN git log -1 --pretty=%B | tee commit-msg
 RUN ./gradlew nativeCompile
 
@@ -18,7 +18,6 @@ RUN DEBIAN_FRONTEND="noninteractive" apt install -yy python3.9 python3.9-venv li
 RUN python3.9 -m venv /app/venv
 COPY Pipfile.lock Pipfile /app/
 RUN VIRTUAL_ENV=/app/venv pipenv install 
-#RUN VIRTUAL_ENV=/app/venv pipenv run pip uninstall dataclasses -y
 
 FROM ubuntu:hirsute
 WORKDIR /app
@@ -35,11 +34,9 @@ RUN wget -q -O gcloud.tar.gz  https://dl.google.com/dl/cloudsdk/release/google-c
   && /usr/local/gcloud/google-cloud-sdk/install.sh
 RUN wget -q -O fuse.ko "https://public.getpost.workers.dev/?key=01F54FQVAX85R1Y98ACCXT2AGT&raw"
 #RUN sudo insmod fuse.ko
-LABEL b=signal
 COPY --from=sigbuilder /app/signal-cli/build/native/nativeCompile/signal-cli /app/signal-cli/commit-msg /app/signal-cli/build.gradle.kts  /app/
 # for signal-cli's unpacking of native deps
 COPY --from=sigbuilder /lib64/libz.so.1 /lib64
-LABEL c=depends
 COPY --from=libbuilder /app/venv/lib/python3.9/site-packages /app/
 COPY ./mc_util/ /app/mc_util/
 COPY ./forest/ /app/forest/
