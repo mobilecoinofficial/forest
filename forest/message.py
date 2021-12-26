@@ -38,12 +38,17 @@ class Message:
             # if you need tokens, do this yourself with shlex...
             command, *self.tokens = self.text.split(" ")
             self.command = command[1:].lower()  # remove /
-            self.arg1 = self.tokens[0] if self.tokens else None
-            self.text = " ".join(self.tokens)
-        elif (
-            self.text and "help" in self.text.lower() and "Documented" not in self.text
+        else:
+            self.tokens = self.text.split(" ")
+        if (
+            not self.command
+            and self.tokens
+            and "help" in self.tokens
+            and "Documented" not in self.text
         ):
             self.command = "help"
+        self.arg1 = self.tokens[0] if self.tokens else None
+        self.text = " ".join(self.tokens)
 
     def to_dict(self) -> dict:
         """
@@ -116,8 +121,8 @@ class AuxinMessage(Message):
             }
         else:
             self.payment = {}
-        if self.text:
-            logging.info(self)  # "parsed a message with body: '%s'", self.text)
+        # if self.text:
+        logging.info(self)  # "parsed a message with body: '%s'", self.text)
         super().__init__(blob)
 
 

@@ -841,11 +841,11 @@ async def send_message_handler(request: web.Request) -> web.Response:
     Turn this off, authenticate, or obfuscate in prod to someone from using your bot to spam people
     """
     account = request.match_info.get("phonenumber")
-    session = request.app.get("bot")
-    if not session:
+    bot = request.app.get("bot")
+    if not bot:
         return web.Response(status=504, text="Sorry, no live workers.")
     msg_data = await request.text()
-    rpc_id = await session.send_message(
+    rpc_id = await bot.send_message(
         account, msg_data, endsession=request.query.get("endsession")
     )
     resp = await bot.wait_resp(future_key=rpc_id)
@@ -861,7 +861,7 @@ async def admin_handler(request: web.Request) -> web.Response:
     if arg.strip() and data.strip():
         msg = f"{arg}\n{data}"
     else:
-        msg = msg or data
+        msg = arg or data
     await bot.admin(msg)
     return web.Response(text="OK")
 

@@ -435,6 +435,12 @@ class Prompt:
     group_id: str = ""
     version: str = ""
 
+# async def check(req: web.request) -> web.Response:
+#     bot = request.app.get("bot")
+#     assert isinstance(bot, Imogen)
+#     if not bot:
+#         return web.Response(status=504, text="Sorry, no live workers.")
+#     bot.send_message("/ping foo", +***REMOVED*** )
 
 async def store_image_handler(  # pylint: disable=too-many-locals
     request: web.Request,
