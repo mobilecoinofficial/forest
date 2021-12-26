@@ -92,10 +92,13 @@ openai.api_key = utils.get_secret("OPENAI_API_KEY")
 # --labels=goog-dm=nvidia-gpu-cloud-image-1 --reservation-affinity=any --source-machine-image=bulky
 
 
+
 if not utils.LOCAL:
     gcp_cred = utils.get_secret("GCP_CREDENTIALS")
     if gcp_cred:
         open("gcp-key-imogen.json", "w").write(base64.b64decode(gcp_cred).decode())
+        # get_output("gcloud auth activate-service-account --key-file gcp-key-imogen.json")
+        # get_output("gcloud config set project sublime-coast-306000")
     else:
         logging.info("couldn't find gcp creds")
     ssh_key = utils.get_secret("SSH_KEY")
@@ -111,6 +114,8 @@ redis = aioredis.Redis(
 )
 
 status = "gcloud --format json compute instances describe nvidia-gpu-cloud-image-1-vm | jq -r .status"
+start = "gcloud --format json compute instances start nvidia-gpu-cloud-image-1-vm | jq -r .status"
+systemctl = "yes | gcloud --format json compute ssh start nvidia-gpu-cloud-image-1-vm -- systemctl status imagegen"
 
 
 async def get_output(cmd: str) -> str:
@@ -128,7 +133,9 @@ class Imogen(Bot):
             database=utils.get_secret("DATABASE_URL"),
         )
         # get_output("gcloud auth activate-service-account -f gcp-key-imogen.json")
+        await self.admin("starting")
         await super().start_process()
+
 
     async def set_profile(self) -> None:
         profile = {
@@ -206,6 +213,14 @@ class Imogen(Bot):
 
     image_rate_cents = 10
 
+    async def insert(self, msg: Message, parms: dict, attachments:bool=False) -> None:
+        pass
+        # if msg.attachments and attachments
+        # params is the only thing that changes between commands/models
+        # also handles rate limiting, paid success checking
+        # will start instances if paid
+        # future: instance-groups resize {} --size {}
+
     async def do_imagine(self, msg: Message) -> str:
         """/imagine [prompt]"""
         if not msg.text.strip() and not msg.attachments:
@@ -227,7 +242,6 @@ class Imogen(Bot):
             await redis.set(
                 key, open(Path("./attachments") / attachment["id"], "rb").read()
             )
-
         await self.queue.execute(
             """INSERT INTO prompt_queue (prompt, paid, author, signal_ts, group_id, params, url) VALUES ($1, $2, $3, $4, $5, $6, $7);""",
             msg.text,
@@ -239,6 +253,8 @@ class Imogen(Bot):
             utils.URL,
         )
         queue_length = (await self.queue.length())[0].get("len")
+        # if get_output(status) == "TERMINATED":
+        #     await self.admin(get_output(start))
         return f"you are #{queue_length} in line"
 
     def make_prefix(prefix: str) -> Callable:  # type: ignore  # pylint: disable=no-self-argument

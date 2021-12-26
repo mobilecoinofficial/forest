@@ -121,8 +121,8 @@ class AuxinMessage(Message):
             }
         else:
             self.payment = {}
-        # if self.text:
-        logging.info(self)  # "parsed a message with body: '%s'", self.text)
+        if self.text:
+            logging.info(self)  # "parsed a message with body: '%s'", self.text)
         super().__init__(blob)
 
 

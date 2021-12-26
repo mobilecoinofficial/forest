@@ -7,14 +7,14 @@ name = "pypi"
 aioprocessing = "*"
 asyncpg = "*"
 aiohttp = {extras = [ "speedups",], version = "*"}
-phonenumbers = "*"
-termcolor = "*"
 aioredis = "*"
-mobilecoin = "*"
 base58 = "*"
 openai = "*"
+phonenumberslite = "*"
 prometheus_async = "*"
 prometheus_client = "*"
+protobuf = "*"
+termcolor = "*"
 
 [requires]
 python_version = "3.9"
