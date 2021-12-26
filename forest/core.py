@@ -190,7 +190,7 @@ class Signal:
 
     # async def handle_stderr(self, stream: StreamReader) -> None:
     #     debug = ["TRACE", "DEBUG", "WARN"]
-    #     mute = ["PhoneNumberFormatter"]
+    #     mute = ["PhoneNumberFormatter", "Sending keep alive", "Checking for new message"]
     #     while True:
     #         line = (await stream.readline()).decode().strip()
     #         if not like:

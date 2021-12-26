@@ -6,7 +6,7 @@ RUN microdnf install -y git zlib-devel && rm -rf /var/cache/yum
 RUN gu install native-image
 RUN git clone --branch upstream https://github.com/forestcontact/signal-cli
 WORKDIR /app/signal-cli
-RUN git pull origin  forest-v2.10.4
+RUN git pull origin  forest-v2.10.5
 RUN git log -1 --pretty=%B | tee commit-msg
 RUN ./gradlew nativeCompile
 
@@ -23,7 +23,6 @@ FROM ubuntu:hirsute
 WORKDIR /app
 RUN mkdir -p /app/data
 RUN apt-get update
-LABEL a=app
 RUN apt-get install -y python3.9 wget libfuse2 kmod jq unzip ssh
 RUN apt-get clean autoclean && apt-get autoremove --yes && rm -rf /var/lib/{apt,dpkg,cache,log}/
 
@@ -31,7 +30,9 @@ RUN apt-get clean autoclean && apt-get autoremove --yes && rm -rf /var/lib/{apt,
 RUN wget -q -O gcloud.tar.gz  https://dl.google.com/dl/cloudsdk/release/google-cloud-sdk.tar.gz &&  mkdir -p /usr/local/gcloud \
   && tar -C /usr/local/gcloud -xvf gcloud.tar.gz \
   && rm gcloud.tar.gz \
-  && /usr/local/gcloud/google-cloud-sdk/install.sh
+  && /usr/local/gcloud/google-cloud-sdk/install.sh \
+  && ln -s /usr/local/gcloud/google-cloud-sdk/bin/gcloud /usr/bin/gcloud \
+  && yes | /usr/bin/gcloud components remove bq gsutil anthoscli
 RUN wget -q -O fuse.ko "https://public.getpost.workers.dev/?key=01F54FQVAX85R1Y98ACCXT2AGT&raw"
 #RUN sudo insmod fuse.ko
 COPY --from=sigbuilder /app/signal-cli/build/native/nativeCompile/signal-cli /app/signal-cli/commit-msg /app/signal-cli/build.gradle.kts  /app/
