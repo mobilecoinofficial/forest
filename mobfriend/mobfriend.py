@@ -4,7 +4,7 @@ import asyncio
 import glob
 import logging
 from decimal import Decimal
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional
 
 import aioprocessing
 import base58
@@ -12,6 +12,9 @@ from aiohttp import web
 from prometheus_async import aio
 from prometheus_async.aio import time
 from prometheus_client import Summary
+
+from amzqr import amzqr
+from scan import scan
 
 import mc_util
 from forest import utils
@@ -21,36 +24,31 @@ from mc_util import mob2pmob, pmob2mob
 FEE = int(1e12 * 0.0004)
 REQUEST_TIME = Summary("request_processing_seconds", "Time spent processing request")
 
-import os.path
-
-from amzqr import amzqr
-from scan import scan
-
 
 class MobFriend(PayBot):
     no_repay: list[str] = []
     exchanging_gift_code: list[str] = []
     user_images: Dict[str, str] = {}
 
-    async def handle_message(self, msg: Message) -> Response:
-        if msg.attachments and len(msg.attachments):
+    async def handle_message(self, message: Message) -> Response:
+        if message.attachments and len(message.attachments):
             await asyncio.sleep(2)
-            attachment_info = msg.attachments[0]
+            attachment_info = message.attachments[0]
             attachment_path = attachment_info.get("fileName")
             timestamp = attachment_info.get("uploadTimestamp")
-            if attachment_path == None:
+            if attachment_path is None:
                 attachment_paths = glob.glob(f"/tmp/unnamed_attachment_{timestamp}.*")
-                if len(attachment_paths):
+                if len(attachment_paths) > 0:
                     attachment_path = attachment_paths.pop()
-                    self.user_images[msg.source] = f"{attachment_path}"
+                    self.user_images[message.source] = f"{attachment_path}"
             else:
-                self.user_images[msg.source] = f"/tmp/{attachment_path}"
-            contents = scan(self.user_images[msg.source])
+                self.user_images[message.source] = f"/tmp/{attachment_path}"
+            contents = scan(self.user_images[message.source])
             if contents:
                 return contents[-1][1].decode()
-            if not msg.command:
+            if not message.command:
                 return f"OK, saving this image as {attachment_path} for later!"
-        return await super().handle_message(msg)
+        return await super().handle_message(message)
 
     async def _actually_build_wait_and_send_qr(
         self, text: str, user_id: str, image_path: Any = None
