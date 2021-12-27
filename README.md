@@ -46,6 +46,7 @@ to install the prerequisites.
 
 
 #### Manually ####
+
 To install Signal-Cli clone the official repo, cd into it, and build the binary. You will need Java 17 or greater. For more detailed instructions visit the [Signal-cli repository](https://github.com/AsamK/signal-cli). If your build is failing, first ensure that you're using a version of Java 17 or highuer with `java --version`
 
 ```
@@ -64,9 +65,13 @@ signal-cli 0.10.0
 
 ## Registering a new account
 
+With a phone number from Google Voice, Forest Contact, Twilio, or Teli.net, a Signal account can be registered easily. These commands (bash compatible) serve as a starting point and use `human-after-all` as an alternative to manually solving the recaptcha challenge.
 
-
-
+``` bash
+export MY_PHONE_NUMBER=+15551234567
+export CAPTCHA=$(curl -s --data-binary "https://signalcaptchas.org/registration/generate.html" https://human-after-all-21.fly.dev/6LedYI0UAAAAAMt8HLj4s-_2M_nYOhWMMFRGYHgY | jq -r .solution.gRecaptchaResponse)
+signal-cli --config . -u $MY_PHONE_NUMBER --config state register --captcha $CAPTCHA
+```
 
 
 ## Running Hellobot ##
