@@ -498,7 +498,10 @@ def hide(command: Callable) -> Callable:
     hidden_command.hide = True  # type: ignore
     return hidden_command
 
-
+# imagin, imogen, imagen, image, imagines, imahine, imoge, 
+# list_que, status_list
+# dark, synthwav, synthese, "fantasy,"
+# bing
 class Bot(Signal):
     """Handles messages and command dispatch, as well as basic commands.
     Must be instantiated within a running async loop.
@@ -585,18 +588,29 @@ class Bot(Signal):
             logging.info("saw a reaction")
             return await self.handle_reaction(message)
         # could embedify these instead of recalculating a string distance
-        # commands = [
-        #     name.removeprefix("do_")
-        #     for name in dir(self)
-        #     if name.startswith("do_")
-        #     and not hasattr(getattr(self, name), "admin")
-        #     and not hasattr(getattr(self, name), "hide")
-        #     and hasattr(getattr(self, name), "__doc__")
-        # ]
+
+        commands = [
+            name.removeprefix("do_")
+            for name in dir(self)
+            if name.startswith("do_")
+            and not hasattr(getattr(self, name), "admin")
+            and not hasattr(getattr(self, name), "hide")
+        ]
+        def jaccard(s1: str, s2: str) -> float:
+            intersection = len(list(set(s1).intersection(s2)))
+            union = (len(s1) + len(s2)) - intersection
+            return float(intersection) / union
+        def match(inp: str) -> tuple[float, str]:
+            return sorted(((jaccard(inp, cmd), cmd) for cmd in cmds))[-1]
         if message.command:
-            # todo: https://github.com/jazzband/docopt-ng/blob/63094d5fb82a0dcdea59b606b9fecbff0973b6cc/docopt.py#L49
             if hasattr(self, "do_" + message.command):
                 return await getattr(self, "do_" + message.command)(message)
+            score, cmd = match(message.command)
+            if score > 0.5:
+                return await getattr(self, "do_" + cmd)(message)
+            expansions = [cmd for cmd in commands if cmd.startswith(message.command)]
+            if len(expansions) == 1:
+                return await getattr(self, "do_" + expansions[0])(message)
             suggest_help = " Try /help." if hasattr(self, "do_help") else ""
             return f"Sorry! Command {message.command} not recognized!" + suggest_help
         if message.text == "TERMINATE":

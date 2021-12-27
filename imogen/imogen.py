@@ -74,7 +74,8 @@ QueueExpressions = pghelp.PGExpressions(
         hostname TEXT DEFAULT null,
         url TEXT DEFAULT 'https://imogen-renaissance.fly.dev/',
         sent_ts BIGINT DEFAULT null,
-        errors INTEGER DEFAULT 0);""",
+        errors INTEGER DEFAULT 0)
+        UNIQUE (signal_ts);""",
     insert="""INSERT INTO {self.table} (prompt, paid, author, signal_ts, group_id, params, url) VALUES ($1, $2, $3, $4, $5, $6, $7);""",
     length="SELECT count(id) AS len FROM {self.table} WHERE status='pending' OR status='assigned';",
     list_queue="SELECT prompt FROM {self.table} WHERE status='pending' OR status='assigned' ORDER BY signal_ts ASC",
