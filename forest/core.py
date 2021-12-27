@@ -584,6 +584,15 @@ class Bot(Signal):
         if message.reaction:
             logging.info("saw a reaction")
             return await self.handle_reaction(message)
+        # could embedify these instead of recalculating a string distance
+        # commands = [
+        #     name.removeprefix("do_")
+        #     for name in dir(self)
+        #     if name.startswith("do_")
+        #     and not hasattr(getattr(self, name), "admin")
+        #     and not hasattr(getattr(self, name), "hide")
+        #     and hasattr(getattr(self, name), "__doc__")
+        # ]
         if message.command:
             # todo: https://github.com/jazzband/docopt-ng/blob/63094d5fb82a0dcdea59b606b9fecbff0973b6cc/docopt.py#L49
             if hasattr(self, "do_" + message.command):
