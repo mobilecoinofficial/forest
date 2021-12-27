@@ -1,8 +1,9 @@
-import zbar, numpy
+from typing import Any
+
 import numpy
+import zbar
 import zbar.misc
 from PIL import Image
-from typing import Any
 
 scanner = zbar.Scanner()
 
