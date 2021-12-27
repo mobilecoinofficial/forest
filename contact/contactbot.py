@@ -213,7 +213,7 @@ class Forest(PayBot):
 
     async def do_register(self, message: Message) -> Response:
         """register for a phone number"""
-        return f"Please send {await self.mobster.usd2mob(self.usd_price)} via Signal Pay"
+        return f"Please send {await self.mobster.usd2mob(self.usd_price)} MOB via Signal Pay"
 
     async def get_user_balance(self, account: str) -> float:
         res = await self.mobster.ledger_manager.get_usd_balance(account)
@@ -288,7 +288,7 @@ class Forest(PayBot):
             f"values ('{_id}', '{destination}', 'assigned') on conflict (id) do update "
             f"set destination='{destination}', status='assigned' "
         )
-        return f"Set {_id) -> {destination}"
+        return f"Set { _id } -> {destination}"
 
     if not utils.get_secret("ORDER"):
         del do_order, do_pay
@@ -372,9 +372,9 @@ async def inbound_sms_handler(request: web.Request) -> web.Response:
     return web.Response(text="TY!")
 
 
-app.add_routes([web.post("/inbound", inbound_sms_handler)])
-
 if __name__ == "__main__":
+
+    app.add_routes([web.post("/inbound", inbound_sms_handler)])
 
     @app.on_startup.append
     async def start_wrapper(our_app: web.Application) -> None:
