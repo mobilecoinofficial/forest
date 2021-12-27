@@ -27,11 +27,11 @@ RUN cargo +nightly build --release
 FROM ubuntu:hirsute as libbuilder
 WORKDIR /app
 RUN ln --symbolic --force --no-dereference /usr/share/zoneinfo/EST && echo "EST" > /etc/timezone
-RUN apt update
-RUN DEBIAN_FRONTEND="noninteractive" apt install -yy python3.9 python3.9-venv libfuse2 pipenv
+RUN apt update && DEBIAN_FRONTEND="noninteractive" apt upgrade -y
+RUN DEBIAN_FRONTEND="noninteractive" apt install -yy python3.9 python3.9-venv libfuse2 pipenv git
 RUN python3.9 -m venv /app/venv
 COPY Pipfile.lock Pipfile /app/
-RUN VIRTUAL_ENV=/app/venv pipenv install 
+RUN VIRTUAL_ENV=/app/venv pipenv install
 
 FROM ubuntu:hirsute
 WORKDIR /app
@@ -44,5 +44,5 @@ COPY --from=builder /app/target/release/auxin-cli /app/auxin-cli
 COPY --from=libbuilder /app/venv/lib/python3.9/site-packages /app/
 COPY ./forest/ /app/forest/
 COPY ./mc_util/ /app/mc_util/
-COPY ./mobfriend.py  /app/ 
+COPY ./mobfriend.py ./scan.py ./template.png /app/
 ENTRYPOINT ["/usr/bin/python3.9", "/app/mobfriend.py"]
