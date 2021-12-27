@@ -582,6 +582,11 @@ class Bot(Signal):
             resp = self.documented_commands()
         return resp
 
+    @hide
+    async def do_echo(self, msg: Message) -> Response:
+        """Returns a representation of the input message for debugging parse errors."""
+        return msg.blob
+
     async def do_printerfact(self, _: Message) -> str:
         "Learn a fact about printers"
         async with self.client_session.get("https://colbyolson.com/printers") as resp:
@@ -614,6 +619,23 @@ class PayBot(Bot):
             asyncio.create_task(self.handle_payment(message))
             return None
         return await super().handle_message(message)
+
+    @requires_admin
+    async def do_fsr(self, msg: Message) -> Response:
+        """
+        Make a request to the Full-Service instance behind the bot. Admin-only.
+        ie) /fsr [command] ([arg1] [val1]( [arg2] [val2])...)"""
+        if not msg.tokens:
+            return "/fsr [command] ([arg1] [val1]( [arg2] [val2]))"
+        if len(msg.tokens) == 1:
+            return await self.mobster.req(dict(method=msg.tokens[0]))
+        if (len(msg.tokens) % 2) == 1:
+            fsr_command = msg.tokens[0]
+            fsr_keys = msg.tokens[1::2]
+            fsr_values = msg.tokens[2::2]
+            params = dict(zip(fsr_keys, fsr_values))
+            return str(await self.mobster.req_(fsr_command, **params))
+        return "/fsr [command] ([arg1] [val1]( [arg2] [val2])...)"
 
     async def get_user_balance(self, account: str) -> float:
         res = await self.mobster.ledger_manager.get_usd_balance(account)
