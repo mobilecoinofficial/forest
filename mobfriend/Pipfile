@@ -12,8 +12,6 @@ phonenumbers = "*"
 termcolor = "*"
 prometheus_async = "*"
 prometheus_client = "*"
-pyqrcode = "*"
-pypng = "*"
 
 [requires]
 python_version = "3.9"
@@ -31,3 +29,9 @@ types-protobuf = "*"
 [packages.aiohttp]
 extras = [ "speedups",]
 version = "==3.8.1"
+
+[packages.zbar-py]
+git = "https://github.com/zplab/zbar-py"
+
+[packages.amzqr]
+git = "https://github.com/x-hw/amazing-qr"

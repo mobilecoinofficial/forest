@@ -3,30 +3,99 @@ import ast
 import asyncio
 import logging
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Any, Optional, Union, Dict
 
-import pyqrcode
 from aiohttp import web
 from prometheus_async import aio
 from prometheus_async.aio import time
 from prometheus_client import Summary
 
+import base58
+import aioprocessing
 import mc_util
 from forest import utils
 from forest.core import Message, PayBot, Response, app, hide, requires_admin
 from mc_util import mob2pmob, pmob2mob
+import glob
 
 FEE = int(1e12 * 0.0004)
 REQUEST_TIME = Summary("request_processing_seconds", "Time spent processing request")
+
+import os.path
+from amzqr import amzqr
+from scan import scan
 
 
 class MobFriend(PayBot):
     no_repay: list[str] = []
     exchanging_gift_code: list[str] = []
+    user_images: Dict[str, str] = {}
 
-    async def handle_message(self, message: Message) -> Response:
-        return await super().handle_message(message)
+    async def handle_message(self, msg: Message) -> Response:
+        if msg.attachments and len(msg.attachments):
+            await asyncio.sleep(2)
+            attachment_info = msg.attachments[0]
+            attachment_path = attachment_info.get("fileName")
+            timestamp = attachment_info.get("uploadTimestamp")
+            if attachment_path == None:
+                attachment_paths = glob.glob(f"/tmp/unnamed_attachment_{timestamp}.*")
+                if len(attachment_paths):
+                    attachment_path = attachment_paths.pop()
+                    self.user_images[msg.source] = f"{attachment_path}"
+            else:
+                self.user_images[msg.source] = f"/tmp/{attachment_path}"
+            contents = scan(self.user_images[msg.source])
+            if contents:
+                return contents[-1][1].decode()
+            if not msg.command:
+                return f"OK, saving this image as {attachment_path} for later!"
+        return await super().handle_message(msg)
 
+    async def _actually_build_wait_and_send_qr(
+        self, text: str, user_id: str, image_path: Any = None
+    ) -> str:
+        if not image_path:
+            image_path = self.user_images.get(user_id, "template.png")
+        if image_path and "." in image_path:
+            extension = image_path.split(".")[-1]
+        else:
+            extension = "png"
+        save_name = f"{user_id}_{base58.b58encode(text[:16]).decode()}.{extension}"
+        default_params = dict(save_name=save_name, save_dir="/tmp")
+        if image_path:
+            default_params.update(
+                dict(
+                    version=1,
+                    level="H",
+                    colorized=False,
+                    contrast=1.0,
+                    brightness=1.0,
+                    picture=image_path,
+                )
+            )
+        await self.send_message(user_id, "Building your QR code! Please be patient!")
+        p = aioprocessing.AioProcess(
+            target=amzqr.run, args=(text,), kwargs=default_params
+        )
+        p.start()
+        await p.coro_join()
+        await self.send_message(user_id, text, attachments=[f"/tmp/{save_name}"])
+        return save_name
+
+    async def do_makeqr(self, msg: Message) -> None:
+        """
+        /makeqr [text]
+          or
+        /makeqr "Longer Bit Of Text"
+
+        I'll make a QR Code from the provided text!
+        If you send me an image first, I'll use it as a template.
+        """
+
+        await self._actually_build_wait_and_send_qr(str(msg.arg1), msg.source)
+        return None
+
+    @hide
     async def do_makegift(self, msg: Message) -> Response:
         """
         /makegift
@@ -96,7 +165,8 @@ class MobFriend(PayBot):
             self.exchanging_gift_code.remove(msg.source)
             if msg.source in self.no_repay:
                 self.no_repay.remove(msg.source)
-            return resp
+            await self._actually_build_wait_and_send_qr(resp, msg.source)
+            return None
         if msg.source not in self.no_repay:
             payment_notif = await self.send_payment(msg.source, amount_pmob - FEE)
             if not payment_notif:
@@ -110,9 +180,7 @@ class MobFriend(PayBot):
 
     @requires_admin
     async def do_eval(self, msg: Message) -> Response:
-        """/eval [lines]
-        Evaluates a few lines of Python.
-        Preface a value or expression with with "return" to reply with result."""
+        """Evaluates a few lines of Python. Preface with "return" to reply with result."""
 
         async def async_exec(stmts: str, env: Optional[dict]) -> Any:
             parsed_stmts = ast.parse(stmts)
@@ -223,15 +291,8 @@ class MobFriend(PayBot):
         if msg.tokens and len(msg.tokens) > 1:
             payload.payment_request.memo = " ".join(msg.tokens[1:])
         payment_request_b58 = mc_util.add_checksum_and_b58(payload.SerializeToString())
-        pyqrcode.QRCode(payment_request_b58).png(
-            f"/tmp/{msg.timestamp}.png", scale=5, quiet_zone=10
-        )
-        await self.send_message(
-            recipient=msg.source,
-            attachments=[f"/tmp/{msg.timestamp}.png"],
-            msg="Scan me in the Mobile Wallet!",
-        )
-        return payment_request_b58
+        await self._actually_build_wait_and_send_qr(payment_request_b58, msg.source)
+        return None
 
     async def do_paywallet(self, msg: Message) -> Response:
         """
@@ -259,31 +320,7 @@ class MobFriend(PayBot):
         payload.payment_request.value = mob2pmob(Decimal(amount))
         payload.payment_request.memo = memo
         payment_request_b58 = mc_util.add_checksum_and_b58(payload.SerializeToString())
-        pyqrcode.QRCode(payment_request_b58).png(
-            f"/tmp/{msg.timestamp}.png", scale=5, quiet_zone=10
-        )
-        await self.send_message(
-            recipient=msg.source,
-            attachments=[f"/tmp/{msg.timestamp}.png"],
-            msg="Scan me in the Mobile Wallet!",
-        )
-        return payment_request_b58
-
-    async def do_qr(self, msg: Message) -> Response:
-        """
-        /qr [gift card, url, etc]
-        Creates a basic QR code for the provided content."""
-        if not (msg.tokens and len(msg.tokens)):
-            return "Usage: /qr [gift card, url, etc]"
-        payload = " ".join(msg.tokens)
-        pyqrcode.QRCode(payload).png(
-            f"/tmp/{msg.timestamp}.png", scale=5, quiet_zone=10
-        )
-        await self.send_message(
-            recipient=msg.source,
-            attachments=[f"/tmp/{msg.timestamp}.png"],
-            msg="Scan me!",
-        )
+        await self._actually_build_wait_and_send_qr(payment_request_b58, msg.source)
         return None
 
     @requires_admin
