@@ -20,12 +20,6 @@ from aiohttp import web
 from forest import pghelp, utils
 from forest.core import JSON, Bot, Message, Response, app, hide, requires_admin, run_bot
 
-# metrics to look for:
-# - gaurantee <10min default paid
-# - validations are based on estimates but final balance based on gpu runtime
-# - loss vs reactions
-
-
 # @dataclass
 # class InsertedPrompt:
 #     prompt: str
@@ -97,8 +91,8 @@ if not utils.LOCAL:
     gcp_cred = utils.get_secret("GCP_CREDENTIALS")
     if gcp_cred:
         open("gcp-key-imogen.json", "w").write(base64.b64decode(gcp_cred).decode())
-        # get_output("gcloud auth activate-service-account --key-file gcp-key-imogen.json")
-        # get_output("gcloud config set project sublime-coast-306000")
+        get_output("gcloud auth activate-service-account --key-file gcp-key-imogen.json")
+        get_output("gcloud config set project sublime-coast-306000")
     else:
         logging.info("couldn't find gcp creds")
     ssh_key = utils.get_secret("SSH_KEY")
@@ -221,6 +215,10 @@ class Imogen(Bot):
         # will start instances if paid
         # future: instance-groups resize {} --size {}
 
+    async def ensure_worker(self) -> None:
+        if get_output(status) == "TERMINATED":
+            await self.admin(await get_output(start))
+
     async def do_imagine(self, msg: Message) -> str:
         """/imagine [prompt]"""
         if not msg.text.strip() and not msg.attachments:
@@ -252,9 +250,8 @@ class Imogen(Bot):
             json.dumps(params),
             utils.URL,
         )
+        await self.ensure_worker()
         queue_length = (await self.queue.length())[0].get("len")
-        # if get_output(status) == "TERMINATED":
-        #     await self.admin(get_output(start))
         return f"you are #{queue_length} in line"
 
     def make_prefix(prefix: str) -> Callable:  # type: ignore  # pylint: disable=no-self-argument
@@ -292,6 +289,7 @@ class Imogen(Bot):
             json.dumps({"feedforward": True}),
             utils.URL,
         )
+        await self.ensure_worker()
         queue_length = (await self.queue.length())[0].get("len")
         return f"you are #{queue_length} in line"
 
@@ -299,6 +297,7 @@ class Imogen(Bot):
         """Generate an image in a single pass"""
         if not msg.text:
             return "A prompt is required"
+        await self.ensure_worker()
         await self.queue.execute(
             """INSERT INTO prompt_queue (prompt, paid, author, signal_ts, group_id, params, url) VALUES ($1, $2, $3, $4, $5, $6, $7);""",
             msg.text,
@@ -343,6 +342,7 @@ class Imogen(Bot):
             json.dumps(params),
             utils.URL,
         )
+        await self.ensure_worker()
         queue_length = (await self.queue.length())[0].get("len")
         return f"you are #{queue_length} in line"
 

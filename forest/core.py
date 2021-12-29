@@ -657,8 +657,14 @@ class Bot(Signal):
 
     @hide
     async def do_uptime(self, _: Message) -> str:
-        """Returns a message containing the bot uptime (in seconds)."""
-        return f"Uptime: {int(time.time() - self.start_time)}sec"
+        """Returns a message containing the bot uptime."""
+        tot_min, sec = divmod(int(time.time() - self.start_time), 60)
+        hr, min = divmod(tot_min, 60)
+        t = "Uptime: "
+        t += f"{hr}h" if hr else ""
+        t += f"{min}m" if min  else ""
+        t += f"{sec}s" 
+        return t
 
     @hide
     async def do_pong(self, message: Message) -> str:
