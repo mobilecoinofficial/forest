@@ -8,7 +8,7 @@ import phonenumbers as pn
 from aiohttp import web
 import teli
 from forest import utils
-from forest.core import Message, PayBot, Response, app, requires_admin
+from forest.core import Message, PayBot, Response, app, requires_admin, run_bot
 from forest_tables import GroupRoutingManager, PaymentsManager, RoutingManager
 
 
@@ -293,7 +293,7 @@ class Forest(PayBot):
     if not utils.get_secret("ORDER"):
         del do_order, do_pay
 
-    async def start_process(self) -> None:
+    async def start_process2(self) -> None:
         """Make sure full-service has a wallet before starting signal"""
         try:
             await self.mobster.get_address()
@@ -373,13 +373,6 @@ async def inbound_sms_handler(request: web.Request) -> web.Response:
 
 
 if __name__ == "__main__":
-
     app.add_routes([web.post("/inbound", inbound_sms_handler)])
 
-    @app.on_startup.append
-    async def start_wrapper(our_app: web.Application) -> None:
-        our_app["bot"] = Forest()
-        our_app["routing"] = RoutingManager()
-        our_app["group_routing"] = GroupRoutingManager()
-
-    web.run_app(app, port=8080, host="0.0.0.0", access_log=None)
+    run_bot(Forest)
