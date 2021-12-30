@@ -837,11 +837,17 @@ async def metrics(request: web.Request) -> web.Response:
     )
 
 
-async def tiprat(request: web.Request) -> web.Response:
-    raise web.HTTPFound("https://tiprat.fly.dev", headers=None, reason=None)
-
-
 app = web.Application()
+
+
+async def add_tiprat(app: web.Application) -> None:
+    async def tiprat(request: web.Request) -> web.Response:
+        raise web.HTTPFound("https://tiprat.fly.dev", headers=None, reason=None)
+
+    app.add_routes([web.route("*", "/{tail:.*}", tiprat)])
+
+
+app.on_startup.append(add_tiprat)
 
 app.add_routes(
     [
@@ -851,7 +857,6 @@ app.add_routes(
         web.post("/admin", admin_handler),
         web.get("/metrics", aio.web.server_stats),
         web.get("/csv_metrics", metrics),
-        web.route("*", "/{tail:.*}", tiprat),
     ]
 )
 
