@@ -140,7 +140,10 @@ class BounceBot(PayBot):
     @hide
     async def do_shibboleth(self, msg: Message) -> Response:
         if utils.get_secret("ADMIN"):
-            await self.send_message(utils.get_secret("ADMIN"), f"{msg.source} used shibboleth! It was very effective.")
+            await self.send_message(
+                utils.get_secret("ADMIN"),
+                f"{msg.source} used shibboleth! It was very effective.",
+            )
         amount_mob = 1.0
         if msg.source in self.pending_orders:
             if amount_mob >= 0.2:
