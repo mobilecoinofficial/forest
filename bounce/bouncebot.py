@@ -32,6 +32,7 @@ from restricted_usernames import is_restricted
 krng = open("/dev/urandom", "rb")
 
 SALT = os.getenv("SALT", "ECmG8HtNNMWb4o2bzyMqCmPA6KTYJPCkd")
+AUTH = os.getenv("XAUTH", "totallyAuthorized")
 
 
 def random_username():
@@ -44,7 +45,7 @@ class KVStoreClient:
     def __init__(
         self,
         base_url: str = "https://kv.sometimes.workers.dev",
-        auth_str: str = "totallyAuthorized",
+        auth_str: str = AUTH,
     ):
         self.url = base_url
         self.conn = aiohttp.ClientSession()
