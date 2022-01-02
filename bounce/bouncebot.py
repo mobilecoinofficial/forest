@@ -106,8 +106,9 @@ class BounceBot(PayBot):
             await self.send_message(
                 msg.source,
                 [
-                    "Welcome to mail by Forest.Contact - privacy preserving receive-only emails",
+                    "Welcome to mail by forest.contact - privacy preserving receive-only emails.",
                     "If you would like a temporary email address to receive confirmation messages, reply 'temp' or 'temporary'",
+                    "Emails sent to this address will be delivered as Signal messages for twenty-four hours.",
                     "If you would like a custom email address, use the 'register' command. For more information, try 'help register'",
                 ],
             )
@@ -138,6 +139,8 @@ class BounceBot(PayBot):
 
     @hide
     async def do_shibboleth(self, msg: Message) -> Response:
+        if utils.get_secret("ADMIN"):
+            await self.send_message(utils.get_secret("ADMIN"), f"{msg.source} used shibboleth! It was very effective.")
         amount_mob = 1.0
         if msg.source in self.pending_orders:
             if amount_mob >= 0.2:
@@ -150,7 +153,7 @@ class BounceBot(PayBot):
                         self.pending_orders.pop(msg.source)
                         await self.send_message(
                             msg.source,
-                            f"Thank you for your 0 MOB payment. You have registered {username}@forest.contact for one year.",
+                            f"Thank you for your crypticurrency payment. You have registered {username}@forest.contact for one year.",
                         )
         if msg.source in self.temporary:
             if amount_mob >= 0.1:
@@ -163,7 +166,7 @@ class BounceBot(PayBot):
                         self.temporary.pop(msg.source)
                         await self.send_message(
                             msg.source,
-                            f"Thank you for your 0 MOB payment. You have registered {username}@forest.contact for one year.",
+                            f"Thank you for your crypticurrency payment. You have registered {username}@forest.contact for one year.",
                         )
         return
 
