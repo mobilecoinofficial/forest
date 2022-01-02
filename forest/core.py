@@ -114,7 +114,7 @@ class Signal:
             )
             if not utils.AUXIN:
                 path += " --trust-new-identities always"
-            command = f"{path} --config {utils.ROOT_DIR} --user {self.bot_number} jsonRpc".split()
+            command = f"{path} --config {utils.ROOT_DIR} --download-path /tmp --user {self.bot_number} jsonRpc".split()
             logging.info(command)
             proc_launch_time = time.time()
             self.proc = await asyncio.create_subprocess_exec(
@@ -548,7 +548,7 @@ class Bot(Signal):
 
     def documented_commands(self) -> str:
         commands = ", ".join(
-            name.replace("do_", "/")
+            name.replace("do_", "")
             for name in dir(self)
             if name.startswith("do_")
             and not hasattr(getattr(self, name), "admin")
