@@ -126,7 +126,9 @@ class BounceBot(PayBot):
             # if username is not taken
             if await self.kv_store.check_email_by_username(username) is None:
                 # assign it for one day
-                await self.kv_store.assign_email_by_username(username, msg.uuid, ttl=60*60*24)
+                await self.kv_store.assign_email_by_username(
+                    username, msg.uuid, ttl=60 * 60 * 24
+                )
                 self.temporary[msg.source] = username
                 return [
                     f"You now can use {username}@forest.contact for the next twenty-four hours.",
