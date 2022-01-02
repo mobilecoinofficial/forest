@@ -33,6 +33,8 @@ class Message:
         # parsing
         self.command: Optional[str] = None
         self.tokens: Optional[list[str]] = None
+        if self.text and not self.text.startswith("/"):
+            self.text = f"/{self.text}"
         if self.text and self.text.startswith("/"):
             try:
                 command, *self.tokens = shlex.split(self.text)
@@ -40,6 +42,8 @@ class Message:
                 command, *self.tokens = self.text.split(" ")
             self.command = command[1:].lower()  # remove /
             self.arg1 = self.tokens[0] if self.tokens else None
+            self.arg2 = self.tokens[1] if len(self.tokens) > 1 else None
+            self.arg3 = self.tokens[2] if len(self.tokens) > 2 else None
             self.text = " ".join(self.tokens)
         elif (
             self.text and "help" in self.text.lower() and "Documented" not in self.text
