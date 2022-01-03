@@ -7,8 +7,8 @@ import base64
 import datetime
 import json
 import logging
-import time
 import random
+import time
 import urllib
 from pathlib import Path
 from textwrap import dedent
@@ -20,15 +20,7 @@ import openai
 from aiohttp import web
 
 from forest import utils
-from forest.core import (
-    JSON,
-    Message,
-    Bot,
-    Response,
-    app,
-    hide,
-    requires_admin,
-)
+from forest.core import JSON, Bot, Message, Response, app, hide, requires_admin, run_bot
 
 openai.api_key = utils.get_secret("OPENAI_API_KEY")
 
@@ -101,7 +93,6 @@ class Imogen(Bot):
         await self.auxincli_input_queue.put(profile)
         logging.info(profile)
 
-    # this is a really ugly non-cooperative inheritence
     async def handle_reaction(self, msg: Message) -> Response:
         """
         route a reaction to the original message.
@@ -522,9 +513,4 @@ app.add_routes([])
 
 
 if __name__ == "__main__":
-
-    @app.on_startup.append
-    async def start_wrapper(our_app: web.Application) -> None:
-        our_app["bot"] = Imogen()
-
-    web.run_app(app, port=8080, host="0.0.0.0")
+    run_bot(Imogen, app)

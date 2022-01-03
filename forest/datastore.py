@@ -42,16 +42,14 @@ class DatastoreError(Exception):
 AccountPGExpressions = pghelp.PGExpressions(
     table="signal_accounts",
     # rename="ALTAR TABLE IF EXISTS prod_users RENAME TO {self.table}",
-    migrate="""ALTER TABLE IF EXISTS {self.table} ADD IF NOT EXISTS datastore BYTEA, ADD IF NOT EXISTS notes TEXT,
-        IF NOT EXISTS uuid TEXT""",
+    migrate="ALTER TABLE IF EXISTS {self.table} ADD IF NOT EXISTS datastore BYTEA, ADD IF NOT EXISTS notes TEXT",
     create_table="CREATE TABLE IF NOT EXISTS {self.table} \
             (id TEXT PRIMARY KEY, \
             datastore BYTEA, \
             last_update_ms BIGINT, \
             last_claim_ms BIGINT, \
             active_node_name TEXT, \
-            notes TEXT, \
-            uuid TEXT);",
+            notes TEXT);",
     is_registered="SELECT datastore is not null as registered FROM {self.table} WHERE id=$1",
     get_datastore=get_datastore,
     get_claim="SELECT active_node_name FROM {self.table} WHERE id=$1",
@@ -90,16 +88,13 @@ class SignalDatastore:
 
     def __init__(self, number: str):
         self.account_interface = get_account_interface()
-        if utils.get_secret("IGNORE_FORMAT"):
-            self.number = number
+        formatted_number = utils.signal_format(number)
+        if isinstance(formatted_number, str):
+            self.number: str = formatted_number
         else:
-            formatted_number = utils.signal_format(number)
-            if isinstance(formatted_number, str):
-                self.number = formatted_number
-            else:
-                raise Exception("not a valid number")
+            raise Exception("not a valid number")
         logging.info("SignalDatastore number is %s", self.number)
-        self.filepath = "data/" + number.split("_")[0]
+        self.filepath = "data/" + number
         # await self.account_interface.create_table()
         setup_tmpdir()  # shouldn't do anything if not running locally
 
@@ -223,7 +218,6 @@ class SignalDatastore:
 
 
 def setup_tmpdir() -> None:
-    logging.info("setup tmpdir")
     if not utils.LOCAL:
         logging.warning("not setting up tmpdir, running on fly")
         return
