@@ -211,7 +211,7 @@ class Forest(PayBot):
 
     usd_price = 5
 
-    async def do_register(self, message: Message) -> Response:
+    async def do_register(self, _: Message) -> Response:
         """register for a phone number"""
         return f"Please send {await self.mobster.usd2mob(self.usd_price)} MOB via Signal Pay"
 
