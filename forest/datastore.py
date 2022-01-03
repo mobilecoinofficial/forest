@@ -10,6 +10,8 @@ import os
 import shutil
 import sys
 import time
+import datetime
+import zoneinfo
 from io import BytesIO
 from pathlib import Path
 from tarfile import TarFile
@@ -314,6 +316,16 @@ def subcommand(
     return decorator
 
 
+def format_field(field: Any) -> str:
+    if isinstance(field, int):
+        return (
+            datetime.datetime.fromtimestamp(field / 1000)
+            .astimezone(zoneinfo.ZoneInfo("localtime"))
+            .isoformat(timespec="seconds")
+        )
+    return str(field)
+
+
 @subcommand()
 async def list_accounts(_args: argparse.Namespace) -> None:
     "list available accounts in table format"
@@ -335,7 +347,7 @@ async def list_accounts(_args: argparse.Namespace) -> None:
     if not isinstance(accounts, list):
         return
     table = [cols] + [
-        [str(value) for value in account.values()] for account in accounts
+        [format_field(value) for value in account.values()] for account in accounts
     ]
     str_widths = [max(len(row[index]) for row in table) for index in range(len(cols))]
     row_format = " ".join("{:<" + str(width) + "}" for width in str_widths)

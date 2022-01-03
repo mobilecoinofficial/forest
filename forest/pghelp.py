@@ -58,9 +58,14 @@ class SimpleInterface:
     @asynccontextmanager
     async def get_connection(self) -> AsyncGenerator:
         if not self.pool:
-            self.pool = await asyncpg.create_pool(self.database)
+            logging.info("creating pool")
+            if "localhost" in self.database:
+                self.pool = await asyncpg.create_pool(user="postgres")#self.database)
+            else:
+                self.pool = await asyncpg.create_pool(self.database)
             pools.append(self.pool)
         async with self.pool.acquire() as conn:
+            logging.info("connection acquired")
             yield conn
 
 
@@ -238,7 +243,8 @@ class PGInterface:
                 self.logger.debug(
                     f"{rebuilt_statement} {short_args} -> {short_strresp}"
                 )
-                logging.info("query %s took %s", self.truncate(rebuilt_statement), time.time() - start_time)
+                elapsed = f"{time.time() - start_time:.4f}s" # round to miliseconds 
+                logging.info("query %s took %s", self.truncate(rebuilt_statement), elapsed)
                 return resp
 
             return executer_with_args

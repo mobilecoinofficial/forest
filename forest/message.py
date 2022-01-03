@@ -4,7 +4,7 @@ We're using this because you can have `{"attachments": null}` in JSON, which
 breaks our typing if we expect Message.attachments to be list[str].
 Using `or` like this is a bit of a hack, but it's what we've got.
 """
-import shlex
+#import shlex
 from typing import Optional
 
 from forest.utils import logging
