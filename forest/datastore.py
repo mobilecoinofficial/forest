@@ -52,6 +52,7 @@ AccountPGExpressions = pghelp.PGExpressions(
             last_update_ms BIGINT, \
             last_claim_ms BIGINT, \
             active_node_name TEXT, \
+            last_node_name TEXT, \
             notes TEXT, \
             uuid TEXT);",
     is_registered="SELECT datastore is not null as registered FROM {self.table} WHERE id=$1",
@@ -59,6 +60,7 @@ AccountPGExpressions = pghelp.PGExpressions(
     get_claim="SELECT active_node_name FROM {self.table} WHERE id=$1",
     mark_account_claimed="UPDATE {self.table} \
         SET active_node_name = $2, \
+        last_node_name = $2, \
         last_claim_ms = (extract(epoch from now()) * 1000) \
         WHERE id=$1;",
     mark_account_freed="UPDATE {self.table} SET last_claim_ms = 0, \
@@ -148,16 +150,6 @@ class SignalDatastore:
                 self.number.removeprefix("+")
             )
         logging.info("got datastore from pg")
-        if json_data := record[0].get("account"):
-            # legacy json-only field
-            loaded_data = json.loads(json_data)
-            if "username" in loaded_data:
-                try:
-                    os.mkdir("data")
-                except FileExistsError:
-                    pass
-                open("data/" + loaded_data["username"], "w").write(json_data)
-                return
         buffer = BytesIO(record[0].get("datastore"))
         tarball = TarFile(fileobj=buffer)
         fnames = [member.name for member in tarball.getmembers()]
@@ -169,7 +161,9 @@ class SignalDatastore:
         )
         tarball.extractall(utils.ROOT_DIR)
         # open("last_downloaded_checksum", "w").write(zlib.crc32(buffer.seek(0).read()))
-        await self.account_interface.mark_account_claimed(self.number, utils.HOSTNAME)
+        app_prefix = utils.APP_NAME + "-" if utils.APP_NAME else ""
+        node_name = app_prefix + utils.HOSTNAME
+        await self.account_interface.mark_account_claimed(self.number, node_name)
         logging.debug("marked account as claimed, asserting that this is the case")
         assert await self.is_claimed()
         return
@@ -342,7 +336,7 @@ async def list_accounts(_args: argparse.Namespace) -> None:
         )
     ]:
         cols.append("notes")
-    query = f"select {' ,'.join(cols)} from signal_accounts order by id"
+    query = f"select {' ,'.join(cols)} from signal_accounts order by last_update_ms desc"
     accounts = await get_account_interface().execute(query)
     if not isinstance(accounts, list):
         return
