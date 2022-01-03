@@ -658,11 +658,11 @@ class Bot(Signal):
     @hide
     async def do_uptime(self, _: Message) -> str:
         """Returns a message containing the bot uptime."""
-        tot_min, sec = divmod(int(time.time() - self.start_time), 60)
-        hr, min = divmod(tot_min, 60)
+        tot_mins, sec = divmod(int(time.time() - self.start_time), 60)
+        hr, mins = divmod(tot_mins, 60)
         t = "Uptime: "
         t += f"{hr}h" if hr else ""
-        t += f"{min}m" if min  else ""
+        t += f"{mins}m" if mins  else ""
         t += f"{sec}s" 
         return t
 
