@@ -839,7 +839,6 @@ async def metrics(request: web.Request) -> web.Response:
     )
 
 
-
 app = web.Application()
 
 
@@ -848,7 +847,6 @@ async def add_tiprat(_app: web.Application) -> None:
         raise web.HTTPFound("https://tiprat.fly.dev", headers=None, reason=None)
 
     _app.add_routes([web.route("*", "/{tail:.*}", tiprat)])
-
 
 
 app.add_routes(
