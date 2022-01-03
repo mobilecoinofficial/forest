@@ -843,6 +843,16 @@ async def tiprat(request: web.Request) -> web.Response:
 
 app = web.Application()
 
+
+async def add_tiprat(app: web.Application) -> None:
+    async def tiprat(request: web.Request) -> web.Response:
+        raise web.HTTPFound("https://tiprat.fly.dev", headers=None, reason=None)
+
+    app.add_routes([web.route("*", "/{tail:.*}", tiprat)])
+
+
+app.on_startup.append(add_tiprat)
+
 app.add_routes(
     [
         web.get("/", no_get),
