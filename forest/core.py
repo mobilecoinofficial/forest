@@ -219,7 +219,7 @@ class Signal:
 
     async def handle_auxincli_raw_line(self, line: str) -> None:
         if '{"jsonrpc":"2.0","result":[],"id":"receive"}' not in line:
-            pass # logging.debug("auxin: %s", line)
+            pass  # logging.debug("auxin: %s", line)
         try:
             blob = json.loads(line)
         except json.JSONDecodeError:
@@ -544,9 +544,6 @@ class Bot(Signal):
     async def handle_reaction(self, msg: Message) -> Response:
         """
         route a reaction to the original message.
-        #if the number of reactions that message has is a fibonacci number, notify the message's author
-        this is probably flakey, because signal only gives us timestamps and
-        not message IDs
         """
         assert isinstance(msg.reaction, Reaction)
         react = msg.reaction
