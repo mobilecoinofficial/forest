@@ -24,11 +24,10 @@ jobs:
         run: cd .github && pipenv install --deploy --dev && cd ..
       - name: Black
         run: pipenv run black . --check
-        continue-on-error: true
+        if: always()
       - name: Mypy
-        run: pipenv run mypy other_bots mc_util forest mobfriend imogen
-        continue-on-error: true
+        run: pipenv run mypy other_bots mc_util forest mobfriend contact imogen
+        if: always()
       - name: Pylint
-        run: pipenv run pylint other_bots mc_util forest mobfriend/mobfriend.py imogen/imogen.py
-        continue-on-error: true
-
+        run: pipenv run pylint other_bots mc_util forest mobfriend/mobfriend.py contact imogen
+        if: always()
