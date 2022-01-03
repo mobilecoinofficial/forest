@@ -5,6 +5,7 @@ breaks our typing if we expect Message.attachments to be list[str].
 Using `or` like this is a bit of a hack, but it's what we've got.
 """
 import shlex
+import json
 from typing import Optional
 
 from forest.utils import logging
@@ -35,9 +36,15 @@ class Message:
         self.command: Optional[str] = None
         self.tokens: Optional[list[str]] = None
         if self.text and self.text.startswith("/"):
-            # if you need tokens, do this yourself with shlex...
-            command, *self.tokens = self.text.split(" ")
-            self.command = command[1:].lower()  # remove /
+            try:
+                json.loads(self.text)
+                command, *self.tokens = self.text.split(" ")
+            except json.JSONDecodeError:
+                try:
+                    command, *self.tokens = shlex.split(self.text)
+                except ValueError:
+                    command, *self.tokens = self.text.split(" ")
+            self.command = command.removeprefix("/").lower()
             self.arg1 = self.tokens[0] if self.tokens else None
             self.text = " ".join(self.tokens)
         elif (
