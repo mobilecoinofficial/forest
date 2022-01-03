@@ -1,5 +1,5 @@
 __pycache__
-dev_secrets
+*_secrets
 data
 *log
 .idea

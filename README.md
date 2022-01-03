@@ -1,16 +1,5 @@
 Requires python3.9
 
-## Family of BOts
-
-* Forest Contact
-* Imogen
-* MobFriend
-* FormBot
-* EchoPay
-* Tiamat
-* Evilbot
-
-
 ## Bootstrapping Forestbot
 
 Use pipenv install to install deps. Install notes for Ubuntu Hirsuite in INSTALL.md
