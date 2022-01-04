@@ -34,7 +34,7 @@ to install the prerequisites.
 
 ### Signal-Cli ###
 
-Signal-Cli is a command line interface for Signal. Forest bots run with Signal-Cli or Auxin-cli as the backend. Auxin-cli is alpha software, so for now we recommend you use Signal-Cli. 
+[Signal-Cli](https://github.com/AsamK/signal-cli) is a command line interface for Signal. Forest bots run with Signal-Cli or [Auxin-cli](https://github.com/mobilecoinofficial/auxin-cli) as the backend. Auxin-cli is beta software, and does not yet allow to register a new phone number, so for this guide we will use Signal-Cli. 
 
 To install or run Signal-Cli you will need Java 17 or greater. Verify that you have it installed by running:
 ```
@@ -61,8 +61,16 @@ $ tar -xvf signal-cli-0.10.0.tar.gz
 ```
 Verify the installation succeeded 
 
-```
+``` bash
 $ ./signal-cli-0.10.0/bin/signal-cli --version
+signal-cli 0.10.0
+```
+
+Finally for ease of use, link the executable to your working directory:
+
+``` bash
+$ ln -s ./signal-cli-0.10.0/bin/signal-cli .
+$ ./signal-cli version
 signal-cli 0.10.0
 ```
 
@@ -70,20 +78,19 @@ signal-cli 0.10.0
 
 You can also build Signal-Cli from source. You can do so by cloning the official repo and running `gradlew installDist`
 
-```
-git clone https://github.com/AsamK/signal-cli.git
+``` bash
+$ git clone https://github.com/AsamK/signal-cli.git
 
-cd signal-cli
+$ cd signal-cli
 
-./gradlew installDist
+$ ./gradlew installDist
 ```
 Verify the installation succeeded 
 
-```
-./build/install/signal-cli/bin/signal-cli --version
+``` bash
+$ ./build/install/signal-cli/bin/signal-cli --version
 signal-cli 0.10.0
 ```
-
 
 For more detailed instructions visit the [Signal-cli repository](https://github.com/AsamK/signal-cli). If your build is failing, first ensure that you're using a version of Java 17 or highuer with java --version
 
@@ -91,13 +98,32 @@ For more detailed instructions visit the [Signal-cli repository](https://github.
 
 You will need at least 2 signal accounts to properly test your bot. A signal account for the bot to run on and your own signal account to talk to the bot. To set up an additional signal account for your bot you can use a second phone or a VoIP service such as Google Voice, [Forest Contact](/contact), Twilio, or Teli.net. All you need is a phone number that can receive SMS.
 
-With a phone number from Google Voice, Forest Contact, Twilio, or Teli.net, a Signal account can be registered easily. These commands (bash compatible) serve as a starting point and use `human-after-all` as an alternative to manually solving the recaptcha challenge.
+We've deviced a shortcut to register a signal data store. Input your phone number with the country code (+1 for the US) and then run these commands to obtain a signal data store in a state folder
 
 ``` bash
-export MY_PHONE_NUMBER=+15551234567
-export CAPTCHA=$(curl -s --data-binary "https://signalcaptchas.org/registration/generate.html" https://human-after-all-21.fly.dev/6LedYI0UAAAAAMt8HLj4s-_2M_nYOhWMMFRGYHgY | jq -r .solution.gRecaptchaResponse)
-signal-cli --config . -u $MY_PHONE_NUMBER --config state register --captcha $CAPTCHA
+$ export MY_BOT_NUMBER=+15551234567 # number you've obtained for your bot
+$ export CAPTCHA=$(curl -s --data-binary "https://signalcaptchas.org/registration/generate.html" https://human-after-all-21.fly.dev/6LedYI0UAAAAAMt8HLj4s-_2M_nYOhWMMFRGYHgY | jq -r .solution.gRecaptchaResponse)
+$ signal-cli --config . -u $MY_PHONE_NUMBER register --captcha $CAPTCHA
 ```
+You will receive an SMS with a 6 digit verification code. Use that code with the verify command to verify your phone number.
+
+``` bash
+$ ./signal-cli-release --config . -u $MY_PHONE_NUMBER verify 000000
+```
+
+This will create a `data` directory that holds your signal keys and secret data. DO NOT CHECK THIS DIRECTORY INTO VERSION CONTROL. You can use this `data` directory with signal-cli or auxin-cli. You can test that the registration and verification succeeded by sending a message. 
+
+```bash
+$ export MY_ADMIN_NUMBER=+15551111111 #signal number from your phone
+$ ./signal-cli --config . -u $MY_PHONE_NUMBER send $MY_ADMIN_NUMBER -m "hello"
+1641332354004
+```
+Signal-CLI will output a timestamp and you should receive a message on your phone.
 
 
 ## Running Hellobot ##
+
+If you've made it this far, the hard part is over, pat yourself in the back. Once you have a Signal data store, you can provision as many bots as you want with it (as long as only one runs at a time).
+
+Hellobot is the simplest possible bot, it is a bot that replies to the message "hello" with "hello, world". You can see the code for it in `/sample_bots/hellobot.py`
+
