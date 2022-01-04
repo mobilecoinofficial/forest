@@ -18,10 +18,11 @@ jobs:
         uses: actions/cache@v1
         with:
           path: ~/.local/share/virtualenvs
-          key: '${{ runner.os }}-pipenv-v3-${{ hashFiles(''**/Pipfile.lock'') }}'
+          key: '${{ runner.os }}-pipenv-v4-${{ hashFiles(''**/Pipfile.lock'') }}'
       - name: Install dependencies
         if: steps.cache-pipenv.outputs.cache-hit != 'true'
-        run: cd .github && pipenv install --deploy --dev && cd ..
+#        run: cd .github && pipenv install --deploy --dev && cd ..
+        run: pipenv install -r .github/requirements.txt
       - name: Black
         run: pipenv run black . --check
         if: always()
