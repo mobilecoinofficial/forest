@@ -18,7 +18,7 @@ BOT_NUMBER="+12692462089"
 SIGNAL="signal-cli"
 LOGLEVEL="DEBUG"
 ADMIN_GROUP="0om6G+Yj9Kv0LH5Z0992pucLPXTk2qyIYPwBpjhbZO4="
-FULL_SERVICE_URL="https://full-service-imogen.fly.dev/wallet"
+FULL_SERVICE_URL="https://imogen-full-service-real.fly.dev/wallet"
 
 [experimental]
   allowed_public_ports = []
