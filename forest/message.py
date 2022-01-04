@@ -40,6 +40,7 @@ class Message:
                 command, *self.tokens = shlex.split(self.text)
             except ValueError:
                 command, *self.tokens = self.text.split(" ")
+            self.arg0 = command.lstrip('/')
             self.command = command[1:].lower()  # remove /
             self.arg1 = self.tokens[0] if self.tokens else None
             self.arg2 = self.tokens[1] if len(self.tokens) > 1 else None

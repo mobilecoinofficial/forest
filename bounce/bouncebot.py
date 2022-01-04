@@ -293,13 +293,17 @@ class BounceBot(PayBot):
             return fact.strip()
 
 
-async def inbound_sms_handler(request: web.Request) -> web.Response:
-    """Handles SMS messages received by our numbers.
-    Try groups, then try users, otherwise fall back to an admin
+async def inbound_handler(request: web.Request) -> web.Response:
+    """Handles messages received by our numbers.
+    Hashes To: or to: field in POSTed JSON blob, looks for matching user UUID in datastore.
     """
     bot = request.app.get("bot")
     msg_data: dict[str, str] = json.loads(await request.text())  # type: ignore
-    to_address = msg_data.get("To").split("<", 1)[-1].split(">", 1)[0]
+    to_address = (
+        (msg_data.get("To", "") or msg_data.get("to", ""))
+        .split("<", 1)[-1]
+        .split(">", 1)[0]
+    )
     to_token = base58.b58encode(
         hashlib.sha256(f"{SALT}{to_address}".encode()).digest()
     ).decode()
@@ -318,7 +322,7 @@ async def inbound_sms_handler(request: web.Request) -> web.Response:
 
 if __name__ == "__main__":
     app.add_routes([web.get("/metrics", aio.web.server_stats)])
-    app.add_routes([web.post("/inbound", inbound_sms_handler)])
+    app.add_routes([web.post("/inbound", inbound_handler)])
 
     @app.on_startup.append
     async def start_wrapper(out_app: web.Application) -> None:
