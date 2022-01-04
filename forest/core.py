@@ -456,6 +456,7 @@ def requires_admin(command: Callable) -> Callable:
         return "you must be an admin to use this command"
 
     admin_command.admin = True  # type: ignore
+    admin_command.hide = True  # type: ignore
     return admin_command
 
 
@@ -551,7 +552,6 @@ class Bot(Signal):
             name.replace("do_", "/")
             for name in dir(self)
             if name.startswith("do_")
-            and not hasattr(getattr(self, name), "admin")
             and not hasattr(getattr(self, name), "hide")
             and hasattr(getattr(self, name), "__doc__")
         )
@@ -574,6 +574,8 @@ class Bot(Signal):
             try:
                 doc = getattr(self, f"do_{msg.arg1}").__doc__
                 if doc:
+                    if hasattr(getattr(self, f"do_{msg.arg1}"), hide):
+                        raise AttributeError("Pretend this never happened.")
                     return dedent(doc).strip()
                 return f"{msg.arg1} isn't documented, sorry :("
             except AttributeError:
