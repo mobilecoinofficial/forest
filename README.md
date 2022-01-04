@@ -127,11 +127,26 @@ If you've made it this far, the hard part is over, pat yourself in the back. Onc
 
 Hellobot is the simplest possible bot, it is a bot that replies to the message "hello" with "hello, world". You can see the code for it in `/sample_bots/hellobot.py`
 
+
+# Secrets
+
+You can upload your signal keys and secret data to Postgres. Once you have a database (e.g. via <http://supabase.com> or <https://fly.io/docs/reference/postgres>), create a dev_secrets file with
+
+```
+DATABASE_URL=postgres://<your database url>
+```
+
+Then, you can upload your datastore with:
+
+```bash
+$ ./forest/datastore.py upload --number $MY_BOT_NUMBER --path .
+```
+
 # Options and secrets
 
 - `ENV`: if running locally, which {ENV}_secrets file to use. this is also optionally used as profile family name
 - `BOT_NUMBER`: signal account being used
-- `ADMIN`: primarily fallback recipient for invalid webhooks; may also be used to send error messages
+- `ADMIN`: primarily fallback recipient for invalid webhooks; may also be used to send error messages and metrics
 - `DATABASE_URL`: Postgres DB
 - `FULL_SERVICE_URL`: url for full-service instance to use for sending and receiving payments
 - `CLIENTCRT`: client certificate to connect to ssl-enabled full-service
