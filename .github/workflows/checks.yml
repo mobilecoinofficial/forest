@@ -14,8 +14,8 @@ jobs:
           python-version: 3.9
       - name: Install pipenv
         run: python -m pip install --upgrade pipenv wheel
-      - name: Setup tmate session
-        uses: mxschmitt/action-tmate@v3
+      # - name: Setup tmate session
+      #   uses: mxschmitt/action-tmate@v3
       - id: cache-pipenv
         uses: actions/cache@v1
         with:
