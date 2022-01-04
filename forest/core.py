@@ -574,7 +574,7 @@ class Bot(Signal):
             try:
                 doc = getattr(self, f"do_{msg.arg1}").__doc__
                 if doc:
-                    if hasattr(getattr(self, f"do_{msg.arg1}"), hide):
+                    if hasattr(getattr(self, f"do_{msg.arg1}"), "hide"):
                         raise AttributeError("Pretend this never happened.")
                     return dedent(doc).strip()
                 return f"{msg.arg1} isn't documented, sorry :("
