@@ -2,20 +2,13 @@
 # Copyright (c) 2021 MobileCoin Inc.
 # Copyright (c) 2021 The Forest Team
 
-import asyncio
-from aiohttp import web
-from forest.core import Bot, Message, app
+from forest.core import Bot, Message, run_bot
 
 
 class HelloBot(Bot):
-    async def do_hello(self, message) -> str:
-        return "Hello, world."
+    async def do_hello(self, message: Message) -> str:
+        return "Hello, world!"
 
 
 if __name__ == "__main__":
-
-    @app.on_startup.append
-    async def start_wrapper(our_app: web.Application) -> None:
-        our_app["bot"] = HelloBot()
-
-    web.run_app(app, port=8080, host="0.0.0.0")
+    run_bot(HelloBot)

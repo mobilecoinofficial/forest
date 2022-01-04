@@ -103,19 +103,19 @@ We've deviced a shortcut to register a signal data store. Input your phone numbe
 ``` bash
 $ export MY_BOT_NUMBER=+15551234567 # number you've obtained for your bot
 $ export CAPTCHA=$(curl -s --data-binary "https://signalcaptchas.org/registration/generate.html" https://human-after-all-21.fly.dev/6LedYI0UAAAAAMt8HLj4s-_2M_nYOhWMMFRGYHgY | jq -r .solution.gRecaptchaResponse)
-$ signal-cli --config . -u $MY_PHONE_NUMBER register --captcha $CAPTCHA
+$ signal-cli --config . -u $MY_BOT_NUMBER register --captcha $CAPTCHA
 ```
 You will receive an SMS with a 6 digit verification code. Use that code with the verify command to verify your phone number.
 
 ``` bash
-$ ./signal-cli-release --config . -u $MY_PHONE_NUMBER verify 000000
+$ ./signal-cli-release --config . -u $MY_BOT_NUMBER verify 000000
 ```
 
 This will create a `data` directory that holds your signal keys and secret data. DO NOT CHECK THIS DIRECTORY INTO VERSION CONTROL. You can use this `data` directory with signal-cli or auxin-cli. You can test that the registration and verification succeeded by sending a message. 
 
 ```bash
 $ export MY_ADMIN_NUMBER=+15551111111 #signal number from your phone
-$ ./signal-cli --config . -u $MY_PHONE_NUMBER send $MY_ADMIN_NUMBER -m "hello"
+$ ./signal-cli --config . -u $MY_BOT_NUMBER send $MY_ADMIN_NUMBER -m "hello"
 1641332354004
 ```
 Signal-CLI will output a timestamp and you should receive a message on your phone.
@@ -127,3 +127,27 @@ If you've made it this far, the hard part is over, pat yourself in the back. Onc
 
 Hellobot is the simplest possible bot, it is a bot that replies to the message "hello" with "hello, world". You can see the code for it in `/sample_bots/hellobot.py`
 
+# Options and secrets
+
+- `ENV`: if running locally, which {ENV}_secrets file to use. this is also optionally used as profile family name
+- `BOT_NUMBER`: signal account being used
+- `ADMIN`: primarily fallback recipient for invalid webhooks; may also be used to send error messages
+- `DATABASE_URL`: Postgres DB
+- `FULL_SERVICE_URL`: url for full-service instance to use for sending and receiving payments
+- `CLIENTCRT`: client certificate to connect to ssl-enabled full-service
+- `ROOTCRT`: certificate to validate full-service
+- `MNEMONIC`: account to import for full-service. insecure
+- `SIGNAL`: which signal client to use. can be 'signal' for signal-cli or 'auxin' for auxin-cli
+
+## Binary flags
+- `NO_DOWNLOAD`: don't download a signal-cli datastore, instead use what's in the current working directory
+- `NO_MEMFS`: if this isn't set, MEMFS is started, making a fake filesystem in `./data` and used to upload the signal-cli datastore to the database whenever it is changed. if not `NO_DOWNLOAD`, also create an equivalent tmpdir at /tmp/local-signal, chdir to it, and symlink signal-cli process and avatar
+- `NO_MONITOR_WALLET`: monitor transactions from full-service. relevent only if you're giving users a payment address to send mobilecoin not with signal pay.  has bugs
+- `SIGNAL_CLI_PATH`: executable to use. useful for running graalvm tracing agent
+- `LOGFILES`: create a debug.log
+- `LOGLEVEL`: what log level to use for console logs (DEBUG, INFO, WARNING, ERROR). 
+- `ADMIN_METRICS`: send python and roundtrip timedeltas for each command to ADMIN
+
+## Contributing
+
+Code style: `mypy *py` and `pylint *py` should not have errors when you push. Run `black`. Prefer verbose, easier to read names over conciser ones.
