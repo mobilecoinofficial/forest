@@ -885,7 +885,6 @@ app.add_routes(
         web.post("/admin", admin_handler),
         web.get("/metrics", aio.web.server_stats),
         web.get("/csv_metrics", metrics),
-        web.route("*", "/{tail:.*}", tiprat),
     ]
 )
 
