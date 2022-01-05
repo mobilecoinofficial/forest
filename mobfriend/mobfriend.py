@@ -110,7 +110,9 @@ class MobFriend(PayBot):
 
     @requires_admin
     async def do_eval(self, msg: Message) -> Response:
-        """Evaluates a few lines of Python. Preface with "return" to reply with result."""
+        """/eval [lines]
+        Evaluates a few lines of Python.
+        Preface a value or expression with with "return" to reply with result."""
 
         async def async_exec(stmts: str, env: Optional[dict]) -> Any:
             parsed_stmts = ast.parse(stmts)
