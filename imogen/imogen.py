@@ -91,6 +91,7 @@ async def get_output(cmd: str) -> str:
     stdout, stderr = await proc.communicate()
     return stdout.decode().strip() or stderr.decode().strip()
 
+
 if not utils.LOCAL:
     gcp_cred = utils.get_secret("GCP_CREDENTIALS")
     if gcp_cred:
@@ -116,8 +117,6 @@ start = "gcloud --format json compute instances start nvidia-gpu-cloud-image-1-v
 systemctl = "yes | gcloud --format json compute ssh start nvidia-gpu-cloud-image-1-vm -- systemctl status imagegen"
 
 
-
-
 class Imogen(Bot):
     worker_instance_id: Optional[str] = None
 
@@ -129,7 +128,6 @@ class Imogen(Bot):
         # get_output("gcloud auth activate-service-account -f gcp-key-imogen.json")
         await self.admin("starting")
         await super().start_process()
-
 
     async def set_profile(self) -> None:
         profile = {
@@ -207,7 +205,9 @@ class Imogen(Bot):
 
     image_rate_cents = 10
 
-    async def insert(self, msg: Message, parms: dict, attachments:bool=False) -> None:
+    async def insert(
+        self, msg: Message, parms: dict, attachments: bool = False
+    ) -> None:
         pass
         # if msg.attachments and attachments
         # params is the only thing that changes between commands/models
@@ -451,12 +451,14 @@ class Prompt:
     group_id: str = ""
     version: str = ""
 
+
 # async def check(req: web.request) -> web.Response:
 #     bot = request.app.get("bot")
 #     assert isinstance(bot, Imogen)
 #     if not bot:
 #         return web.Response(status=504, text="Sorry, no live workers.")
 #     bot.send_message("/ping foo", +***REMOVED*** )
+
 
 async def store_image_handler(  # pylint: disable=too-many-locals
     request: web.Request,
