@@ -6,7 +6,6 @@ name = "pypi"
 [packages]
 aioprocessing = "*"
 asyncpg = "*"
-mobilecoin = "*"
 base58 = "*"
 phonenumbers = "*"
 termcolor = "*"

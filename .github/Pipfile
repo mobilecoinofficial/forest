@@ -1,3 +1,6 @@
+# these are the packages necessary to typecheck the entire repo
+# superset of all the others ones. 
+
 [[source]]
 url = "https://pypi.org/simple"
 verify_ssl = true
@@ -9,7 +12,6 @@ asyncpg = "*"
 phonenumbers = "*"
 termcolor = "*"
 aioredis = "*"
-mobilecoin = "*"
 base58 = "*"
 openai = "*"
 prometheus_async = "*"
