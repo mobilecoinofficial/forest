@@ -86,13 +86,17 @@ openai.api_key = utils.get_secret("OPENAI_API_KEY")
 # --labels=goog-dm=nvidia-gpu-cloud-image-1 --reservation-affinity=any --source-machine-image=bulky
 
 
+async def get_output(cmd: str) -> str:
+    proc = await asyncio.create_subprocess_shell(cmd, stdout=-1, stderr=-1)
+    stdout, stderr = await proc.communicate()
+    return stdout.decode().strip() or stderr.decode().strip()
 
 if not utils.LOCAL:
     gcp_cred = utils.get_secret("GCP_CREDENTIALS")
     if gcp_cred:
         open("gcp-key-imogen.json", "w").write(base64.b64decode(gcp_cred).decode())
-        get_output("gcloud auth activate-service-account --key-file gcp-key-imogen.json")
-        get_output("gcloud config set project sublime-coast-306000")
+        # get_output("gcloud auth activate-service-account --key-file gcp-key-imogen.json")
+        # get_output("gcloud config set project sublime-coast-306000")
     else:
         logging.info("couldn't find gcp creds")
     ssh_key = utils.get_secret("SSH_KEY")
@@ -112,10 +116,6 @@ start = "gcloud --format json compute instances start nvidia-gpu-cloud-image-1-v
 systemctl = "yes | gcloud --format json compute ssh start nvidia-gpu-cloud-image-1-vm -- systemctl status imagegen"
 
 
-async def get_output(cmd: str) -> str:
-    proc = await asyncio.create_subprocess_shell(cmd, stdout=-1, stderr=-1)
-    stdout, stderr = await proc.communicate()
-    return stdout.decode().strip() or stderr.decode().strip()
 
 
 class Imogen(Bot):

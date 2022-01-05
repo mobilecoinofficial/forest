@@ -34,7 +34,9 @@ class Message:
         # parsing
         self.command: Optional[str] = None
         self.tokens: Optional[list[str]] = None
-        if self.text and self.text.startswith("/"):
+        if not self.text:
+            return
+        if self.text.startswith("/"):
             # if you need tokens, do this yourself with shlex...
             command, *self.tokens = self.text.split(" ")
             self.command = command[1:].lower()  # remove /
