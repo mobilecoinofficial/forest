@@ -6,7 +6,6 @@ RUN microdnf install -y git zlib-devel && rm -rf /var/cache/yum
 RUN gu install native-image
 RUN git clone --branch upstream https://github.com/forestcontact/signal-cli
 WORKDIR /app/signal-cli
-ENV a=1
 RUN git pull origin forest-v2.10.5
 RUN git log -1 --pretty=%B | tee commit-msg
 RUN ./gradlew nativeCompile
@@ -33,7 +32,6 @@ RUN wget -q -O gcloud.tar.gz  https://dl.google.com/dl/cloudsdk/release/google-c
   && /usr/local/gcloud/google-cloud-sdk/install.sh \
   && ln -s /usr/local/gcloud/google-cloud-sdk/bin/gcloud /usr/bin/gcloud #\
 #  && yes | /usr/bin/gcloud components remove bq gsutil anthoscli
-ENV a=1
 COPY --from=sigbuilder /app/signal-cli/build/native/nativeCompile/signal-cli /app/signal-cli/commit-msg /app/signal-cli/build.gradle.kts  /app/
 # for signal-cli's unpacking of native deps
 COPY --from=sigbuilder /lib64/libz.so.1 /lib64
