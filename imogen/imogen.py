@@ -18,7 +18,7 @@ import openai
 from aiohttp import web
 
 from forest import pghelp, utils
-from forest.core import JSON, Bot, Message, Response, app, hide, requires_admin, run_bot
+from forest.core import JSON, PayBot, Message, Response, app, hide, requires_admin, run_bot
 
 # @dataclass
 # class InsertedPrompt:
@@ -117,7 +117,7 @@ start = "gcloud --format json compute instances start nvidia-gpu-cloud-image-1-v
 systemctl = "yes | gcloud --format json compute ssh start nvidia-gpu-cloud-image-1-vm -- systemctl status imagegen"
 
 
-class Imogen(Bot):
+class Imogen(PayBot):
     worker_instance_id: Optional[str] = None
 
     async def start_process(self) -> None:

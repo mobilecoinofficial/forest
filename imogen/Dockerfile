@@ -30,7 +30,7 @@ RUN wget -q -O gcloud.tar.gz  https://dl.google.com/dl/cloudsdk/release/google-c
   && tar -C /usr/local/gcloud -xvf gcloud.tar.gz \
   && rm gcloud.tar.gz \
   && /usr/local/gcloud/google-cloud-sdk/install.sh \
-  && ln -s /usr/local/gcloud/google-cloud-sdk/bin/gcloud /usr/bin/gcloud #\
+  && ln -s /usr/local/gcloud/google-cloud-sdk/bin/gcloud /usr/bin/gcloud 
 #  && yes | /usr/bin/gcloud components remove bq gsutil anthoscli
 COPY --from=sigbuilder /app/signal-cli/build/native/nativeCompile/signal-cli /app/signal-cli/commit-msg /app/signal-cli/build.gradle.kts  /app/
 # for signal-cli's unpacking of native deps
