@@ -105,7 +105,8 @@ class SignalDatastore:
         logging.info("SignalDatastore number is %s", self.number)
         self.filepath = "data/" + number.split("_")[0]
         # await self.account_interface.create_table()
-        setup_tmpdir()  # shouldn't do anything if not running locally
+        if not utils.get_secret("NO_TMPDIR"):
+            setup_tmpdir()  # shouldn't do anything if not running locally
 
     def is_registered_locally(self) -> bool:
         try:
@@ -231,6 +232,7 @@ def setup_tmpdir() -> None:
             shutil.rmtree(utils.ROOT_DIR)
         except (FileNotFoundError, OSError) as e:
             logging.warning("couldn't remove rootdir: %s", e)
+    Path(utils.ROOT_DIR).mkdir(exist_ok=True, parents=True)
     if not utils.MEMFS:
         (Path(utils.ROOT_DIR) / "data").mkdir(exist_ok=True, parents=True)
     # assume we're running in the repo
