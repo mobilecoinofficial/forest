@@ -18,7 +18,16 @@ import openai
 from aiohttp import web
 
 from forest import pghelp, utils
-from forest.core import JSON, PayBot, Message, Response, app, hide, requires_admin, run_bot
+from forest.core import (
+    JSON,
+    PayBot,
+    Message,
+    Response,
+    app,
+    hide,
+    requires_admin,
+    run_bot,
+)
 
 # @dataclass
 # class InsertedPrompt:
@@ -76,14 +85,6 @@ QueueExpressions = pghelp.PGExpressions(
 )
 
 openai.api_key = utils.get_secret("OPENAI_API_KEY")
-# gcloud beta compute instances create imogen-3 --project=sublime-coast-306000 --zone=us-central1-a
-# --machine-type=n1-standard-4 --network-interface=network-tier=PREMIUM,subnet=default
-# --metadata=google-monitoring-enable=0,google-logging-enable=0 --maintenance-policy=TERMINATE
-# --service-account=638601660045-compute@developer.gserviceaccount.com
-# --scopes=https://www.googleapis.com/auth/logging.write,https://www.googleapis.com/auth/monitoring.write,https://www.googleapis.com/auth/devstorage.read_only
-# --accelerator=count=1,type=nvidia-tesla-v100 --min-cpu-platform=Automatic
-# --tags=http-server,https-server --no-shielded-secure-boot --shielded-vtpm --shielded-integrity-monitoring
-# --labels=goog-dm=nvidia-gpu-cloud-image-1 --reservation-affinity=any --source-machine-image=bulky
 
 
 async def get_output(cmd: str) -> str:
@@ -490,7 +491,7 @@ async def store_image_handler(  # pylint: disable=too-many-locals
     )
     if not row or (not row[0].get("author") and not row[0].get("group_id")):
         await bot.admin("no prompt id found?", attachments=str(path))
-        info = f"prompt id now found, sent {filename} sized of {size} to admin"
+        info = f"prompt id not found, sent {filename} sized of {size} to admin"
         logging.info(info)
         return web.Response(text=info)
 
@@ -520,7 +521,7 @@ async def store_image_handler(  # pylint: disable=too-many-locals
         rpc_id = await bot.send_message(
             None, message, attachments=[str(path)], group=prompt.group_id, **quote  # type: ignore
         )
-        if random.random() < 0.05:
+        if random.random() < 0.03:
             asyncio.create_task(
                 bot.send_message(None, tip_message, group=prompt.group_id)
             )
@@ -529,9 +530,12 @@ async def store_image_handler(  # pylint: disable=too-many-locals
             prompt.author, message, attachments=[str(path)], **quote  # type: ignore
         )
         if prompt.author != utils.get_secret("ADMIN"):
-            asyncio.create_task(
-                bot.admin(message + f"author: {prompt.author}", attachments=[str(path)])
+            admin_task = bot.admin(
+                message
+                + f"\nrequested by {prompt.author} in DMs. prompt id: {prompt_id}",
+                attachments=[str(path)],
             )
+            asyncio.create_task(admin_task)
 
     result = await bot.pending_requests[rpc_id]
     await bot.queue.execute(
