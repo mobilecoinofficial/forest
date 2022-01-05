@@ -14,6 +14,16 @@ base58 = "*"
 openai = "*"
 prometheus_async = "*"
 prometheus_client = "*"
+black = "*"
+mypy = "*"
+pylint = "*"
+types-termcolor = "*"
+types-protobuf = "*"
+pyqrcode = "*"
+
+[packages.aiohttp]
+extras = [ "speedups",]
+version = "==3.8.1"
 
 [requires]
 python_version = "3.9"
@@ -22,12 +32,3 @@ python_version = "3.9"
 allow_prereleases = true
 
 [dev-packages]
-black = "*"
-mypy = "*"
-pylint = "*"
-types-termcolor = "*"
-types-protobuf = "*"
-pyqrcode = "*" # putting it here because pylint needs it to check mobfriend but it's not needed in prod
-[packages.aiohttp]
-extras = [ "speedups",]
-version = "==3.8.1"
