@@ -1,16 +1,21 @@
 #!/usr/bi:n/python3.9
+# pylint: disable=too-many-branches disable=too-many-return-statements
+# pylint: disable=too-many-arguments disable=too-many-nested-blocks disable=unused-argument
 """Executable file which starts up a bot which does mobilecoin airdrops"""
 import logging
 import json
+import asyncio
 from datetime import datetime
 from enum import Enum
 from typing import Any, Union, Optional
 from dataclasses import dataclass, field
 from asyncio import create_task
 from aiohttp import web
+import mc_util
 from forest.core import PayBot, app, Message, Response, requires_admin, hide
 from forest.utils import get_secret
 from forest.pghelp import Loop, PGExpressions, PGInterface
+
 
 AirdropPGExpressions = PGExpressions(
     table="aidrops",
@@ -170,8 +175,8 @@ class SimpleAirdrop(Airdrop):  # pylint: disable=too-many-instance-attributes
             specify_amount="Enter # of entrants to make drop to, {num_users} unpaid airdrop enterants remaining",  # pylint: disable=line-too-long
             specify_amount_invalid="Input invalid, enter a whole number",
             confirm_airdrop="Type 'confirm' to drop {amt} mob to {num_users} users",
-            confirm_airdrop_invalid="Invalid input, please type confirm to make drop or exit to cancel",
-            confirmed="Attemping to make airdrop of {amt} mob to {num_users} entrants",
+            confirm_airdrop_invalid="Invalid input, type confirm to make drop or exit to cancel",
+            confirmed="Attemping to airdrop {amt} mob to {num_users} entrants",
             exit="Cancelling mob distribution, you can re-enter this dialog using /make_drop",
         )
         self.dialog_state = {}
@@ -222,7 +227,9 @@ class SimpleAirdrop(Airdrop):  # pylint: disable=too-many-instance-attributes
         self.start_block = block
 
     def clear_airdrop(self) -> None:
-
+        """
+        Clear airdrop configuration, this ends the airdrop
+        """
         logging.info("Resetting airdrop to default values")
         self.name = "simple_airdrop_setup"
         self.dialog = Dialog.NONE
@@ -232,9 +239,9 @@ class SimpleAirdrop(Airdrop):  # pylint: disable=too-many-instance-attributes
         self.entry_price = -1.0
         self.drop_amount = -1.0
 
-    def get_next_dialog(
+    def get_next_dialog(  # pylint: disable=too-many-branches disable=too-many-return-statements
         self, invalid: bool = False, data: Optional[dict] = None
-    ) -> str:  # pylint: disable=too-many-branches
+    ) -> str:
         """
         Gets next dialog in setup sequence based on current configuration
 
@@ -251,7 +258,11 @@ class SimpleAirdrop(Airdrop):  # pylint: disable=too-many-instance-attributes
 
         if self.dialog == Dialog.ADMIN_AIRDROP_SETUP:
             if self.entry_price < 0:
-                return self.setup_script["welcome"] + "\n\n" + self.setup_script["entry_price" + valid]
+                return (
+                    self.setup_script["welcome"]
+                    + "\n\n"
+                    + self.setup_script["entry_price" + valid]
+                )
             if self.drop_amount < 0:
                 return self.setup_script["drop_amount" + valid]
             if self.max_entrants < 1:
@@ -259,7 +270,9 @@ class SimpleAirdrop(Airdrop):  # pylint: disable=too-many-instance-attributes
             self.end_dialog()
             return self.setup_script["setup_finished"]
 
-        if self.dialog == Dialog.ADMIN_DISTRIBUTE_MOBILECOIN:
+        if (
+            self.dialog == Dialog.ADMIN_DISTRIBUTE_MOBILECOIN
+        ):  # pylint: disable=too-many-nested-blocks
             if isinstance(data, dict):
                 unpaid_entrants = data.get("num_unpaid_entrants")
                 selection = self.dialog_state.get("selection")
@@ -282,8 +295,7 @@ class SimpleAirdrop(Airdrop):  # pylint: disable=too-many-instance-attributes
                         if num_to_drop:
                             if confirmed:
                                 return self.drop_script["confirmed"].format(
-                                    num_users=num_to_drop,
-                                    amt=self.drop_amount
+                                    num_users=num_to_drop, amt=self.drop_amount
                                 )
                             return self.drop_script["confirm_airdrop" + valid].format(
                                 num_users=num_to_drop, amt=self.drop_amount
@@ -337,7 +349,9 @@ class SimpleAirdrop(Airdrop):  # pylint: disable=too-many-instance-attributes
                 return self.drop_script.get("exit", "Exiting dialog")
             if not selection:
                 value = try_cast_int(value)
-                if isinstance(value, int) and value > -1 and value < 2:
+                if isinstance(value, int) and (
+                    -1 < value < 2
+                ):  # pylint: disable=chained-comparison
                     self.dialog_state["selection"] = value
                     if value == 1:
                         self.dialog_state["num_to_drop"] = unpaid_entrants
@@ -363,7 +377,11 @@ class SimpleAirdrop(Airdrop):  # pylint: disable=too-many-instance-attributes
                     ):
                         if value == "confirm":
                             self.dialog_state["confirmed"] = True
-                            logging.info("Airdrop of %s to %s entrants confirmed", self.drop_amount, num_to_drop)
+                            logging.info(
+                                "Airdrop of %s to %s entrants confirmed",
+                                self.drop_amount,
+                                num_to_drop,
+                            )
                             return self.get_next_dialog(data=data)
                         return self.get_next_dialog(invalid=True, data=data)
                 if selection == 1:
@@ -371,7 +389,11 @@ class SimpleAirdrop(Airdrop):  # pylint: disable=too-many-instance-attributes
                         return self.get_next_dialog(data=data)
                     if value == "confirm":
                         self.dialog_state["confirmed"] = True
-                        logging.info("Airdrop of %s to %s entrants confirmed", self.drop_amount, unpaid_entrants)
+                        logging.info(
+                            "Airdrop of %s to %s entrants confirmed",
+                            self.drop_amount,
+                            unpaid_entrants,
+                        )
                         return self.get_next_dialog(data=data)
                     return self.get_next_dialog(invalid=True, data=data)
 
@@ -463,27 +485,38 @@ class AirDropBot(PayBot):
         return msg.source == admin
 
     async def record_tx(
-        self, sender: str, reason: str, amount: int, direction: str
+        self,
+        sender: str,
+        reason: str,
+        amount: int,
+        direction: str,
+        wallet_address: str,
+        entry_block: int,
     ) -> None:
+        """
+        Record transaction into database to be recovered in case of bot failure
+        """
         state = await self.get_state()
         if States.LIVE in state and isinstance(self.config, SimpleAirdrop):
-            block = await self.mobster.get_current_network_block()
-            wallet_address = await self.get_address(sender)
             data = dict(
                 username=sender,
                 wallet_address=wallet_address,
                 amount=amount,
                 direction=direction,
                 tx_purpose=reason,
-                tx_block=block,
+                tx_block=entry_block,
                 bot_number=self.bot_number,
             )
+
             logging.info("logging {direction} - {sender}:{amount}:{reason}")
             await self.db_manager.sd_add_tx(self.config.name, json.dumps(data))
 
     async def get_state(self) -> set[States]:
         """
         get airdrop state based on environment
+
+        Returns:
+          set: Set of state
         """
         states = set()
         conf = self.config
@@ -522,25 +555,72 @@ class AirDropBot(PayBot):
             states.add(States.NO_AIRDROP)
         return states
 
-    async def distribute_drop(self, num_to_drop: int) -> Response:
-        unpaid_entrants = len(self.get_unpaid_entrants())
-        if num_to_drop > unpaid_entrants:
-            return "Number of requested drops above number of users entered, aborting"
-            
+    async def distribute_drop(self, num_to_drop: int) -> None:
+        """
+        Executes payment of airdrop amount to
+        """
+        config = self.config
+        admin = get_secret("ADMIN")
+        assert isinstance(config, SimpleAirdrop)
+        unpaid = self.get_entrants()
+        if num_to_drop > len(unpaid):
+            msg = "Number of requested drops above number of users entered, aborting"
+            await self.send_message(admin, msg)
+            return
+        drop_amount = int(mc_util.mob2pmob(config.drop_amount))
+        unpaid = unpaid[0:num_to_drop]
+        for entrant in unpaid:
+            await asyncio.sleep(2)  # avoid rate limit
+            await self.send_payment(
+                entrant["number"],
+                drop_amount,
+                f"Mobot sent you {mc_util.mob2pmob(drop_amount)} MoB!",
+            )
+            self.entrant_list[entrant["number"]]["status"] = "paid"
+        asyncio.sleep(10)
+        drop_stats = await self.get_drop_stats()
+        await self.send_message(admin, drop_stats)
+
+    async def reconcile_data(self, start_block: int) -> dict[str, list]:
+        """
+        Returns any discrepancies that exist in the airdrop bot's payment
+        records and full service payment records. If "mismatch_paid" records
+        exist, it indicates that the bot has recorded payments which weren't
+        actually made. "Mismatch_unpaid" indicates some entrants haven't been
+        tracked by the bot.
+
+        args:
+          start_block (int): Block from which to measure discrepancies
+
+        Returns:
+          dict(str, set): List of mismatches in paid and unpaid entrants
+        """
+        config = self.config
+        assert isinstance(config, SimpleAirdrop)
+        paid = set(entrant["wallet_address"] for entrant in self.get_entrants("paid"))
+        unpaid = set(
+            entrant["wallet_address"] for entrant in self.get_entrants("unpaid")
+        )
+        fs_entrants = await self.get_entrants_from_full_service(start_block)
+        fs_paid = set(fs_entrants["paid_entrants"])
+        fs_unpaid = set(fs_entrants["unpaid_entrants"])
+        paid_diff = list(paid - fs_paid)
+        unpaid_diff = list(unpaid - fs_unpaid)
+        return {"mismatch_paid": paid_diff, "mismatch_unpaid": unpaid_diff}
+
     async def handle_message(self, message: Message) -> Response:
+        logging.info(message)
         if self.is_admin(message) and isinstance(self.config, SimpleAirdrop):
             if self.config.dialog == Dialog.ADMIN_AIRDROP_SETUP:
                 if message.command:
-                    self.config.dialog = (
-                        Dialog.NONE
-                    )  # pylint: disable=attribute-defined-outside-init
+                    self.config.end_dialog()
                     return await super().handle_message(message)
                 return self.config.take_next_input(message.text, {})
             if self.config.dialog == Dialog.ADMIN_DISTRIBUTE_MOBILECOIN:
-                unpaid_entrants = self.get_unpaid_entrants()
+                unpaid_entrants = self.get_entrants()
                 data = {"num_unpaid_entrants": unpaid_entrants}
                 dialog = self.config.take_next_input(message.text, data)
-                if self.config.dialog_state.get("confirmed") == True:
+                if self.config.dialog_state.get("confirmed") is True:
                     num_to_drop = await self.config.dialog_state.get("num_to_drop", 0)
                     create_task(self.distribute_drop(num_to_drop))
                     self.config.end_dialog()
@@ -558,27 +638,26 @@ class AirDropBot(PayBot):
         refund_without_fees = "we are refunding your payment minus transaction fees!"
         refund_with_fees = "We are refunding your payment and transaction fees!"
         if not States.LIVE in state:
-            create_task(self.return_payment(message, state, "not_live"))
+            create_task(self.return_payment(message, "not_live"))
             return f"No airdrop in progress, {refund_without_fees}"
         if States.AIRDROP_FULL in state:
-            create_task(self.return_payment(message, state, "aidrop_full"))
+            create_task(self.return_payment(message, "aidrop_full"))
             return f"This airdrop has reached the maximum amount of entrants, {refund_without_fees}"
         if message.source in self.entrant_list and isinstance(
             self.config, SimpleAirdrop
         ):
-            create_task(self.return_payment(message, state, "duplicate_payment"))
+            create_task(self.return_payment(message, "duplicate_payment"))
             return f"You've already entered this airdrop, {refund_without_fees}"
         if isinstance(self.config, SimpleAirdrop) and not (
             message.source in self.entrant_list
         ):
-            create_task(self.return_payment(message, state, "airdrop_entry"))
-            self.entrant_list[message.source] = {"status": "unpaid"}
+            create_task(self.return_payment(message, "airdrop_entry"))
             return f"You've successfully entered the airdrop! {refund_with_fees}"
-        create_task(self.return_payment(message, state, "Unexpected"))
+        create_task(self.return_payment(message, "Unexpected"))
         return f"Your payment was unexpected, {refund_without_fees}"
 
     async def return_payment(
-        self, msg: Message, state: set[States], reason: str, fee: int = 400000000
+        self, msg: Message, reason: str, fee: int = 400000000
     ) -> None:
         """
         Return payments sent to the bot to the original sender
@@ -592,23 +671,47 @@ class AirDropBot(PayBot):
         logging.info(msg.payment)
         amount_pmob = await self.mobster.get_receipt_amount_pmob(msg.payment["receipt"])
         if isinstance(amount_pmob, int):
-            create_task(
-                self.record_tx(msg.source, reason, amount_pmob, "tx_direction_received")
-            )
             amount = amount_pmob - fee
             if reason == "airdrop_entry":
                 amount = amount_pmob + fee
-                self.entrant_list[msg.source]["entry_fee_paid"] = amount_pmob
+                wallet_address = await self.get_address(msg.source)
+                entry_block = await self.mobster.get_current_network_block()
+                self.entrant_list[msg.source] = dict(
+                    entry_fee=amount_pmob,
+                    status="unpaid",
+                    number=msg.source,
+                    wallet_address=wallet_address,
+                    entry_block=entry_block,
+                )
+
+            assert isinstance(wallet_address, str)
+            create_task(
+                self.record_tx(
+                    msg.source,
+                    reason,
+                    amount_pmob,
+                    "tx_direction_sent",
+                    wallet_address,
+                    entry_block,
+                )
+            )
+
             await self.send_payment(
                 msg.source, amount, "Your payment has been refunded!", reason
             )
-            if reason == "airdrop_entry":
-                self.entrant_list[msg.source]["fee_amount_refunded"] = amount
-            create_task(
-                self.record_tx(msg.source, reason, amount_pmob, "tx_direction_sent")
-            )
 
     async def get_entrants_from_full_service(self, start_block: int) -> dict[str, list]:
+        """
+        Get full service record of which entrants have been entered and/or have
+        been paid.
+
+        args:
+          start_block (int): block from which to measure from
+
+        Returns:
+          dict[str, list]: list of paid and unpaid entrants within the block
+          specified
+        """
         account_id = await self.mobster.get_account()
         record_list = await self.mobster.get_transactions(account_id)
         _id = "recipient_address_id"
@@ -635,9 +738,18 @@ class AirDropBot(PayBot):
             "unpaid_entrants": list(unpaid_entrants),
         }
 
-    def get_unpaid_entrants(self) -> list[dict]:
-        return [entrant for _, entrant in self.entrant_list.items() if entrant["status"] == "unpaid"]
-   
+    def get_entrants(self, status: str = "unpaid") -> Union[list[dict]]:
+        """
+        Get entrants based on paid or unpaid status
+
+        args:
+          status (str): either "paid" to get entrants who have been sent mob or
+          "unpaid" to get entrants who have yet to receive an airdrop
+        """
+        return [
+            data for _, data in self.entrant_list.items() if data["status"] == status
+        ]
+
     @hide
     @requires_admin
     async def do_make_drop(self, msg: Message) -> Response:
@@ -650,25 +762,30 @@ class AirDropBot(PayBot):
         if States.ERROR in state:
             return "Airdrop is in error state, please correct error before continuing"
         if States.NO_AIRDROP in state:
-            return "No Airdrop active, please configure and launch one before continuing"
+            return (
+                "No Airdrop active, please configure and launch one before continuing"
+            )
         if States.LIVE in state and isinstance(self.config, SimpleAirdrop):
-            if States.NEEDS_FUNDING in state: 
-                resp = f"Funding needed, please make sure wallet has at least {self.config.get_total_airdrop_amount()} MoB"
+            if States.NEEDS_FUNDING in state:
+                amount_needed = self.config.get_total_airdrop_amount()
+                resp = f"Funding needed, ensure wallet has at least {amount_needed} MoB"
                 logging.warning(resp)
                 return resp
-            unpaid_entrants = self.get_unpaid_entrants()
+            unpaid_entrants = self.get_entrants()
             if len(unpaid_entrants) <= 0:
                 return "No airdrop entrants yet, please wait until there are entrants"
-            data = {"num_unpaid_entrants":len(unpaid_entrants)}
+            data = {"num_unpaid_entrants": len(unpaid_entrants)}
             self.config.enter_dialog(Dialog.ADMIN_DISTRIBUTE_MOBILECOIN)
             return self.config.get_next_dialog(data=data)
+
         return "Not able to make drop"
 
     async def default(self, message: Message) -> Response:
         conf = self.config
         state = await self.get_state()
         resp = f"You've messaged {self.name}. \n\n"
-        if message.txt and not (message.group or message.txt == resp):
+        logging.info("default reply to %s - state %s", message.source, state)
+        if message.text and not (message.group or message.source == self.bot_number):
             if not isinstance(conf, InteractiveAirdrop) or (States.SETUP in state):
                 if self.is_admin(message):
                     resp = "Hi admin, no aidrop is currently configured\n"
@@ -677,7 +794,7 @@ class AirDropBot(PayBot):
                     resp += "type /setup_airdrop to enter airdrop setup\n"
                     resp += "\nOther commands:\n" + self.documented_commands()
                     return resp
-                resp += "No aidrop is in progress, please check back later"
+                resp += "Hello! No airdrop is in progress please check back later"
                 return resp
 
             if States.LIVE in state:
@@ -717,6 +834,12 @@ class AirDropBot(PayBot):
     ) -> Response:  # pylint: disable=unused-argument
         """
         Get stats on airdrop
+        """
+        return await self.get_drop_stats()
+
+    async def get_drop_stats(self) -> Response:
+        """
+        Provide data on airdrop status
         """
         state = await self.get_state()
         if States.NO_AIRDROP in state:

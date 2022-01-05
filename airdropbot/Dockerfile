@@ -1,7 +1,7 @@
 FROM ghcr.io/rust-lang/rust:nightly as builder
 WORKDIR /src
 RUN echo hello
-RUN git clone https://github.com/forestcontact/auxin && cd auxin && git pull origin 0.1.4
+RUN git clone https://github.com/forestcontact/auxin && cd auxin
 WORKDIR /app
 RUN rustup default nightly
 # from https://stackoverflow.com/questions/58473606/cache-rust-dependencies-with-docker-build
@@ -46,4 +46,5 @@ COPY --from=libbuilder /app/venv/lib/python3.9/site-packages /app/
 COPY ./forest/ /app/forest/
 COPY ./mc_util/ /app/mc_util/
 COPY ./airdropbot.py  /app/ 
+COPY ./profile.png /app/
 ENTRYPOINT ["/usr/bin/python3.9", "/app/airdropbot.py"]

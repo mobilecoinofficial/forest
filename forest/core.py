@@ -294,15 +294,15 @@ class Signal:
         about_emoji: str = "",
         avatar: list = "",
     ) -> str:
-        params = dict(name=dict(given_name=given_name, family_name=family_name))
+        params = dict(name=dict(givenName=given_name, familyName=family_name))
         if mobilecoin_address:
-            params["mobilecoinAddress"] = mobilecoin_address
+            params["mobilecoin_address"] = mobilecoin_address
         if about:
             params["about"] = about
         if about_emoji:
             params["about_emoji"] = about_emoji
         if avatar:
-            params["avatar"] = [avatar]
+            params["avatar"] = avatar
         future_key = f"setProfile-{int(time.time()*1000)}"
         await self.auxincli_input_queue.put(rpc("setProfile", params, future_key))
         return future_key
