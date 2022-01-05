@@ -289,7 +289,7 @@ class Signal:
 
     async def set_profile_auxin(
         self,
-        given_name: str = "",
+        given_name: Optional[str] = "",
         family_name: Optional[str] = "",
         payment_address: Optional[str] = "",
         profile_path: Optional[str] = None,
@@ -679,9 +679,9 @@ class PayBot(Bot):
             attachment_info = msg.attachments[0]
             attachment_path = attachment_info.get("fileName")
             timestamp = attachment_info.get("uploadTimestamp")
-            if attachment_path == None:
+            if attachment_path is None:
                 attachment_paths = glob.glob(f"/tmp/unnamed_attachment_{timestamp}.*")
-                if len(attachment_paths):
+                if attachment_paths:
                     user_image = attachment_paths.pop()
             else:
                 user_image = f"/tmp/{attachment_path}"
@@ -839,21 +839,15 @@ async def metrics(request: web.Request) -> web.Response:
     )
 
 
-async def tiprat(request: web.Request) -> web.Response:
-    raise web.HTTPFound("https://tiprat.fly.dev", headers=None, reason=None)
-
-
 app = web.Application()
 
 
-async def add_tiprat(app: web.Application) -> None:
+async def add_tiprat(_app: web.Application) -> None:
     async def tiprat(request: web.Request) -> web.Response:
         raise web.HTTPFound("https://tiprat.fly.dev", headers=None, reason=None)
 
-    app.add_routes([web.route("*", "/{tail:.*}", tiprat)])
+    _app.add_routes([web.route("*", "/{tail:.*}", tiprat)])
 
-
-app.on_startup.append(add_tiprat)
 
 app.add_routes(
     [
@@ -866,13 +860,13 @@ app.add_routes(
     ]
 )
 
-
 # order of operations:
 # 1. start memfs
 # 2. instanciate Bot, which may call setup_tmpdir
 # 3. download
 # 4. start process
 
+app.on_startup.append(add_tiprat)
 if utils.MEMFS:
     app.on_startup.append(autosave.start_memfs)
     app.on_startup.append(autosave.start_memfs_monitor)
