@@ -35,14 +35,14 @@ else:
 
 DATABASE_URL = utils.get_secret("DATABASE_URL")
 LedgerPGExpressions = PGExpressions(
-    table="imogen_ledger",
-    create_table="CREATE TABLE IF NOT EXISTS {self.table} ( \
-        tx_id SERIAL PRIMARY KEY, \
-        account CHARACTER VARYING(16), \
-        amount_usd_cents BIGINT NOT NULL, \
-        amount_pmob BIGINT, \
-        memo CHARACTER VARYING(32), \
-        ts TIMESTAMP);",
+    table=utils.get_secret("LEDGER_NAME") or "ledger",
+    create_table="""CREATE TABLE IF NOT EXISTS {self.table} ( 
+        tx_id SERIAL PRIMARY KEY, 
+        account TEXT,
+        amount_usd_cents BIGINT NOT NULL, 
+        amount_pmob BIGINT, 
+        memo TEXT, 
+        ts TIMESTAMP);""",
     put_usd_tx="INSERT INTO {self.table} (account, amount_usd_cents, memo, ts) \
         VALUES($1, $2, $3, CURRENT_TIMESTAMP);",
     put_pmob_tx="INSERT INTO {self.table} (account, amount_usd_cents, amount_pmob, memo, ts) \
@@ -50,8 +50,6 @@ LedgerPGExpressions = PGExpressions(
     get_usd_balance="SELECT COALESCE(SUM(amount_usd_cents)/100, 0.0) AS balance \
         FROM {self.table} WHERE account=$1",
 )
-"""
-"""
 
 
 class LedgerManager(PGInterface):
@@ -62,7 +60,6 @@ class LedgerManager(PGInterface):
         loop: Loop = None,
     ) -> None:
         super().__init__(queries, database, loop)
-
 
 
 class Mobster:

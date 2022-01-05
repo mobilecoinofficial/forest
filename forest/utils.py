@@ -93,7 +93,8 @@ LOCAL = os.getenv("FLY_APP_NAME") is None
 ROOT_DIR = (
     "." if get_secret("NO_DOWNLOAD") else "/tmp/local-signal" if LOCAL else "/app"
 )
-UPLOAD = DOWNLOAD = not get_secret("NO_DOWNLOAD")
+DOWNLOAD = not get_secret("NO_DOWNLOAD")
+UPLOAD = get_secret("UPLOAD") or DOWNLOAD
 MEMFS = not get_secret("NO_MEMFS")
 
 if get_secret("LOGFILES") or not LOCAL:
