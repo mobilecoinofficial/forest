@@ -289,7 +289,7 @@ class Signal:
 
     async def set_profile_auxin(
         self,
-        given_name: str = "",
+        given_name: Optional[str] = "",
         family_name: Optional[str] = "",
         payment_address: Optional[str] = "",
         profile_path: Optional[str] = None,

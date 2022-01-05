@@ -14,7 +14,7 @@ jobs:
           python-version: 3.9
       - name: Install pipenv
         run: python -m pip install --upgrade pipenv wheel
-      # - name: Setup tmate session
+      # - name: Setup tmate session # this lets you SSH into the container
       #   uses: mxschmitt/action-tmate@v3
       - id: cache-pipenv
         uses: actions/cache@v1
@@ -23,7 +23,6 @@ jobs:
           key: '${{ runner.os }}-pipenv-v4-${{ hashFiles(''**/Pipfile.lock'') }}'
       - name: Install dependencies
         if: steps.cache-pipenv.outputs.cache-hit != 'true'
-#        run: cd .github && pipenv install --deploy --dev && cd ..
         run: pipenv install -r .github/requirements.txt
       - name: Black
         run: pipenv run black . --check
