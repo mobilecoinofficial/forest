@@ -29,13 +29,18 @@ class Message:
     source: str
     payment: dict
     reactions: dict[str, str]
+    arg1: Optional[str]
+    arg2: Optional[str]
+    arg3: Optional[str]
 
     def __init__(self, blob: dict) -> None:
         self.blob = blob
         # parsing
         self.command: Optional[str] = None
         self.tokens: Optional[list[str]] = None
-        if self.text and self.text.startswith("/"):
+        if not self.text:
+            return
+        if self.text.startswith("/"):
             try:
                 json.loads(self.text)
                 command, *self.tokens = self.text.split(" ")
@@ -47,9 +52,7 @@ class Message:
             self.command = command.removeprefix("/").lower()
             self.arg1 = self.tokens[0] if self.tokens else None
             self.text = " ".join(self.tokens)
-        elif (
-            self.text and "help" in self.text.lower() and "Documented" not in self.text
-        ):
+        elif "help" in self.text.lower() and "Documented" not in self.text:
             self.command = "help"
 
     def to_dict(self) -> dict:
