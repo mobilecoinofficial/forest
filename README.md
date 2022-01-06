@@ -1,4 +1,8 @@
-To get familiarised with deploying and running a forest bot, we've provided a short tutorial to teach you how to deploy hellobot.
+# A Forest of Signal Bots #
+
+Forest is a framework for running payments-enabled chat and utility bots for [Signal Messenger](https://signal.org/en/).
+
+To get familiarised with deploying and running a forest bot, we've provided a short tutorial to teach you how to deploy hellobot, the simplest possible forest bot.
 
 ## High Level Overview ##
 
@@ -8,16 +12,22 @@ In this tutorial you will:
  * Install Signal-CLI and register a Signal account for your bot.
  * Deploy the bot!
 
- At the end there's extra information and a guide on how to contribute.
+At the end there's extra information and a guide on how to contribute.
+
+## Bring your own phone number ##
+
+You will need at least 2 Signal accounts to properly test your bot. A signal account for the bot to run on and your own signal account to talk to the bot. To set up an additional signal account for your bot you can use a second phone or a VoIP service such as Google Voice, [Forest Contact](/contact), Twilio, or Teli.net. All you need is a phone number that can receive SMS.
+
 
 ## Installing Prerequisites ##
 
 ### Python 3.9 ### 
 
-Please refer to the [official Python wiki](https://wiki.python.org/moin/BeginnersGuide/Download) for instructions 
-for instructions on installing Python 3.9 on your machine. On Debian/Ubuntu based systems one can simply run:
+Please refer to the [official Python wiki](https://wiki.python.org/moin/BeginnersGuide/Download)
+for instructions on installing Python 3.9 on your machine. On Debian/Ubuntu based systems you may run:
 
 ```
+sudo apt update
 sudo apt install python3.9 python3.9-dev python3-pip
 ```
 
@@ -48,7 +58,7 @@ OpenJDK Runtime Environment (build 17.0.1+12-Ubuntu-120.04)
 OpenJDK 64-Bit Server VM (build 17.0.1+12-Ubuntu-120.04, mixed mode, sharing)
 ```
 
-otherwise install with 
+otherwise install with:
 ```
 sudo apt install openjdk-17-jre-headless
 ```
@@ -80,14 +90,14 @@ Finally for ease of use, link the executable to your working directory:
 ``` bash
 ln -s ./signal-cli-0.10.0/bin/signal-cli .
 
-./signal-cli version
+./signal-cli --version
 ---
 signal-cli 0.10.0
 ```
 
 ### Building Signal-Cli from Source ###
 
-You can also build Signal-Cli from source. You can do so by cloning the official repo and running `gradlew installDist`
+You can also build Signal-Cli from source. You can do so by cloning the official repo and running `gradlew installDist`:
 
 ``` bash
 git clone https://github.com/AsamK/signal-cli.git
@@ -96,7 +106,7 @@ cd signal-cli
 
 ./gradlew installDist
 ```
-Verify the installation succeeded 
+Verify the installation succeeded:
 
 ``` bash
 ./build/install/signal-cli/bin/signal-cli --version
@@ -104,35 +114,49 @@ Verify the installation succeeded
 signal-cli 0.10.0
 ```
 
-For more detailed instructions visit the [Signal-cli repository](https://github.com/AsamK/signal-cli). If your build is failing, first ensure that you're using a version of Java 17 or higher with `java --version`
+Finally for ease of use, link the executable to your working directory:
+
+``` bash
+
+ln -s home/username/signal-cli/build/install/signal-cli/bin/signal-cli .
+
+./signal-cli --version
+---
+signal-cli 0.10.0
+```
+
+For more detailed instructions visit the [Signal-cli repository](https://github.com/AsamK/signal-cli). 
 
 <br>
 
 ## Registering a Signal Account for your bot
 
-You will need at least 2 signal accounts to properly test your bot. A signal account for the bot to run on and your own signal account to talk to the bot. To set up an additional signal account for your bot you can use a second phone or a VoIP service such as Google Voice, [Forest Contact](/contact), Twilio, or Teli.net. All you need is a phone number that can receive SMS.
+As mentioned above, you will need at least 2 Signal accounts to properly test your bot. A Signal account for the bot to run on and your own signal account to talk to the bot. To set up an additional Signal account for your bot you can use a second phone or a VoIP service such as Google Voice, [Forest Contact](/contact), Twilio, or Teli.net. All you need is a phone number that can receive SMS.
 
-We've deviced a shortcut to register a signal data store. Input your phone number with the country code (+1 for the US) and then run these commands to obtain a signal data store in a state folder
+We've deviced a shortcut to register a Signal data store. Input your phone number with the country code (+1 for the US) and then run these commands to obtain a signal data store in a state folder
 
+``` bash
+sudo apt install jq # install jq in case you don't already have it
+```
 ``` bash
 export BOT_NUMBER=+15551234567 # number you've obtained for your bot
 export CAPTCHA=$(curl -s --data-binary "https://signalcaptchas.org/registration/generate.html" https://human-after-all-21.fly.dev/6LedYI0UAAAAAMt8HLj4s-_2M_nYOhWMMFRGYHgY | jq -r .solution.gRecaptchaResponse)
-signal-cli --config . -u $BOT_NUMBER register --captcha $CAPTCHA
+./signal-cli --config . -u $BOT_NUMBER register --captcha $CAPTCHA
 ```
 You will receive an SMS with a 6 digit verification code. Use that code with the verify command to verify your phone number.
 
 ``` bash
-./signal-cli-release --config . -u $BOT_NUMBER verify 000000
+./signal-cli --config . -u $BOT_NUMBER verify 000000
 ```
 
-This will create a `data` directory that holds your signal keys and secret data. DO NOT CHECK THIS DIRECTORY INTO VERSION CONTROL. You can use this `data` directory with signal-cli or auxin-cli. You can test that the registration and verification succeeded by sending a message. 
+This will create a `data` directory that holds your Signal keys and secret data. DO NOT CHECK THIS DIRECTORY INTO VERSION CONTROL. You can use this `data` directory with signal-cli or auxin-cli. You can test that the registration and verification succeeded by sending yourself a message. 
 
 ```bash
-export ADMIN=+15551111111 #signal number from your phone
+export ADMIN=+15551111111 #your personal signal number
 ./signal-cli --config . -u $BOT_NUMBER send $ADMIN -m "hello"
 1641332354004
 ```
-Signal-CLI will output a timestamp and you should receive a message on your phone.
+Signal-cli will output a timestamp and you should receive a message on your phone.
 
 If your having trouble registering with this method, there's [a more thorough walkthrough on the Signal-cli wiki](https://github.com/AsamK/signal-cli/wiki/Registration-with-captcha).
 
@@ -140,9 +164,9 @@ If your having trouble registering with this method, there's [a more thorough wa
 
 If you've made it this far, the hard part is over, pat yourself in the back. Once you have a Signal data store, you can provision as many bots as you want with it (as long as only one runs at a time).
 
-Hellobot is the simplest possible bot, it is a bot that replies to the message "hello" with "hello, world". You can see the code for it in `/sample_bots/hellobot.py`
+Hellobot is the simplest possible bot, it is a bot that replies to the message "/hello" with "hello, world". You can see the code for it in [sample_bots/hellobot](sample_bots/hellobot.py).
 
-Hellobot will read Environment variables from a Secrets file. Create a file called dev_secrets with the following information on it (replace ADMIN with your personal number and BOT_NUMBER with the number you registered with signal-cli). DO NOT CHECK THIS FILE INTO VERSION CONTROL.
+Hellobot will read environment variables from a secrets file. By default it looks for a file called dev_secrets. Create a file called dev_secrets with the following information on it (replace ADMIN with your personal number and BOT_NUMBER with the number you registered with signal-cli). DO NOT CHECK THIS FILE INTO VERSION CONTROL. Look at the end of the document for explanations of the other environment variables in the dev_secrets file. 
 
 ```bash
 ADMIN=+15551111111
@@ -155,7 +179,7 @@ SIGNAL=signal
 
 Finally you can run hellobot with
 ```bash
-pipenv run python -m other_bots.hellobot
+pipenv run python -m sample_bots.hellobot
 ```
 
 You should see an output like this:
@@ -193,11 +217,11 @@ And with that you've deployed your first forest bot. Congratulations!
 
 ## Next Steps and Further Information ##
 
-This is just the beginning. The forest framework provides a lot more functionality, and there are a couple more complex bots packed in as well. One of the main functionalities of forest bots is that it's easy to enable signal_payments for them so that your users can pay your bot in mob. This allows you to collect donations or sell content. To learn about the payment functionalities, and build your first payments enabled forest bot, check out [/echopay](/echopay).
+This is just the beginning. The forest framework provides a lot more functionality, and there are a couple more complex bots in the repo as well. One of the main functionalities of forest bots is that it's easy to enable Signal Payments for them so that your users can pay your bot in $mob. This allows your bot to collect donations or sell content. To learn about the payment functionalities, and build your first payments-enabled forest bot, check out [/echopay](/echopay).
 
 ### Storing your Signal keys
 
-Forest provides a helper program to upload your data directory to a postgress database. Once you have provisioned a database (e.g. via <http://supabase.com> or <https://fly.io/docs/reference/postgres>), add this line to your dev_secrets file.
+Forest provides a helper program to upload your data directory to a Postgres database. Once you have provisioned a database (e.g. via <http://supabase.com> or <https://fly.io/docs/reference/postgres>), add this line to your dev_secrets file.
 
 ```
 DATABASE_URL=postgres://<your database url>
@@ -217,25 +241,25 @@ These are the environment variables and flags that the bots read to work. Not al
 - `BOT_NUMBER`: the number for the bot's signal account
 - `ADMIN`: admin's phone number, primarily as a fallback recipient for invalid webhooks; may also be used to send error messages and metrics.
 - `DATABASE_URL`: URL for the Postgres database to store the signal keys in as well as other information.
-- `FULL_SERVICE_URL`: url for [full-service](https://github.com/mobilecoinofficial/full-service) instance to use for sending and receiving payments
-- `CLIENTCRT`: client certificate to connect to ssl-enabled full-service
-- `ROOTCRT`: certificate to validate full-service
-- `MNEMONIC`: account to import for full-service. insecure
-- `SIGNAL`: which signal client to use. can be 'signal' for signal-cli or 'auxin' for auxin-cli
-- `ROOT_DIR`: specify the directory where the data file is stored, as well as where the signal-cli executable is
+- `FULL_SERVICE_URL`: URL for [full-service](https://github.com/mobilecoinofficial/full-service) instance to use for sending and receiving payments
+- `CLIENTCRT`: client certificate to connect to ssl-enabled full-service.
+- `ROOTCRT`: certificate to validate full-service.
+- `MNEMONIC`: account to import for full-service. Not Secure.
+- `SIGNAL`: which signal client to use. can be 'signal' for signal-cli or 'auxin' for auxin-cli.
+- `ROOT_DIR`: specify the directory where the data file is stored, as well as where the signal-cli executable is.
 - `SIGNAL_CLI_PATH`: specify where the signal-cli executable is if it is not in ROOT_DIR.
-- `LOGLEVEL`: what log level to use for console logs (DEBUG, INFO, WARNING, ERROR)
+- `LOGLEVEL`: what log level to use for console logs (DEBUG, INFO, WARNING, ERROR).
 
 ## Binary flags
-- `NO_DOWNLOAD`: don't download a signal-cli datastore, instead use what's in the current working directory
-- `NO_MEMFS`: if this isn't set, MEMFS is started, making a fake filesystem in `./data` and used to upload the signal-cli datastore to the database whenever it is changed. If not `NO_DOWNLOAD`, also create an equivalent tmpdir at /tmp/local-signal, chdir to it, and symlink signal-cli process and avatar
+- `NO_DOWNLOAD`: don't download a signal-cli datastore, instead use what's in the current working directory.
+- `NO_MEMFS`: if this isn't set, MEMFS is started, making a fake filesystem in `./data` and used to upload the signal-cli datastore to the database whenever it is changed. If not `NO_DOWNLOAD`, also create an equivalent tmpdir at /tmp/local-signal, chdir to it, and symlink signal-cli process and avatar.
 - `MONITOR_WALLET`: monitor transactions from full-service. Relevant only if you're giving users a payment address to send mobilecoin to instead of using signal pay.  Experimental, do not use.
-- `LOGFILES`: create a debug.log 
-- `ADMIN_METRICS`: send python and roundtrip timedeltas for each command to ADMIN
+- `LOGFILES`: create a debug.log.
+- `ADMIN_METRICS`: send python and roundtrip timedeltas for each command to ADMIN.
 
 ## Contributing
 
-We accept issues and Pull Requests. These are our style guides:
+We accept Issues and Pull Requests. These are our style guides:
 
 Code style: Ensure that `mypy *py` and `pylint *py` do not return errors before you push. 
 
