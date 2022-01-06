@@ -12,7 +12,7 @@ class TemplateBot(Bot):
         """
         A template you can fill in to make your own bot. Anything after do_ is a / command.
         Return value is used to send a message to the user.
-         """
+        """
         return "template."
 
     async def do_hello(self, message) -> str:
@@ -21,7 +21,6 @@ class TemplateBot(Bot):
 
         """
         return "Hello, world!"
-
 
 
 if __name__ == "__main__":
