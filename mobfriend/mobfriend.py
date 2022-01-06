@@ -60,7 +60,7 @@ class MobFriend(PayBot):
         else:
             extension = "png"
         save_name = f"{user_id}_{base58.b58encode(text[:16]).decode()}.{extension}"
-        default_params = dict(save_name=save_name, save_dir="/tmp")
+        default_params: dict[str, Any] = dict(save_name=save_name, save_dir="/tmp")
         if image_path:
             default_params.update(
                 dict(
@@ -160,11 +160,12 @@ class MobFriend(PayBot):
     @time(REQUEST_TIME)  # type: ignore
     async def payment_response(self, msg: Message, amount_pmob: int) -> Response:
         if msg.source in self.exchanging_gift_code:
-            resp = await self.build_gift_code(amount_pmob - FEE)
+            resp_list = await self.build_gift_code(amount_pmob - FEE)
+            gift_code = resp_list[1]
             self.exchanging_gift_code.remove(msg.source)
             if msg.source in self.no_repay:
                 self.no_repay.remove(msg.source)
-            await self._actually_build_wait_and_send_qr(resp, msg.source)
+            await self._actually_build_wait_and_send_qr(gift_code, msg.source)
             return None
         if msg.source not in self.no_repay:
             payment_notif = await self.send_payment(msg.source, amount_pmob - FEE)
