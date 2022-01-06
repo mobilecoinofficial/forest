@@ -102,10 +102,7 @@ class Mobster:
 
     def __init__(self, url: str = "") -> None:
         if not url:
-            url = (
-                utils.get_secret("FULL_SERVICE_URL")
-                or "http://full-service.fly.dev/wallet"
-            )
+            url = utils.get_secret("FULL_SERVICE_URL") or "http://localhost:9090/wallet"
         self.ledger_manager = LedgerManager()
         self.invoice_manager = InvoiceManager()
         logging.info("full-service url: %s", url)
