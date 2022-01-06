@@ -172,7 +172,9 @@ class ClanGat(PayBotPro):
         if (user_owns_list_obj or user_owns_event_obj) and param:
             for target_user in self.event_lists[obj]:
                 await self.send_message(target_user, param)
-                for owner in list(set(self.event_owners.get(obj, []) + self.list_owners.get(obj, []))):
+                for owner in list(
+                    set(self.event_owners.get(obj, []) + self.list_owners.get(obj, []))
+                ):
                     await self.send_message(
                         owner,
                         f"OK, sent '{param}' to 1 of {len(self.event_lists[obj])} people on list {obj}: {target_user}",
@@ -189,9 +191,8 @@ class ClanGat(PayBotPro):
             except Exception as e:
                 return str(e)
 
-
     async def do_blast(self, msg: Message) -> Response:
-        """ blast  <listname> "message"
+        """blast  <listname> "message"
         blast <eventname> "message"
         """
         obj = (msg.arg1 or "").lower()
@@ -201,8 +202,8 @@ class ClanGat(PayBotPro):
         user_owns_list_obj = obj in self.list_owners and user in self.list_owners.get(
             obj, []
         )
-        user_owns_event_obj = obj in self.event_owners and user in self.event_owners.get(
-            obj, []
+        user_owns_event_obj = (
+            obj in self.event_owners and user in self.event_owners.get(obj, [])
         )
         list_ = []
         print(obj, param, value, user)
@@ -224,7 +225,6 @@ class ClanGat(PayBotPro):
             return "add a message"
         else:
             return "nice try"
-
 
     async def do_subscribe(self, msg: Message) -> Response:
         obj = (msg.arg1 or "").lower()
@@ -342,16 +342,26 @@ class ClanGat(PayBotPro):
             lists = []
             all_owners = []
             for list_ in self.event_lists:
+                # if user is on a list
                 if msg.source in self.event_lists[list_]:
                     owners = self.event_owners.get(list_, [])
                     owners += self.list_owners.get(list_, [])
                     all_owners += owners
                     lists += [list_]
+                # if user bought tickets
+                if (
+                    list_ in self.event_attendees
+                    and msg.source in self.event_attendees[list_]
+                ):
+                    owners = self.event_owners.get(list_, [])
+                    all_owners += owners
+                    lists += [list_]
 
-            for owner in list(set(owners)):
+            # being really lazy about owners / all_owners here
+            for owner in list(set(all_owners)):
                 await self.send_message(
                     owner,
-                    f"resp: {msg.source}, {code} {msg.text} via {list(set(lists))}",
+                    f"resp: {msg.source}, {code} {msg.text} in {list(set(lists))}",
                 )
                 await asyncio.sleep(0.1)
 
