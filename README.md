@@ -21,7 +21,7 @@ You will need at least 2 Signal accounts to properly test your bot. A signal acc
 
 ## Installing Prerequisites ##
 
-### Python 3.9 ### 
+### Python 3.9 ###
 
 Please refer to the [official Python wiki](https://wiki.python.org/moin/BeginnersGuide/Download)
 for instructions on installing Python 3.9 on your machine. On Debian/Ubuntu based systems you may run:
@@ -38,16 +38,16 @@ We use pipenv to handle dependencies, run:
 ```bash
 python3.9 -m pip install pipenv
 ```
-then to install the prerequisites:  
+then to install the prerequisites:
 ```bash
-pipenv install  
-```  
+pipenv install
+```
 
 </br>
 
 ## Signal-cli ##
 
-[Signal-cli](https://github.com/AsamK/signal-cli) is a command line interface for Signal. Forest bots run with signal-cli or [auxin-cli](https://github.com/mobilecoinofficial/auxin-cli) as the backend. Auxin-cli is beta software, and does not yet allow to register a new phone number, so for this guide we will use signal-cli. 
+[Signal-cli](https://github.com/AsamK/signal-cli) is a command line interface for Signal. Forest bots run with signal-cli or [auxin-cli](https://github.com/mobilecoinofficial/auxin-cli) as the backend. Auxin-cli is beta software, and does not yet allow to register a new phone number, so for this guide we will use signal-cli.
 
 To install or run signal-cli you will need Java 17. Verify that you have it installed by running:
 ```bash
@@ -63,7 +63,7 @@ otherwise install with:
 sudo apt install openjdk-17-jre-headless
 ```
 
-You can then install signal-cli from a pre-built release or build it from source yourself.  
+You can then install signal-cli from a pre-built release or build it from source yourself.
 
 <br>
 
@@ -71,13 +71,13 @@ You can then install signal-cli from a pre-built release or build it from source
 
 The maintainers of signal-cli provide precompiled releases you can download and run immediately.
 
-Download and extract the latest release tarball from https://github.com/AsamK/signal-cli/releases 
+Download and extract the latest release tarball from https://github.com/AsamK/signal-cli/releases
 ```bash
 wget https://github.com/AsamK/signal-cli/releases/download/v0.10.0/signal-cli-0.10.0.tar.gz
 
 tar -xvf signal-cli-0.10.0.tar.gz
 ```
-Verify the installation succeeded 
+Verify the installation succeeded
 
 ``` bash
 ./signal-cli-0.10.0/bin/signal-cli --version
@@ -125,7 +125,7 @@ ln -s $HOME/signal-cli/build/install/signal-cli/bin/signal-cli .
 signal-cli 0.10.0
 ```
 
-For more detailed instructions visit the [signal-cli repository](https://github.com/AsamK/signal-cli). 
+For more detailed instructions visit the [signal-cli repository](https://github.com/AsamK/signal-cli).
 
 <br>
 
@@ -149,7 +149,7 @@ You will receive an SMS with a 6 digit verification code. Use that code with the
 ./signal-cli --config . -u $BOT_NUMBER verify 000000
 ```
 
-This will create a `data` directory that holds your Signal keys and secret data. DO NOT CHECK THIS DIRECTORY INTO VERSION CONTROL. You can use this `data` directory with signal-cli or auxin-cli. You can test that the registration and verification succeeded by sending yourself a message. 
+This will create a `data` directory that holds your Signal keys and secret data. DO NOT CHECK THIS DIRECTORY INTO VERSION CONTROL. You can use this `data` directory with signal-cli or auxin-cli. You can test that the registration and verification succeeded by sending yourself a message.
 
 ```bash
 export ADMIN=+15551111111 #your personal signal number
@@ -166,7 +166,7 @@ If you've made it this far, the hard part is over, pat yourself in the back. Onc
 
 Hellobot is the simplest possible bot, it is a bot that replies to the message "/hello" with "hello, world". You can see the code for it in [sample_bots/hellobot](sample_bots/hellobot.py).
 
-Hellobot will read environment variables from a secrets file. By default it looks for a file called dev_secrets. Create a file called dev_secrets with the following information on it (replace ADMIN with your personal number and BOT_NUMBER with the number you registered with signal-cli). DO NOT CHECK THIS FILE INTO VERSION CONTROL. Look at the end of the document for explanations of the other environment variables in the dev_secrets file. 
+Hellobot will read environment variables from a secrets file. By default it looks for a file called dev_secrets. Create a file called dev_secrets with the following information on it (replace ADMIN with your personal number and BOT_NUMBER with the number you registered with signal-cli). DO NOT CHECK THIS FILE INTO VERSION CONTROL. Look at the end of the document for explanations of the other environment variables in the dev_secrets file.
 
 ```bash
 ADMIN=+15551111111
@@ -187,7 +187,7 @@ You should see an output like this:
 ```
 INFO utils:56: loading secrets from dev_secrets
 INFO core:48: Using message parser: <class 'forest.message.StdioMessage'>
-INFO payments_monitor:111: full-service url: http://full-service.fly.dev/wallet
+INFO payments_monitor:111: full-service url: http://localhost:9090/wallet
 INFO datastore:96: SignalDatastore number is +15551234567
 WARNING datastore:225: not setting up tmpdir, using current directory
 INFO core:118: ['./signal-cli', '--trust-new-identities', 'always', '--config', '.', '--user', '+15551234567', 'jsonRpc']
@@ -235,7 +235,7 @@ Then, you can upload your datastore with:
 
 ## Options and secrets
 
-These are the environment variables and flags that the bots read to work. Not all of them are necessary for every bot. As you saw hellobot only used a subset of these. 
+These are the environment variables and flags that the bots read to work. Not all of them are necessary for every bot. As you saw hellobot only used a subset of these.
 
 - `ENV`: if running locally, which {ENV}_secrets file to use. This is also optionally used as profile family name
 - `BOT_NUMBER`: the number for the bot's signal account
@@ -261,6 +261,6 @@ These are the environment variables and flags that the bots read to work. Not al
 
 We accept Issues and Pull Requests. These are our style guides:
 
-Code style: Ensure that `mypy *py` and `pylint *py` do not return errors before you push. 
+Code style: Ensure that `mypy *py` and `pylint *py` do not return errors before you push.
 
 Use [black](https://github.com/psf/black) to format your python code. Prefer verbose, easier to read names over conciser ones.

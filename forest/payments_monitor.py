@@ -104,7 +104,7 @@ class Mobster:
         if not url:
             url = (
                 utils.get_secret("FULL_SERVICE_URL")
-                or "http://full-service.fly.dev/wallet"
+                or "http://localhost:9090/wallet"
             )
         self.ledger_manager = LedgerManager()
         self.invoice_manager = InvoiceManager()
