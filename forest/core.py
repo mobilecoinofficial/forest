@@ -289,7 +289,7 @@ class Signal:
 
     async def set_profile_auxin(
         self,
-        given_name: str = "",
+        given_name: Optional[str] = "",
         family_name: Optional[str] = "",
         payment_address: Optional[str] = "",
         profile_path: Optional[str] = None,
@@ -456,6 +456,7 @@ def requires_admin(command: Callable) -> Callable:
         return "you must be an admin to use this command"
 
     admin_command.admin = True  # type: ignore
+    admin_command.hide = True  # type: ignore
     return admin_command
 
 
@@ -551,7 +552,6 @@ class Bot(Signal):
             name.replace("do_", "/")
             for name in dir(self)
             if name.startswith("do_")
-            and not hasattr(getattr(self, name), "admin")
             and not hasattr(getattr(self, name), "hide")
             and hasattr(getattr(self, name), "__doc__")
         )
@@ -574,6 +574,8 @@ class Bot(Signal):
             try:
                 doc = getattr(self, f"do_{msg.arg1}").__doc__
                 if doc:
+                    if hasattr(getattr(self, f"do_{msg.arg1}"), "hide"):
+                        raise AttributeError("Pretend this never happened.")
                     return dedent(doc).strip()
                 return f"{msg.arg1} isn't documented, sorry :("
             except AttributeError:
@@ -677,9 +679,9 @@ class PayBot(Bot):
             attachment_info = msg.attachments[0]
             attachment_path = attachment_info.get("fileName")
             timestamp = attachment_info.get("uploadTimestamp")
-            if attachment_path == None:
+            if attachment_path is None:
                 attachment_paths = glob.glob(f"/tmp/unnamed_attachment_{timestamp}.*")
-                if len(attachment_paths):
+                if attachment_paths:
                     user_image = attachment_paths.pop()
             else:
                 user_image = f"/tmp/{attachment_path}"
@@ -837,11 +839,15 @@ async def metrics(request: web.Request) -> web.Response:
     )
 
 
-async def tiprat(request: web.Request) -> web.Response:
-    raise web.HTTPFound("https://tiprat.fly.dev", headers=None, reason=None)
-
-
 app = web.Application()
+
+
+async def add_tiprat(_app: web.Application) -> None:
+    async def tiprat(request: web.Request) -> web.Response:
+        raise web.HTTPFound("https://tiprat.fly.dev", headers=None, reason=None)
+
+    _app.add_routes([web.route("*", "/{tail:.*}", tiprat)])
+
 
 app.add_routes(
     [
@@ -851,10 +857,8 @@ app.add_routes(
         web.post("/admin", admin_handler),
         web.get("/metrics", aio.web.server_stats),
         web.get("/csv_metrics", metrics),
-        web.route("*", "/{tail:.*}", tiprat),
     ]
 )
-
 
 # order of operations:
 # 1. start memfs
@@ -862,6 +866,7 @@ app.add_routes(
 # 3. download
 # 4. start process
 
+app.on_startup.append(add_tiprat)
 if utils.MEMFS:
     app.on_startup.append(autosave.start_memfs)
     app.on_startup.append(autosave.start_memfs_monitor)
