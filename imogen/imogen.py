@@ -81,8 +81,10 @@ QueueExpressions = pghelp.PGExpressions(
         errors INTEGER DEFAULT 0);""",
     insert="""INSERT INTO {self.table} (prompt, paid, author, signal_ts, group_id, params, url) VALUES ($1, $2, $3, $4, $5, $6, $7);""",
     length="SELECT count(id) AS len FROM {self.table} WHERE status='pending' OR status='assigned';",
+    paid_length="SELECT count(id) AS len FROM {self.table} WHERE status='pending' OR status='assigned' AND paid=true;",
     list_queue="SELECT prompt FROM {self.table} WHERE status='pending' OR status='assigned' ORDER BY signal_ts ASC",
     react="UPDATE {self.table} SET reaction_map = reaction_map || $2::jsonb WHERE sent_ts=$1;",
+    workers="SELECT count(DISTINCT hostname) WHERE status='pending' OR status='uploading' ;",
 )
 
 openai.api_key = utils.get_secret("OPENAI_API_KEY")
@@ -113,6 +115,7 @@ if not utils.LOCAL:
 redis = aioredis.Redis(
     host="forest-redis.fly.dev", port=10000, password="speak-friend-and-enter"
 )
+start_worker = "kubectl scale statefulsets worker_set --replicas="
 
 status = "gcloud --format json compute instances describe nvidia-gpu-cloud-image-1-vm | jq -r .status"
 start = "gcloud --format json compute instances start nvidia-gpu-cloud-image-1-vm | jq -r .status"
@@ -218,8 +221,11 @@ class Imogen(PayBot):
         # future: instance-groups resize {} --size {}
 
     async def ensure_worker(self) -> None:
-        if get_output(status) == "TERMINATED":
-            await self.admin(await get_output(start))
+        workers = await self.queue.workers()[0][0]
+        paid_queue_size = await self.queue.length()[0][0]
+        if paid_queue_size / workers > 5 and workers < 6:
+            out = await get_output(f"{start_worker}{workers + 1}")
+            await self.admin("starting worker " + out)
 
     async def do_imagine(self, msg: Message) -> str:
         """/imagine [prompt]"""
