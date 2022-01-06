@@ -9,7 +9,7 @@ To get familiarised with deploying and running a forest bot, we've provided a sh
 In this tutorial you will:
 
  * Install Pre-Requisites.
- * Install Signal-CLI and register a Signal account for your bot.
+ * Install signal-cli and register a Signal account for your bot.
  * Deploy the bot!
 
 At the end there's extra information and a guide on how to contribute.
@@ -26,7 +26,7 @@ You will need at least 2 Signal accounts to properly test your bot. A signal acc
 Please refer to the [official Python wiki](https://wiki.python.org/moin/BeginnersGuide/Download)
 for instructions on installing Python 3.9 on your machine. On Debian/Ubuntu based systems you may run:
 
-```
+```bash
 sudo apt update
 sudo apt install python3.9 python3.9-dev python3-pip
 ```
@@ -35,22 +35,22 @@ sudo apt install python3.9 python3.9-dev python3-pip
 
 We use pipenv to handle dependencies, run:
 
-```
+```bash
 python3.9 -m pip install pipenv
 ```
 then to install the prerequisites:  
-```  
+```bash
 pipenv install  
 ```  
 
 </br>
 
-## Signal-Cli ##
+## Signal-cli ##
 
-[Signal-Cli](https://github.com/AsamK/signal-cli) is a command line interface for Signal. Forest bots run with Signal-Cli or [Auxin-cli](https://github.com/mobilecoinofficial/auxin-cli) as the backend. Auxin-cli is beta software, and does not yet allow to register a new phone number, so for this guide we will use Signal-Cli. 
+[Signal-cli](https://github.com/AsamK/signal-cli) is a command line interface for Signal. Forest bots run with signal-cli or [auxin-cli](https://github.com/mobilecoinofficial/auxin-cli) as the backend. Auxin-cli is beta software, and does not yet allow to register a new phone number, so for this guide we will use signal-cli. 
 
-To install or run Signal-Cli you will need Java 17 or greater. Verify that you have it installed by running:
-```
+To install or run signal-cli you will need Java 17. Verify that you have it installed by running:
+```bash
 java --version
 ---
 openjdk 17.0.1 2021-10-19
@@ -59,20 +59,20 @@ OpenJDK 64-Bit Server VM (build 17.0.1+12-Ubuntu-120.04, mixed mode, sharing)
 ```
 
 otherwise install with:
-```
+```bash
 sudo apt install openjdk-17-jre-headless
 ```
 
-You can then install Signal-Cli from a pre-built release or build it from source yourself.  
+You can then install signal-cli from a pre-built release or build it from source yourself.  
 
 <br>
 
-### Download a pre-built Signal-cli release ###
+### Download a pre-built signal-cli release ###
 
-The maintainers of Signal-Cli provide precompiled releases you can download and run immediately.
+The maintainers of signal-cli provide precompiled releases you can download and run immediately.
 
 Download and extract the latest release tarball from https://github.com/AsamK/signal-cli/releases 
-```
+```bash
 wget https://github.com/AsamK/signal-cli/releases/download/v0.10.0/signal-cli-0.10.0.tar.gz
 
 tar -xvf signal-cli-0.10.0.tar.gz
@@ -95,9 +95,9 @@ ln -s ./signal-cli-0.10.0/bin/signal-cli .
 signal-cli 0.10.0
 ```
 
-### Building Signal-Cli from Source ###
+### Building signal-cli from Source ###
 
-You can also build Signal-Cli from source. You can do so by cloning the official repo and running `gradlew installDist`:
+You can also build signal-cli from source. You can do so by cloning the official repo and running `./gradlew installDist`:
 
 ``` bash
 git clone https://github.com/AsamK/signal-cli.git
@@ -114,26 +114,26 @@ Verify the installation succeeded:
 signal-cli 0.10.0
 ```
 
-Finally for ease of use, link the executable to your working directory:
+Finally for ease of use, link the executable to your working directory (change the path depending on where you cloned the repo):
 
 ``` bash
 
-ln -s home/username/signal-cli/build/install/signal-cli/bin/signal-cli .
+ln -s $HOME/signal-cli/build/install/signal-cli/bin/signal-cli .
 
 ./signal-cli --version
 ---
 signal-cli 0.10.0
 ```
 
-For more detailed instructions visit the [Signal-cli repository](https://github.com/AsamK/signal-cli). 
+For more detailed instructions visit the [signal-cli repository](https://github.com/AsamK/signal-cli). 
 
 <br>
 
 ## Registering a Signal Account for your bot
 
-As mentioned above, you will need at least 2 Signal accounts to properly test your bot. A Signal account for the bot to run on and your own signal account to talk to the bot. To set up an additional Signal account for your bot you can use a second phone or a VoIP service such as Google Voice, [Forest Contact](/contact), Twilio, or Teli.net. All you need is a phone number that can receive SMS.
+As mentioned above, you will need at least 2 Signal accounts to properly test your bot. A Signal account for the bot to run on and your own signal account to talk to the bot. To set up an additional Signal account for your bot you can use a second phone or a VoIP service such as Google Voice, [Forest Contact](/contact), or Twilio. All you need is a phone number that can receive SMS.
 
-We've deviced a shortcut to register a Signal data store. Input your phone number with the country code (+1 for the US) and then run these commands to obtain a signal data store in a state folder
+We've deviced a shortcut to register a Signal data store. Input your phone number with the country code (+1 for the US) and then run these commands to obtain a Signal datastore in a data folder
 
 ``` bash
 sudo apt install jq # install jq in case you don't already have it
@@ -158,7 +158,7 @@ export ADMIN=+15551111111 #your personal signal number
 ```
 Signal-cli will output a timestamp and you should receive a message on your phone.
 
-If your having trouble registering with this method, there's [a more thorough walkthrough on the Signal-cli wiki](https://github.com/AsamK/signal-cli/wiki/Registration-with-captcha).
+If your having trouble registering with this method, there's [a more thorough walkthrough on the signal-cli wiki](https://github.com/AsamK/signal-cli/wiki/Registration-with-captcha).
 
 ## Running Hellobot ##
 
@@ -174,7 +174,7 @@ BOT_NUMBER=+15551234567
 NO_DOWNLOAD=1
 NO_MEMFS=1
 ROOT_DIR=.
-SIGNAL=signal
+SIGNAL=signal-cli
 ```
 
 Finally you can run hellobot with
@@ -199,10 +199,10 @@ Now you can text your bot "/hello" and it should reply with "hello, world".
 
 ### Default forest commands ###
 
-Every forest bot comes with some pre-packaged commands. You can test these with your hellobot. Try sending it "/printerfact" to learn a real fact about printers. `/help` will display all the available commands for any given bot. And `/help $command` will explain what the command does. The default commands are.
+Every forest bot comes with some pre-packaged commands. You can test these with your hellobot. Try sending it "/printerfact" to learn a real fact about printers. `/help` will display all the available commands for any given bot. `/help [command]` will explain what the command does. The default commands are.
 
 /help : prints available commands and information about a given command
-/ping : has the bot reply with pong
+/ping : replies with pong
 /printerfact : prints a fact about printers
 
 ### Write your own bot! ###
@@ -217,13 +217,13 @@ And with that you've deployed your first forest bot. Congratulations!
 
 ## Next Steps and Further Information ##
 
-This is just the beginning. The forest framework provides a lot more functionality, and there are a couple more complex bots in the repo as well. One of the main functionalities of forest bots is that it's easy to enable Signal Payments for them so that your users can pay your bot in $mob. This allows your bot to collect donations or sell content. To learn about the payment functionalities, and build your first payments-enabled forest bot, check out [/echopay](/echopay).
+This is just the beginning. The forest framework provides a lot more functionality, and there are a couple more complex bots in the repo as well. One of the main functionalities of forest bots is that it's easy to enable Signal Payments for them so that your users can pay your bot in $MOB. This allows your bot to collect donations or sell content. To learn about the payment functionalities, and build your first payments-enabled forest bot, check out [/echopay](/echopay).
 
 ### Storing your Signal keys
 
 Forest provides a helper program to upload your data directory to a Postgres database. Once you have provisioned a database (e.g. via <http://supabase.com> or <https://fly.io/docs/reference/postgres>), add this line to your dev_secrets file.
 
-```
+```bash
 DATABASE_URL=postgres://<your database url>
 ```
 
@@ -245,7 +245,7 @@ These are the environment variables and flags that the bots read to work. Not al
 - `CLIENTCRT`: client certificate to connect to ssl-enabled full-service.
 - `ROOTCRT`: certificate to validate full-service.
 - `MNEMONIC`: account to import for full-service. Not Secure.
-- `SIGNAL`: which signal client to use. can be 'signal' for signal-cli or 'auxin' for auxin-cli.
+- `SIGNAL`: which signal client to use. can be 'signal-cli' for signal-cli or 'auxin' for auxin-cli.
 - `ROOT_DIR`: specify the directory where the data file is stored, as well as where the signal-cli executable is.
 - `SIGNAL_CLI_PATH`: specify where the signal-cli executable is if it is not in ROOT_DIR.
 - `LOGLEVEL`: what log level to use for console logs (DEBUG, INFO, WARNING, ERROR).
