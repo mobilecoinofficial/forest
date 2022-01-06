@@ -368,6 +368,27 @@ class Imogen(PayBot):
         )
         return response["choices"][0]["text"].strip()
 
+    @hide
+    async def do_spitball(self, msg: Message) -> str:
+        prompt = (
+            "text prompts for a neural network that are aiming to be artistic, "
+            'short descriptive phrases of bizarre, otherworldly scenes: "'
+        )
+        completion = openai.Completion.create(  # type: ignore
+            engine="davinci",
+            prompt=prompt,
+            temperature=0.9,
+            max_tokens=140,
+            top_p=1,
+            frequency_penalty=0.0,
+            presence_penalty=0.6,
+            stop=['"', "\n"],
+        )
+        prompt = completion["choices"][0]["text"].strip()
+        msg.text = prompt
+        resp = await self.do_imagine(msg)
+        return resp.replace("you are", f'"{prompt}" is')
+
     @requires_admin
     async def do_gpt(self, msg: Message) -> str:
         response = openai.Completion.create(  # type: ignore
