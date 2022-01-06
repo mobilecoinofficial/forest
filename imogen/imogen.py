@@ -97,15 +97,14 @@ async def get_output(cmd: str) -> str:
 
 
 if not utils.LOCAL:
-    gcp_cred = utils.get_secret("GCP_CREDENTIALS")
-    if gcp_cred:
-        open("gcp-key-imogen.json", "w").write(base64.b64decode(gcp_cred).decode())
-        # get_output("gcloud auth activate-service-account --key-file gcp-key-imogen.json")
-        # get_output("gcloud config set project sublime-coast-306000")
+    kube_cred = utils.get_secret("KUBE_CREDENTIALS")
+    if kube_cred:
+        Path("/root/.kube").mkdir(exist_ok=True, parents=True)
+        open("/root/.kube/config", "w").write(base64.b64decode(kube_cred).decode())
     else:
-        logging.info("couldn't find gcp creds")
-    ssh_key = utils.get_secret("SSH_KEY")
-    open("id_rsa", "w").write(base64.b64decode(ssh_key).decode())
+        logging.info("couldn't find kube creds")
+    # ssh_key = utils.get_secret("SSH_KEY")
+    # open("id_rsa", "w").write(base64.b64decode(ssh_key).decode())
 
 # url = "redis://:speak-friend-and-enter@forest-redis.fly.dev:10000" or utils.get_secret("FLY_REDIS_CACHE_URL")
 # password, rest = url.removeprefix("redis://:").split("@")
@@ -221,11 +220,12 @@ class Imogen(PayBot):
         # future: instance-groups resize {} --size {}
 
     async def ensure_worker(self) -> None:
-        workers = await self.queue.workers()[0][0]
-        paid_queue_size = await self.queue.length()[0][0]
-        if paid_queue_size / workers > 5 and workers < 6:
-            out = await get_output(f"{start_worker}{workers + 1}")
-            await self.admin("starting worker " + out)
+        return
+        # workers = await self.queue.workers()[0][0]
+        # paid_queue_size = await self.queue.length()[0][0]
+        # if paid_queue_size / workers > 5 and workers < 6:
+        #     out = await get_output(f"{start_worker}{workers + 1}")
+        #     await self.admin("starting worker " + out)
 
     async def do_imagine(self, msg: Message) -> str:
         """/imagine [prompt]"""
