@@ -27,18 +27,27 @@ class Message:
     quoted_text: str
     source: str
     payment: dict
+    arg1: Optional[str]
+    arg2: Optional[str]
+    arg3: Optional[str]
 
     def __init__(self, blob: dict) -> None:
         self.blob = blob
         # parsing
         self.command: Optional[str] = None
         self.tokens: Optional[list[str]] = None
-        if self.text and self.text.startswith("/"):
-            command, *self.tokens = shlex.split(self.text)
-            self.command = command[1:]  # remove /
-            self.arg1 = self.tokens[0] if self.tokens else None
+        if not self.text:
+            return
+        if self.text.startswith("/"):
+            try:
+                command, *self.tokens = shlex.split(self.text)
+            except ValueError:
+                command, *self.tokens = self.text.split(" ")
+            self.command = command[1:].lower()  # remove /
+            if self.tokens:
+                self.arg1, self.arg2, self.arg3, *_ = self.tokens + [""] * 3
             self.text = " ".join(self.tokens)
-        elif self.text and "help" in self.text.lower():
+        elif "help" in self.text.lower() and "Documented" not in self.text:
             self.command = "help"
 
     def to_dict(self) -> dict:

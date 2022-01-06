@@ -1,3 +1,6 @@
+# these are the packages necessary to typecheck the entire repo
+# superset of all the others ones. 
+
 [[source]]
 url = "https://pypi.org/simple"
 verify_ssl = true
@@ -6,13 +9,23 @@ name = "pypi"
 [packages]
 aioprocessing = "*"
 asyncpg = "*"
-base58 = "*"
 phonenumbers = "*"
 termcolor = "*"
+aioredis = "*"
+base58 = "*"
+openai = "*"
 prometheus_async = "*"
 prometheus_client = "*"
+black = "*"
+mypy = "*"
+pylint = "*"
+types-termcolor = "*"
+types-protobuf = "*"
 pyqrcode = "*"
-pypng = "*"
+
+[packages.aiohttp]
+extras = [ "speedups",]
+version = "==3.8.1"
 
 [requires]
 python_version = "3.9"
@@ -21,12 +34,3 @@ python_version = "3.9"
 allow_prereleases = true
 
 [dev-packages]
-black = "*"
-mypy = "*"
-pylint = "*"
-types-termcolor = "*"
-types-protobuf = "*"
-
-[packages.aiohttp]
-extras = [ "speedups",]
-version = "==3.8.1"
