@@ -1,5 +1,8 @@
 __pycache__
-dev_secrets
+*secrets
+avatars
+signal-cli*
+auxin-cli
 data
 *log
 .idea
