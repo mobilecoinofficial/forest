@@ -11,20 +11,12 @@ phonenumbers = "*"
 termcolor = "*"
 prometheus_async = "*"
 prometheus_client = "*"
-mobilecoin = "*"
 
 [requires]
 python_version = "3.9"
 
 [pipenv]
 allow_prereleases = true
-
-[dev-packages]
-black = "*"
-mypy = "*"
-pylint = "*"
-types-termcolor = "*"
-types-protobuf = "*"
 
 [packages.aiohttp]
 extras = [ "speedups",]
