@@ -311,7 +311,7 @@ class Signal:
 
     async def set_profile_auxin(
         self,
-        given_name: str = "",
+        given_name: Optional[str] = "",
         family_name: Optional[str] = "",
         payment_address: Optional[str] = "",
         profile_path: Optional[str] = None,
@@ -673,7 +673,7 @@ class Bot(Signal):
         t = "Uptime: "
         t += f"{hr}h" if hr else ""
         t += f"{mins}m" if mins  else ""
-        t += f"{sec}s" 
+        t += f"{sec}s"
         return t
 
     @hide
@@ -754,9 +754,9 @@ class PayBot(Bot):
             attachment_info = msg.attachments[0]
             attachment_path = attachment_info.get("fileName")
             timestamp = attachment_info.get("uploadTimestamp")
-            if attachment_path == None:
+            if attachment_path is None:
                 attachment_paths = glob.glob(f"/tmp/unnamed_attachment_{timestamp}.*")
-                if len(attachment_paths):
+                if attachment_paths:
                     user_image = attachment_paths.pop()
             else:
                 user_image = f"/tmp/{attachment_path}"
@@ -924,12 +924,11 @@ async def metrics(request: web.Request) -> web.Response:
 app = web.Application()
 
 
-async def add_tiprat(app: web.Application) -> None:
+async def add_tiprat(_app: web.Application) -> None:
     async def tiprat(request: web.Request) -> web.Response:
         raise web.HTTPFound("https://tiprat.fly.dev", headers=None, reason=None)
 
-    app.add_routes([web.route("*", "/{tail:.*}", tiprat)])
-
+    _app.add_routes([web.route("*", "/{tail:.*}", tiprat)])
 
 
 app.add_routes(
@@ -942,7 +941,6 @@ app.add_routes(
         web.get("/csv_metrics", metrics),
     ]
 )
-
 
 # order of operations:
 # 1. start memfs
