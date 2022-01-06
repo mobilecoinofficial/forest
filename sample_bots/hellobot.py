@@ -6,7 +6,7 @@ from forest.core import Bot, Message, run_bot
 
 
 class HelloBot(Bot):
-    async def do_hello(self, message: Message) -> str:
+    async def do_hello(self, _: Message) -> str:
         return "Hello, world!"
 
 

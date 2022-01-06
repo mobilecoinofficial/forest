@@ -2,7 +2,7 @@
 # Copyright (c) 2021 MobileCoin Inc.
 # Copyright (c) 2021 The Forest Team
 
-from forest.core import Bot, Message, app, run_bot
+from forest.core import Bot, Message, run_bot
 
 
 class TemplateBot(Bot):
@@ -19,6 +19,12 @@ class TemplateBot(Bot):
 
         """
         return "Hello, world!"
+
+    async def do_echo(self, message: Message) -> str:
+        """
+        Repeats what you said. Type /echo foo and the bot will say "foo".
+        """
+        return message.text
 
 
 if __name__ == "__main__":
