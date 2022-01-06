@@ -112,9 +112,11 @@ class Signal:
                 utils.get_secret("SIGNAL_CLI_PATH")
                 or f"{utils.ROOT_DIR}/{'auxin' if utils.AUXIN else 'signal'}-cli"
             )
-            if not utils.AUXIN:
+            if utils.AUXIN:
+                path += " --download-path /tmp"
+            else:
                 path += " --trust-new-identities always"
-            command = f"{path} --config {utils.ROOT_DIR} --download-path /tmp --user {self.bot_number} jsonRpc".split()
+            command = f"{path} --config {utils.ROOT_DIR} --user {self.bot_number} jsonRpc".split()
             logging.info(command)
             proc_launch_time = time.time()
             self.proc = await asyncio.create_subprocess_exec(
