@@ -5,11 +5,11 @@ import logging
 from functools import wraps
 from typing import Callable, Union, cast
 import phonenumbers as pn
-from aiohttp import web
 import teli
+from aiohttp import web
+from forest_tables import GroupRoutingManager, PaymentsManager, RoutingManager
 from forest import utils
 from forest.core import Message, PayBot, Response, app, requires_admin
-from forest_tables import GroupRoutingManager, PaymentsManager, RoutingManager
 
 
 def takes_number(command: Callable) -> Callable:
