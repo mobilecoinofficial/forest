@@ -28,8 +28,8 @@ jobs:
         run: pipenv run black . --check
         if: always()
       - name: Mypy
-        run: pipenv run mypy other_bots mc_util forest mobfriend contact imogen
+        run: pipenv run mypy sample_bots mc_util forest mobfriend contact imogen
         if: always()
       - name: Pylint
-        run: pipenv run pylint other_bots mc_util forest mobfriend/mobfriend.py contact imogen/imogen.py
+        run: pipenv run pylint sample_bots mc_util forest mobfriend/mobfriend.py contact imogen/imogen.py
         if: always()
