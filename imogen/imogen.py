@@ -99,26 +99,18 @@ async def get_output(cmd: str) -> str:
 if not utils.LOCAL:
     kube_cred = utils.get_secret("KUBE_CREDENTIALS")
     if kube_cred:
+        logging.info("kube creds")
         Path("/root/.kube").mkdir(exist_ok=True, parents=True)
         open("/root/.kube/config", "w").write(base64.b64decode(kube_cred).decode())
     else:
         logging.info("couldn't find kube creds")
-    # ssh_key = utils.get_secret("SSH_KEY")
-    # open("id_rsa", "w").write(base64.b64decode(ssh_key).decode())
 
-# url = "redis://:speak-friend-and-enter@forest-redis.fly.dev:10000" or utils.get_secret("FLY_REDIS_CACHE_URL")
-# password, rest = url.removeprefix("redis://:").split("@")
-# host, port = rest.split(":")
-# redis = aioredis.Redis(host=host, port=int(port), password=password)
+password, rest = utils.get_secret("REDIS_URL").removeprefix("redis://:").split("@")
+host, port = rest.split(":")
+redis = aioredis.Redis(host=host, port=int(port), password=password)
 
-redis = aioredis.Redis(
-    host="forest-redis.fly.dev", port=10000, password="speak-friend-and-enter"
-)
-start_worker = "kubectl create -f imagegen-job.yaml" # maybe give it a better name
-
-# status = "gcloud --format json compute instances describe nvidia-gpu-cloud-image-1-vm | jq -r .status"
-# start = "gcloud --format json compute instances start nvidia-gpu-cloud-image-1-vm | jq -r .status"
-# systemctl = "yes | gcloud --format json compute ssh start nvidia-gpu-cloud-image-1-vm -- systemctl status imagegen"
+worker_status = "kubectl get pods -o json| jq '.items[] | {(.metadata.name): .status.phase}' | jq -s add"
+podcount = "kubectl get pods --no-headers | wc -l"
 
 
 class Imogen(PayBot):
@@ -206,6 +198,13 @@ class Imogen(PayBot):
         queue_length = (await self.queue.length())[0].get("len")
         return f"queue size: {queue_length}"
 
+    async def do_workers(self, _: Message) -> dict[str, str]:
+        "shows worker state"
+        return json.loads(await get_output(worker_status))
+
+    async def do_balance(self, message: Message) -> Response:
+        return str(await self.get_user_balance(message.source))
+
     image_rate_cents = 10
 
     async def insert(
@@ -218,21 +217,24 @@ class Imogen(PayBot):
         # will start instances if paid
         # future: instance-groups resize {} --size {}
 
-    async def ensure_worker(self) -> None:
-        workers = await self.queue.workers()[0][0]
+    async def ensure_worker(self, paid: bool = False) -> None:
+        workers = int(await get_output(podcount))
+        if workers == 0:
+            out = await get_output("kubectl create -f free-imagegen-job.yaml")
+            await self.admin("starting free worker: " + out)
+            return
+        if not paid:
+            return
         paid_queue_size = await self.queue.paid_length()[0][0]
         if paid_queue_size / workers > 5 and workers < 6:
             # specify name and paid/not paid here
-            job_name = f"imagegen-job-{workers + 1}"
-            paid = workers > 0
-            out = await get_output(f"kubectl create -f imagegen-job.yaml")
-            await self.admin("starting worker: " + out)
+            out = await get_output("kubectl create -f paid-imagegen-job.yaml")
+            await self.admin("starting paid worker: " + out)
 
     async def do_imagine(self, msg: Message) -> str:
         """/imagine [prompt]"""
         if not msg.text.strip() and not msg.attachments:
             return "A prompt is required"
-        # await self.mobster.put_usd_tx(msg.sender, self.image_rate_cents, msg.text[:32])
         logging.info(msg.full_text)
         params: JSON = {}
         if msg.attachments:
@@ -249,6 +251,12 @@ class Imogen(PayBot):
             await redis.set(
                 key, open(Path("./attachments") / attachment["id"], "rb").read()
             )
+        paid = await self.get_user_balance(msg.source) > self.image_rate_cents / 100
+        if paid:
+            # maybe set memo to prompt_id in the sql or smth
+            await self.mobster.ledger_manager.put_usd_tx(
+                msg.source, -int(self.image_rate_cents * 100), "image"
+            )
         await self.queue.execute(
             """INSERT INTO prompt_queue (prompt, paid, author, signal_ts, group_id, params, url) VALUES ($1, $2, $3, $4, $5, $6, $7);""",
             msg.text,
@@ -259,7 +267,7 @@ class Imogen(PayBot):
             json.dumps(params),
             utils.URL,
         )
-        await self.ensure_worker()
+        await self.ensure_worker(paid=paid)
         queue_length = (await self.queue.length())[0].get("len")
         return f"you are #{queue_length} in line"
 

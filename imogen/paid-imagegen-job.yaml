@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  generateName: imagegen-job-{}
+  generateName: imagegen-job-paid-
   namespace: tenant-mobilecoin-imogen
 spec:
   ttlSecondsAfterFinished: 60
@@ -10,13 +10,18 @@ spec:
       restartPolicy: Never
       containers:
       - name: imogegen
-        image: technillogue/imogen # technillogue/imagegen
+        image: technillogue/imagegen
         resources:
           limits:
             cpu: 3
             memory: 6Gi #idk if it needs this much
             nvidia.com/gpu: 1
         env:
+          - name: REDIS_URL
+            valueFrom:
+              secretKeyRef:
+                name: dev-secrets
+                key: REDIS_URL
           - name: DATABASE_URL
             valueFrom:
               secretKeyRef:
@@ -27,12 +32,12 @@ spec:
               secretKeyRef:
                 name: dev-secrets
                 key: SUPABASE_API_KEY
-          - name: PAID
-            value: {}
-		  - name: EXIT # exit when fetching prompt fails on queue empty
-		    value: 1
-		  - name: SCALE_IN # exit after finishing a prompt if queue low
-			value: 1
+          - name: EXIT # exit when fetching prompt fails on queue empty
+            value: "true"
+          - name: SCALE_IN # exit after finishing a prompt if queue low
+            value: "true"
+          - name: PAID # only process paid prompts
+            value: "true"
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:

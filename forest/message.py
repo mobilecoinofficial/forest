@@ -28,6 +28,8 @@ class Message:
     source: str
     payment: dict
     reactions: dict[str, str]
+    # reaction: Optional[Reaction]
+    # quote: Optional[Quote]
 
     def __init__(self, blob: dict) -> None:
         self.blob = blob
@@ -135,6 +137,13 @@ class Reaction:
         self.author = reaction["targetAuthorNumber"]
         self.ts = reaction["targetSentTimestamp"]
 
+class Quote:
+    def __init__(self, quote: dict) -> None:
+        assert quote
+        # {"id":1641591686224,"author":"+***REMOVED***","authorNumber":"+***REMOVED***","authorUuid":"412e180d-c500-4c60-b370-14f6693d8ea7","text":"hi","attachments":[]}
+        self.ts = quote["id"]
+        self.author = quote["authorNumber"]
+        self.text = quote["text"]
 
 class StdioMessage(Message):
     """Represents a Message received from signal-cli, optionally containing a command with arguments."""
@@ -158,6 +167,10 @@ class StdioMessage(Message):
         ) or result.get("groupId")
         self.quoted_text = msg.get("quote", {}).get("text")
         self.payment = msg.get("payment")
+        try:
+            self.quote: Optional[Quote] = Quote(msg.get("quote"))
+        except (AssertionError, KeyError):
+            self.quote = None
         try:
             self.reaction: Optional[Reaction] = Reaction(msg.get("reaction"))
         except (AssertionError, KeyError):
