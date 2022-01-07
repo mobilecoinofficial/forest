@@ -115,7 +115,7 @@ class Signal:
             )
             if not utils.AUXIN:
                 path += " --trust-new-identities always"
-                path += " --verbose"
+                # path += " --verbose"
             command = f"{path} --config {utils.ROOT_DIR} --user {self.bot_number} jsonRpc".split()
             logging.info(command)
             proc_launch_time = time.time()
@@ -762,7 +762,7 @@ class PayBot(Bot):
                 user_image = f"/tmp/{attachment_path}"
         if user_image or (msg.tokens and len(msg.tokens) > 0):
             await self.set_profile_auxin(
-                given_name=msg.arg1, # type: ignore
+                given_name=msg.arg1, 
                 family_name=msg.arg2,
                 payment_address=msg.arg3,
                 profile_path=user_image,
