@@ -11,6 +11,7 @@ phonenumbers = "*"
 termcolor = "*"
 prometheus_async = "*"
 prometheus_client = "*"
+mobilecoin = "*"
 
 [requires]
 python_version = "3.9"

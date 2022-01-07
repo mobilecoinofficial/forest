@@ -34,3 +34,9 @@ python_version = "3.9"
 allow_prereleases = true
 
 [dev-packages]
+
+[packages.zbar-py]
+git = "https://github.com/zplab/zbar-py"
+
+[packages.amzqr]
+git = "https://github.com/x-hw/amazing-qr"
