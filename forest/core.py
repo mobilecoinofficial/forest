@@ -291,18 +291,15 @@ class Signal:
         family_name: str = "",
         mobilecoin_address: str = "",
         about="",
-        about_emoji: str = "",
-        avatar: list = "",
+        avatar: str = "",
     ) -> str:
         params = dict(name=dict(givenName=given_name, familyName=family_name))
         if mobilecoin_address:
-            params["mobilecoin_address"] = mobilecoin_address
+            params["mobilecoinAddress"] = mobilecoin_address
         if about:
             params["about"] = about
-        if about_emoji:
-            params["about_emoji"] = about_emoji
         if avatar:
-            params["avatar"] = avatar
+            params["avatarFile"] = avatar
         future_key = f"setProfile-{int(time.time()*1000)}"
         await self.auxincli_input_queue.put(rpc("setProfile", params, future_key))
         return future_key
@@ -541,7 +538,9 @@ class Bot(Signal):
         Overwrite this to add your own non-command logic,
         but call super().handle_message(message) at the end"""
         if message.command:
+            logging.info(f"{message.command} being attempted")
             if hasattr(self, "do_" + message.command):
+                logging.info(f"{message.command} exists, calling")
                 return await getattr(self, "do_" + message.command)(message)
             suggest_help = " Try /help." if hasattr(self, "do_help") else ""
             return f"Sorry! Command {message.command} not recognized!" + suggest_help

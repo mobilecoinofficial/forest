@@ -1,5 +1,5 @@
 #!/usr/bi:n/python3.9
-# pylint: disable=too-many-branches disable=too-many-return-statements
+# pylint: disable=too-many-branches disable=too-many-return-statements disable=line-too-long
 # pylint: disable=too-many-arguments disable=too-many-nested-blocks disable=unused-argument
 """Executable file which starts up a bot which does mobilecoin airdrops"""
 import logging
@@ -25,10 +25,13 @@ AirdropPGExpressions = PGExpressions(
             created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL, \
             updated_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL, \
             drop_type text NOT NULL, start_block integer NOT NULL, data jsonb );",
+    initialize_defaults="INSERT INTO airdrops (drop_id, start_block, drop_type, data \
+            VALUES ('no_airdrop', 0, 'none', '{{\\\"tx_list\\\":[]}}') ON \
+            CONFLICT DO NOTHING;",
     create_simple_airdrop="INSERT INTO airdrops (drop_id, start_block, drop_type, data) \
             VALUES ($1, $2, $3, '{{\\\"tx_list\\\":[]}}');",
     sd_add_tx="UPDATE airdrops SET data = jsonb_set(data,'{{\\\"tx_list\\\", \
-            9999999}}', $2, TRUE) WHERE drop_id = $1 ;",
+            99999999}}', $2, TRUE) WHERE drop_id = $1 ;",
     sd_get_unpaid_entrants="SELECT username, wallet_address, tx_block, bot_number \
             FROM airdrops,jsonb_to_recordset(airdrops.data->'tx_list')  AS (username text, \
             wallet_address text, tx_block integer, tx_purpose text, bot_number text) \
@@ -123,7 +126,7 @@ class Airdrop:
     """
     Base aidrop configuration type
     """
-
+    name: str = "no_airdrop"
     # pylint: disable=R0201
     def is_configured_correctly(self) -> bool:
         """
@@ -139,7 +142,7 @@ class SimpleAirdrop(Airdrop):  # pylint: disable=too-many-instance-attributes
     amount to each participant
     """
 
-    name: str = "simple_airdrop_setup"
+    name: str = "no_airdrop"
     entry_price: float = -1.0
     drop_amount: float = -1.0
     max_entrants: int = -1
@@ -155,11 +158,13 @@ class SimpleAirdrop(Airdrop):  # pylint: disable=too-many-instance-attributes
             welcome="Welcome to aidrop setup, I will now ask series of questions to setup "
             "your drop\nYou may exit this at anytime by typing another /command "
             "or by typing 'exit' at anytime",
-            entry_price="What is the entry price for this airdrop (enter integer or decimal)",
+            entry_price=("What's the entry price for this airdrop? Enter an "
+            "integer or decimal number representing the amount of MoB "
+            "users will need to pay to enter"),
             entry_price_invalid="Entry price must be a positive number, please re-enter",
-            drop_amount="How many mob will be given out to each entrant (enter integer or decimal)",
+            drop_amount="How many MoB will be given out to each entrant when the airdrop starts? (enter integer or decimal)",
             drop_amount_invalid="Drop amount must be a positive number, please re-enter",
-            max_entrants="How many entrants total are allowed? (enter integer or decimal)",
+            max_entrants="How many entrants total are allowed? (enter integer)",
             max_entrants_invalid="Max entrants must be a positive whole number, please re-enter",
             setup_finished="Airdrop setup complete! Type /launch_aidrop to begin the airdrop",
             exit="Exiting setup. You may return to this dialog anytime by typing /setup_airdrop",
@@ -316,6 +321,7 @@ class SimpleAirdrop(Airdrop):  # pylint: disable=too-many-instance-attributes
           str: reply string
         """
         if self.dialog == Dialog.ADMIN_AIRDROP_SETUP:
+            logging.info("airdrop state is %s", repr(self))
             if value == "exit":
                 self.end_dialog()
                 return self.setup_script.get("exit", "Exiting dialog")
@@ -431,7 +437,7 @@ class SimpleAirdrop(Airdrop):  # pylint: disable=too-many-instance-attributes
         """
 
         cost = self.get_total_airdrop_amount(include_fees=True)
-        enough_mob_available = balance < cost
+        enough_mob_available = balance > cost
         configured_correctly = self.is_configured_correctly()
         can_start = enough_mob_available and configured_correctly
         if not enough_mob_available:
@@ -449,10 +455,12 @@ class SimpleAirdrop(Airdrop):  # pylint: disable=too-many-instance-attributes
     def __repr__(self) -> str:
         resp = (
             "\nAidrop Configuration:\n"
+            f"Airdrop Name: {self.name}\n"
             f"Start Block: {self.start_block}\n"
             f"Drop Amount: {self.drop_amount}\n"
             f"Max Entrants: {self.max_entrants}\n"
-            f"Entry Price: {self.entry_price}"
+            f"Entry Price: {self.entry_price}\n"
+            f"Dialog State: {self.dialog}"
         )
         if self.is_configured_correctly():
             total = self.get_total_airdrop_amount()
@@ -496,6 +504,8 @@ class AirDropBot(PayBot):
         """
         Record transaction into database to be recovered in case of bot failure
         """
+
+        logging.debug("recording tx to db")
         state = await self.get_state()
         if States.LIVE in state and isinstance(self.config, SimpleAirdrop):
             data = dict(
@@ -521,6 +531,7 @@ class AirDropBot(PayBot):
         states = set()
         conf = self.config
         num_entrants = len(self.entrant_list)
+        logging.debug("State request started")
         if isinstance(conf, SimpleAirdrop):
             if self.airdrop_finished:
                 states.add(States.AIRDROP_FINISHED)
@@ -553,6 +564,7 @@ class AirDropBot(PayBot):
                     states.add(States.AIRDROP_FULL)
         else:
             states.add(States.NO_AIRDROP)
+        logging.debug("state are %s", states)
         return states
 
     async def distribute_drop(self, num_to_drop: int) -> None:
@@ -611,7 +623,10 @@ class AirDropBot(PayBot):
     async def handle_message(self, message: Message) -> Response:
         logging.info(message)
         if self.is_admin(message) and isinstance(self.config, SimpleAirdrop):
+            if not (message.text or message.command) or message.group:
+                return None
             if self.config.dialog == Dialog.ADMIN_AIRDROP_SETUP:
+                logging.info("In Aidrop Setup")
                 if message.command:
                     self.config.end_dialog()
                     return await super().handle_message(message)
@@ -668,14 +683,16 @@ class AirDropBot(PayBot):
         """
 
         assert msg.payment
-        logging.info(msg.payment)
+        logging.info("attempting to confirm payment %s", msg.payment)
         amount_pmob = await self.mobster.get_receipt_amount_pmob(msg.payment["receipt"])
+        wallet_address = await self.get_address(msg.source)
+        entry_block = await self.mobster.get_current_network_block()
+
         if isinstance(amount_pmob, int):
             amount = amount_pmob - fee
             if reason == "airdrop_entry":
                 amount = amount_pmob + fee
-                wallet_address = await self.get_address(msg.source)
-                entry_block = await self.mobster.get_current_network_block()
+                logging.info("%s entered airdrop, adding to list", msg.source)
                 self.entrant_list[msg.source] = dict(
                     entry_fee=amount_pmob,
                     status="unpaid",
@@ -690,14 +707,31 @@ class AirDropBot(PayBot):
                     msg.source,
                     reason,
                     amount_pmob,
-                    "tx_direction_sent",
+                    "tx_direction_received",
                     wallet_address,
                     entry_block,
                 )
             )
 
+            logging.info(
+                "refunding %s MoB paid to %s reason: %s",
+                float(mc_util.pmob2mob(amount)),
+                msg.source,
+                reason,
+            )
             await self.send_payment(
                 msg.source, amount, "Your payment has been refunded!", reason
+            )
+
+            create_task(
+                self.record_tx(
+                    msg.source,
+                    reason,
+                    amount,
+                    "tx_direction_sent",
+                    wallet_address,
+                    entry_block,
+                )
             )
 
     async def get_entrants_from_full_service(self, start_block: int) -> dict[str, list]:
@@ -788,10 +822,25 @@ class AirDropBot(PayBot):
         if message.text and not (message.group or message.source == self.bot_number):
             if not isinstance(conf, InteractiveAirdrop) or (States.SETUP in state):
                 if self.is_admin(message):
-                    resp = "Hi admin, no aidrop is currently configured\n"
-                    if States.SETUP in state:
-                        resp = "Hi admin, an airdrop configuration is in progress\n"
-                    resp += "type /setup_airdrop to enter airdrop setup\n"
+                    if not isinstance(conf, InteractiveAirdrop):
+                        resp = ("Hi admin, no aidrop is currently configured. Type "
+                        "/setup_airdrop to configure one\n")
+                        resp += "\nOther commands:\n" + self.documented_commands()
+                        return resp
+                    if not conf.is_configured_correctly():
+                        resp = ("Hi admin, an airdrop configuration is in progress. "
+                        "Further configuration is needed, type /setup_airdrop "
+                        "to enter airdrop setup\n")
+                    else:
+                        resp = "Hi admin, airdrop configuration is complete\n"
+                    if States.NEEDS_FUNDING in state:
+                        resp += ("\nThe airdrop wallet does not have enough funds "
+                        f"please add at least {config.get_total_airdrop_amount()} "
+                        "to the wallet before launching the airdrop\n")
+                    if States.READY_TO_LAUNCH in state:
+                        resp = ("Hi admin, airdrop configuration is complete and "
+                        "fully funded, you can launch it by typing /launch_airdrop\n")
+                    resp += "\nYou can check airdrop configuration using /drop_stats\n"
                     resp += "\nOther commands:\n" + self.documented_commands()
                     return resp
                 resp += "Hello! No airdrop is in progress please check back later"
@@ -799,7 +848,7 @@ class AirDropBot(PayBot):
 
             if States.LIVE in state:
                 if self.is_admin(message):
-                    resp = "Hello admin, an airdop is in progress\n"
+                    resp = "Hello admin, an airdop is in progress.\n"
                     if States.NEEDS_FUNDING in state:
                         resp += "but has insufficient funding, PLEASE FUND IMMEDIATELY!"
                         return resp
@@ -865,7 +914,7 @@ class AirDropBot(PayBot):
             prefix = (
                 "Setup is currently in progress\n"
                 f"Setup Complete: {setup_done}\n"
-                f"Fully Funded: {States.NEEDS_FUNDING in state}\n"
+                f"Fully Funded: {not (States.NEEDS_FUNDING in state)}\n"
                 f"Able to Launch: {States.READY_TO_LAUNCH in state}\n"
             )
             return prefix + resp
@@ -920,10 +969,8 @@ class AirDropBot(PayBot):
         if States.NO_AIRDROP in state:
             self.config = SimpleAirdrop()
             assert isinstance(self.config, SimpleAirdrop)
-            resp = self.config.setup_script.get("welcome", "Welcome to airdrop setup")
-            resp += "\n" + self.config.get_next_dialog()
             self.config.enter_dialog(Dialog.ADMIN_AIRDROP_SETUP)
-            return resp
+            return self.config.get_next_dialog()
         if States.LIVE in state:
             return "An airdrop is in progress, cannot setup a new one"
         if States.ERROR in state:

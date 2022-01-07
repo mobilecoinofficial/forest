@@ -1,7 +1,6 @@
 FROM ghcr.io/rust-lang/rust:nightly as builder
 WORKDIR /src
-RUN echo hello
-RUN git clone https://github.com/forestcontact/auxin && cd auxin
+RUN git clone https://github.com/forestcontact/auxin && cd auxin && git pull origin 0.1.7
 WORKDIR /app
 RUN rustup default nightly
 # from https://stackoverflow.com/questions/58473606/cache-rust-dependencies-with-docker-build
