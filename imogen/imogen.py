@@ -114,11 +114,11 @@ if not utils.LOCAL:
 redis = aioredis.Redis(
     host="forest-redis.fly.dev", port=10000, password="speak-friend-and-enter"
 )
-start_worker = "kubectl scale statefulsets worker_set --replicas="
+start_worker = "kubectl create -f imagegen-job.yaml" # maybe give it a better name
 
-status = "gcloud --format json compute instances describe nvidia-gpu-cloud-image-1-vm | jq -r .status"
-start = "gcloud --format json compute instances start nvidia-gpu-cloud-image-1-vm | jq -r .status"
-systemctl = "yes | gcloud --format json compute ssh start nvidia-gpu-cloud-image-1-vm -- systemctl status imagegen"
+# status = "gcloud --format json compute instances describe nvidia-gpu-cloud-image-1-vm | jq -r .status"
+# start = "gcloud --format json compute instances start nvidia-gpu-cloud-image-1-vm | jq -r .status"
+# systemctl = "yes | gcloud --format json compute ssh start nvidia-gpu-cloud-image-1-vm -- systemctl status imagegen"
 
 
 class Imogen(PayBot):
@@ -129,8 +129,7 @@ class Imogen(PayBot):
             query_strings=QueueExpressions,
             database=utils.get_secret("DATABASE_URL"),
         )
-        # get_output("gcloud auth activate-service-account -f gcp-key-imogen.json")
-        await self.admin("starting")
+        await self.admin("forestbot booting")
         await super().start_process()
 
     async def set_profile(self) -> None:
@@ -220,12 +219,14 @@ class Imogen(PayBot):
         # future: instance-groups resize {} --size {}
 
     async def ensure_worker(self) -> None:
-        return
-        # workers = await self.queue.workers()[0][0]
-        # paid_queue_size = await self.queue.length()[0][0]
-        # if paid_queue_size / workers > 5 and workers < 6:
-        #     out = await get_output(f"{start_worker}{workers + 1}")
-        #     await self.admin("starting worker " + out)
+        workers = await self.queue.workers()[0][0]
+        paid_queue_size = await self.queue.paid_length()[0][0]
+        if paid_queue_size / workers > 5 and workers < 6:
+            # specify name and paid/not paid here
+            job_name = f"imagegen-job-{workers + 1}"
+            paid = workers > 0
+            out = await get_output(f"kubectl create -f imagegen-job.yaml")
+            await self.admin("starting worker: " + out)
 
     async def do_imagine(self, msg: Message) -> str:
         """/imagine [prompt]"""

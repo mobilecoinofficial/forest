@@ -1,0 +1,53 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  generateName: imagegen-job-{}
+  namespace: tenant-mobilecoin-imogen
+spec:
+  ttlSecondsAfterFinished: 60
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: imogegen
+        image: technillogue/imogen # technillogue/imagegen
+        resources:
+          limits:
+            cpu: 3
+            memory: 6Gi #idk if it needs this much
+            nvidia.com/gpu: 1
+        env:
+          - name: DATABASE_URL
+            valueFrom:
+              secretKeyRef:
+                name: dev-secrets
+                key: DATABASE_URL
+          - name: SUPABASE_API_KEY
+            valueFrom:
+              secretKeyRef:
+                name: dev-secrets
+                key: SUPABASE_API_KEY
+          - name: PAID
+            value: {}
+		  - name: EXIT # exit when fetching prompt fails on queue empty
+		    value: 1
+		  - name: SCALE_IN # exit after finishing a prompt if queue low
+			value: 1
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: gpu.nvidia.com/class
+                operator: In
+                values:
+                  - Tesla_V100_PCIE
+                  - Tesla_V100_NVLINK
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 20
+              preference:
+                matchExpressions:
+                  - key: gpu.nvidia.com/class
+                    operator: In
+                    values:
+                      - Tesla_V100_PCIE
