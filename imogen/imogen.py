@@ -224,6 +224,7 @@ class Imogen(PayBot):
             await self.admin("starting free worker: " + out)
             return
         if not paid:
+            logging.info("not paid and a worker already exists so not making a new one")
             return
         paid_queue_size = (await self.queue.paid_length())[0][0]
         if paid_queue_size / workers > 5 and workers < 6:
@@ -260,7 +261,7 @@ class Imogen(PayBot):
         await self.queue.execute(
             """INSERT INTO prompt_queue (prompt, paid, author, signal_ts, group_id, params, url) VALUES ($1, $2, $3, $4, $5, $6, $7);""",
             msg.text,
-            False,
+            paid,
             msg.source,
             msg.timestamp,
             msg.group,
@@ -269,7 +270,7 @@ class Imogen(PayBot):
         )
         await self.ensure_worker(paid=paid)
         queue_length = (await self.queue.length())[0].get("len")
-        return f"you are #{queue_length} in line" + " (paid)" if paid else ""
+        return f"you are #{queue_length} in line" + (" (paid)" if paid else "")
 
     def make_prefix(prefix: str) -> Callable:  # type: ignore  # pylint: disable=no-self-argument
         async def wrapped(self: "Imogen", msg: Message) -> str:
