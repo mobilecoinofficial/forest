@@ -255,7 +255,7 @@ class Imogen(PayBot):
         if paid:
             # maybe set memo to prompt_id in the sql or smth
             await self.mobster.ledger_manager.put_usd_tx(
-                msg.source, -self.image_rate_cents / 100, "image"
+                msg.source, -self.image_rate_cents, "image"
             )
         await self.queue.execute(
             """INSERT INTO prompt_queue (prompt, paid, author, signal_ts, group_id, params, url) VALUES ($1, $2, $3, $4, $5, $6, $7);""",
