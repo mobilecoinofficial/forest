@@ -225,7 +225,7 @@ class Imogen(PayBot):
             return
         if not paid:
             return
-        paid_queue_size = await self.queue.paid_length()[0][0]
+        paid_queue_size = (await self.queue.paid_length())[0][0]
         if paid_queue_size / workers > 5 and workers < 6:
             # specify name and paid/not paid here
             out = await get_output("kubectl create -f paid-imagegen-job.yaml")
@@ -239,7 +239,7 @@ class Imogen(PayBot):
         params: JSON = {}
         if msg.attachments:
             attachment = msg.attachments[0]
-            if attachment.get("filename", "").endswith(".txt"):
+            if (attachment.get("filename") or "").endswith(".txt"):
                 return "your prompt is way too long"
             key = (
                 "input/"
@@ -255,7 +255,7 @@ class Imogen(PayBot):
         if paid:
             # maybe set memo to prompt_id in the sql or smth
             await self.mobster.ledger_manager.put_usd_tx(
-                msg.source, -int(self.image_rate_cents * 100), "image"
+                msg.source, -int(self.image_rate_cents / 100), "image"
             )
         await self.queue.execute(
             """INSERT INTO prompt_queue (prompt, paid, author, signal_ts, group_id, params, url) VALUES ($1, $2, $3, $4, $5, $6, $7);""",

@@ -34,6 +34,8 @@ spec:
                 key: SUPABASE_API_KEY
           - name: EXIT # exit when fetching prompt fails on queue empty
             value: "true"
+          - name: FREE # parse nonpaid prompts
+            value: "true"
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:

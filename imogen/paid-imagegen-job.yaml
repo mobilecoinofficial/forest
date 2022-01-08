@@ -36,8 +36,6 @@ spec:
             value: "true"
           - name: SCALE_IN # exit after finishing a prompt if queue low
             value: "true"
-          - name: PAID # only process paid prompts
-            value: "true"
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
