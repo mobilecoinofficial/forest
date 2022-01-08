@@ -200,7 +200,7 @@ class Imogen(PayBot):
 
     async def do_workers(self, _: Message) -> dict[str, str]:
         "shows worker state"
-        return json.loads(await get_output(worker_status))
+        return json.loads(await get_output(worker_status)) or "no workers running"
 
     async def do_balance(self, message: Message) -> Response:
         return str(await self.get_user_balance(message.source))
@@ -255,7 +255,7 @@ class Imogen(PayBot):
         if paid:
             # maybe set memo to prompt_id in the sql or smth
             await self.mobster.ledger_manager.put_usd_tx(
-                msg.source, -int(self.image_rate_cents / 100), "image"
+                msg.source, -self.image_rate_cents / 100, "image"
             )
         await self.queue.execute(
             """INSERT INTO prompt_queue (prompt, paid, author, signal_ts, group_id, params, url) VALUES ($1, $2, $3, $4, $5, $6, $7);""",
@@ -269,7 +269,7 @@ class Imogen(PayBot):
         )
         await self.ensure_worker(paid=paid)
         queue_length = (await self.queue.length())[0].get("len")
-        return f"you are #{queue_length} in line"
+        return f"you are #{queue_length} in line" + " (paid)" if paid else ""
 
     def make_prefix(prefix: str) -> Callable:  # type: ignore  # pylint: disable=no-self-argument
         async def wrapped(self: "Imogen", msg: Message) -> str:
