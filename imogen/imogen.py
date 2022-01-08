@@ -203,7 +203,7 @@ class Imogen(PayBot):
         return json.loads(await get_output(worker_status)) or "no workers running"
 
     async def do_balance(self, message: Message) -> Response:
-        return str(await self.get_user_balance(message.source))
+        return f"${await self.get_user_balance(message.source)}"
 
     image_rate_cents = 10
 
