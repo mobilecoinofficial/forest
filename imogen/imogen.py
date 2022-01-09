@@ -110,7 +110,7 @@ host, port = rest.split(":")
 redis = aioredis.Redis(host=host, port=int(port), password=password)
 
 worker_status = "kubectl get pods -o json| jq '.items[] | {(.metadata.name): .status.phase}' | jq -s add"
-podcount = "kubectl get pods --no-headers | wc -l"
+podcount = "kubectl get pods --field-selector status.phase=Running --no-headers | wc -l"
 
 
 class Imogen(PayBot):
@@ -198,7 +198,7 @@ class Imogen(PayBot):
         queue_length = (await self.queue.length())[0].get("len")
         return f"queue size: {queue_length}"
 
-    async def do_workers(self, _: Message) -> dict[str, str]:
+    async def do_workers(self, _: Message) -> Response:
         "shows worker state"
         return json.loads(await get_output(worker_status)) or "no workers running"
 
@@ -217,20 +217,23 @@ class Imogen(PayBot):
         # will start instances if paid
         # future: instance-groups resize {} --size {}
 
-    async def ensure_worker(self, paid: bool = False) -> None:
+    async def ensure_worker(self, paid: bool = False) -> bool:
         workers = int(await get_output(podcount))
         if workers == 0:
             out = await get_output("kubectl create -f free-imagegen-job.yaml")
             await self.admin("starting free worker: " + out)
-            return
+            return True
         if not paid:
             logging.info("not paid and a worker already exists so not making a new one")
-            return
+            return False
         paid_queue_size = (await self.queue.paid_length())[0][0]
         if paid_queue_size / workers > 5 and workers < 6:
-            # specify name and paid/not paid here
-            out = await get_output("kubectl create -f paid-imagegen-job.yaml")
+            spec = open("paid-imagegen-job.yaml").read()
+            with_name = spec.replace("generateName: imagegen-job-paid-", f"name: imagegen-job-paid-{workers + 1}")
+            out = await get_output("kubectl create -f -", with_name)
             await self.admin("starting paid worker: " + out)
+            return True
+        return False
 
     async def do_imagine(self, msg: Message) -> str:
         """/imagine [prompt]"""
@@ -268,9 +271,17 @@ class Imogen(PayBot):
             json.dumps(params),
             utils.URL,
         )
-        await self.ensure_worker(paid=paid)
+        worker_created = await self.ensure_worker(paid=paid)
         queue_length = (await self.queue.length())[0].get("len")
-        return f"you are #{queue_length} in line" + (" (paid)" if paid else "")
+        if paid and worker_created:
+            deets = " (paid, started a new worker)"
+        elif paid:
+            deets = " (paid)"
+        elif worker_created:
+            deets = " (started a new worker)"
+        else:
+            deets = ""
+        return f"you are #{queue_length} in line{deets}"
 
     def make_prefix(prefix: str) -> Callable:  # type: ignore  # pylint: disable=no-self-argument
         async def wrapped(self: "Imogen", msg: Message) -> str:
@@ -429,9 +440,11 @@ class Imogen(PayBot):
     async def do_dump_queue(self, _: Message) -> Response:
         raise NotImplementedError
 
-    async def payment_response(self, msg: Message, amount_pmob: int) -> None:
-        del msg, amount_pmob
-        return None
+    async def payment_response(self, msg: Message, amount_pmob: int) -> str:
+        rate = self.image_rate_cents / 100
+        prompts = int(await self.mobster.pmob2usd(amount_pmob) / rate)
+        total = int(await self.get_user_balance(msg.source) / rate)
+        return f"You now have an additional {prompts} priority prompts. Total: {total}"
 
     @hide
     async def do_poke(self, _: Message) -> str:
