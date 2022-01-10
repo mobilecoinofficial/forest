@@ -81,6 +81,12 @@ class MobFriend(PayBot):
         await self.send_message(user_id, text, attachments=[f"/tmp/{save_name}"])
         return save_name
 
+    async def do_clear(self, msg: Message) -> Response:
+        """Clears (if relevant) any saved images."""
+        if msg.source in self.user_images:
+            return f"Will use default instead of {self.user_images.pop(msg.source)} for next QR code."
+        return "No images saved."
+
     async def do_makeqr(self, msg: Message) -> None:
         """
         /makeqr [text]
