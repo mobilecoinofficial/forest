@@ -17,7 +17,6 @@ from amzqr import amzqr
 from scan import scan
 
 import mc_util
-from forest import utils
 from forest.core import Message, PayBot, Response, app, hide, requires_admin
 from mc_util import mob2pmob, pmob2mob
 
