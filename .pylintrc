@@ -12,6 +12,7 @@ disable=
     consider-using-from-import,
     fixme,
     no-self-use,
+    unspecified-encoding,
     # handled by black
     format,
     line-too-long

@@ -76,8 +76,8 @@ class MobFriend(PayBot):
         p = aioprocessing.AioProcess(
             target=amzqr.run, args=(text,), kwargs=default_params
         )
-        p.start()
-        await p.coro_join()
+        p.start()  # pylint: disable=no-member
+        await p.coro_join()  # pylint: disable=no-member
         await self.send_message(user_id, text, attachments=[f"/tmp/{save_name}"])
         return save_name
 
