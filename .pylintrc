@@ -11,6 +11,7 @@ disable=
     consider-using-with,
     consider-using-from-import,
     fixme,
+    no-self-use,
     # handled by black
     format,
     line-too-long
