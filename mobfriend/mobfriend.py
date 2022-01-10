@@ -136,17 +136,6 @@ class MobFriend(PayBot):
             return "Okay, nevermind about that tip."
         return "Couldn't find a tip in process to cancel!"
 
-    @hide
-    @requires_admin
-    async def do_exception(self, _: Message) -> None:
-        raise Exception("You asked for it!")
-
-    @hide
-    @requires_admin
-    async def do_wait(self, _: Message) -> str:
-        await asyncio.sleep(60)
-        return "waited!"
-
     @time(REQUEST_TIME)  # type: ignore
     @hide
     async def do_pay(self, msg: Message) -> Response:
@@ -347,18 +336,6 @@ class MobFriend(PayBot):
             params = dict(zip(fsr_keys, fsr_values))
             return str(await self.mobster.req_(fsr_command, **params))
         return "/fsr [command] ([arg1] [val1]( [arg2] [val2])...)"
-
-    @hide
-    async def do_echo(self, msg: Message) -> Response:
-        """Returns a representation of the input message for debugging parse errors."""
-        return msg.blob
-
-    @hide
-    async def do_printerfact(self, _: Message) -> str:
-        """Learn a fact about something."""
-        async with self.client_session.get(utils.get_secret("FACT_SOURCE")) as resp:
-            fact = await resp.text()
-            return fact.strip()
 
     async def do_claim(self, msg: Message) -> Response:
         """
