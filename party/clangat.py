@@ -40,6 +40,11 @@ class PayBotPro(PayBot):
         self.last_seen[message.source] = message.timestamp / 1000
         return await super().handle_message(message)
 
+    async def do_signalme(self, _: Message) -> Response:
+        """signalme
+        Returns a link to share the bot with friends!"""
+        return f"https://signal.me/#p/{self.bot_number}"
+
     @hide
     @requires_admin
     async def do_exception(self, _: Message) -> None:
