@@ -90,9 +90,9 @@ QueueExpressions = pghelp.PGExpressions(
 openai.api_key = utils.get_secret("OPENAI_API_KEY")
 
 
-async def get_output(cmd: str) -> str:
-    proc = await asyncio.create_subprocess_shell(cmd, stdout=-1, stderr=-1)
-    stdout, stderr = await proc.communicate()
+async def get_output(cmd: str, inp: str = "") -> str:
+    proc = await asyncio.create_subprocess_shell(cmd, stdin=-1, stdout=-1, stderr=-1)
+    stdout, stderr = await proc.communicate(inp.encode())
     return stdout.decode().strip() or stderr.decode().strip()
 
 
@@ -121,7 +121,7 @@ class Imogen(PayBot):
             query_strings=QueueExpressions,
             database=utils.get_secret("DATABASE_URL"),
         )
-        await self.admin("forestbot booting")
+        await self.admin("\N{deciduous tree}\N{robot face}\N{hiking boot}")
         await super().start_process()
 
     async def set_profile(self) -> None:
@@ -221,7 +221,7 @@ class Imogen(PayBot):
         workers = int(await get_output(podcount))
         if workers == 0:
             out = await get_output("kubectl create -f free-imagegen-job.yaml")
-            await self.admin("starting free worker: " + out)
+            await self.admin("\N{rocket}\N{squared free}: " + out)
             return True
         if not paid:
             logging.info("not paid and a worker already exists so not making a new one")
@@ -229,9 +229,12 @@ class Imogen(PayBot):
         paid_queue_size = (await self.queue.paid_length())[0][0]
         if paid_queue_size / workers > 5 and workers < 6:
             spec = open("paid-imagegen-job.yaml").read()
-            with_name = spec.replace("generateName: imagegen-job-paid-", f"name: imagegen-job-paid-{workers + 1}")
+            with_name = spec.replace(
+                "generateName: imagegen-job-paid-",
+                f"name: imagegen-job-paid-{workers + 1}",
+            )
             out = await get_output("kubectl create -f -", with_name)
-            await self.admin("starting paid worker: " + out)
+            await self.admin("\N{rocket}\N{money with wings}: " + out)
             return True
         return False
 
