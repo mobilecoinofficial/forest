@@ -12,14 +12,17 @@ from typing import Optional
 from forest.utils import logging
 
 
-def unicode_character_name(i):
+def unicode_character_name(i: int) -> str:
     try:
         return unicodedata.name(chr(i))
     except ValueError:
-        return None
+        return ""
 
 
-unicode_quotes = [chr(i) for i in range(0, 0x10fff) if "QUOTATION MARK" in unicode_character_name(i)]
+unicode_quotes = [
+    chr(i) for i in range(0, 0x10FFF) if "QUOTATION MARK" in unicode_character_name(i)
+]
+
 
 class Message:
     """
@@ -62,7 +65,7 @@ class Message:
                 command, *self.tokens = shlex.split(clean_quote_text)
         except ValueError:
             command, *self.tokens = self.text.split(" ")
-        self.command = command.removeprefix("/").lower() 
+        self.command = command.removeprefix("/").lower()
         self.arg0 = command
         if self.tokens:
             self.arg1, self.arg2, self.arg3, *_ = self.tokens + [""] * 3
