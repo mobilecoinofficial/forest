@@ -1,3 +1,6 @@
+# these are the packages necessary to typecheck the entire repo
+# superset of all the others ones. 
+
 [[source]]
 url = "https://pypi.org/simple"
 verify_ssl = true
@@ -6,15 +9,24 @@ name = "pypi"
 [packages]
 aioprocessing = "*"
 asyncpg = "*"
-
-aiohttp = {extras = [ "speedups",], version = "*"}
+phonenumbers = "*"
+termcolor = "*"
+aioredis = "*"
 base58 = "*"
-phonenumberslite = "*"
+openai = "*"
 prometheus_async = "*"
 prometheus_client = "*"
+black = "*"
+mypy = "*"
+pylint = "*"
 protobuf = "*"
-termcolor = "*"
+types-termcolor = "*"
+types-protobuf = "*"
+pyqrcode = "*"
 
+[packages.aiohttp]
+extras = [ "speedups",]
+version = "==3.8.1"
 
 [requires]
 python_version = "3.9"
@@ -22,16 +34,10 @@ python_version = "3.9"
 [pipenv]
 allow_prereleases = true
 
-
 [dev-packages]
-black = "*"
-mypy = "*"
-pylint = "*"
-types-termcolor = "*"
-types-protobuf = "*"
-isort = "*"
 
-[packages.aiohttp]
-extras = [ "speedups",]
-version = "==3.8.1"
+[packages.zbar-py]
+git = "https://github.com/zplab/zbar-py"
 
+[packages.amzqr]
+git = "https://github.com/x-hw/amazing-qr"
