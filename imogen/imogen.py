@@ -308,15 +308,10 @@ class Imogen(PayBot):
         wrapped.__doc__ = f"/{prefix} <prompt>: imagine it with {prefix} style"
         return wrapped
 
-    do_mythical = make_prefix("mythical")
-    do_festive = make_prefix("festive")
     do_dark_fantasy = make_prefix("dark fantasy")
     do_psychic = make_prefix("psychic")
     do_pastel = make_prefix("pastel")
-    do_hd = make_prefix("hd")
     do_vibrant = make_prefix("vibrant")
-    do_fantasy = make_prefix("fantasy")
-    do_steampunk = make_prefix("steampunk")
     do_ukiyo = make_prefix("ukiyo")
     do_synthwave = make_prefix("synthwave")
     del make_prefix  # shouldn't be used after class definition is over
@@ -395,7 +390,7 @@ class Imogen(PayBot):
             """
         Thank you for collaborating with Imogen, if you'd like to support the project you can send her a tip of any amount with Signal Pay.
 
-        If you get "This person has not activated payments", try messagining me with /ping. 
+        If you get "This person has not activated payments", try messaging me with /ping. 
 
         If you have payments activated, simply click on the plus sign and choose payment.
 
