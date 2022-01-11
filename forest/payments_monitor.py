@@ -9,7 +9,7 @@ import logging
 import random
 import ssl
 import time
-from typing import Optional, Union
+from typing import Optional, Union, Any
 
 import aiohttp
 import asyncpg
@@ -23,7 +23,7 @@ if utils.get_secret("USE_TESTNET"):
     ROOTCRT = "TESTNET_" + ROOTCRT
     CLIENTCRT = "TESTNET_" + CLIENTCRT
     FULL_SERVICE_URL = "TESTNET_" + FULL_SERVICE_URL
-    
+
 if not utils.get_secret("ROOTCRT"):
     ssl_context: Optional[ssl.SSLContext] = None
 else:
@@ -244,7 +244,7 @@ class Mobster:
         )["result"]["balance"]["unspent_pmob"]
         return int(value)
 
-    async def get_transactions(self, account_id: str) -> dict[str, dict[str,dict]]:
+    async def get_transactions(self, account_id: str) -> dict[str, dict[str, dict]]:
         return (
             await self.req(
                 {
@@ -254,90 +254,78 @@ class Mobster:
             )
         )["result"]["transaction_log_map"]
 
-    async def build_single_txo_proposal(self, recipient: str, amount: Union[int, str],
-            submit: bool = False, comment: str = "", log: bool = True) -> dict:
-        """
-        Build proposal for single txo to single recipient.
-
-        args:
-          recipient (str): Base58 mobilecoin address of recipient
-          amount (int): Amount in picomob to send to address
-          submit (bool): if true, will submit the proposal immediately
-          comment (str): if proposal is set to submit, this comment will be logged in the wallet account's database
-          log (bool): if proposal is not set to submit, tx_proposal metadatn will be logged
- 
-        returns:
-          dict: Resulting proposal from mobilecoin
-        """
-
-        amount = str(amount)
-
-        method = "build_transaction"
-        if submit:
-            method = "build_and_submit_transaction"
-        account_id = await self.get_account()
-        tx_proposal = dict(
-            method=method,
-            params=dict(
-                account_id=account_id,
-                recipient_public_address=recipient,
-                value_pmob=str(amount),
-            ),
-        )
-        if submit and comment:
-            tx_proposal["params"]["comment"] = comment # type: ignore
-
-        if not submit and log:
-            tx_proposal["params"]["log_tx_proposal"] = log # type: ignore
-
-
-        return await self.req(tx_proposal)
-
-    async def build_multi_txo_proposal(
-            self, txo_proposals: list[list[Union[str, int]]], submit: bool = False,
-            comment: str = "", log: bool = False
-    ) -> dict:
-        """
-        Submit a multiple txo transaction proposal to full-service api. Txos may
-        be sent to a single address or multiple addresses.
-
-        args:
-          txo_proposals (list[tuple[str, int]]): List of (address, picomob) pairs
-          submit (bool): if true, will submit the proposal immediately
-          comment (str): if proposal is set to submit, this comment will be logged in the wallet account's database
-          log (bool): if proposal is not set to submit, tx_proposal metadatn will be logged
-        Returns:
-          dict: result of multi-output proposal
-        """
-        for prop in txo_proposals:
-            prop[1] = str(prop[1])
-
-        method = "build_transaction"
-        if submit:
-            method = "build_and_submit_transaction"
-        account_id = await self.get_account()
-        tx_proposal = dict(
-            method=method,
-            params=dict(
-                account_id=account_id,
-                addresses_and_values=txo_proposals,
-                log_tx_proposal=True,
-            ),
-        )
-
-        if submit and comment:
-            tx_proposal["params"]["comment"] = comment # type: ignore
-
-        if not submit and log:
-            tx_proposal["params"]["log_tx_proposal"] = log # type: ignore
-
-        return await self.req(tx_proposal)
-
-    async def submit_proposal(self, tx_prop: dict, account_id: str = "",
+    async def build_transaction(
+            self,
+            account_id: str,
+            value_pmob: int = -1,
+            recipient_public_address: str = "",
+            addresses_and_values: Optional[list[tuple[str, int]]] = None,
+            input_txo_ids: Optional[list[str]] = None,
+            submit: bool=False,
+            log: bool =False,
+            fee: int = -1,
+            tombstone_block: int = -1,
+            max_spendable_value: int = -1,
             comment: str = "") -> dict:
         """
+        Build a single_txo or multi_txo transaction. If building a single txo
+        transaction use value_pmob and recipient_public_address args. If
+        building a multi-txo transaction, use the addresses_and_values arg to
+        specify a list of [mobilecoin address, amount] pairs.
+
+        args:
+          account_id (str): account_id of the sending account
+          value_pmob (int): txo value if building a single_txo transaction in picomob
+          recipient_public_address (str): address of recipient for single txo transaction
+          addresses_and_values (list[tuple[str,int]]): List of pairs of addresses and 
+          picomob 
+          input_txo_ids: list[str]: list of input_txo_ids to use to build the
+          txos. Input txos must be greater than or equal to value being sent in
+          the transaction
+          submit (bool): if true, transaction will be submitted to mobilecoin
+          blockchain
+          fee (int): fee to send
+          tombstone_block (int): block in which transaction will become invalid
+          if not confirmed
+          log (bool): Log tx proposal in wallet database
+          max_spendable_value (int): max value allowed to spend
+          comment (str): comment to annotate transaction purpose to be stored
+          in wallet db
+        """
+        params: dict[str, Any] = {}
+        
+        method = "build_transaction"
+        if submit:
+            method = "build_and_submit_transaction"
+        if value_pmob > 0:
+            params["value_pmob"] = value_pmob
+        if recipient_public_address:
+            params["recipient_public_address"] = recipient_public_address
+        if addresses_and_values:
+            params["addresses_and_values"] = addresses_and_values
+        if input_txo_ids:
+            params["input_txo_ids"] = input_txo_ids
+        if submit and comment:
+            params["comment"] = comment
+        if not submit and log:
+            params["log_tx_proposal"] = log
+        if fee > 0:
+            params["fee"] = fee
+        if tombstone_block > 0:
+            params["tombstone_block"]  = tombstone_block
+        if max_spendable_value >0:
+            params["max_spendable_value"] = max_spendable_value
+        if comment:
+            params["comment"] = comment
+        
+        return await self.req({"method": method, "params":params})
+
+    async def submit_transaction(
+        self, tx_proposal: dict, account_id: str = "", comment: str = ""
+    ) -> dict:
+        """
         Submit an already built txo. Meant to be used with the output of the
-        "build_transaction" method of full service. Do not attempt to build 
+        "build_transaction" method of full service. Do not attempt to build
         your own txo proposal.
 
         args:
@@ -348,13 +336,13 @@ class Mobster:
         Return:
           dict: proposal submission result
         """
-        request = dict(method="submit_transaction", params=dict(tx_prop=tx_prop))
+        request = dict(method="submit_transaction", params=dict(tx_proposal=tx_proposal))
 
         if account_id:
-            request["params"]["account_id"] = account_id # type: ignore
+            request["params"]["account_id"] = account_id  # type: ignore
 
         if comment:
-            request["params"]["comment"] = comment # type: ignore
+            request["params"]["comment"] = comment  # type: ignore
 
         return await self.req(request)
 
@@ -367,7 +355,8 @@ class Mobster:
         """
 
         request = dict(method="get_all_transaction_logs_ordered_by_block")
-        return await self.req(request)
+        status = await self.req(request)
+        return status.get("result", {})
 
     async def get_block(self, block: int) -> dict:
         """
@@ -394,7 +383,7 @@ class Mobster:
         request = dict(method="get_wallet_status")
         return await self.req(request)
 
-    async def get_wallet_balance(self, convert_to_mob: bool=True) -> float:
+    async def get_wallet_balance(self, convert_to_mob: bool = True) -> float:
         """
         Gets current wallet balance, defaults to converting to mob
 
@@ -406,7 +395,11 @@ class Mobster:
         """
 
         data = await self.get_wallet_status()
-        wallet_balance = data.get("result",{}).get("wallet_status",{}).get("total_unspent_pmob", -1)
+        wallet_balance = (
+            data.get("result", {})
+            .get("wallet_status", {})
+            .get("total_unspent_pmob", -1)
+        )
         try:
             wallet_balance = float(wallet_balance)
             if convert_to_mob:
@@ -415,7 +408,7 @@ class Mobster:
             logging.warning("Could not get wallet balance, returning -1.0")
             wallet_balance = -1.0
         return wallet_balance
-    
+
     async def get_current_network_block(self) -> int:
         """
         Gets current network block, returns -1 if error
@@ -425,14 +418,17 @@ class Mobster:
         """
 
         data = await self.get_wallet_status()
-        start_block = data.get("result",{}).get("wallet_status",{}).get("network_block_index", -1)
+        start_block = (
+            data.get("result", {})
+            .get("wallet_status", {})
+            .get("network_block_index", -1)
+        )
         try:
             start_block = int(start_block)
         except:
             logging.warning("Could not get starting block, returning -1")
             start_block = -1
         return start_block
-
 
     async def get_pending_transactions(self, from_block: int = 2) -> list[dict]:
         """
@@ -459,6 +455,77 @@ class Mobster:
 
         return pending_transactions
 
+    async def get_all_txos_for_account(self, account_id: str) -> dict:
+        """
+        Get all txos for account
+
+        args:
+          account_id (str): mobilecoin account id
+
+        Returns:
+          dict: matching transactions
+        """
+
+        txos = await self.req_("get_all_txos_for_account", account_id=account_id)
+        return txos.get("result", {}).get("txo_map", {})
+
+    async def filter_utxos(
+        self,
+        account_id: str,
+        txo_status: str = "txo_status_unspent",
+        max_val: Union[int, float] = 0,
+        min_val: int = 0,
+    ) -> list[tuple[str,int]]:
+        """
+        Get all txos matching specific criterion
+
+        args:
+          txo_status (str): status of the txo, specify "txo_status_unspent" to
+          get unpsent txos or "txo_status_spent" to get spent txos
+          max_val (int): maximum value in pmob
+          min_val (int): minimum value in pmob
+        """
+        if max_val <= 0:
+            max_val = float("inf")
+
+        txos = await self.get_all_txos_for_account(account_id)
+        utxos = [
+            (k, int(v.get("value_pmob")))
+            for k, v in txos.items()
+            if v.get("account_status_map", {}).get(account_id).get("txo_status")
+            == txo_status
+            and (max_val > int(v.get("value_pmob")) > min_val)
+        ]
+        return sorted(utxos, key = lambda txo_value: txo_value[1], reverse=True)
+
+    async def build_split_txo_transaction(self, txo_id: str, output_values:
+            list[int], **params: str) -> dict:
+        """
+        Helper method that splits an existing txo in the account into multiple 
+        txos sent to the account. Primary use-case is ensuring enough txos 
+        exist to make multiple transactions in a short timeframe.
+
+        args:
+          txo_id (str): id of the txo desired to be split
+          output_values (list[int]): list o
+        """
+        values = [str(value) for value in output_values]
+        data = dict(method = "build_and_split_txo_transaction", params = dict(
+            txo_id=txo_id, output_values=values, **params))
+        result = await self.req(data)
+        return result.get("result", {})
+
+    async def preallocate_txos(self, account_id: str, tx_list: list[int]) -> None:
+        """
+        Pre-allocate a list of transactions.
+        """
+        unspent_utxos = await self.filter_utxos(account_id)
+        tx_list = sorted(tx_list, reverse=True)
+        total_requested = sum(tx_list)
+        total_available = sum([txo[1] for txo in unspent_utxos])
+        if total_available < total_requested:
+            raise ValueError("Not enough available in account to allocate txos")
+
     async def create_account(self, name: str) -> dict:
         """
         Create new account in wallet
@@ -469,7 +536,7 @@ class Mobster:
         Returns:
           dict: new account data
         """
-        
+
         request = dict(method="create_account", params=dict(name=name))
         return await self.req(request)
 
