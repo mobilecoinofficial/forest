@@ -110,7 +110,7 @@ host, port = rest.split(":")
 redis = aioredis.Redis(host=host, port=int(port), password=password)
 
 worker_status = "kubectl get pods -o json| jq '.items[] | {(.metadata.name): .status.phase}' | jq -s add"
-podcount = "kubectl get pods --field-selector status.phase=Running --no-headers | wc -l"
+podcount = "kubectl get pods --no-headers | awk '$3 !~ /(Completed|Failed)/ {print $1}' | wc -l"
 
 
 class Imogen(PayBot):
