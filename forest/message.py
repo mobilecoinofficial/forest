@@ -43,7 +43,6 @@ class Message:
     arg2: Optional[str]
     arg3: Optional[str]
 
-                pass
     def __init__(self, blob: dict) -> None:
         self.blob = blob
         # parsing

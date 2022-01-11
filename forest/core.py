@@ -550,8 +550,8 @@ class Bot(Signal):
 
     # imagin, imogen, imagen, image, imagines, imahine, imoge,
     # list_que, status_list; dark, synthwav, synthese, "fantasy,"; bing
-    # could you embedify these instead of recalculating string distance?
-    def match_command(inp: str) -> tuple[float, str]:
+    # could you embedify these instead of recalculating string distance? or cache
+    def match_command(self, inp: str) -> tuple[float, str]:
         return sorted(((jaccard(inp, cmd), cmd) for cmd in self.commands))[-1]
 
     async def handle_message(self, message: Message) -> Response:
@@ -561,10 +561,10 @@ class Bot(Signal):
         if message.arg0:
             if hasattr(self, "do_" + message.arg0):
                 return await getattr(self, "do_" + message.arg0)(message)
-            score, cmd = match(message.arg0)
+            score, cmd = self.match_command(message.arg0)
             if score > 0.5:
                 return await getattr(self, "do_" + cmd)(message)
-            expansions = [cmd for cmd in arg0 if cmd.startswith(message.arg0)]
+            expansions = [cmd for cmd in self.commands if cmd.startswith(message.arg0)]
             if len(expansions) == 1:
                 return await getattr(self, "do_" + expansions[0])(message)
             suggest_help = ' Try "help".' if hasattr(self, "do_help") else ""
