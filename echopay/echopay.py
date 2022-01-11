@@ -8,7 +8,6 @@ from prometheus_client import Summary
 
 from forest.core import Message, PayBot, Response, app
 
-britbot = "+447888866969"
 fee = int(1e12 * 0.0004)
 
 REQUEST_TIME = Summary("request_processing_seconds", "Time spent processing request")
@@ -31,6 +30,8 @@ class AuthorizedPayer(PayBot):
 
     @time(REQUEST_TIME)  # type: ignore
     async def do_pay(self, msg: Message) -> Response:
+
+        
         payment_notif_sent = await self.send_payment(msg.source, int(1e9))
         if payment_notif_sent:
             logging.info(payment_notif_sent)
