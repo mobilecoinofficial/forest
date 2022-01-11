@@ -494,7 +494,7 @@ class Bot(Signal):
             name.removeprefix("do_") for name in dir(self) if name.startswith("do_")
         ]
         self.visible_commands = [
-            name for name in self.commands if not hasattr(getattr(self, name), "hide")
+            name for name in self.commands if not hasattr(getattr(self, f"do_{name}"), "hide")
         ]
         super().__init__(bot_number)
         self.restart_task = asyncio.create_task(
