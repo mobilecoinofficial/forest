@@ -64,6 +64,12 @@ def fmt_ms(ts: int) -> str:
     return datetime.datetime.utcfromtimestamp(ts / 1000).isoformat()
 
 
+def jaccard(s1: str, s2: str) -> float:
+    intersection = len(list(set(s1).intersection(s2)))
+    union = (len(s1) + len(s2)) - intersection
+    return float(intersection) / union
+
+
 class Signal:
     """
     Represents a auxin-cli session.
@@ -471,12 +477,6 @@ def hide(command: Callable) -> Callable:
     return hidden_command
 
 
-# imagin, imogen, imagen, image, imagines, imahine, imoge,
-# list_que, status_list
-# dark, synthwav, synthese, "fantasy,"
-# bing
-
-
 class Bot(Signal):
     """Handles messages and command dispatch, as well as basic commands.
     Must be instantiated within a running async loop.
@@ -488,13 +488,19 @@ class Bot(Signal):
         self.client_session = aiohttp.ClientSession()
         self.mobster = payments_monitor.Mobster()
         self.pongs: dict[str, str] = {}
-        super().__init__(bot_number)
+        self.auxin_roundtrip_latency: list[Datapoint] = []
         self.pending_response_tasks: list[asyncio.Task] = []
+        self.commands = [
+            name.removeprefix("do_") for name in dir(self) if name.startswith("do_")
+        ]
+        self.visible_commands = [
+            name for name in self.commands if not hasattr(getattr(self, name), "hide")
+        ]
+        super().__init__(bot_number)
         self.restart_task = asyncio.create_task(
             self.start_process()
         )  # maybe cancel on sigint?
         self.queue_task = asyncio.create_task(self.handle_messages())
-        self.auxin_roundtrip_latency: list[Datapoint] = []
         if utils.get_secret("MONITOR_WALLET"):
             # currently spams and re-credits the same invoice each reboot
             asyncio.create_task(self.mobster.monitor_wallet())
@@ -542,51 +548,40 @@ class Bot(Signal):
                     f"command: {note}. python delta: {python_delta}s. roundtrip delta: {roundtrip_delta}s",
                 )
 
+    # imagin, imogen, imagen, image, imagines, imahine, imoge,
+    # list_que, status_list; dark, synthwav, synthese, "fantasy,"; bing
+    # could you embedify these instead of recalculating string distance?
+    def match_command(inp: str) -> tuple[float, str]:
+        return sorted(((jaccard(inp, cmd), cmd) for cmd in self.commands))[-1]
+
     async def handle_message(self, message: Message) -> Response:
         """Method dispatch to do_x commands and goodies.
         Overwrite this to add your own non-command logic,
         but call super().handle_message(message) at the end"""
-        # could embedify these instead of recalculating a string distance
-        commands = [
-            name.removeprefix("do_")
-            for name in dir(self)
-            if name.startswith("do_")
-            and not hasattr(getattr(self, name), "admin")
-            and not hasattr(getattr(self, name), "hide")
-        ]
-
-        def jaccard(s1: str, s2: str) -> float:
-            intersection = len(list(set(s1).intersection(s2)))
-            union = (len(s1) + len(s2)) - intersection
-            return float(intersection) / union
-
-        def match(inp: str) -> tuple[float, str]:
-            return sorted(((jaccard(inp, cmd), cmd) for cmd in cmds))[-1]
-
-        if message.command:
-            if hasattr(self, "do_" + message.command):
-                return await getattr(self, "do_" + message.command)(message)
-            score, cmd = match(message.command)
+        if message.arg0:
+            if hasattr(self, "do_" + message.arg0):
+                return await getattr(self, "do_" + message.arg0)(message)
+            score, cmd = match(message.arg0)
             if score > 0.5:
                 return await getattr(self, "do_" + cmd)(message)
-            expansions = [cmd for cmd in commands if cmd.startswith(message.command)]
+            expansions = [cmd for cmd in arg0 if cmd.startswith(message.arg0)]
             if len(expansions) == 1:
                 return await getattr(self, "do_" + expansions[0])(message)
-            suggest_help = " Try /help." if hasattr(self, "do_help") else ""
-            return f"Sorry! Command {message.command} not recognized!" + suggest_help
+            suggest_help = ' Try "help".' if hasattr(self, "do_help") else ""
+            return f"Sorry! Command {message.arg0} not recognized!" + suggest_help
         if message.text == "TERMINATE":
             return "signal session reset"
         return await self.default(message)
 
     def documented_commands(self) -> str:
         commands = ", ".join(
-            name.replace("do_", "/")
+            name.replace("do_", '"') + '"'
             for name in dir(self)
             if name.startswith("do_")
             and not hasattr(getattr(self, name), "hide")
             and hasattr(getattr(self, name), "__doc__")
         )
-        return f"Documented commands: {commands}\n\nFor more info about a command, try /help [command]"
+        return f'Documented commands: {commands}\n\nFor more info about a command, try "help" [command]'
 
     async def default(self, message: Message) -> Response:
         resp = "That didn't look like a valid command!\n" + self.documented_commands()
@@ -597,7 +592,7 @@ class Bot(Signal):
 
     async def do_help(self, msg: Message) -> Response:
         """
-        /help [command]. see the documentation for command, or all commands
+        help [command]. see the documentation for command, or all commands
         """
         if msg.text and "Documented commands" in msg.text:
             return None
