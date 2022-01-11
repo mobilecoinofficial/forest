@@ -1,6 +1,7 @@
 #!/usr/bin/python3.9
 # Copyright (c) 2021 MobileCoin Inc.
 # Copyright (c) 2021 The Forest Team
+# Copyright (c) 2021 Sylvie Liberman
 
 import asyncio
 import base64

@@ -27,6 +27,9 @@ class Message:
     quoted_text: str
     source: str
     payment: dict
+    arg1: Optional[str]
+    arg2: Optional[str]
+    arg3: Optional[str]
 
     def __init__(self, blob: dict) -> None:
         self.blob = blob
@@ -43,13 +46,11 @@ class Message:
                 command, *self.tokens = self.text.split(" ")
             self.arg0 = command.lstrip('/')
             self.command = command[1:].lower()  # remove /
-            self.arg1 = self.tokens[0] if self.tokens else None
-            self.arg2 = self.tokens[1] if len(self.tokens) > 1 else None
-            self.arg3 = self.tokens[2] if len(self.tokens) > 2 else None
+            if self.tokens:
+                self.arg1, self.arg2, self.arg3, *_ = self.tokens + [""] * 3
+
             self.text = " ".join(self.tokens)
-        elif (
-            self.text and "help" in self.text.lower() and "Documented" not in self.text
-        ):
+        elif "help" in self.text.lower() and "Documented" not in self.text:
             self.command = "help"
 
     def to_dict(self) -> dict:
