@@ -112,7 +112,9 @@ class Signal:
                 utils.get_secret("SIGNAL_CLI_PATH")
                 or f"{utils.ROOT_DIR}/{'auxin' if utils.AUXIN else 'signal'}-cli"
             )
-            if not utils.AUXIN:
+            if utils.AUXIN:
+                path += " --download-path /tmp"
+            else:
                 path += " --trust-new-identities always"
             command = f"{path} --config {utils.ROOT_DIR} --user {self.bot_number} jsonRpc".split()
             logging.info(command)
@@ -724,7 +726,7 @@ class PayBot(Bot):
         content_skeletor["dataMessage"]["payment"] = payment
         return json.dumps(content_skeletor)
 
-    async def build_gift_code(self, amount_pmob: int) -> Response:
+    async def build_gift_code(self, amount_pmob: int) -> list[str]:
         """Builds a gift code and returns a list of messages to send, given an amount in pMOB."""
         raw_prop = await self.mob_request(
             "build_gift_code",
