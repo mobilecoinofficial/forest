@@ -23,7 +23,7 @@ jobs:
           key: '${{ runner.os }}-pipenv-v5-${{ hashFiles(''**/Pipfile.lock'') }}'
       - name: Install dependencies
         if: steps.cache-pipenv.outputs.cache-hit != 'true'
-        run: cp .github/Pipfile .; pipenv install --skip-lock
+        run: cp .github/Pipfile .; pipenv install --skip-lock --pre
       - name: Black
         run: pipenv run black . --check
         if: always()
