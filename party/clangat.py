@@ -2,6 +2,7 @@
 # Copyright (c) 2021 MobileCoin Inc.
 # Copyright (c) 2021 The Forest Team
 
+import random
 import ast
 import asyncio
 import hashlib
@@ -407,6 +408,15 @@ class ClanGat(PayBotPro):
             delta = (payment_notif.timestamp - msg.timestamp) / 1000
             self.auxin_roundtrip_latency.append((msg.timestamp, "repayment", delta))
             return "We have refunded your accidental payment, minus fees!"
+
+    async def do_test(self, _: Message) -> str:
+        numlst = list(range(6))
+        random.shuffle(numlst)
+        nustr = str(' '.join(list(map(str, numlst))))
+        msg = "Please write this number on your COVID test: "
+        resp = msg + nustr
+        return resp
+
 
 
 if __name__ == "__main__":
