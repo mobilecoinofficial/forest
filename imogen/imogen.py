@@ -20,40 +20,35 @@ from aiohttp import web
 
 from forest import pghelp, utils
 from forest.core import (
-    JSON,
-    PayBot,
     Message,
+    PayBot,
     Response,
+    UserError,
     app,
     hide,
     requires_admin,
     run_bot,
 )
 
-# @dataclass
-# class InsertedPrompt:
-#     prompt: str
-#     paid: bool
-#     author: str
-#     signal_ts: int
-#     group: str = ""
-#     params: str = "{}"
-#     url: str = utils.URL
 
-#     async def insert(self, queue: pghelp.PGInterface) -> None:
-#         async with queue.pool.acquire() as conn:
-#             await conn.execute(
-#                 """INSERT INTO prompt_queue (prompt, paid, author, signal_ts, group, params, url) VALUES ($1, $2, $3, $4, $5, $6, $7)
-#                 RETURNING (SELECT count(id) AS len FROM prompt_queue WHERE status <> 'done');""",
-#                 self.prompt,
-#                 msg.text,
-#                 False,
-#                 msg.source,
-#                 msg.timestamp,
-#                 msg.group,
-#                 json.dumps(params),
-#                 utils.URL,
-#             )
+@dataclass
+class InsertedPrompt:
+    prompt: str
+    author: str
+    signal_ts: int
+    group: str
+    params: dict
+    url: str = utils.URL
+
+    def as_args(self) -> list:
+        return [
+            self.prompt,
+            self.author,
+            self.signal_ts,
+            self.group,
+            json.dumps(self.params),
+            self.url,
+        ]
 
 
 QueueExpressions = pghelp.PGExpressions(
@@ -79,7 +74,7 @@ QueueExpressions = pghelp.PGExpressions(
         url TEXT DEFAULT 'https://imogen-renaissance.fly.dev/',
         sent_ts BIGINT DEFAULT null,
         errors INTEGER DEFAULT 0);""",
-    insert="""INSERT INTO {self.table} (prompt, paid, author, signal_ts, group_id, params, url) VALUES ($1, $2, $3, $4, $5, $6, $7);""",
+    enqueue="SELECT enqueue_prompt(prompt:=$1, author:=$2, signal_ts:=$3, group_id:=$4, params:=$5, url:=$6)",
     length="SELECT count(id) AS len FROM {self.table} WHERE status='pending' OR status='assigned';",
     paid_length="SELECT count(id) AS len FROM {self.table} WHERE status='pending' OR status='assigned' AND paid=true;",
     list_queue="SELECT prompt FROM {self.table} WHERE status='pending' OR status='assigned' ORDER BY signal_ts ASC",
@@ -105,12 +100,12 @@ if not utils.LOCAL:
     else:
         logging.info("couldn't find kube creds")
 
+worker_status = "kubectl get pods -o json| jq '.items[] | {(.metadata.name): .status.phase}' | jq -s add"
+podcount = "kubectl get pods --no-headers | awk '$3 !~ /(Completed|Failed)/ {print $1}' | wc -l"
+
 password, rest = utils.get_secret("REDIS_URL").removeprefix("redis://:").split("@")
 host, port = rest.split(":")
 redis = aioredis.Redis(host=host, port=int(port), password=password)
-
-worker_status = "kubectl get pods -o json| jq '.items[] | {(.metadata.name): .status.phase}' | jq -s add"
-podcount = "kubectl get pods --no-headers | awk '$3 !~ /(Completed|Failed)/ {print $1}' | wc -l"
 
 
 class Imogen(PayBot):
@@ -151,6 +146,7 @@ class Imogen(PayBot):
             return None
         message_blob = self.sent_messages[msg.reaction.ts]
         current_reaction_count = len(message_blob["reactions"])
+
         reaction_counts = [
             len(some_message_blob["reactions"])
             for timestamp, some_message_blob in self.sent_messages.items()
@@ -198,6 +194,16 @@ class Imogen(PayBot):
         queue_length = (await self.queue.length())[0].get("len")
         return f"queue size: {queue_length}"
 
+    async def do_list_queue(self, _: Message) -> str:
+        q = "; ".join(prompt.get("prompt") for prompt in await self.queue.list_queue())
+        return q or "queue empty"
+
+    do_list_prompts = do_listqueue = do_queue = hide(do_list_queue)
+
+    @hide
+    async def do_dump_queue(self, _: Message) -> Response:
+        raise NotImplementedError
+
     async def do_workers(self, _: Message) -> Response:
         "shows worker state"
         return json.loads(await get_output(worker_status)) or "no workers running"
@@ -207,26 +213,23 @@ class Imogen(PayBot):
 
     image_rate_cents = 10
 
-    async def insert(
-        self, msg: Message, parms: dict, attachments: bool = False
-    ) -> None:
-        pass
-        # if msg.attachments and attachments
-        # params is the only thing that changes between commands/models
-        # also handles rate limiting, paid success checking
-        # will start instances if paid
-        # future: instance-groups resize {} --size {}
+    async def payment_response(self, msg: Message, amount_pmob: int) -> str:
+        rate = self.image_rate_cents / 100
+        prompts = int(await self.mobster.pmob2usd(amount_pmob) / rate)
+        total = int(await self.get_user_balance(msg.source) / rate)
+        return f"You now have an additional {prompts} priority prompts. Total: {total}"
 
-    async def ensure_worker(self, paid: bool = False) -> bool:
+    async def ensure_worker(self, enqueue_result: dict) -> bool:
         workers = int(await get_output(podcount))
+        # maybe check for the case of one running/completed pod and zero assigned workers
         if workers == 0:
             out = await get_output("kubectl create -f free-imagegen-job.yaml")
             await self.admin("\N{rocket}\N{squared free}: " + out)
             return True
-        if not paid:
+        if not enqueue_result.get("paid"):
             logging.info("not paid and a worker already exists so not making a new one")
             return False
-        paid_queue_size = (await self.queue.paid_length())[0][0]
+        paid_queue_size = enqueue_result["paid_queue_size"]
         if paid_queue_size / workers > 5 and workers < 6:
             spec = open("paid-imagegen-job.yaml").read()
             with_name = spec.replace(
@@ -238,53 +241,64 @@ class Imogen(PayBot):
             return True
         return False
 
-    async def do_imagine(self, msg: Message) -> str:
-        """/imagine [prompt]"""
-        if not msg.text.strip() and not msg.attachments:
+    async def upload_attachment(self, msg: Message) -> dict[str, str]:
+        if not msg.attachments:
+            return {}
+        attachment = msg.attachments[0]
+        if (attachment.get("filename") or "").endswith(".txt"):
+            raise UserError("your prompt is way too long")
+        key = "input/" + attachment["id"] + "-" + (attachment.get("filename") or ".jpg")
+        await redis.set(
+            key, open(Path("./attachments") / attachment["id"], "rb").read()
+        )
+        return {"init_image": key}
+
+    async def enqueue_prompt(
+        self, msg: Message, params: dict, attachments: bool = False
+    ) -> str:
+        if not msg.text.strip():
             return "A prompt is required"
         logging.info(msg.full_text)
-        params: JSON = {}
-        if msg.attachments:
-            attachment = msg.attachments[0]
-            if (attachment.get("filename") or "").endswith(".txt"):
-                return "your prompt is way too long"
-            key = (
-                "input/"
-                + attachment["id"]
-                + "-"
-                + (attachment.get("filename") or ".jpg")
-            )
-            params["init_image"] = key
-            await redis.set(
-                key, open(Path("./attachments") / attachment["id"], "rb").read()
-            )
-        paid = await self.get_user_balance(msg.source) > self.image_rate_cents / 100
-        if paid:
-            # maybe set memo to prompt_id in the sql or smth
-            await self.mobster.ledger_manager.put_usd_tx(
-                msg.source, -self.image_rate_cents, "image"
-            )
-        await self.queue.execute(
-            """INSERT INTO prompt_queue (prompt, paid, author, signal_ts, group_id, params, url) VALUES ($1, $2, $3, $4, $5, $6, $7);""",
-            msg.text,
-            paid,
-            msg.source,
-            msg.timestamp,
-            msg.group,
-            json.dumps(params),
-            utils.URL,
+        if attachments:
+            params.update(await self.upload_attachment(msg))
+        prompt = InsertedPrompt(
+            prompt=msg.text,
+            author=msg.source,
+            signal_ts=msg.timestamp,
+            group=msg.group or "",
+            params=params,
         )
-        worker_created = await self.ensure_worker(paid=paid)
-        queue_length = (await self.queue.length())[0].get("len")
-        if paid and worker_created:
+        result = await self.queue.enqueue(*prompt.as_args())
+        worker_created = await self.ensure_worker(result)
+        if result.get("paid") and worker_created:
             deets = " (paid, started a new worker)"
-        elif paid:
+        elif result.get("paid"):
             deets = " (paid)"
         elif worker_created:
             deets = " (started a new worker)"
         else:
             deets = ""
-        return f"you are #{queue_length} in line{deets}"
+        return f"you are #{result['queue_length']} in line{deets}"
+
+    async def do_imagine(self, msg: Message) -> str:
+        """/imagine [prompt]"""
+        return await self.enqueue_prompt(msg, {}, True)
+
+    async def do_quick(self, msg: Message) -> str:
+        """Generate a 512x512 image off from the last time this command was used"""
+        return await self.enqueue_prompt(msg, {"feedforward": True}, False)
+
+    async def do_fast(self, msg: Message) -> str:
+        """Generate an image in a single pass"""
+        return await self.enqueue_prompt(msg, {"feedforward_fast": True}, False)
+
+    async def do_paint(self, msg: Message) -> str:
+        """/paint <prompt>"""
+        params = {
+            "vqgan_config": "wikiart_16384.yaml",
+            "vqgan_checkpoint": "wikiart_16384.ckpt",
+        }
+        return await self.enqueue_prompt(msg, params, False)
 
     def make_prefix(prefix: str) -> Callable:  # type: ignore  # pylint: disable=no-self-argument
         async def wrapped(self: "Imogen", msg: Message) -> str:
@@ -306,77 +320,6 @@ class Imogen(PayBot):
     do_ukiyo = make_prefix("ukiyo")
     do_synthwave = make_prefix("synthwave")
     del make_prefix  # shouldn't be used after class definition is over
-
-    async def do_quick(self, msg: Message) -> str:
-        """Generate a 512x512 image off from the last time this command was used"""
-        if not msg.text:
-            return "A prompt is required"
-        await self.queue.execute(
-            """INSERT INTO prompt_queue (prompt, paid, author, signal_ts, group_id, params, url) VALUES ($1, $2, $3, $4, $5, $6, $7);""",
-            msg.text,
-            False,
-            msg.source,
-            msg.timestamp,
-            msg.group,
-            json.dumps({"feedforward": True}),
-            utils.URL,
-        )
-        await self.ensure_worker()
-        queue_length = (await self.queue.length())[0].get("len")
-        return f"you are #{queue_length} in line"
-
-    async def do_fast(self, msg: Message) -> str:
-        """Generate an image in a single pass"""
-        if not msg.text:
-            return "A prompt is required"
-        await self.ensure_worker()
-        await self.queue.execute(
-            """INSERT INTO prompt_queue (prompt, paid, author, signal_ts, group_id, params, url) VALUES ($1, $2, $3, $4, $5, $6, $7);""",
-            msg.text,
-            False,
-            msg.source,
-            msg.timestamp,
-            msg.group,
-            json.dumps({"feedforward_fast": True}),
-            utils.URL,
-        )
-        queue_length = (await self.queue.length())[0].get("len")
-        return f"you are #{queue_length} in line"
-
-    async def do_paint(self, msg: Message) -> str:
-        """/paint <prompt>"""
-        if not msg.text and not msg.attachments:
-            return "A prompt is required"
-        logging.info(msg.full_text)
-        params: JSON = {
-            "vqgan_config": "wikiart_16384.yaml",
-            "vqgan_checkpoint": "wikiart_16384.ckpt",
-        }
-        if msg.attachments:
-            attachment = msg.attachments[0]
-            key = (
-                "input/"
-                + attachment["id"]
-                + "-"
-                + (attachment.get("filename") or ".jpg")
-            )
-            params["init_image"] = key
-            await redis.set(
-                key, open(Path("./attachments") / attachment["id"], "rb").read()
-            )
-        await self.queue.execute(
-            """INSERT INTO prompt_queue (prompt, paid, author, signal_ts, group_id, params, url) VALUES ($1, $2, $3, $4, $5, $6, $7);""",
-            msg.text,
-            False,
-            msg.source,
-            msg.timestamp,
-            msg.group,
-            json.dumps(params),
-            utils.URL,
-        )
-        await self.ensure_worker()
-        queue_length = (await self.queue.length())[0].get("len")
-        return f"you are #{queue_length} in line"
 
     @hide
     async def do_c(self, msg: Message) -> str:
@@ -432,22 +375,6 @@ class Imogen(PayBot):
             stop=["\n", " Human:", " AI:"],
         )
         return response["choices"][0]["text"].strip()
-
-    async def do_list_queue(self, _: Message) -> str:
-        q = "; ".join(prompt.get("prompt") for prompt in await self.queue.list_queue())
-        return q or "queue empty"
-
-    do_list_prompts = do_listqueue = do_queue = hide(do_list_queue)
-
-    @hide
-    async def do_dump_queue(self, _: Message) -> Response:
-        raise NotImplementedError
-
-    async def payment_response(self, msg: Message, amount_pmob: int) -> str:
-        rate = self.image_rate_cents / 100
-        prompts = int(await self.mobster.pmob2usd(amount_pmob) / rate)
-        total = int(await self.get_user_balance(msg.source) / rate)
-        return f"You now have an additional {prompts} priority prompts. Total: {total}"
 
     @hide
     async def do_poke(self, _: Message) -> str:

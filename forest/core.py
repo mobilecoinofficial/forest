@@ -484,6 +484,8 @@ class Signal:
 
 Datapoint = tuple[int, str, float]  # timestamp in ms, command/info, latency in seconds
 
+class UserError(Exception):
+    pass
 
 def requires_admin(command: Callable) -> Callable:
     @wraps(command)
@@ -547,6 +549,8 @@ class Bot(Signal):
             response = await self.handle_message(message)
             if response is not None:
                 future_key = await self.respond(message, response)
+        except UserError as e:
+            future_key = await self.respond(message, str(e))
         except:  # pylint: disable=bare-except
             exception_traceback = "".join(traceback.format_exception(*sys.exc_info()))
             # should this actually be parallel?
