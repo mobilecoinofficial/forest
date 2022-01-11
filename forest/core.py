@@ -215,8 +215,11 @@ class Signal:
                 message_blob = blob
             else:
                 logging.warning(blob["result"])
+        if "error" in blob:
+            message_blob = blob
         if message_blob:
             return await self.auxincli_output_queue.put(MessageParser(message_blob))
+        logging.error("DOING NOTHING", blob)
 
     async def handle_auxincli_raw_line(self, line: str) -> None:
         if '{"jsonrpc":"2.0","result":[],"id":"receive"}' not in line:
@@ -228,8 +231,6 @@ class Signal:
             logging.info("auxin: %s", line)
             return
         if "error" in blob:
-            if blob.get('id', '') in self.pending_requests:
-                self.pending_requests[blob.get('id')].set_result(blob)
             logging.info("auxin: %s", line)
             error = json.dumps(blob["error"])
             logging.error(
@@ -314,7 +315,7 @@ class Signal:
         peerName: str = None,
     ) -> str:
         """ Gets a profile via Auxin RPC """
-        return (await self.auxin_req("getprofile", peer_name = peerName)).blob
+        return (await self.auxin_req("getprofile", peer_name = peerName))
 
     # this should maybe yield a future (eep) and/or use auxin_req
     async def send_message(  # pylint: disable=too-many-arguments

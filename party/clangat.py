@@ -81,8 +81,8 @@ class PayBotPro(PayBot):
                 .get("text_message", "")
                 .replace("eval", "", 1)
                 .replace("Eval", "", 1)
+                .lstrip("/")
                 .lstrip(" ")
-                .rstrip("/")
             )
             if source_blob:
                 return str(await async_exec(source_blob, locals()))
@@ -180,7 +180,7 @@ class ClanGat(PayBotPro):
                     ]
                     self.send_message(
                         msg.source,
-                        f"removed you from list {list_}, to rejoin send 'subscribe {list_}'",
+                        f"Removed you from list {list_}, to rejoin send 'subscribe {list_}'",
                     )
 
     async def do_slow_blast(self, msg: Message) -> Response:
@@ -231,10 +231,8 @@ class ClanGat(PayBotPro):
             obj in self.event_owners and user in self.event_owners.get(obj, [])
         )
         list_ = []
-        print(obj, param, value, user)
         if user_owns_list_obj and param:
             list_ = self.event_lists.get(obj, [])
-            print(list_)
             if len(list_) > 0:
                 for target_user in list_:
                     await self.send_message(target_user, param)
@@ -242,7 +240,6 @@ class ClanGat(PayBotPro):
         if user_owns_event_obj and param:
             await self.send_message(msg.source, "blasting to event attendees")
             list_ = self.event_attendees.get(obj, [])
-            print(list_)
             for target_user in list_:
                 await self.send_message(target_user, param)
             return f"OK, blasted '{param}' to {len(list_)} people on list {obj}"
@@ -260,23 +257,23 @@ class ClanGat(PayBotPro):
                 self.event_lists[obj] += [msg.source]
                 return f"Added you to the {obj} list!"
         else:
-            return f"sorry, I couldn't find a list called {obj} - to create your own, try 'add list {obj}'"
+            return f"Sorry, I couldn't find a list called {obj} - to create your own, try 'add list {obj}'."
 
     async def do_help(self, msg: Message) -> Response:
         if msg.arg1 and msg.arg1.lower() == "add":
             return self.do_add.__doc__
-        return "Welcome to The Hotline!\nEvents and announcement lists can be unlocked by messaging the bot the secret code at any time."
+        return "Welcome to The Hotline!\nEvents and announcement lists can be unlocked by messaging the bot the secret code at any time.\n\nAccolades, feature requests, and support questions can be directed to the project maintainers at https://signal.group/#CjQKILH5dkoz99TKxwG7T3TaVAuskMq4gybSplYDfTq-vxUrEhBhuy19A4DbvBqm7PfnBn3I ."
 
     async def do_add(self, msg: Message) -> Response:
         """add event <eventcode>
         > add event TEAMNYE22
-        Okay, you're now the proud owner of a clandestine gathering, secret code TEAMNYE22!
+        Okay, you're now the proud owner of an event on The Hotline, secret code TEAMNYE22!
         > add owner TEAMNYE22 +1-555-000-1234
         Okay, +15550001234 has been notified that they are owners of this event.
         They can also edit details, and will be notified of sales.
         > add price TEAMNYE22 0
         > add prompt TEAMNYE22 "the gang celebrates 2023 with a cool new years eve party. yeah, we plan ahead!"
-        > add limit TEAMNYE22 200 "sorry, only so many square feet on the dance floor!"
+        > add limit TEAMNYE22 200
         > add list COWORKERS
         """
         obj, param, value = (msg.arg1 or "").lower(), (msg.arg2 or "").lower(), msg.arg3
@@ -340,9 +337,28 @@ class ClanGat(PayBotPro):
         if success:
             return f"Successfully added {value} to event {param}'s {obj}(s)!"
 
+    @hide
+    async def do_purchase(self, _: Message) -> Response:
+        helptext = """If you have payments activated, open the conversation on your Signal mobile app, click on the plus (+) sign and choose payment.\n\nIf you don't have Payments activated follow these instructions to activate it.
+
+1. Update Signal app: https://signal.org/install/
+2. Open Signal, tap on the icon in the top left for Settings. If you don’t see *Payments*, reboot your phone. It can take a few hours.
+3. Tap *Payments* and *Activate Payments*
+
+For more information on Signal Payments visit:
+
+https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
+        return helptext
+
+    @hide
+    async def do_buy(self, message: Message) -> Response:
+        return await self.do_purchase(message)
+
     async def default(self, msg: Message) -> Response:
         code = msg.command
         # if the event has an owner and a price and there's attendee space and the user hasn't already bought tickets
+        if code == "?":
+            return await self.do_help(msg)
         if (
             code in self.event_owners
             and code in self.event_prices
@@ -352,7 +368,7 @@ class ClanGat(PayBotPro):
             self.pending_orders[msg.source] = code
             return [
                 self.event_prompts.get(code, "Event Unlocked!"),
-                f"You may purchase up to 2 tickets at {self.event_prices[code]} MOB ea.",
+                f"You may purchase up to 2 tickets at {self.event_prices[code]} MOB ea.\nIf you have payments activated, open the conversation on your Signal mobile app, click on the plus (+) sign and choose payment.",
             ]
         # if there's a list but no attendees
         elif code in self.event_lists and code not in self.event_owners:
@@ -386,9 +402,14 @@ class ClanGat(PayBotPro):
                     lists += [f"pending: {maybe_pending}"]
 
             # being really lazy about owners / all_owners here
-            user_given = (
-                await self.auxin_req("getprofile", peer_name=msg.source)
-            ).blob.get("givenName", "givenName")
+            try:
+                maybe_user_profile = await self.auxin_req(
+                    "getprofile", peer_name=msg.source
+                )
+                user_given = maybe_user_profile.blob.get("givenName", "givenName")
+            except AttributeError:
+                # this returns a Dict containing an error key
+                user_given = "[error]"
             for owner in list(set(all_owners)):
                 # don't flood j
                 if "7777" not in owner:
