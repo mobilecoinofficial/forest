@@ -4,6 +4,7 @@
 
 import ast
 import asyncio
+import codecs
 import hashlib
 import json
 import time
@@ -100,6 +101,9 @@ class PayBotPro(PayBot):
             fact = await resp.text()
             return fact.strip()
 
+    async def do_rot13(self, msg: Message) -> Response:
+        return codecs.encode(msg.text, "rot13")
+
 
 class ClanGat(PayBotPro):
     def __init__(self):
@@ -113,15 +117,29 @@ class ClanGat(PayBotPro):
         self.event_attendees: dict[str, list[str]] = PersistDict("event_attendees")
         self.event_lists: dict[str, list[str]] = PersistDict("event_lists")
         self.list_owners: dict[str, list[str]] = PersistDict("list_owners")
+        self.event_payouts: dict[str, str] = PersistDict("event_payouts")
+        # okay, this now maps the tag (restore key) of each of the above to the instance of the PersistDict class
+        self.state = {
+            self.__getattribute__(attr).tag: self.__getattribute__(attr)
+            for attr in dir(self)
+            if isinstance(self.__getattribute__(attr), PersistDict)
+        }
         super().__init__()
 
-    async def do_tip(self, msg: Message) -> Response:
-        """
-        /tip
-        Records the next payment as a tip, not intended to make a payment."""
-        if msg.source not in self.no_repay:
-            self.no_repay.append(msg.source)
-        return "Your next transaction will be a tip, not refunded!\nThank you!\n(/cancel cancels)"
+    @requires_admin
+    async def do_dump(self, msg: Message) -> Response:
+        return json.dumps(self.state, indent=2)
+
+    @requires_admin
+    async def do_dump2(self, msg: Message) -> Response:
+        dump = {}
+        for eventcode in list(self.event_owners.keys()) + list(self.list_owners.keys()):
+            event = {}
+            for parameters in self.state:
+                if self.state[parameters].get(eventcode):
+                    event[parameters] = self.state[parameters].get(eventcode)
+            dump[eventcode] = event
+        return json.dumps(dump, indent=2)
 
     async def do_check(self, msg: Message) -> Response:
         obj = (msg.arg1 or "").lower()
@@ -157,7 +175,9 @@ class ClanGat(PayBotPro):
         elif not msg.arg1:
             for list_ in self.event_lists:
                 if msg.source in self.event_lists[list_]:
-                    self.event_lists[list_].pop(msg.source)
+                    self.event_lists[list_] = [
+                        el for el in self.event_lists[list_] if msg.source != el
+                    ]
                     self.send_message(
                         msg.source,
                         f"removed you from list {list_}, to rejoin send 'subscribe {list_}'",
@@ -245,7 +265,7 @@ class ClanGat(PayBotPro):
     async def do_help(self, msg: Message) -> Response:
         if msg.arg1 and msg.arg1.lower() == "add":
             return self.do_add.__doc__
-        return "Welcome to the Clan Gathering bot! \n Gatherings can be unlocked by messaging the bot the secret code at any time."
+        return "Welcome to The Hotline!\nEvents and announcement lists can be unlocked by messaging the bot the secret code at any time."
 
     async def do_add(self, msg: Message) -> Response:
         """add event <eventcode>
@@ -259,11 +279,7 @@ class ClanGat(PayBotPro):
         > add limit TEAMNYE22 200 "sorry, only so many square feet on the dance floor!"
         > add list COWORKERS
         """
-        # a user
-        # > add obj param value
-        obj = (msg.arg1 or "").lower()
-        param = (msg.arg2 or "").lower()
-        value = msg.arg3
+        obj, param, value = (msg.arg1 or "").lower(), (msg.arg2 or "").lower(), msg.arg3
         user = msg.source
         user_owns_event_param = (
             param in self.event_owners and user in self.event_owners.get(param, [])
@@ -288,6 +304,7 @@ class ClanGat(PayBotPro):
             return f"created list {param}, time to add some invitees and blast 'em"
         elif obj == "event" and not param:
             return ("please provide an event code to create!", "> add event TEAMNYE22")
+        # if the user owns the event and we have a value passed
         if user_owns_event_param and value:
             if obj == "owner":
                 self.event_owners[param] += [value]
@@ -325,11 +342,12 @@ class ClanGat(PayBotPro):
 
     async def default(self, msg: Message) -> Response:
         code = msg.command
-        # if the event has an owner and a price and there's attendee space
+        # if the event has an owner and a price and there's attendee space and the user hasn't already bought tickets
         if (
             code in self.event_owners
             and code in self.event_prices
-            and len(self.event_attendees[code]) < self.event_limits[code]
+            and len(self.event_attendees[code]) < self.event_limits.get(code, 1e5)
+            and msg.source not in self.event_attendees[code]
         ):
             self.pending_orders[msg.source] = code
             return [
@@ -361,45 +379,43 @@ class ClanGat(PayBotPro):
                     owners = self.event_owners.get(list_, [])
                     all_owners += owners
                     lists += [list_]
+                # if user has started buying tickets
+                maybe_pending = self.pending_orders.get(msg.source)
+                if maybe_pending and maybe_pending in self.event_owners:
+                    all_owners += self.event_owners.get(maybe_pending, [])
+                    lists += [f"pending: {maybe_pending}"]
 
             # being really lazy about owners / all_owners here
+            user_given = (
+                await self.auxin_req("getprofile", peer_name=msg.source)
+            ).blob.get("givenName", "givenName")
             for owner in list(set(all_owners)):
-                await self.send_message(
-                    owner,
-                    f"resp: {msg.source}, {code} {msg.text} in {list(set(lists))}",
-                )
-                await asyncio.sleep(0.1)
+                # don't flood j
+                if "7777" not in owner:
+                    await self.send_message(
+                        owner,
+                        f"{user_given} ( {msg.source} ) says: {code} {msg.text}\nThey are in {list(set(lists))}",
+                    )
+                    await asyncio.sleep(0.1)
 
             return "Sorry, I can't help you with that!"
-
-    @hide
-    async def do_cancel(self, msg: Message) -> Response:
-        """Cancels a tip in progress."""
-        if msg.source in self.no_repay:
-            self.no_repay.remove(msg.source)
-            return "Okay, nevermind about that tip."
-        return "Couldn't find a tip in process to cancel!"
 
     @time_(REQUEST_TIME)  # type: ignore
     async def payment_response(self, msg: Message, amount_pmob: int) -> Response:
         amount_mob = float(mc_util.pmob2mob(amount_pmob).quantize(Decimal("1.0000")))
-        if msg.source in self.no_repay:
-            self.no_repay.remove(msg.source)
-            return f"Received {str(pmob2mob(amount_pmob)).rstrip('0')}MOB. Thank you for the tip!"
         if msg.source in self.pending_orders:
             code = self.pending_orders[msg.source].lower()
             price = self.event_prices.get(code, 1000)
-            if (
-                amount_mob >= price
-                and len(self.event_attendees.get(code, [])) < self.event_limits[code]
-            ):
+            if amount_mob >= price and len(
+                self.event_attendees.get(code, [])
+            ) < self.event_limits.get(code, 1e5):
                 if msg.source not in self.event_attendees[code]:
                     end_note = ""
                     if (amount_mob // price) == 2:
                         self.event_attendees[code] += [msg.source]
                         end_note = "(times two!)"
                     self.event_attendees[code] += [msg.source]
-                    return f"thanks for paying for {self.pending_orders[msg.source]}. you're on the list! {end_note}"
+                    return f"Thanks for paying for {self.pending_orders[msg.source]}.\nYou're on the list! {end_note}"
         if msg.source not in self.no_repay:
             payment_notif = await self.send_payment(msg.source, amount_pmob - FEE)
             if not payment_notif:

@@ -220,13 +220,16 @@ class Signal:
 
     async def handle_auxincli_raw_line(self, line: str) -> None:
         if '{"jsonrpc":"2.0","result":[],"id":"receive"}' not in line:
-            pass  # logging.debug("auxin: %s", line)
+            logging.debug("auxin: %s", line)
+            pass
         try:
             blob = json.loads(line)
         except json.JSONDecodeError:
             logging.info("auxin: %s", line)
             return
         if "error" in blob:
+            if blob.get('id', '') in self.pending_requests:
+                self.pending_requests[blob.get('id')].set_result(blob)
             logging.info("auxin: %s", line)
             error = json.dumps(blob["error"])
             logging.error(
@@ -305,6 +308,13 @@ class Signal:
         future_key = f"setProfile-{int(time.time()*1000)}"
         await self.auxincli_input_queue.put(rpc("setProfile", params, future_key))
         return future_key
+
+    async def get_profile_auxin(
+        self,
+        peerName: str = None,
+    ) -> str:
+        """ Gets a profile via Auxin RPC """
+        return (await self.auxin_req("getprofile", peer_name = peerName)).blob
 
     # this should maybe yield a future (eep) and/or use auxin_req
     async def send_message(  # pylint: disable=too-many-arguments
@@ -541,8 +551,8 @@ class Bot(Signal):
         if message.command:
             if hasattr(self, "do_" + message.command):
                 return await getattr(self, "do_" + message.command)(message)
-            suggest_help = " Try /help." if hasattr(self, "do_help") else ""
-            return f"Sorry! Command {message.command} not recognized!" + suggest_help
+            #suggest_help = " Try /help." if hasattr(self, "do_help") else ""
+            #return f"Sorry! Command {message.command} not recognized!" + suggest_help
         if message.text == "TERMINATE":
             return "signal session reset"
         return await self.default(message)

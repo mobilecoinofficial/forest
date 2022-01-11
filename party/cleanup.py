@@ -2,7 +2,7 @@ import glob, phonenumbers, pprint
 
 def get_phone_numbers_from_csv(csv_name = glob.glob("*.csv")[0]):
     document = open(csv_name).read().splitlines()
-    header = document.pop(0).split(",")
+    header = [column_header for column_header in document.pop(0).split(",") if column_header.strip()]
     print(header)
     is_phone_label = [i for i in header if "phone" in i.lower()]
     label_column_index = None

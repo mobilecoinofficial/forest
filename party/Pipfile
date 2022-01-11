@@ -12,6 +12,8 @@ phonenumbers = "*"
 termcolor = "*"
 prometheus-async = "*"
 prometheus-client = "*"
+pycryptodome = "*"
+black = "*"
 
 [requires]
 python_version = "3.9"

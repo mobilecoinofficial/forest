@@ -35,6 +35,7 @@ class Message:
         self.tokens: Optional[list[str]] = None
         if self.text and not self.text.startswith("/"):
             self.text = f"/{self.text}"
+        self.text = self.text.replace('“', '"').replace('”', '"')
         if self.text and self.text.startswith("/"):
             try:
                 command, *self.tokens = shlex.split(self.text)
