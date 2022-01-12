@@ -3,8 +3,9 @@ CREATE OR REPLACE FUNCTION get_balance(account text) RETURNS NUMERIC AS $$
     FROM imogen_ledger WHERE account=account;
 $$ LANGUAGE SQL;
 
+--AND (SELECT count (id) < 6 FROM prompt_queue WHERE author=author AND status='pending')
 
-CREATE OR REPLACE FUNCTION enqueue_prompt(prompt TEXT, author TEXT, signal_ts BIGINT, group_id TEXT, params TEXT, url TEXT)
+CREATE OR REPLACE FUNCTION enqueue_priority_prompt(prompt TEXT, author TEXT, signal_ts BIGINT, group_id TEXT, params TEXT, url TEXT)
 RETURNS setof record AS $$ 
     DECLARE 
         is_paid BOOLEAN;
@@ -12,10 +13,10 @@ RETURNS setof record AS $$
         output RECORD;
     BEGIN
         is_paid := get_balance(author) > 0.10 ;
-        -- IF NOT is_paid AND (SELECT count (id) < 6 FROM prompt_queue WHERE author=author AND status='pending') THEN
-        --     SELECT -1, -1, -1 INTO output;
-        --     RETURN output;
-        -- END IF;
+        IF NOT is_paid  THEN
+            SELECT -1, -1, -1 INTO output;
+            RETURN output;
+        END IF;
         INSERT INTO prompt_queue (prompt, paid, author, signal_ts, group_id, params, url)
             VALUES (prompt, is_paid, author, signal_ts, group_id, params, url)  RETURNING id INTO id;
         IF is_paid THEN
