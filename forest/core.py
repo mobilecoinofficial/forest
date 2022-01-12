@@ -316,8 +316,8 @@ class Signal:
         self,
         peerName: str = None,
     ) -> str:
-        """ Gets a profile via Auxin RPC """
-        return (await self.auxin_req("getprofile", peer_name = peerName))
+        """Gets a profile via Auxin RPC"""
+        return await self.auxin_req("getprofile", peer_name=peerName)
 
     # this should maybe yield a future (eep) and/or use auxin_req
     async def send_message(  # pylint: disable=too-many-arguments
@@ -554,8 +554,8 @@ class Bot(Signal):
         if message.command:
             if hasattr(self, "do_" + message.command):
                 return await getattr(self, "do_" + message.command)(message)
-            #suggest_help = " Try /help." if hasattr(self, "do_help") else ""
-            #return f"Sorry! Command {message.command} not recognized!" + suggest_help
+            # suggest_help = " Try /help." if hasattr(self, "do_help") else ""
+            # return f"Sorry! Command {message.command} not recognized!" + suggest_help
         if message.text == "TERMINATE":
             return "signal session reset"
         return await self.default(message)

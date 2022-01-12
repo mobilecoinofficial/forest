@@ -38,13 +38,13 @@ class Message:
         self.tokens: Optional[list[str]] = None
         if self.text and not self.text.startswith("/"):
             self.text = f"/{self.text}"
-        self.text = self.text.replace('“', '"').replace('”', '"')
+        self.text = self.text.replace("“", '"').replace("”", '"')
         if self.text and self.text.startswith("/"):
             try:
                 command, *self.tokens = shlex.split(self.text)
             except ValueError:
                 command, *self.tokens = self.text.split(" ")
-            self.arg0 = command.lstrip('/')
+            self.arg0 = command.lstrip("/")
             self.command = command[1:].lower()  # remove /
             if self.tokens:
                 self.arg1, self.arg2, self.arg3, *_ = self.tokens + [""] * 3
