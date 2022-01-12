@@ -221,12 +221,11 @@ class Signal:
             message_blob = blob
         if message_blob:
             return await self.auxincli_output_queue.put(MessageParser(message_blob))
-        logging.error("DOING NOTHING", blob)
+        logging.error(f"DOING NOTHING {blob}")
 
     async def handle_auxincli_raw_line(self, line: str) -> None:
         if '{"jsonrpc":"2.0","result":[],"id":"receive"}' not in line:
             logging.debug("auxin: %s", line)
-            pass
         try:
             blob = json.loads(line)
         except json.JSONDecodeError:
