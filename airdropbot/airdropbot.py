@@ -17,6 +17,8 @@ from forest.core import PayBot, app, Message, Response, requires_admin, hide
 from forest.utils import get_secret
 from forest.pghelp import Loop, PGExpressions, PGInterface
 
+FEE_MOB = 0.0004
+FEE_PMOB = 400000000
 
 AirdropPGExpressions = PGExpressions(
     table="aidrops",
@@ -144,6 +146,7 @@ class SimpleAirdrop(Airdrop):  # pylint: disable=too-many-instance-attributes
     """
 
     name: str = "no_airdrop"
+    pre_drop_amount: float = -1.0
     entry_price: float = -1.0
     drop_amount: float = -1.0
     max_entrants: int = -1
@@ -421,10 +424,11 @@ class SimpleAirdrop(Airdrop):  # pylint: disable=too-many-instance-attributes
         """
         total_drop = self.max_entrants * self.drop_amount
         if include_fees:
+            
             return (
                 total_drop
-                + self.max_entrants * 0.01
-                + self.entry_price * self.max_entrants
+                + self.max_entrants
+                * ( FEE_MOB * 2 + self.pre_drop_amount )
             )
         return total_drop
 
@@ -454,6 +458,22 @@ class SimpleAirdrop(Airdrop):  # pylint: disable=too-many-instance-attributes
                 "Airdrop configured correctly with sufficient balance, airdrop can start"
             )
         return can_start
+    
+    @staticmethod
+    def to_pmob(amount: Union[float, int]) -> int:
+        """
+        Takes amount in mob, returns amount in pmob
+        """
+        
+        return int(mc_util.mob2pmob(amount))
+
+    @staticmethod
+    def to_mob(amount: int) -> float:
+        """
+        Takes amount in pmob, returns amount in mob
+        """
+
+        return float(round(mc_util.pmob2mob(amount), 3))
 
     def __repr__(self) -> str:
         resp = (
@@ -483,6 +503,7 @@ class AirDropBot(PayBot):
         self.name = "MobDripper"
         self.config: Airdrop = Airdrop()
         self.entrant_list: dict = {}
+        self.txo_pool: dict[str,list[tuple[str,int]]] = {}
         self.db_manager = AirdropManager()
         super().__init__()
 
@@ -493,6 +514,11 @@ class AirDropBot(PayBot):
         """
         admin = get_secret("ADMIN")
         return msg.source == admin
+    
+    def get_txo_from_pool(self, pool: str, amount_pmob: int) -> tuple[str,int]:
+        index = [i for i, e in enumerate(self.txo_pool.get(pool,{})) if e == amount_pmob][0]
+        assert isinstance(index, int)
+        return self.txo_pool[pool].pop(index)
 
     async def record_tx(
         self,
@@ -983,6 +1009,8 @@ class AirDropBot(PayBot):
                 await self.db_manager.create_simple_airdrop(
                     name, block_height, "simple"
                 )
+                account_id = await self.mobster.get_account()
+                self.txo_pool["drop_txos"] = await self.mobster.preallocate_txos(account_id, [conf.to_pmob(conf.drop_amount)]*conf.max_entrants)
                 return f"Airdrop launched at block: {block_height}, {self.name} will now accept payments. Airdrop UUID is: {name}"
             if States.NEEDS_FUNDING in state:
                 funds = await self.mobster.get_wallet_balance()

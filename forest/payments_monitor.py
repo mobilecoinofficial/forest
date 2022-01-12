@@ -42,6 +42,7 @@ else:
 
 
 DATABASE_URL = utils.get_secret("DATABASE_URL")
+FEE = 400000000
 LedgerPGExpressions = PGExpressions(
     table="ledger",
     create_table="CREATE TABLE IF NOT EXISTS {self.table} ( \
@@ -605,7 +606,7 @@ class Mobster:  # pylint: disable=too-many-public-methods
         unspent_utxos = await self.filter_utxos(account_id)
         txo_list = sorted(txo_list, reverse=True)
         logging.info("attempting pre_allocation of: %s", txo_list)
-        total_requested = sum(txo_list)
+        total_requested = sum(txo_list) + FEE*len(txo_list)
         total_available = sum([txo[1] for txo in unspent_utxos])
         if total_available < total_requested:
             raise ValueError("Not enough available in account to allocate txos")
@@ -616,14 +617,14 @@ class Mobster:  # pylint: disable=too-many-public-methods
         for sublist in tx_list_split:
             send_list = []
             utxo_inputs = []
-            txo_total = sum(sublist)
+            txo_total = sum(sublist) + FEE*len(sublist)
             logging.info("Allocating %s txos totaling %s Pmob", len(sublist), txo_total)
             for utxo in unspent_utxos:
                 utxo_inputs.append(utxo)
                 logging.debug("utxo_inputs are %s", utxo_inputs)
                 input_amt = sum([utxo[1] for utxo in utxo_inputs])
                 if input_amt > txo_total:
-                    send_list = [(address, amt) for amt in sublist]
+                    send_list = [(address, amt + FEE) for amt in sublist]
                     tx_prop = await self.build_transaction(
                         account_id,
                         addresses_and_values=send_list,
