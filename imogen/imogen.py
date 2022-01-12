@@ -108,6 +108,12 @@ host, port = rest.split(":")
 redis = aioredis.Redis(host=host, port=int(port), password=password)
 
 
+messages = dict(
+    no_credit="""You have no credit to submit priority requests.
+    Please sent Imogen a payment,
+    or message Imogen with the /credit command to learn how to add credit for priority features""",
+)
+
 class Imogen(PayBot):
     worker_instance_id: Optional[str] = None
 
@@ -254,7 +260,11 @@ class Imogen(PayBot):
         return {"init_image": key}
 
     async def enqueue_prompt(
-        self, msg: Message, params: dict, attachments: bool = False
+        self,
+        msg: Message,
+        params: dict,
+        attachments: bool = False,
+        try_paid: bool = False,
     ) -> str:
         if not msg.text.strip():
             return "A prompt is required"
@@ -268,6 +278,10 @@ class Imogen(PayBot):
             group=msg.group or "",
             params=params,
         )
+        if try_paid:
+            result = await self.queue.enqueue_paid(*prompt.as_args())
+            if not result.get("queue_length"):
+                return messages["no_credit"]
         result = await self.queue.enqueue(*prompt.as_args())
         worker_created = await self.ensure_worker(result)
         if result.get("paid") and worker_created:
