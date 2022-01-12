@@ -357,7 +357,7 @@ class ClanGat(PayBotPro):
                     await self.send_message(user, value)
                 success = True
         if success:
-            return f"Successfully added {value} to event {param}'s {obj}(s)!"
+            return f"Successfully added {value} to event {param}'s {obj}!"
 
     @hide
     async def do_purchase(self, _: Message) -> Response:
@@ -391,7 +391,7 @@ https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
         ):
             self.pending_orders[msg.source] = code
             return [
-                self.event_prompts.get(code, "Event Unlocked!"),
+                self.event_prompts.get(code) or "Event Unlocked!",
                 f"You may now make one purchase of up to 2 tickets at {self.event_prices[code]} MOB ea.\nIf you have payments activated, open the conversation on your Signal mobile app, click on the plus (+) sign and choose payment.",
             ]
         # if there's a list but no attendees
