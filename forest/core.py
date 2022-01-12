@@ -562,7 +562,7 @@ class Bot(Signal):
             if hasattr(self, "do_" + message.arg0):
                 return await getattr(self, "do_" + message.arg0)(message)
             score, cmd = self.match_command(message.arg0)
-            if score > 0.5:
+            if score > float(utils.get_secret("TYPO_THRESHOLD")) or 0.7:
                 return await getattr(self, "do_" + cmd)(message)
             expansions = [cmd for cmd in self.commands if cmd.startswith(message.arg0)]
             if len(expansions) == 1:
