@@ -74,7 +74,8 @@ QueueExpressions = pghelp.PGExpressions(
         url TEXT DEFAULT 'https://imogen-renaissance.fly.dev/',
         sent_ts BIGINT DEFAULT null,
         errors INTEGER DEFAULT 0);""",
-    enqueue="SELECT enqueue_prompt(prompt:=$1, author:=$2, signal_ts:=$3, group_id:=$4, params:=$5, url:=$6)",
+    enqueue_free="SELECT enqueue_free_prompt(prompt:=$1, author:=$2, signal_ts:=$3, group_id:=$4, params:=$5, url:=$6)",
+    enqueue_paid="SELECT enqueue_paid_prompt(prompt:=$1, author:=$2, signal_ts:=$3, group_id:=$4, params:=$5, url:=$6)",
     length="SELECT count(id) AS len FROM {self.table} WHERE status='pending' OR status='assigned';",
     paid_length="SELECT count(id) AS len FROM {self.table} WHERE status='pending' OR status='assigned' AND paid=true;",
     list_queue="SELECT prompt FROM {self.table} WHERE status='pending' OR status='assigned' ORDER BY signal_ts ASC",
@@ -101,7 +102,8 @@ if not utils.LOCAL:
         logging.info("couldn't find kube creds")
 
 worker_status = "kubectl get pods -o json| jq '.items[] | {(.metadata.name): .status.phase}' | jq -s add"
-podcount = "kubectl get pods --no-headers | awk '$3 !~ /(Completed|Failed)/ {print $1}' | wc -l"
+jobcount = r"kubectl get jobs --no-headers | awk '$2 ~ /0\/1/ && $1 ~ /paid/ {print $1}' | wc -l"
+
 
 password, rest = utils.get_secret("REDIS_URL").removeprefix("redis://:").split("@")
 host, port = rest.split(":")
@@ -112,7 +114,9 @@ messages = dict(
     no_credit="""You have no credit to submit priority requests.
     Please sent Imogen a payment,
     or message Imogen with the /credit command to learn how to add credit for priority features""",
+    rate_limit="Slow down",
 )
+
 
 class Imogen(PayBot):
     worker_instance_id: Optional[str] = None
@@ -214,29 +218,39 @@ class Imogen(PayBot):
         "shows worker state"
         return json.loads(await get_output(worker_status)) or "no workers running"
 
-    async def do_balance(self, message: Message) -> Response:
-        return f"${await self.get_user_balance(message.source)}"
+    async def do_balance(self, msg: Message) -> Response:
+        if msg.group:
+            return (
+                "To make use of Imogen's paid features, please message Imogen directly."
+            )
+        balance = await self.get_user_balance(msg.source)
+        prompts = int(balance / (self.image_rate_cents / 100))
+        return f"Your current Imogen balance is ${balance} ({prompts} priority prompts)"
 
     image_rate_cents = 10
 
     async def payment_response(self, msg: Message, amount_pmob: int) -> str:
+        # lookup last group the person submitted a prompt in
+        # await self.queue.last_active_group(msg.source)
+        # await self.send_message("Imogen got {amount}")
         rate = self.image_rate_cents / 100
         prompts = int(await self.mobster.pmob2usd(amount_pmob) / rate)
         total = int(await self.get_user_balance(msg.source) / rate)
         return f"You now have an additional {prompts} priority prompts. Total: {total}"
 
-    async def ensure_worker(self, enqueue_result: dict) -> bool:
-        workers = int(await get_output(podcount))
+    async def ensure_free_worker(self) -> bool:
         # maybe check for the case of one running/completed pod and zero assigned workers
-        if workers == 0:
-            out = await get_output("kubectl create -f free-imagegen-job.yaml")
-            await self.admin("\N{rocket}\N{squared free}: " + out)
-            return True
-        if not enqueue_result.get("paid"):
-            logging.info("not paid and a worker already exists so not making a new one")
+        # could actually try creating a new one each time and use the name conflict lol
+        out = await get_output("kubectl create -f free-imagegen-job.yaml")
+        if "AlreadyExists" in out:
             return False
-        paid_queue_size = enqueue_result["paid_queue_size"]
-        if paid_queue_size / workers > 5 and workers < 6:
+        await self.admin("\N{rocket}\N{squared free}: " + out)
+        return "error" not in out.lower()
+
+    async def ensure_paid_worker(self, enqueue_result: dict) -> bool:
+        queue_size = enqueue_result["queue_size"]
+        workers = int(await get_output(jobcount))
+        if queue_size / workers > 5 and workers < 6:
             spec = open("paid-imagegen-job.yaml").read()
             with_name = spec.replace(
                 "generateName: imagegen-job-paid-",
@@ -264,7 +278,7 @@ class Imogen(PayBot):
         msg: Message,
         params: dict,
         attachments: bool = False,
-        try_paid: bool = False,
+        paid: bool = False,
     ) -> str:
         if not msg.text.strip():
             return "A prompt is required"
@@ -278,41 +292,56 @@ class Imogen(PayBot):
             group=msg.group or "",
             params=params,
         )
-        if try_paid:
+        if paid:
             result = await self.queue.enqueue_paid(*prompt.as_args())
-            if not result.get("queue_length"):
+            if not result.get("success"):
                 return messages["no_credit"]
-        result = await self.queue.enqueue(*prompt.as_args())
-        worker_created = await self.ensure_worker(result)
-        if result.get("paid") and worker_created:
-            deets = " (paid, started a new worker)"
-        elif result.get("paid"):
-            deets = " (paid)"
-        elif worker_created:
+            worker_created = await self.ensure_paid_worker(result)
+            priority = ""
+        else:
+            result = await self.queue.enqueue_free(*prompt.as_args())
+            if not result.get("success"):
+                return messages["rate_limit"]
+            worker_created = await self.ensure_free_worker()
+            priority = " priority"
+        if worker_created:
             deets = " (started a new worker)"
         else:
             deets = ""
-        return f"you are #{result['queue_length']} in line{deets}"
+        return f"you are #{result['queue_length']} in{priority} line{deets}"
 
     async def do_imagine(self, msg: Message) -> str:
-        """/imagine [prompt]"""
-        return await self.enqueue_prompt(msg, {}, True)
+        """/imagine [prompt]
+        Generates an image based on your prompt.
+        Request is handled in the free queue, every free request is addressed and generated sequentially.
+        """
+        return await self.enqueue_prompt(msg, {}, True, False)
 
-    async def do_quick(self, msg: Message) -> str:
-        """Generate a 512x512 image off from the last time this command was used"""
-        return await self.enqueue_prompt(msg, {"feedforward": True}, False)
-
-    async def do_fast(self, msg: Message) -> str:
-        """Generate an image in a single pass"""
-        return await self.enqueue_prompt(msg, {"feedforward_fast": True}, False)
+    async def do_priority(self, msg: Message) -> str:
+        """/imagine [prompt]
+        Like /imagine but places your request on a priority queue. Priority items get dedicated workers and bypass the free queue.
+        """
+        return await self.enqueue_prompt(msg, {}, True, True)
 
     async def do_paint(self, msg: Message) -> str:
-        """/paint <prompt>"""
+        """/paint <prompt>
+        Generate an image using the WikiArt dataset and your prompt, generates painting-like images. Requests handled on the Free queue.
+        """
         params = {
             "vqgan_config": "wikiart_16384.yaml",
             "vqgan_checkpoint": "wikiart_16384.ckpt",
         }
-        return await self.enqueue_prompt(msg, params, False)
+        return await self.enqueue_prompt(msg, params, False, False)
+
+    async def do_priority_paint(self, msg: Message) -> str:
+        """/paint <prompt>
+        Generate an image using the WikiArt dataset and your prompt, generates painting-like images. Requests handled on the Free queue.
+        """
+        params = {
+            "vqgan_config": "wikiart_16384.yaml",
+            "vqgan_checkpoint": "wikiart_16384.ckpt",
+        }
+        return await self.enqueue_prompt(msg, params, False, True)
 
     def make_prefix(prefix: str) -> Callable:  # type: ignore  # pylint: disable=no-self-argument
         async def wrapped(self: "Imogen", msg: Message) -> str:
@@ -329,6 +358,14 @@ class Imogen(PayBot):
     do_ukiyo = make_prefix("ukiyo")
     do_synthwave = make_prefix("synthwave")
     del make_prefix  # shouldn't be used after class definition is over
+
+    # async def do_quick(self, msg: Message) -> str:
+    #     """Generate a 512x512 image off from the last time this command was used"""
+    #     return await self.enqueue_prompt(msg, {"feedforward": True}, False)
+
+    # async def do_fast(self, msg: Message) -> str:
+    #     """Generate an image in a single pass"""
+    #     return await self.enqueue_prompt(msg, {"feedforward_fast": True}, False)
 
     @hide
     async def do_c(self, msg: Message) -> str:

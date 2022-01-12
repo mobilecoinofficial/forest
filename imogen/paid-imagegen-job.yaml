@@ -3,6 +3,8 @@ kind: Job
 metadata:
   generateName: imagegen-job-paid-
   namespace: tenant-mobilecoin-imogen
+  labels:
+      tier: paid
 spec:
   ttlSecondsAfterFinished: 60
   template:
@@ -11,6 +13,7 @@ spec:
       containers:
       - name: imogegen
         image: technillogue/imagegen:latest
+        imagePullPolicy: Always
         resources:
           limits:
             cpu: 3
