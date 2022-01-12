@@ -315,7 +315,7 @@ class Signal:
     async def get_profile_auxin(
         self,
         peerName: str = None,
-    ) -> str:
+    ) -> Message:
         """Gets a profile via Auxin RPC"""
         return await self.auxin_req("getprofile", peer_name=peerName)
 
