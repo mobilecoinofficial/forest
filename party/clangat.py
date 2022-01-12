@@ -379,7 +379,9 @@ https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
     async def default(self, msg: Message) -> Response:
         code = msg.command
         # if the event has an owner and a price and there's attendee space and the user hasn't already bought tickets
-        if code == "?":
+        if code == "+":
+            return await self.do_purchase(msg)
+        elif code == "?":
             return await self.do_help(msg)
         if (
             code in self.event_owners
