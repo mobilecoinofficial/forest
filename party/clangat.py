@@ -117,7 +117,7 @@ class ClanGat(PayBotPro):
         self.event_attendees: dict[str, list[str]] = PersistDict("event_attendees")
         self.event_lists: dict[str, list[str]] = PersistDict("event_lists")
         self.list_owners: dict[str, list[str]] = PersistDict("list_owners")
-        self.event_payouts: dict[str, str] = PersistDict("event_payouts")
+        self.easter_eggs: dict[str, str] = PersistDict("easter_eggs")
         # okay, this now maps the tag (restore key) of each of the above to the instance of the PersistDict class
         self.state = {
             self.__getattribute__(attr).tag: self.__getattribute__(attr)
@@ -178,7 +178,7 @@ class ClanGat(PayBotPro):
                     self.event_lists[list_] = [
                         el for el in self.event_lists[list_] if msg.source != el
                     ]
-                    self.send_message(
+                    await self.send_message(
                         msg.source,
                         f"Removed you from list {list_}, to rejoin send 'subscribe {list_}'",
                     )
@@ -231,22 +231,27 @@ class ClanGat(PayBotPro):
             obj in self.event_owners and user in self.event_owners.get(obj, [])
         )
         list_ = []
-        if user_owns_list_obj and param:
-            list_ = self.event_lists.get(obj, [])
-            if len(list_) > 0:
-                for target_user in list_:
-                    await self.send_message(target_user, param)
-                return f"OK, blasted '{param}' to {len(list_)} people on list {obj}"
-        if user_owns_event_obj and param:
-            await self.send_message(msg.source, "blasting to event attendees")
-            list_ = self.event_attendees.get(obj, [])
-            for target_user in list_:
+        success = False
+        if (user_owns_list_obj or user_owns_event_obj) and param:
+            for target_user in list(
+                set(self.event_lists.get(obj, []) + self.event_attendees.get(obj, []))
+            ):
                 await self.send_message(target_user, param)
-            return f"OK, blasted '{param}' to {len(list_)} people on list {obj}"
+                for owner in list(
+                    set(self.event_owners.get(obj, []) + self.list_owners.get(obj, []))
+                ):
+                    success = True
+                    await self.send_message(
+                        owner,
+                        f"OK, sent '{param}' to 1 of {len(self.event_lists.get(obj, []) + self.event_attendees.get(obj, []))} people via {obj}: {target_user}",
+                    )
+                await asyncio.sleep(1)
         elif user_owns_event_obj or user_owns_list_obj:
             return "add a message"
         else:
-            return "nice try"
+            return "nice try - you don't have ownership!"
+        if not success:
+            return "That didn't work!"
 
     async def do_subscribe(self, msg: Message) -> Response:
         obj = (msg.arg1 or "").lower()
@@ -263,6 +268,10 @@ class ClanGat(PayBotPro):
         if msg.arg1 and msg.arg1.lower() == "add":
             return self.do_add.__doc__
         return "Welcome to The Hotline!\nEvents and announcement lists can be unlocked by messaging the bot the secret code at any time.\n\nAccolades, feature requests, and support questions can be directed to the project maintainers at https://signal.group/#CjQKILH5dkoz99TKxwG7T3TaVAuskMq4gybSplYDfTq-vxUrEhBhuy19A4DbvBqm7PfnBn3I ."
+
+    async def do_set(self, msg: Message) -> Response:
+        """Set is an alias for add"""
+        return await self.do_add(msg)
 
     async def do_add(self, msg: Message) -> Response:
         """add event <eventcode>
@@ -286,7 +295,16 @@ class ClanGat(PayBotPro):
         )
         objs = "event list owner price prompt limit invitees blast".split()
         success = False
-        if obj == "event" and param not in self.event_owners:
+        if obj == "egg" and param not in self.easter_eggs and value:
+            self.easter_eggs[param] = f"{value} - added by {msg.source}"
+            return "Added an egg!"
+        elif obj == "egg" and param in self.easter_eggs:
+            return f"Sorry, egg already has value {self.easter_eggs.get(param)}. Please message support to change it."
+        if (
+            obj == "event"
+            and param not in self.event_owners
+            and param not in self.list_owners
+        ):
             self.event_owners[param] = [user]
             self.event_prices[param] = None
             self.event_attendees[param] = []
@@ -295,7 +313,11 @@ class ClanGat(PayBotPro):
             self.event_prompts[param] = ""
             successs = True
             return f'you now own event "{param}", and a list by the same name - time to add price, prompt, and invitees'
-        if obj == "list" and param not in self.event_lists:
+        if (
+            obj == "list"
+            and param not in self.list_owners
+            and param not in self.event_owners
+        ):
             self.event_lists[param] = []
             self.list_owners[param] = [user]
             return f"created list {param}, time to add some invitees and blast 'em"
@@ -368,7 +390,7 @@ https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
             self.pending_orders[msg.source] = code
             return [
                 self.event_prompts.get(code, "Event Unlocked!"),
-                f"You may purchase up to 2 tickets at {self.event_prices[code]} MOB ea.\nIf you have payments activated, open the conversation on your Signal mobile app, click on the plus (+) sign and choose payment.",
+                f"You may now make one purchase of up to 2 tickets at {self.event_prices[code]} MOB ea.\nIf you have payments activated, open the conversation on your Signal mobile app, click on the plus (+) sign and choose payment.",
             ]
         # if there's a list but no attendees
         elif code in self.event_lists and code not in self.event_owners:
@@ -377,6 +399,12 @@ https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
             else:
                 self.event_lists[code] += [msg.source]
                 return f"Added you to the {code} list!"
+        elif (
+            code in self.event_owners
+            and code in self.event_prices
+            and msg.source in self.event_attendees[code]
+        ):
+            return f"You're already on the '{code}' list."
         elif code:
             lists = []
             all_owners = []
@@ -410,6 +438,8 @@ https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
             except AttributeError:
                 # this returns a Dict containing an error key
                 user_given = "[error]"
+            if code in self.easter_eggs:
+                return self.easter_eggs.get(code)
             for owner in list(set(all_owners)):
                 # don't flood j
                 if "7777" not in owner:
@@ -418,7 +448,6 @@ https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
                         f"{user_given} ( {msg.source} ) says: {code} {msg.text}\nThey are in {list(set(lists))}",
                     )
                     await asyncio.sleep(0.1)
-
             return "Sorry, I can't help you with that!"
 
     @time_(REQUEST_TIME)  # type: ignore

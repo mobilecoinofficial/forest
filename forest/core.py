@@ -116,7 +116,7 @@ class Signal:
                 path += " --download-path /tmp"
             else:
                 path += " --trust-new-identities always"
-            command = f"{path} --config {utils.ROOT_DIR} --download-path /tmp --user {self.bot_number} jsonRpc".split()
+            command = f"{path} --config {utils.ROOT_DIR} --user {self.bot_number} jsonRpc".split()
             logging.info(command)
             proc_launch_time = time.time()
             self.proc = await asyncio.create_subprocess_exec(
@@ -294,7 +294,7 @@ class Signal:
 
     async def set_profile_auxin(
         self,
-        given_name: Optional[str] = "",
+        given_name: str = "",
         family_name: Optional[str] = "",
         payment_address: Optional[str] = "",
         profile_path: Optional[str] = None,
@@ -403,6 +403,7 @@ class Signal:
         }
         self.pending_requests[future_key] = asyncio.Future()
         await self.auxincli_input_queue.put(json_command)
+        await asyncio.sleep(0.005)
         return future_key
 
     async def admin(self, msg: Response) -> None:
@@ -713,9 +714,9 @@ class PayBot(Bot):
             attachment_info = msg.attachments[0]
             attachment_path = attachment_info.get("fileName")
             timestamp = attachment_info.get("uploadTimestamp")
-            if attachment_path is None:
+            if attachment_path == None:
                 attachment_paths = glob.glob(f"/tmp/unnamed_attachment_{timestamp}.*")
-                if attachment_paths:
+                if len(attachment_paths):
                     user_image = attachment_paths.pop()
             else:
                 user_image = f"/tmp/{attachment_path}"
@@ -758,7 +759,7 @@ class PayBot(Bot):
         content_skeletor["dataMessage"]["payment"] = payment
         return json.dumps(content_skeletor)
 
-    async def build_gift_code(self, amount_pmob: int) -> list[str]:
+    async def build_gift_code(self, amount_pmob: int) -> Response:
         """Builds a gift code and returns a list of messages to send, given an amount in pMOB."""
         raw_prop = await self.mob_request(
             "build_gift_code",
@@ -893,6 +894,7 @@ app.add_routes(
         web.get("/csv_metrics", metrics),
     ]
 )
+
 
 # order of operations:
 # 1. start memfs
