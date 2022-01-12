@@ -1,7 +1,8 @@
 #!/usr/bin/python3.9
 # Copyright (c) 2021 MobileCoin Inc.
 # Copyright (c) 2021 The Forest Team
-
+# pylint: disable=invalid-name disable=line-too-long disable=missing-module-docstring disable=consider-using-with
+# pylint: disable=too-many-locals disable=too-many-arguments disable=bare-except
 import asyncio
 import base64
 import json
@@ -73,11 +74,19 @@ InvoicePGEExpressions = PGExpressions(
 
 
 class InvoiceManager(PGInterface):
+    """
+    Manage simple list of invoices
+    """
+
     def __init__(self) -> None:
         super().__init__(InvoicePGEExpressions, DATABASE_URL, None)
 
 
 class LedgerManager(PGInterface):
+    """
+    Manage simple list of txos
+    """
+
     def __init__(
         self,
         queries: PGExpressions = LedgerPGExpressions,
@@ -101,8 +110,9 @@ class LedgerManager(PGInterface):
 #     )
 
 
-class Mobster:
-    """Class to keep track of a aiohttp session and cached rate"""
+class Mobster:  # pylint: disable=too-many-public-methods
+    """Class to keep track of aiohttp session and provide useful full service
+    api methods"""
 
     default_url = ()
 
@@ -118,6 +128,10 @@ class Mobster:
         self.url = url
 
     async def req_(self, method: str, **params: str) -> dict:
+        """
+        Make json rpc request to MobileCoin full-service api specifying
+        arguments as named parameters
+        """
         logging.info("full-service request: %s", method)
         result = await self.req({"method": method, "params": params})
         if "error" in result:
@@ -125,6 +139,9 @@ class Mobster:
         return result
 
     async def req(self, data: dict) -> dict:
+        """
+        Make json rpc request to Mobilecoin full-service api using a dictionary
+        """
         better_data = {"jsonrpc": "2.0", "id": 1, **data}
         logging.debug("url is %s", self.url)
         conn = aiohttp.TCPConnector(ssl=ssl_context)
@@ -161,11 +178,25 @@ class Mobster:
         return mob_rate
 
     async def pmob2usd(self, pmob: int) -> float:
+        """
+        Convert pmob into current market rate usd
+
+        args:
+          pmob (int): amount in pmob to convert
+
+        Returns:
+          float: amount in USD
+        """
         return float(mc_util.pmob2mob(pmob)) * await self.get_rate()
 
     async def usd2mob(self, usd: float, perturb: bool = False) -> float:
-        invnano = 100000000
-        # invpico = 100000000000 # doesn't work in mixin
+        """
+        Convert current market rate of USD into MoB
+
+        args:
+          usd (float): amount in USD to convert
+          peturb (bool): extend precision to 8 floating points
+        """
         mob_rate = await self.get_rate()
         if perturb:
             # perturb each price slightly to have a unique payment
@@ -176,6 +207,9 @@ class Mobster:
         return round(mob_amount, 3)  # maybe ceil?
 
     async def create_invoice(self, amount_usd: float, account: str, memo: str) -> float:
+        """
+        Create invoice using full service api
+        """
         while 1:
             try:
                 mob_price_exact = await self.usd2mob(amount_usd, perturb=True)
@@ -187,6 +221,9 @@ class Mobster:
                 pass
 
     async def import_account(self) -> dict:
+        """
+        import mobilecoin account with an account mnemonic
+        """
         params = {
             "mnemonic": utils.get_secret("MNEMONIC"),
             "key_derivation_version": "1",
@@ -197,12 +234,22 @@ class Mobster:
         return await self.req({"method": "import_account", "params": params})
 
     # cache?
-    async def get_address(self) -> str:
+    async def get_address(self, index: int = 0) -> str:
+        """
+        Get main address in wallet for a specific account
+        """
         res = await self.req({"method": "get_all_accounts"})
-        acc_id = res["result"]["account_ids"][0]
+        acc_id = res["result"]["account_ids"][index]
         return res["result"]["account_map"][acc_id]["main_address"]
 
     async def get_receipt_amount_pmob(self, receipt_str: str) -> Optional[int]:
+        """
+        Use blinded full service receipt to get amount of sent transaction
+
+        receipt_str (str): receipt string
+
+        Returns (Optional[int]): amount of transaction specified in receipt
+        """
         full_service_receipt = mc_util.b64_receipt_to_full_service_receipt(receipt_str)
         logging.info("fs receipt: %s", full_service_receipt)
         params = {
@@ -226,14 +273,23 @@ class Mobster:
 
     account_id: Optional[str] = None
 
-    async def get_account(self) -> str:
+    async def get_account(self, index: int = 0) -> str:
+        """
+        Get account_id of an account within the wallet in use
+        """
         if not isinstance(self.account_id, str):
             self.account_id = (await self.req({"method": "get_all_accounts"}))[
                 "result"
-            ]["account_ids"][0]
+            ]["account_ids"][index]
         return self.account_id
 
     async def get_balance(self) -> int:
+        """
+        Get balance of primary account in wallet in pmob
+
+        Returns:
+          int: balance in pmob
+        """
         value = (
             await self.req(
                 {
@@ -245,6 +301,15 @@ class Mobster:
         return int(value)
 
     async def get_transactions(self, account_id: str) -> dict[str, dict[str, dict]]:
+        """
+        Get all transactions logs for a specified account
+
+        args:
+          account_id (str): account_id of desired account
+
+        Returns:
+          dict[str, dict[str,dict]]: list of transactions & associated metadata
+        """
         return (
             await self.req(
                 {
@@ -255,18 +320,19 @@ class Mobster:
         )["result"]["transaction_log_map"]
 
     async def build_transaction(
-            self,
-            account_id: str,
-            value_pmob: int = -1,
-            recipient_public_address: str = "",
-            addresses_and_values: Optional[list[tuple[str, int]]] = None,
-            input_txo_ids: Optional[list[str]] = None,
-            submit: bool=False,
-            log: bool =False,
-            fee: int = -1,
-            tombstone_block: int = -1,
-            max_spendable_value: int = -1,
-            comment: str = "") -> dict:
+        self,
+        account_id: str,
+        value_pmob: int = -1,
+        recipient_public_address: str = "",
+        addresses_and_values: Optional[list[tuple[str, int]]] = None,
+        input_txo_ids: Optional[list[str]] = None,
+        submit: bool = False,
+        log: bool = False,
+        fee: int = -1,
+        tombstone_block: int = -1,
+        max_spendable_value: int = -1,
+        comment: str = "",
+    ) -> dict:
         """
         Build a single_txo or multi_txo transaction. If building a single txo
         transaction use value_pmob and recipient_public_address args. If
@@ -277,8 +343,8 @@ class Mobster:
           account_id (str): account_id of the sending account
           value_pmob (int): txo value if building a single_txo transaction in picomob
           recipient_public_address (str): address of recipient for single txo transaction
-          addresses_and_values (list[tuple[str,int]]): List of pairs of addresses and 
-          picomob 
+          addresses_and_values (list[tuple[str,int]]): List of pairs of addresses and
+          picomob
           input_txo_ids: list[str]: list of input_txo_ids to use to build the
           txos. Input txos must be greater than or equal to value being sent in
           the transaction
@@ -292,17 +358,18 @@ class Mobster:
           comment (str): comment to annotate transaction purpose to be stored
           in wallet db
         """
-        params: dict[str, Any] = {}
-        
+        params: dict[str, Any] = {"account_id": account_id}
         method = "build_transaction"
+
         if submit:
             method = "build_and_submit_transaction"
         if value_pmob > 0:
-            params["value_pmob"] = value_pmob
+            params["value_pmob"] = str(value_pmob)
         if recipient_public_address:
             params["recipient_public_address"] = recipient_public_address
         if addresses_and_values:
-            params["addresses_and_values"] = addresses_and_values
+            value_pairs = [(v[0], str(v[1])) for v in addresses_and_values]
+            params["addresses_and_values"] = value_pairs
         if input_txo_ids:
             params["input_txo_ids"] = input_txo_ids
         if submit and comment:
@@ -312,13 +379,15 @@ class Mobster:
         if fee > 0:
             params["fee"] = fee
         if tombstone_block > 0:
-            params["tombstone_block"]  = tombstone_block
-        if max_spendable_value >0:
+            params["tombstone_block"] = tombstone_block
+        if max_spendable_value > 0:
             params["max_spendable_value"] = max_spendable_value
         if comment:
             params["comment"] = comment
-        
-        return await self.req({"method": method, "params":params})
+
+        tx_proposal = {"method": method, "params": params}
+        logging.info("building txo_proposal: %s", tx_proposal)
+        return await self.req(tx_proposal)
 
     async def submit_transaction(
         self, tx_proposal: dict, account_id: str = "", comment: str = ""
@@ -336,7 +405,9 @@ class Mobster:
         Return:
           dict: proposal submission result
         """
-        request = dict(method="submit_transaction", params=dict(tx_proposal=tx_proposal))
+        request = dict(
+            method="submit_transaction", params=dict(tx_proposal=tx_proposal)
+        )
 
         if account_id:
             request["params"]["account_id"] = account_id  # type: ignore
@@ -475,7 +546,7 @@ class Mobster:
         txo_status: str = "txo_status_unspent",
         max_val: Union[int, float] = 0,
         min_val: int = 0,
-    ) -> list[tuple[str,int]]:
+    ) -> list[tuple[str, int]]:
         """
         Get all txos matching specific criterion
 
@@ -496,13 +567,14 @@ class Mobster:
             == txo_status
             and (max_val > int(v.get("value_pmob")) > min_val)
         ]
-        return sorted(utxos, key = lambda txo_value: txo_value[1], reverse=True)
+        return sorted(utxos, key=lambda txo_value: txo_value[1], reverse=True)
 
-    async def build_split_txo_transaction(self, txo_id: str, output_values:
-            list[int], **params: str) -> dict:
+    async def build_split_txo_transaction(
+        self, txo_id: str, output_values: list[int], **params: str
+    ) -> dict:
         """
-        Helper method that splits an existing txo in the account into multiple 
-        txos sent to the account. Primary use-case is ensuring enough txos 
+        Helper method that splits an existing txo in the account into multiple
+        txos sent to the account. Primary use-case is ensuring enough txos
         exist to make multiple transactions in a short timeframe.
 
         args:
@@ -510,21 +582,70 @@ class Mobster:
           output_values (list[int]): list o
         """
         values = [str(value) for value in output_values]
-        data = dict(method = "build_and_split_txo_transaction", params = dict(
-            txo_id=txo_id, output_values=values, **params))
+        data = dict(
+            method="build_and_split_txo_transaction",
+            params=dict(txo_id=txo_id, output_values=values, **params),
+        )
         result = await self.req(data)
         return result.get("result", {})
 
-    async def preallocate_txos(self, account_id: str, tx_list: list[int]) -> None:
+    async def preallocate_txos(
+        self, account_id: str, txo_list: list[int], address: str = ""
+    ) -> list[tuple[str, int]]:
         """
-        Pre-allocate a list of transactions.
+        Pre-allocate UTXOS in exact amount for a list of amounts. Used when a
+        large amount of transactions need to be sent.
+
+        args:
+          account_id (str): account_id of the account to allocate the txos within
+          txo_list (list[int]): list of transaction amounts in pmob to allocate
+
+
         """
         unspent_utxos = await self.filter_utxos(account_id)
-        tx_list = sorted(tx_list, reverse=True)
-        total_requested = sum(tx_list)
+        txo_list = sorted(txo_list, reverse=True)
+        logging.info("attempting pre_allocation of: %s", txo_list)
+        total_requested = sum(txo_list)
         total_available = sum([txo[1] for txo in unspent_utxos])
         if total_available < total_requested:
             raise ValueError("Not enough available in account to allocate txos")
+        tx_list_split = [txo_list[i : i + 15] for i in range(0, len(txo_list), 15)]
+        output_txos = []
+        if not address:
+            address = await self.get_address()
+        for sublist in tx_list_split:
+            send_list = []
+            utxo_inputs = []
+            txo_total = sum(sublist)
+            logging.info("Allocating %s txos totaling %s Pmob", len(sublist), txo_total)
+            for utxo in unspent_utxos:
+                utxo_inputs.append(utxo)
+                logging.debug("utxo_inputs are %s", utxo_inputs)
+                input_amt = sum([utxo[1] for utxo in utxo_inputs])
+                if input_amt > txo_total:
+                    send_list = [(address, amt) for amt in sublist]
+                    tx_prop = await self.build_transaction(
+                        account_id,
+                        addresses_and_values=send_list,
+                        input_txo_ids=[utxo[0] for utxo in utxo_inputs],
+                        submit=True,
+                        comment="txo_allocation",
+                    )
+                    await asyncio.sleep(5)
+                    otxos = (
+                        tx_prop.get("result", {})
+                        .get("transaction_log", {})
+                        .get("output_txos")
+                    )
+                    output_txos.extend(
+                        [
+                            (utxo.get("txo_id_hex"), int(utxo.get("value_pmob")))
+                            for utxo in otxos
+                        ]
+                    )
+                    break
+            unspent_utxos = await self.filter_utxos(account_id)
+        return output_txos
 
     async def create_account(self, name: str) -> dict:
         """
@@ -541,7 +662,11 @@ class Mobster:
         return await self.req(request)
 
     async def monitor_wallet(self) -> None:
-        last_transactions: dict[str, dict[str, str]] = {}
+        """
+        Monitor wallet for transactions and store transactions in postgres
+        database
+        """
+        last_transactions: dict[str, dict[Any, Any]] = {}
         account_id = await self.get_account()
         while True:
             latest_transactions = await self.get_transactions(account_id)
@@ -556,6 +681,7 @@ class Mobster:
                             v = v[:16]
                         short_tx[k] = v
                     logging.info(short_tx)
+                    assert isinstance(short_tx["value_pmob"], int)
                     value_pmob = int(short_tx["value_pmob"])
                     invoice = await self.invoice_manager.get_invoice_by_amount(
                         value_pmob
