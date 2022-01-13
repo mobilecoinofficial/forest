@@ -759,8 +759,10 @@ class PayBot(Bot):
         )
         prop = raw_prop["result"]["tx_proposal"]
         if tx_comment:
-            await self.mob_request("submit_transaction", tx_proposal=prop,
+            result = await self.mob_request("submit_transaction", tx_proposal=prop,
                     comment=tx_comment, account_id=account_id)
+            logging.info('result of tx send attempt to %s was:\n %s',
+                    recipient, result)
         else:
             await self.mob_request("submit_transaction", tx_proposal=prop)
         receipt_resp = await self.mob_request(
