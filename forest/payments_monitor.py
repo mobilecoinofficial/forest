@@ -133,7 +133,8 @@ class Mobster:  # pylint: disable=too-many-public-methods
         Make json rpc request to MobileCoin full-service api specifying
         arguments as named parameters
         """
-        logging.info("full-service request: %s", method)
+        logging.info("full-service request: {method: %s, params: %s}", method,
+                list(params.keys()))
         result = await self.req({"method": method, "params": params})
         if "error" in result:
             logging.error(result)
@@ -144,7 +145,6 @@ class Mobster:  # pylint: disable=too-many-public-methods
         Make json rpc request to Mobilecoin full-service api using a dictionary
         """
         better_data = {"jsonrpc": "2.0", "id": 1, **data}
-        logging.debug("url is %s", self.url)
         conn = aiohttp.TCPConnector(ssl=ssl_context)
         mob_req = aiohttp.ClientSession(connector=conn).post(
             self.url,

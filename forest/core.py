@@ -736,7 +736,8 @@ class PayBot(Bot):
         recipient: str,
         amount_pmob: int,
         receipt_message: str = "Transaction sent!",
-        tx_comment: str = ""
+        tx_comment: str = "",
+        **params: Any
     ) -> Optional[Message]:
         address = await self.get_address(recipient)
         if not address:
@@ -747,17 +748,19 @@ class PayBot(Bot):
         # TODO: add a lock around two-part build/submit Or
         # TODO: add explicit utxo handling
         # TODO: add task which keeps full-service filled
+        account_id = await self.mobster.get_account()
         raw_prop = await self.mob_request(
             "build_transaction",
-            account_id=await self.mobster.get_account(),
+            account_id=account_id,
             recipient_public_address=address,
             value_pmob=str(int(amount_pmob)),
             fee=str(int(1e12 * 0.0004)),
+            **params
         )
         prop = raw_prop["result"]["tx_proposal"]
         if tx_comment:
             await self.mob_request("submit_transaction", tx_proposal=prop,
-                    comment=tx_comment)
+                    comment=tx_comment, account_id=account_id)
         else:
             await self.mob_request("submit_transaction", tx_proposal=prop)
         receipt_resp = await self.mob_request(
