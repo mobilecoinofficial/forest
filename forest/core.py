@@ -255,6 +255,7 @@ class Signal:
     # In the next section, we see how the input queue is populated and consumed
 
     pending_requests: dict[str, asyncio.Future[Message]] = {}
+    pending_messages_sent: dict[str, dict] = {}
 
     async def wait_resp(
         self, req: Optional[dict] = None, future_key: str = ""
@@ -389,6 +390,8 @@ class Signal:
             "method": "send",
             "params": params,
         }
+        future_key = f"send-{int(time.time()*1000)}-{hex(hash(msg))[-4:]}"
+        self.pending_messages_sent[future_key] = json_command
         self.pending_requests[future_key] = asyncio.Future()
         await self.auxincli_input_queue.put(json_command)
         return future_key
@@ -496,7 +499,14 @@ class Bot(Signal):
         async for message in self.auxincli_output_iter():
             if message.id and message.id in self.pending_requests:
                 logging.debug("setting result for future %s: %s", message.id, message)
+                sent_json_message = self.pending_messages_sent.pop(message.id)
                 self.pending_requests[message.id].set_result(message)
+                if "error" in message.blob and "413" in message.blob["error"]["data"]:
+                    logging.warning("waiting to retry send after rate limit")
+                    future_key = f"send-{int(time.time()*1000)}-{hex(hash(msg))[-4:]}"
+                    self.pending_messages_sent[future_key] = sent_json_message
+                    self.pending_requests[future_key] = asyncio.Future()
+                    await self.auxincli_input_queue.put(json_command)
                 continue
             self.pending_response_tasks = [
                 task for task in self.pending_response_tasks if not task.done()
