@@ -295,9 +295,22 @@ class ClanGat(PayBotPro):
         )
         objs = "event list owner price prompt limit invitees blast".split()
         success = False
-        if obj == "egg" and param not in self.easter_eggs and value:
-            self.easter_eggs[param] = f"{value} - added by {msg.source}"
-            return "Added an egg!"
+        if (
+            obj == "egg"
+            and (
+                param not in self.easter_eggs
+                or msg.source in self.easter_eggs.get(param, "")
+            )
+            and value
+        ):
+            maybe_old_message = self.easter_eggs.get(param, "")
+            if maybe_old_message:
+                self.send_message(msg.source, f"replacing: {maybe_old_message}")
+                self.easter_eggs[param] = f"{value} - updated by {msg.source}"
+                return f"Updated {param} to read {value}"
+            else:
+                self.easter_eggs[param] = f"{value} - added by {msg.source}"
+                return f'Added an egg! "{param}" now returns\n > {value} - added by {msg.source}'
         elif obj == "egg" and param in self.easter_eggs:
             return f"Sorry, egg already has value {self.easter_eggs.get(param)}. Please message support to change it."
         if (
