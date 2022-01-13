@@ -390,7 +390,6 @@ class Signal:
             "method": "send",
             "params": params,
         }
-        future_key = f"send-{int(time.time()*1000)}-{hex(hash(msg))[-4:]}"
         self.pending_messages_sent[future_key] = json_command
         self.pending_requests[future_key] = asyncio.Future()
         await self.auxincli_input_queue.put(json_command)
@@ -434,10 +433,16 @@ class Signal:
             command = await self.auxincli_input_queue.get()
             yield command
 
+    pause = False
+
     # maybe merge with the above?
     async def write_commands(self, pipe: StreamWriter) -> None:
         """Encode and write pending auxin-cli commands"""
         async for msg in self.auxincli_input_iter():
+            if self.pause:
+                logging.info("pausing message writes")
+                await asyncio.sleep(4)
+                self.pause = False
             if not msg.get("method"):
                 print(msg)
             if msg.get("method") != "receive":
@@ -503,6 +508,8 @@ class Bot(Signal):
                 self.pending_requests[message.id].set_result(message)
                 if "error" in message.blob and "413" in message.blob["error"]["data"]:
                     logging.warning("waiting to retry send after rate limit")
+                    self.pause = True
+                    asyncio.sleep(4)
                     future_key = f"send-{int(time.time()*1000)}-{hex(hash(msg))[-4:]}"
                     self.pending_messages_sent[future_key] = sent_json_message
                     self.pending_requests[future_key] = asyncio.Future()
