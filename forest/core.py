@@ -261,8 +261,7 @@ class Signal:
     pending_requests: dict[str, asyncio.Future[Message]] = {}
     pending_messages_sent: dict[str, dict] = {}
 
-    async def wait_resp(
-        self, req: Optional[dict] = None, future_key: str = ""
+    async def wait_resp( self, req: Optional[dict] = None, future_key: str = ""
     ) -> Message:
         if req:
             future_key = req["method"] + "-" + str(round(time.time()))
@@ -509,6 +508,7 @@ class Bot(Signal):
                 logging.debug("setting result for future %s: %s", message.id, message)
                 sent_json_message = self.pending_messages_sent.pop(message.id)
                 self.pending_requests[message.id].set_result(message)
+                logging.info(message.blob)
                 if "error" in message.blob and "413" in message.blob["error"]["data"]:
                     logging.warning("waiting to retry send after rate limit")
                     self.pause = True
