@@ -201,9 +201,7 @@ class Mobster:
             built += 15
             i += 1
         time.sleep(10)
-        return (
-            f"built {built} utxos each containing {output_millimob} mmob/ea"
-        )
+        return f"built {built} utxos each containing {output_millimob} mmob/ea"
 
     rate_cache: tuple[int, Optional[float]] = (0, None)
 

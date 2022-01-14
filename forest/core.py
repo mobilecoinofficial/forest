@@ -800,6 +800,7 @@ class PayBot(Bot):
         # TODO: add a lock around two-part build/submit Or
         # TODO: add explicit utxo handling
         # TODO: add task which keeps full-service filled
+        raw_prop = {}
         if len(input_txo_ids) > 0:
             raw_prop = await self.mob_request(
                 "build_transaction",
@@ -817,7 +818,9 @@ class PayBot(Bot):
                 value_pmob=str(int(amount_pmob)),
                 fee=str(int(1e12 * 0.0004)),
             )
-        prop = raw_prop["result"]["tx_proposal"]
+        prop = raw_prop.get("result", {}).get("tx_proposal", {})
+        if not prop:
+            return f"error: {raw_prop}"
         await self.mob_request("submit_transaction", tx_proposal=prop)
         receipt_resp = await self.mob_request(
             "create_receiver_receipts",
