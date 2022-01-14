@@ -788,23 +788,34 @@ class PayBot(Bot):
         recipient: str,
         amount_pmob: int,
         receipt_message: str = "Transaction sent!",
+        input_txo_ids: list[str] = [],
     ) -> Optional[Message]:
         address = await self.get_address(recipient)
         if not address:
             await self.send_message(
-                recipient, "sorry, couldn't get your MobileCoin address"
+                recipient, "Sorry, we tried to send a payment, but couldn't get your MobileCoin address!"
             )
             return None
         # TODO: add a lock around two-part build/submit Or
         # TODO: add explicit utxo handling
         # TODO: add task which keeps full-service filled
-        raw_prop = await self.mob_request(
-            "build_transaction",
-            account_id=await self.mobster.get_account(),
-            recipient_public_address=address,
-            value_pmob=str(int(amount_pmob)),
-            fee=str(int(1e12 * 0.0004)),
-        )
+        if len(input_txo_ids) > 0:
+            raw_prop = await self.mob_request(
+                "build_transaction",
+                account_id=await self.mobster.get_account(),
+                recipient_public_address=address,
+                value_pmob=str(int(amount_pmob)),
+                fee=str(int(1e12 * 0.0004)),
+                input_txo_ids=input_txo_ids,
+            )
+        else:
+            raw_prop = await self.mob_request(
+                "build_transaction",
+                account_id=await self.mobster.get_account(),
+                recipient_public_address=address,
+                value_pmob=str(int(amount_pmob)),
+                fee=str(int(1e12 * 0.0004)),
+            )
         prop = raw_prop["result"]["tx_proposal"]
         await self.mob_request("submit_transaction", tx_proposal=prop)
         receipt_resp = await self.mob_request(
@@ -818,8 +829,8 @@ class PayBot(Bot):
         # pass our beautifully composed spicy JSON content to auxin.
         # message body is ignored in this case.
         payment_notif = await self.send_message(recipient, "", content=content)
-        if receipt_message:
-            await self.send_message(recipient, receipt_message)
+        #if receipt_message:
+        #    await self.send_message(recipient, receipt_message)
         return await self.wait_resp(future_key=payment_notif)
 
 

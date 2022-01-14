@@ -33,6 +33,8 @@ else:
     ssl_context.verify_mode = ssl.CERT_REQUIRED
     ssl_context.load_cert_chain(certfile="client.full.pem")
 
+MICROMOB_TO_PICOMOB = 1_000_000
+MILLIMOB_TO_PICOMOB = 1_000_000_000
 
 DATABASE_URL = utils.get_secret("DATABASE_URL")
 LedgerPGExpressions = PGExpressions(
@@ -126,6 +128,82 @@ class Mobster:
         )
         async with mob_req as resp:
             return await resp.json()
+
+    async def get_all_txos_for_account(self):
+        txos = (
+            (
+                (
+                    await self.req_(
+                        "get_all_txos_for_account", account_id=await self.get_account()
+                    )
+                )
+            )
+            .get("result", {})
+            .get("txo_map", {})
+        )
+
+        return txos
+
+    async def get_utxos(self):
+        txos = await self.get_all_txos_for_account()
+        utxos = dict(
+            [
+                (txo, int(status.get("value_pmob")))
+                for txo, status in txos.items()
+                if status.get("account_status_map", {})
+                .get(await self.get_account(), {})
+                .get("txo_status")
+                == "txo_status_unspent"
+            ]
+        )
+        utxos = sorted(utxos.items(), key=lambda txo: utxos.get(txo[0]))
+        utxos = dict(utxos)
+        return utxos
+
+    async def get_balance2(self):
+        txos = await self.get_all_txos_for_account()
+        utxos = [
+            (txo, int(status.get("value_pmob")))
+            for txo, status in txos.items()
+            if status.get("account_status_map", {})
+            .get(await self.get_account(), {})
+            .get("txo_status")
+            == "txo_status_unspent"
+        ]
+        utxos = sorted(utxos, key=lambda txo_value: txo_value[1])
+        utxos = dict(utxos)
+        print(f"starting balance: {sum(utxos.values())/MILLIMOB_TO_PICOMOB}mmob")
+        return sum(utxos.values()) / MILLIMOB_TO_PICOMOB
+
+    async def split_txos_slow(self, output_millimob=100, target_quantity=200):
+        utxos = list(reversed(await self.get_utxos()))
+        built = 0
+        i = 0
+        while built < (target_quantity + 10):
+            split_transaction = await self.req_(
+                "build_split_txo_transaction",
+                **dict(
+                    txo_id=utxos.pop(0),
+                    output_values=[
+                        str(
+                            output_millimob * MILLIMOB_TO_PICOMOB
+                            + 400 * MICROMOB_TO_PICOMOB
+                        )
+                        for _ in range(15)
+                    ],
+                ),
+            )
+            params = split_transaction.get("result", {})
+            if not params:
+                return split_transaction
+            split_result = await self.req_("submit_transaction", **params)
+            time.sleep(2)
+            built += 15
+            i += 1
+        time.sleep(10)
+        return (
+            f"built {built} utxos each containing {output_millimob} mmob/ea"
+        )
 
     rate_cache: tuple[int, Optional[float]] = (0, None)
 

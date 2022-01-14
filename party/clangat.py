@@ -183,6 +183,50 @@ class ClanGat(PayBotPro):
                         f"Removed you from list {list_}, to rejoin send 'subscribe {list_}'",
                     )
 
+    @requires_admin
+    async def do_pay_list(self, msg: Message) -> Response:
+        list_, amount, message = (
+            (msg.arg1 or "").lower(),
+            int((msg.arg2 or "0").lower()),
+            msg.arg3 or list_,
+        )
+        if not (list_ in self.event_lists or list_ in self.event_attendees):
+            return "Sorry, that's not a valid list!"
+        to_send = self.event_lists.get(list_, None) or self.event_attendees.get(
+            list_, []
+        )
+        total = len(to_send) * amount
+        await self.send_message(
+            msg.source, f"about to send {total}mmob to {len(to_send)} folks on {list_}"
+        )
+        utxos = await self.mobster.get_utxos()
+        valid_utxos = [
+            utxo
+            for utxo, upmob in (await self.mobster.get_utxos()).items()
+            if upmob > (1_000_000_000 * amount)
+        ]
+        if len(valid_utxos) < len(to_send):
+            await self.send_message(
+                msg.source, "Insufficient number of utxos!\nBuilding more..."
+            )
+            building_msg = await self.mobster.split_txos_slow(
+                amount, (len(to_send) - len(valid_utxos))
+            )
+            await self.send_message(msg.source, building_msg)
+        failed = []
+        for target in to_send:
+            result = await self.send_payment(
+                recipient=target,
+                amount_pmob=amount * 1_000_000_000,
+                receipt_message=message,
+                input_txo_ids=[valid_utxos.pop(0)],
+            )
+            if not result:
+                failed += [target]
+            await asyncio.sleep(1)
+        await self.send_message(msg.source, f"failed on\n{failed}")
+        return "completed sends"
+
     async def do_slow_blast(self, msg: Message) -> Response:
         obj = (msg.arg1 or "").lower()
         param = msg.arg2
@@ -220,9 +264,7 @@ class ClanGat(PayBotPro):
         """blast  <listname> "message"
         blast <eventname> "message"
         """
-        obj = (msg.arg1 or "").lower()
-        param = msg.arg2
-        value = msg.arg3
+        obj, param, value = (msg.arg1 or "").lower(), (msg.arg2 or "").lower(), msg.arg3
         user = msg.source
         user_owns_list_obj = obj in self.list_owners and user in self.list_owners.get(
             obj, []
@@ -363,12 +405,23 @@ class ClanGat(PayBotPro):
             if obj == "invitees":
                 self.event_lists[param] += [value]
                 success = True
+            elif obj == "prompt":
+                # todo add validation
+                self.event_prompts[param] = value
+                success = True
             # "add blast coworkers "hey yall wanna grab a beer"
             # todo: confirm
             elif obj == "blast":
                 for user in self.event_lists[param]:
                     await self.send_message(user, value)
                 success = True
+            elif obj == "limit":
+                # check if int
+                if value.isnumeric():
+                    self.event_limits[param] = int(value)
+                    success = True
+                else:
+                    return "please provide a value that's a number, please!"
         if success:
             return f"Successfully added {value} to event {param}'s {obj}!"
 
@@ -411,9 +464,16 @@ https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
         elif code in self.event_lists and code not in self.event_owners:
             if msg.source in self.event_lists[code]:
                 return f"You're already on the {code} list!"
-            else:
+            elif not self.event_limits.get(code) or (
+                self.event_limits.get(code)
+                and len(self.event_lists.get(code)) < self.event_limits.get(code, 1000)
+            ):
                 self.event_lists[code] += [msg.source]
+                if code in self.event_prompts and self.event_prompts.get(code):
+                    await self.send_message(msg.source, self.event_prompts.get(code))
                 return f"Added you to the {code} list!"
+            else:
+                return f"Sorry, {code} is full!"
         elif (
             code in self.event_owners
             and code in self.event_prices
