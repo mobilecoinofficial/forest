@@ -272,6 +272,7 @@ class Signal:
             logging.info("expecting response id: %s", future_key)
             req["id"] = future_key
             self.pending_requests[future_key] = asyncio.Future()
+            self.pending_messages_sent[future_key] = req
             await self.auxincli_input_queue.put(req)
         # when the result is received, the future will be set
         response = await self.pending_requests[future_key]
@@ -528,9 +529,13 @@ class Bot(Signal):
         async for message in self.auxincli_output_iter():
             if message.id and message.id in self.pending_requests:
                 logging.debug("setting result for future %s: %s", message.id, message)
-                sent_json_message = self.pending_messages_sent.pop(message.id)
                 self.pending_requests[message.id].set_result(message)
-                if message.error and "status: 413" in message.error["data"]:
+                if (
+                    message.error
+                    and "status: 413" in message.error["data"]
+                    and message.id in self.pending_messages_sent
+                ):
+                    sent_json_message = self.pending_messages_sent.pop(message.id)
                     warn = termcolor.colored(
                         "waiting to retry send after rate limit. message: %s", "red"
                     )
