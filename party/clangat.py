@@ -31,7 +31,44 @@ REQUEST_TIME = Summary("request_processing_seconds", "Time spent processing requ
 from pdict import *
 
 
-class PayBotPro(PayBot):
+class QuestionBot(PayBot):
+    def __init__(self):
+        self.pending_confirmations: dict[str, asyncio.Future[bool]] = {}
+        self.pending_answers: dict[str, asyncio.Future[str]] = {}
+        super().__init__()
+
+    async def do_yes(self, msg: Message) -> Response:
+        if msg.source not in self.pending_confirmations:
+            return "Did I ask you a question?"
+        else:
+            question = self.pending_confirmations.get(msg.source)
+            question.set_result(True)
+
+    async def do_no(self, msg: Message) -> Response:
+        if msg.source not in self.pending_confirmations:
+            return "Did I ask you a question?"
+        else:
+            question = self.pending_confirmations.get(msg.source)
+            question.set_result(False)
+
+    async def do_askdemo(self, msg: Message) -> Response:
+        await self.send_message(msg.source, "Are you feeling lucky, punk? (yes/no)")
+        self.pending_confirmations[msg.source] = asyncio.Future()
+        answer = await self.pending_confirmations.get(msg.source)
+        self.pending_confirmations.pop(msg.source)
+        if answer:
+            return "well, that's good!"
+        return "🍀"
+
+    async def ask_yesno_question(
+        self, recipient: str, question_text: str = "Are you sure? yes/no"
+    ) -> bool:
+        self.pending_confirmations[recipient] = asyncio.Future()
+        await self.send_message(recipient, question_text)
+        return await self.pending_confirmations[recipient]
+
+
+class PayBotPro(QuestionBot):
     def __init__(self):
         self.last_seen: dict[str, str] = {}
         super().__init__()
@@ -109,15 +146,18 @@ class ClanGat(PayBotPro):
     def __init__(self):
         self.no_repay: list[str] = []
         self.pending_orders: dict[str, str] = PersistDict("pending_orders")
+        self.pending_orders: dict[str, str] = PersistDict("pending_orders")
         self.event_limits: dict[str, int] = PersistDict("event_limits")
         self.event_prompts: dict[str, str] = PersistDict("event_prompts")
         self.event_prices: dict[str, float] = PersistDict("event_prices")
-        # self.event_image_url : dict[str, str] = PersistDict("event_images")
+        self.event_image_urls: dict[str, str] = PersistDict("event_images")
         self.event_owners: dict[str, list[str]] = PersistDict("event_owners")
         self.event_attendees: dict[str, list[str]] = PersistDict("event_attendees")
         self.event_lists: dict[str, list[str]] = PersistDict("event_lists")
         self.list_owners: dict[str, list[str]] = PersistDict("list_owners")
         self.easter_eggs: dict[str, str] = PersistDict("easter_eggs")
+        self.successful_pays: dict[str, list[str]] = PersistDict("list_payouts")
+        self.pay_lock: asyncio.Lock = asyncio.Lock()
         # okay, this now maps the tag (restore key) of each of the above to the instance of the PersistDict class
         self.state = {
             self.__getattribute__(attr).tag: self.__getattribute__(attr)
@@ -184,48 +224,85 @@ class ClanGat(PayBotPro):
                     )
 
     @requires_admin
-    async def do_pay_list(self, msg: Message) -> Response:
+    async def do_pay(self, msg: Message) -> Response:
         list_, amount, message = (
             (msg.arg1 or "").lower(),
             int((msg.arg2 or "0").lower()),
-            msg.arg3 or list_,
+            msg.arg3 or msg.arg1,
         )
-        if not (list_ in self.event_lists or list_ in self.event_attendees):
-            return "Sorry, that's not a valid list!"
-        to_send = self.event_lists.get(list_, None) or self.event_attendees.get(
-            list_, []
-        )
+        to_send = []
+        maybe_number = utils.signal_format(list_)
+        if maybe_number:
+            to_send = [maybe_number]
+            await self.send_message(msg.source, f"okay, using {maybe_number}")
+        if not len(to_send) and not (
+            list_ in self.event_lists or list_ in self.event_attendees
+        ):
+            return "Sorry, that's not a valid list or number!"
+        if not len(to_send):
+            to_send = self.event_lists.get(list_, []) or self.event_attendees.get(
+                list_, []
+            )
         total = len(to_send) * amount
         await self.send_message(
             msg.source, f"about to send {total}mmob to {len(to_send)} folks on {list_}"
         )
-        utxos = await self.mobster.get_utxos()
-        valid_utxos = [
-            utxo
-            for utxo, upmob in (await self.mobster.get_utxos()).items()
-            if upmob > (1_000_000_000 * amount)
-        ]
-        if len(valid_utxos) < len(to_send):
-            await self.send_message(
-                msg.source, "Insufficient number of utxos!\nBuilding more..."
-            )
-            building_msg = await self.mobster.split_txos_slow(
-                amount, (len(to_send) - len(valid_utxos))
-            )
-            await self.send_message(msg.source, building_msg)
-        failed = []
-        for target in to_send:
-            result = await self.send_payment(
-                recipient=target,
-                amount_pmob=amount * 1_000_000_000,
-                receipt_message=message,
-                input_txo_ids=[valid_utxos.pop(0)],
-            )
-            if not result:
-                failed += [target]
-            await asyncio.sleep(1)
-        await self.send_message(msg.source, f"failed on\n{failed}")
-        return "completed sends"
+        if not await self.ask_yesno_question(msg.source):
+            return "OK, canceling"
+        async with self.pay_lock:
+            save_key = f"{list_}_{amount}_{message}"
+            if save_key not in self.successful_pays:
+                self.successful_pays[save_key] = []
+            else:
+                filtered_send_list = [
+                    user
+                    for user in to_send
+                    if user not in self.successful_pays[save_key]
+                ]
+                if not len(filtered_send_list):
+                    return "already sent to this combination, change the message to continue"
+            utxos = await self.mobster.get_utxos()
+            valid_utxos = [
+                utxo
+                for utxo, upmob in (await self.mobster.get_utxos()).items()
+                if upmob > (1_000_000_000 * amount)
+            ]
+            if len(valid_utxos) < len(to_send):
+                await self.send_message(
+                    msg.source, "Insufficient number of utxos!\nBuilding more..."
+                )
+                building_msg = await self.mobster.split_txos_slow(
+                    amount, (len(to_send) - len(valid_utxos))
+                )
+                await self.send_message(msg.source, building_msg)
+                utxos = await self.mobster.get_utxos()
+                valid_utxos = [
+                    utxo
+                    for utxo, upmob in (await self.mobster.get_utxos()).items()
+                    if upmob > (1_000_000_000 * amount)
+                ]
+            failed = []
+            # filter out users who have already received payments for a given combo of list+amount+message
+            for target in [
+                user for user in to_send if user not in self.successful_pays[save_key]
+            ]:
+                result = await self.send_payment(
+                    recipient=target,
+                    amount_pmob=amount * 1_000_000_000,
+                    receipt_message=message,
+                    input_txo_ids=[valid_utxos.pop(0)],
+                )
+                # if we didn't get a result indicating success
+                if not result:
+                    # stash as failed
+                    failed += [target]
+                else:
+                    # persist user as successfully paid
+                    self.successful_pays[save_key] += [target]
+                await asyncio.sleep(1)
+            await self.send_message(msg.source, f"failed on\n{failed}")
+            return "completed sends"
+        return "failed"
 
     async def do_slow_blast(self, msg: Message) -> Response:
         obj = (msg.arg1 or "").lower()
@@ -279,15 +356,15 @@ class ClanGat(PayBotPro):
                 set(self.event_lists.get(obj, []) + self.event_attendees.get(obj, []))
             ):
                 await self.send_message(target_user, param)
-                for owner in list(
-                    set(self.event_owners.get(obj, []) + self.list_owners.get(obj, []))
-                ):
-                    success = True
-                    await self.send_message(
-                        owner,
-                        f"OK, sent '{param}' to 1 of {len(self.event_lists.get(obj, []) + self.event_attendees.get(obj, []))} people via {obj}: {target_user}",
-                    )
-                await asyncio.sleep(1)
+                # for owner in list(
+                #    set(self.event_owners.get(obj, []) + self.list_owners.get(obj, []))
+                # ):
+                #    success = True
+                #    await self.send_message(
+                #        owner,
+                #        f"OK, sent '{param}' to 1 of {len(self.event_lists.get(obj, []) + self.event_attendees.get(obj, []))} people via {obj}: {target_user}",
+                #    )
+                await asyncio.sleep(3)
         elif user_owns_event_obj or user_owns_list_obj:
             return "add a message"
         else:
@@ -364,6 +441,7 @@ class ClanGat(PayBotPro):
             self.event_prices[param] = None
             self.event_attendees[param] = []
             self.event_lists[param] = []
+            self.event_image_urls[param] = ""
             self.list_owners[param] = [user]
             self.event_prompts[param] = ""
             successs = True
@@ -375,6 +453,7 @@ class ClanGat(PayBotPro):
         ):
             self.event_lists[param] = []
             self.list_owners[param] = [user]
+            self.event_image_urls[param] = ""
             return f"created list {param}, time to add some invitees and blast 'em"
         elif obj == "event" and not param:
             return ("please provide an event code to create!", "> add event TEAMNYE22")
@@ -444,16 +523,22 @@ https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
 
     async def default(self, msg: Message) -> Response:
         code = msg.command
-        # if the event has an owner and a price and there's attendee space and the user hasn't already bought tickets
         if code == "+":
             return await self.do_purchase(msg)
         elif code == "?":
             return await self.do_help(msg)
+        elif code == "y":
+            return await self.do_yes(msg)
+        elif code == "n":
+            return await self.do_no(msg)
+        # if the event has an owner and a price and there's attendee space and the user hasn't already bought tickets
         if (
-            code in self.event_owners
-            and code in self.event_prices
-            and len(self.event_attendees[code]) < self.event_limits.get(code, 1e5)
-            and msg.source not in self.event_attendees[code]
+            code in self.event_owners  # event has an owner
+            and code in self.event_prices  # and a price
+            and len(self.event_attendees[code])
+            < self.event_limits.get(code, 1e5)  # and there's space
+            and msg.source
+            not in self.event_attendees[code]  # and they're not already on the list
         ):
             self.pending_orders[msg.source] = code
             return [
@@ -475,9 +560,10 @@ https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
             else:
                 return f"Sorry, {code} is full!"
         elif (
-            code in self.event_owners
-            and code in self.event_prices
-            and msg.source in self.event_attendees[code]
+            code in self.event_owners  # event has owner
+            and code
+            in self.event_prices  # event has price (not just a stand-alone list)
+            and msg.source in self.event_attendees[code]  # user on the list
         ):
             return f"You're already on the '{code}' list."
         elif code:
