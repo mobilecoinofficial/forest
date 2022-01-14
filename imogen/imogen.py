@@ -112,8 +112,8 @@ redis = aioredis.Redis(host=host, port=int(port), password=password)
 
 messages = dict(
     no_credit="""You have no credit to submit priority requests.
-    Please sent Imogen a payment,
-    or message Imogen with the /credit command to learn how to add credit for priority features""",
+    Please sent Imogen a payment, or message Imogen with the /credit command to learn how to add credit for priority features
+    """,
     rate_limit="Slow down",
     tip_message="""
     If you like Imogen's art, you can show your support by donating within Signal Payments.
@@ -319,18 +319,18 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
             )
             logging.info(result)
             if not result.get("success"):
-                return messages["no_credit"]
+                return dedent(messages["no_credit"]).strip()
             worker_created = await self.ensure_paid_worker(result)
-            priority = ""
+            priority = " priority"
         else:
             result = (await self.queue.enqueue_free(*prompt.as_args()))[0].get(
                 "enqueue_free_prompt"
             )
             logging.info(result)
             if not result.get("success"):
-                return messages["rate_limit"]
+                return dedent(messages["rate_limit"]).strip()
             worker_created = await self.ensure_free_worker()
-            priority = " priority"
+            priority = ""
         if worker_created:
             deets = " (started a new worker)"
         else:
