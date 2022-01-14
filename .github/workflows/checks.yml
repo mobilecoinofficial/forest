@@ -20,16 +20,16 @@ jobs:
         uses: actions/cache@v1
         with:
           path: ~/.local/share/virtualenvs
-          key: '${{ runner.os }}-pipenv-v4-${{ hashFiles(''**/Pipfile.lock'') }}'
+          key: '${{ runner.os }}-pipenv-v5-${{ hashFiles(''**/Pipfile.lock'') }}'
       - name: Install dependencies
         if: steps.cache-pipenv.outputs.cache-hit != 'true'
-        run: pipenv install -r .github/requirements.txt
+        run: cp .github/Pipfile .; pipenv install --skip-lock --pre
       - name: Black
         run: pipenv run black . --check
         if: always()
       - name: Mypy
-        run: pipenv run mypy other_bots mc_util forest mobfriend contact imogen
+        run: pipenv run mypy sample_bots mc_util forest mobfriend contact imogen
         if: always()
       - name: Pylint
-        run: pipenv run pylint other_bots mc_util forest mobfriend/mobfriend.py contact imogen/imogen.py
+        run: pipenv run pylint --version; pipenv run pylint sample_bots mc_util forest mobfriend/mobfriend.py contact imogen/imogen.py
         if: always()

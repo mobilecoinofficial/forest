@@ -1,3 +1,11 @@
+## 1.0.3
+
+- do_update sets profile picture from attachment (#56)
+- redirect invalid requests to tiprat, which times out slowly (#57)
+- hide admin commands better (#67)
+- github actions work now (#68)
+- add documentation!! includes changing default full-service (#62)
+
 ## 1.0.2
 
 - Move contactbot to it's own subdirectory.
