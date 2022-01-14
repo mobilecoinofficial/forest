@@ -60,6 +60,7 @@ async def start_memfs(app: web.Application) -> None:
 
     await launch()
 
+
 # app["memfs"].terminate()
 # app["memfs"] = aioprocessing.AioProcess(target=memfs_proc)
 # app["memfs"].start()
