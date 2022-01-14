@@ -119,7 +119,7 @@ class Mobster:
         better_data = {"jsonrpc": "2.0", "id": 1, **data}
         async with aiohttp.TCPConnector(ssl=ssl_context) as conn:
             async with aiohttp.ClientSession(connector=conn) as sess:
-                sess.post(
+                mob_req = sess.post(
                     self.url,
                     data=json.dumps(better_data),
                     headers={"Content-Type": "application/json"},
