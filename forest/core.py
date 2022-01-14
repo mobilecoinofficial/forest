@@ -432,31 +432,34 @@ class Signal:
             )
         )
 
+    # maybe merge with write_commands?
     async def auxincli_input_iter(self) -> AsyncIterator[dict]:
         """Provides an asynchronous iterator over pending auxin-cli commands"""
         while True:
             command = await self.auxincli_input_queue.get()
             yield command
 
-    pause = False
+    backoff = False
 
-    # maybe merge with the above?
-    message_allowance = 50
-    last_sent = time.time()
+    messages_until_rate_limit = 50
+    last_update = time.time()
 
-    def update_rate_limit(self) -> bool:
-        elapsed, self.last_sent = (time.time() - self.last_sent, time.time())
-        self.message_allowance = min(self.message_allowance + elapsed, 60)
-        return self.message_allowance > 1
+    def update_and_check_rate_limit(self) -> bool:
+        elapsed, self.last_update = (time.time() - self.last_update, time.time())
+        rate = 1  # theoretically 1 at least message per second is allowed
+        self.messages_until_rate_limit = min(
+            self.messages_until_rate_limit + elapsed * rate, 60
+        )
+        return self.messages_until_rate_limit > 1
 
     async def write_commands(self, pipe: StreamWriter) -> None:
         """Encode and write pending auxin-cli commands"""
         async for msg in self.auxincli_input_iter():
-            if self.pause:
+            if self.backoff:
                 logging.info("pausing message writes before retrying")
                 await asyncio.sleep(4)
-                self.pause = False
-            while not self.update_rate_limit():
+                self.backoff = False
+            while not self.update_and_check_rate_limit():
                 logging.info(
                     "waiting for rate limit (current: %s)", self.message_allowance
                 )
@@ -526,14 +529,12 @@ class Bot(Signal):
                 logging.debug("setting result for future %s: %s", message.id, message)
                 sent_json_message = self.pending_messages_sent.pop(message.id)
                 self.pending_requests[message.id].set_result(message)
-                if message.error and "413" in message.error["data"]:
-                    logging.warning(
-                        termcolor.colored(
-                            "waiting to retry send after rate limit. message: %s", "red"
-                        ),
-                        sent_json_message,
+                if message.error and "status: 413" in message.error["data"]:
+                    warn = termcolor.colored(
+                        "waiting to retry send after rate limit. message: %s", "red"
                     )
-                    self.pause = True
+                    logging.warning(warn, sent_json_message)
+                    self.backoff = True
                     await asyncio.sleep(4)
                     hash = message.id.split("-")[-1]
                     future_key = f"retry-send-{int(time.time()*1000)}-{hash}"
