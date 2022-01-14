@@ -22,6 +22,7 @@ async def pay_handler(request: web.Request) -> web.Response:
         return web.Response(status=200)
     return web.Response(status=400)
 
+
 async def award_handler(request: web.Request) -> web.Response:
     bot = request.app.get("bot")
     if not bot:
@@ -39,6 +40,7 @@ app.add_routes([web.post("/pay", pay_handler)])
 app.add_routes([web.post("/award", award_handler)])
 
 if __name__ == "__main__":
+
     @app.on_startup.append
     async def start_wrapper(out_app: web.Application) -> None:
         out_app["bot"] = LinkedAuxin()

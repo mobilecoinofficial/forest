@@ -74,7 +74,7 @@ QueueExpressions = pghelp.PGExpressions(
         url TEXT DEFAULT 'https://imogen-renaissance.fly.dev/',
         sent_ts BIGINT DEFAULT null,
         errors INTEGER DEFAULT 0);""",
-    enqueue_free="SELECT enqueue_free_prompt(prompt:=$1, author:=$2, signal_ts:=$3, group_id:=$4, params:=$5, url:=$6)",
+    enqueue_free="SELECT enqueue_free_prompt(prompt:=$1, _author:=$2, signal_ts:=$3, group_id:=$4, params:=$5, url:=$6)",
     enqueue_paid="SELECT enqueue_paid_prompt(prompt:=$1, author:=$2, signal_ts:=$3, group_id:=$4, params:=$5, url:=$6)",
     length="SELECT count(id) AS len FROM {self.table} WHERE status='pending' OR status='assigned';",
     paid_length="SELECT count(id) AS len FROM {self.table} WHERE status='pending' OR status='assigned' AND paid=true;",
@@ -314,13 +314,19 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
             params=params,
         )
         if paid:
-            result = await self.queue.enqueue_paid(*prompt.as_args())
+            result = (await self.queue.enqueue_paid(*prompt.as_args()))[0].get(
+                "enqueue_paid_prompt"
+            )
+            logging.info(result)
             if not result.get("success"):
                 return messages["no_credit"]
             worker_created = await self.ensure_paid_worker(result)
             priority = ""
         else:
-            result = await self.queue.enqueue_free(*prompt.as_args())
+            result = (await self.queue.enqueue_free(*prompt.as_args()))[0].get(
+                "enqueue_free_prompt"
+            )
+            logging.info(result)
             if not result.get("success"):
                 return messages["rate_limit"]
             worker_created = await self.ensure_free_worker()
