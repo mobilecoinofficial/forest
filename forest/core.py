@@ -494,7 +494,9 @@ class Bot(Signal):
             name.removeprefix("do_") for name in dir(self) if name.startswith("do_")
         ]
         self.visible_commands = [
-            name for name in self.commands if not hasattr(getattr(self, f"do_{name}"), "hide")
+            name
+            for name in self.commands
+            if not hasattr(getattr(self, f"do_{name}"), "hide")
         ]
         super().__init__(bot_number)
         self.restart_task = asyncio.create_task(
@@ -562,7 +564,7 @@ class Bot(Signal):
             if hasattr(self, "do_" + message.arg0):
                 return await getattr(self, "do_" + message.arg0)(message)
             score, cmd = self.match_command(message.arg0)
-            if score > float(utils.get_secret("TYPO_THRESHOLD")) or 0.7:
+            if score > (float(utils.get_secret("TYPO_THRESHOLD")) or 0.7):
                 return await getattr(self, "do_" + cmd)(message)
             expansions = [cmd for cmd in self.commands if cmd.startswith(message.arg0)]
             if len(expansions) == 1:
