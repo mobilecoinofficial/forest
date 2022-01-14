@@ -793,7 +793,8 @@ class PayBot(Bot):
         address = await self.get_address(recipient)
         if not address:
             await self.send_message(
-                recipient, "Sorry, we tried to send a payment, but couldn't get your MobileCoin address!"
+                recipient,
+                "Sorry, we tried to send a payment, but couldn't get your MobileCoin address!",
             )
             return None
         # TODO: add a lock around two-part build/submit Or
@@ -829,7 +830,7 @@ class PayBot(Bot):
         # pass our beautifully composed spicy JSON content to auxin.
         # message body is ignored in this case.
         payment_notif = await self.send_message(recipient, "", content=content)
-        #if receipt_message:
+        # if receipt_message:
         #    await self.send_message(recipient, receipt_message)
         return await self.wait_resp(future_key=payment_notif)
 
