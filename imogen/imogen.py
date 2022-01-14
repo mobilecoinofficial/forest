@@ -118,7 +118,7 @@ messages = dict(
 )
 
 
-class Imogen(PayBot):
+class Imogen(PayBot): # pylint: disable=too-many-public-methods
     worker_instance_id: Optional[str] = None
 
     async def start_process(self) -> None:

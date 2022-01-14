@@ -338,7 +338,9 @@ async def list_accounts(_args: argparse.Namespace) -> None:
         )
     ]:
         cols.append("notes")
-    query = f"select {' ,'.join(cols)} from signal_accounts order by last_update_ms desc"
+    query = (
+        f"select {' ,'.join(cols)} from signal_accounts order by last_update_ms desc"
+    )
     accounts = await get_account_interface().execute(query)
     if not isinstance(accounts, list):
         return

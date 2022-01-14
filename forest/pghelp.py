@@ -60,7 +60,7 @@ class SimpleInterface:
         if not self.pool:
             logging.info("creating pool")
             if "localhost" in self.database:
-                self.pool = await asyncpg.create_pool(user="postgres")#self.database)
+                self.pool = await asyncpg.create_pool(user="postgres")  # self.database)
             else:
                 self.pool = await asyncpg.create_pool(self.database)
             pools.append(self.pool)
@@ -243,8 +243,10 @@ class PGInterface:
                 self.logger.debug(
                     f"{rebuilt_statement} {short_args} -> {short_strresp}"
                 )
-                elapsed = f"{time.time() - start_time:.4f}s" # round to miliseconds 
-                logging.info("query %s took %s", self.truncate(rebuilt_statement), elapsed)
+                elapsed = f"{time.time() - start_time:.4f}s"  # round to miliseconds
+                logging.info(
+                    "query %s took %s", self.truncate(rebuilt_statement), elapsed
+                )
                 return resp
 
             return executer_with_args
