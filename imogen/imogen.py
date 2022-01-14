@@ -115,10 +115,31 @@ messages = dict(
     Please sent Imogen a payment,
     or message Imogen with the /credit command to learn how to add credit for priority features""",
     rate_limit="Slow down",
+    tip_message="""
+    If you like Imogen's art, you can show your support by donating within Signal Payments.
+    Send Imogen a message with the command "/tip" for donation instructions.  Every time she creates an image, it costs $0.09
+    Imogen shares tips with collaborators! If you like an Imogen Imoge, react ❤️  t️o it. When an Imoge gets multiple reactions, the person who prompted the Imoge will be awarded a tip (currently 0.1 MOB).
+    """.strip(),
+    activate_payments="""
+    Thank you for collaborating with Imogen, if you'd like to support the project you can send her a tip of any amount with Signal Pay.
+
+    If you get "This person has not activated payments", try messaging me with /ping. 
+
+    If you have payments activated, simply click on the plus sign and choose payment.
+
+    If you don't have Payments activated follow these instructions to activate it.
+
+    1. Update Signal app: https://signal.org/install/
+    2. Open Signal, tap on the icon in the top left for Settings. If you don’t see *Payments*, reboot your phone. It can take a few hours.
+    3. Tap *Payments* and *Activate Payments*
+
+    For more information on Signal Payments visit:
+
+    https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments""",
 )
 
 
-class Imogen(PayBot): # pylint: disable=too-many-public-methods
+class Imogen(PayBot):  # pylint: disable=too-many-public-methods
     worker_instance_id: Optional[str] = None
 
     async def start_process(self) -> None:
@@ -437,36 +458,12 @@ class Imogen(PayBot): # pylint: disable=too-many-public-methods
         return await super().default(message)
 
     async def do_tip(self, _: Message) -> str:
-        return dedent(
-            """
-        Thank you for collaborating with Imogen, if you'd like to support the project you can send her a tip of any amount with Signal Pay.
-
-        If you get "This person has not activated payments", try messaging me with /ping. 
-
-        If you have payments activated, simply click on the plus sign and choose payment.
-
-        If you don't have Payments activated follow these instructions to activate it.
-
-        1. Update Signal app: https://signal.org/install/
-        2. Open Signal, tap on the icon in the top left for Settings. If you don’t see *Payments*, reboot your phone. It can take a few hours.
-        3. Tap *Payments* and *Activate Payments*
-
-        For more information on Signal Payments visit:
-
-        https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
-        ).strip()
+        return dedent(messages["activate_payments"]).strip()
 
     # eh
     # async def async_shutdown(self):
     #    await redis.disconnect()
     #    super().async_shutdown()
-
-
-tip_message = """
-If you like Imogen's art, you can show your support by donating within Signal Payments.
-Send Imogen a message with the command "/tip" for donation instructions.  Every time she creates an image, it costs $0.09
-Imogen shares tips with collaborators! If you like an Imogen Imoge, react ❤️  t️o it. When an Imoge gets multiple reactions, the person who prompted the Imoge will be awarded a tip (currently 0.1 MOB).
-""".strip()
 
 
 @dataclass
@@ -550,7 +547,7 @@ async def store_image_handler(  # pylint: disable=too-many-locals
         )
         if random.random() < 0.03:
             asyncio.create_task(
-                bot.send_message(None, tip_message, group=prompt.group_id)
+                bot.send_message(None, messages["tip_message"], group=prompt.group_id)
             )
     else:
         rpc_id = await bot.send_message(
