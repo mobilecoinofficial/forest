@@ -196,6 +196,7 @@ class Signal:
 
     async def enqueue_blob_messages(self, blob: JSON) -> None:
         message_blob: Optional[JSON] = None
+        logging.info(blob)
         if "params" in blob:
             if isinstance(blob["params"], list):
                 for msg in blob["params"]:
@@ -213,6 +214,8 @@ class Signal:
                 message_blob = blob
             else:
                 logging.warning(blob["result"])
+        if "error" in blob:
+            message_blob = blob
         if message_blob:
             return await self.auxincli_output_queue.put(MessageParser(message_blob))
 
@@ -257,7 +260,8 @@ class Signal:
     pending_requests: dict[str, asyncio.Future[Message]] = {}
     pending_messages_sent: dict[str, dict] = {}
 
-    async def wait_resp( self, req: Optional[dict] = None, future_key: str = ""
+    async def wait_resp(
+        self, req: Optional[dict] = None, future_key: str = ""
     ) -> Message:
         if req:
             future_key = req["method"] + "-" + str(round(time.time()))
@@ -290,7 +294,7 @@ class Signal:
         given_name: str,
         family_name: str = "",
         mobilecoin_address: str = "",
-        about="",
+        about: str = "",
         avatar: str = "",
     ) -> str:
         params = dict(name=dict(givenName=given_name, familyName=family_name))
@@ -303,8 +307,6 @@ class Signal:
         future_key = f"setProfile-{int(time.time()*1000)}"
         await self.auxincli_input_queue.put(rpc("setProfile", params, future_key))
         return future_key
-
-  
 
     # this should maybe yield a future (eep) and/or use auxin_req
     async def send_message(  # pylint: disable=too-many-arguments
@@ -435,15 +437,29 @@ class Signal:
     pause = False
 
     # maybe merge with the above?
+    message_allowance = 50
+    last_sent = time.time()
+
+    def update_rate_limit(self) -> bool:
+        elapsed, self.last_sent = (time.time() - self.last_sent, time.time())
+        self.message_allowance = min(self.message_allowance + elapsed, 60)
+        return self.message_allowance > 1
+
     async def write_commands(self, pipe: StreamWriter) -> None:
         """Encode and write pending auxin-cli commands"""
         async for msg in self.auxincli_input_iter():
             if self.pause:
-                logging.info("pausing message writes")
+                logging.info("pausing message writes before retrying")
                 await asyncio.sleep(4)
                 self.pause = False
+            while not self.update_rate_limit():
+                logging.info(
+                    "waiting for rate limit (current: %s)", self.message_allowance
+                )
+                await asyncio.sleep(1)
+            self.message_allowance -= 1
             if not msg.get("method"):
-                print(msg)
+                logging.error("msg without method: %s", msg)
             if msg.get("method") != "receive":
                 logging.info("input to signal: %s", json.dumps(msg))
             if pipe.is_closing():
@@ -505,15 +521,20 @@ class Bot(Signal):
                 logging.debug("setting result for future %s: %s", message.id, message)
                 sent_json_message = self.pending_messages_sent.pop(message.id)
                 self.pending_requests[message.id].set_result(message)
-                logging.info(message.blob)
-                if "error" in message.blob and "413" in message.blob["error"]["data"]:
-                    logging.warning("waiting to retry send after rate limit")
+                if message.error and "413" in message.error["data"]:
+                    logging.warning(
+                        termcolor.colored(
+                            "waiting to retry send after rate limit. message: %s", "red"
+                        ),
+                        sent_json_message,
+                    )
                     self.pause = True
-                    asyncio.sleep(4)
-                    future_key = f"send-{int(time.time()*1000)}-{hex(hash(msg))[-4:]}"
+                    await asyncio.sleep(4)
+                    hash = message.id.split("-")[-1]
+                    future_key = f"retry-send-{int(time.time()*1000)}-{hash}"
                     self.pending_messages_sent[future_key] = sent_json_message
                     self.pending_requests[future_key] = asyncio.Future()
-                    await self.auxincli_input_queue.put(json_command)
+                    await self.auxincli_input_queue.put(sent_json_message)
                 continue
             self.pending_response_tasks = [
                 task for task in self.pending_response_tasks if not task.done()
@@ -754,7 +775,7 @@ class PayBot(Bot):
         amount_pmob: int,
         receipt_message: str = "Transaction sent!",
         tx_comment: str = "",
-        **params: Any
+        **params: Any,
     ) -> Optional[Message]:
         address = await self.get_address(recipient)
         if not address:
@@ -772,14 +793,17 @@ class PayBot(Bot):
             recipient_public_address=address,
             value_pmob=str(int(amount_pmob)),
             fee=str(int(1e12 * 0.0004)),
-            **params
+            **params,
         )
         prop = raw_prop["result"]["tx_proposal"]
         if tx_comment:
-            result = await self.mob_request("submit_transaction", tx_proposal=prop,
-                    comment=tx_comment, account_id=account_id)
-            logging.info('result of tx send attempt to %s was:\n %s',
-                    recipient, result)
+            result = await self.mob_request(
+                "submit_transaction",
+                tx_proposal=prop,
+                comment=tx_comment,
+                account_id=account_id,
+            )
+            logging.info("result of tx send attempt to %s was:\n %s", recipient, result)
         else:
             await self.mob_request("submit_transaction", tx_proposal=prop)
         receipt_resp = await self.mob_request(
