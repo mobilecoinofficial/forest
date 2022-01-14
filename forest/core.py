@@ -441,7 +441,7 @@ class Signal:
 
     backoff = False
 
-    messages_until_rate_limit = 50
+    messages_until_rate_limit = 50.0
     last_update = time.time()
 
     def update_and_check_rate_limit(self) -> bool:
@@ -461,10 +461,11 @@ class Signal:
                 self.backoff = False
             while not self.update_and_check_rate_limit():
                 logging.info(
-                    "waiting for rate limit (current: %s)", self.message_allowance
+                    "waiting for rate limit (current: %s)",
+                    self.messages_until_rate_limit,
                 )
                 await asyncio.sleep(1)
-            self.message_allowance -= 1
+            self.messages_until_rate_limit -= 1
             if not msg.get("method"):
                 logging.error("msg without method: %s", msg)
             if msg.get("method") != "receive":
@@ -536,8 +537,8 @@ class Bot(Signal):
                     logging.warning(warn, sent_json_message)
                     self.backoff = True
                     await asyncio.sleep(4)
-                    hash = message.id.split("-")[-1]
-                    future_key = f"retry-send-{int(time.time()*1000)}-{hash}"
+                    msg_hash = message.id.split("-")[-1]
+                    future_key = f"retry-send-{int(time.time()*1000)}-{msg_hash}"
                     self.pending_messages_sent[future_key] = sent_json_message
                     self.pending_requests[future_key] = asyncio.Future()
                     await self.auxincli_input_queue.put(sent_json_message)
