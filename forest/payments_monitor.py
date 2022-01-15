@@ -9,7 +9,7 @@ import logging
 import random
 import ssl
 import time
-from typing import Optional
+from typing import Optional, Any
 
 import aiohttp
 import asyncpg
@@ -127,18 +127,14 @@ class Mobster:
         async with mob_req as resp:
             return await resp.json()
 
-    async def get_all_txos_for_account(self):
+    async def get_all_txos_for_account(self) -> dict[str, Any]:
         txos = (
             (
-                (
-                    await self.req_(
-                        "get_all_txos_for_account", account_id=await self.get_account()
-                    )
+                await self.req_(
+                    "get_all_txos_for_account", account_id=await self.get_account()
                 )
-            )
-            .get("result", {})
-            .get("txo_map", {})
-        )
+            ).get("result", {})
+        ).get("txo_map", {})
 
         return txos
 
