@@ -80,7 +80,7 @@ QueueExpressions = pghelp.PGExpressions(
     paid_length="SELECT count(id) AS len FROM {self.table} WHERE status='pending' OR status='assigned' AND paid=true;",
     list_queue="SELECT prompt FROM {self.table} WHERE status='pending' OR status='assigned' ORDER BY signal_ts ASC",
     react="UPDATE {self.table} SET reaction_map = reaction_map || $2::jsonb WHERE sent_ts=$1;",
-    workers="SELECT count(DISTINCT hostname) WHERE status='pending' OR status='uploading' ;",
+    last_active_group="SELECT group_id FROM prompt_queue WHERE author=$1 AND group_id<>'' ORDER BY id DESC LIMIT 1",
 )
 
 openai.api_key = utils.get_secret("OPENAI_API_KEY")
