@@ -246,7 +246,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
             )
         balance = await self.get_user_balance(msg.source)
         prompts = int(balance / (self.image_rate_cents / 100))
-        return f"Your current Imogen balance is ${balance} ({prompts} priority prompts)"
+        return f"Your current Imogen balance is ${balance:.2f} ({prompts} priority prompts)"
 
     image_rate_cents = 10
 
@@ -269,9 +269,9 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         return "error" not in out.lower()
 
     async def ensure_paid_worker(self, enqueue_result: dict) -> bool:
-        queue_size = enqueue_result["queue_size"]
+        queue_length = enqueue_result["queue_length"]
         workers = int(await get_output(jobcount))
-        if queue_size / workers > 5 and workers < 6:
+        if workers == 0 or queue_length / workers > 5 and workers < 6:
             spec = open("paid-imagegen-job.yaml").read()
             with_name = spec.replace(
                 "generateName: imagegen-job-paid-",
