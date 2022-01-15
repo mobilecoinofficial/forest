@@ -722,7 +722,7 @@ class PayBot(Bot):
                 user_image = f"/tmp/{attachment_path}"
         if user_image or (msg.tokens and len(msg.tokens) > 0):
             await self.set_profile_auxin(
-                given_name=msg.arg1,
+                given_name=msg.arg1 or "",
                 family_name=msg.arg2,
                 payment_address=msg.arg3,
                 profile_path=user_image,

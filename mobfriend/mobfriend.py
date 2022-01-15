@@ -155,6 +155,8 @@ class MobFriend(PayBot):
     async def payment_response(self, msg: Message, amount_pmob: int) -> Response:
         if msg.source in self.exchanging_gift_code:
             resp_list = await self.build_gift_code(amount_pmob - FEE)
+            if not resp_list:
+                return "Couldn't build a gift code"
             gift_code = resp_list[1]
             self.exchanging_gift_code.remove(msg.source)
             if msg.source in self.no_repay:
