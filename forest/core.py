@@ -714,9 +714,9 @@ class PayBot(Bot):
             attachment_info = msg.attachments[0]
             attachment_path = attachment_info.get("fileName")
             timestamp = attachment_info.get("uploadTimestamp")
-            if attachment_path == None:
+            if attachment_path is None:
                 attachment_paths = glob.glob(f"/tmp/unnamed_attachment_{timestamp}.*")
-                if len(attachment_paths):
+                if len(attachment_paths) > 0:
                     user_image = attachment_paths.pop()
             else:
                 user_image = f"/tmp/{attachment_path}"
@@ -788,7 +788,7 @@ class PayBot(Bot):
         recipient: str,
         amount_pmob: int,
         receipt_message: str = "Transaction sent!",
-        input_txo_ids: list[str] = [],
+        input_txo_ids: Optional[list[str]] = None,
     ) -> Optional[Message]:
         address = await self.get_address(recipient)
         if not address:
@@ -801,7 +801,7 @@ class PayBot(Bot):
         # TODO: add explicit utxo handling
         # TODO: add task which keeps full-service filled
         raw_prop = {}
-        if len(input_txo_ids) > 0:
+        if input_txo_ids:
             raw_prop = await self.mob_request(
                 "build_transaction",
                 account_id=await self.mobster.get_account(),
