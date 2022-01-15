@@ -352,6 +352,7 @@ class ClanGat(PayBotPro):
         list_ = []
         success = False
         if (user_owns_list_obj or user_owns_event_obj) and param:
+            success = True
             for target_user in list(
                 set(self.event_lists.get(obj, []) + self.event_attendees.get(obj, []))
             ):
