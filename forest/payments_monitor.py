@@ -153,7 +153,9 @@ class Mobster:
             return sorted_
         return {}
 
-    async def split_txos_slow(self, output_millimob: int=100, target_quantity: int =200) -> str:
+    async def split_txos_slow(
+        self, output_millimob: int = 100, target_quantity: int = 200
+    ) -> str:
         utxos = list(reversed(await self.get_utxos()))
         built = 0
         i = 0
