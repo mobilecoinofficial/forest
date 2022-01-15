@@ -142,7 +142,7 @@ class Mobster:
 
         return txos
 
-    async def get_utxos(self):
+    async def get_utxos(self) -> dict[str, int]:
         txos = await self.get_all_txos_for_account()
         utxos = {
             txo: int(status.get("value_pmob"))
@@ -152,26 +152,12 @@ class Mobster:
             .get("txo_status")
             == "txo_status_unspent"
         }
-        utxos = sorted(utxos.items(), key=lambda txo: utxos.get(txo[0]))
-        utxos = dict(utxos)
-        return utxos
+        if utxos:
+            sorted_ = dict(sorted(utxos.items(), key=lambda txo: utxos.get(txo[0], 0)))
+            return sorted_
+        return {}
 
-    async def get_balance2(self):
-        txos = await self.get_all_txos_for_account()
-        utxos = [
-            (txo, int(status.get("value_pmob")))
-            for txo, status in txos.items()
-            if status.get("account_status_map", {})
-            .get(await self.get_account(), {})
-            .get("txo_status")
-            == "txo_status_unspent"
-        ]
-        utxos = sorted(utxos, key=lambda txo_value: txo_value[1])
-        utxos = dict(utxos)
-        print(f"starting balance: {sum(utxos.values())/MILLIMOB_TO_PICOMOB}mmob")
-        return sum(utxos.values()) / MILLIMOB_TO_PICOMOB
-
-    async def split_txos_slow(self, output_millimob=100, target_quantity=200):
+    async def split_txos_slow(self, output_millimob=100, target_quantity=200) -> str:
         utxos = list(reversed(await self.get_utxos()))
         built = 0
         i = 0
@@ -191,7 +177,7 @@ class Mobster:
             )
             params = split_transaction.get("result", {})
             if not params:
-                return split_transaction
+                return f"{split_transaction}"
             # use this maybe
             _ = await self.req_("submit_transaction", **params)
             time.sleep(2)
