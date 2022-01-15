@@ -105,8 +105,6 @@ class Mobster:
     def __init__(self, url: str = "") -> None:
         if not url:
             url = utils.get_secret("FULL_SERVICE_URL") or "http://localhost:9090/wallet"
-        self.ledger_manager = LedgerManager()
-        self.invoice_manager = InvoiceManager()
         logging.info("full-service url: %s", url)
         self.url = url
 
@@ -146,16 +144,14 @@ class Mobster:
 
     async def get_utxos(self):
         txos = await self.get_all_txos_for_account()
-        utxos = dict(
-            [
-                (txo, int(status.get("value_pmob")))
-                for txo, status in txos.items()
-                if status.get("account_status_map", {})
-                .get(await self.get_account(), {})
-                .get("txo_status")
-                == "txo_status_unspent"
-            ]
-        )
+        utxos = {
+            txo: int(status.get("value_pmob"))
+            for txo, status in txos.items()
+            if status.get("account_status_map", {})
+            .get(await self.get_account(), {})
+            .get("txo_status")
+            == "txo_status_unspent"
+        }
         utxos = sorted(utxos.items(), key=lambda txo: utxos.get(txo[0]))
         utxos = dict(utxos)
         return utxos
@@ -196,7 +192,8 @@ class Mobster:
             params = split_transaction.get("result", {})
             if not params:
                 return split_transaction
-            split_result = await self.req_("submit_transaction", **params)
+            # use this maybe
+            _ = await self.req_("submit_transaction", **params)
             time.sleep(2)
             built += 15
             i += 1
@@ -241,17 +238,6 @@ class Mobster:
         if perturb:
             return round(mob_amount, 8)
         return round(mob_amount, 3)  # maybe ceil?
-
-    async def create_invoice(self, amount_usd: float, account: str, memo: str) -> float:
-        while 1:
-            try:
-                mob_price_exact = await self.usd2mob(amount_usd, perturb=True)
-                await self.invoice_manager.create_invoice(
-                    account, mc_util.mob2pmob(mob_price_exact), memo
-                )
-                return mob_price_exact
-            except asyncpg.UniqueViolationError:
-                pass
 
     async def import_account(self) -> dict:
         params = {
@@ -421,6 +407,24 @@ class Mobster:
                     continue
 
         return pending_transactions
+
+
+class StatefulMobster(Mobster):
+    def __init__(self):
+        self.ledger_manager = LedgerManager()
+        self.invoice_manager = InvoiceManager()
+        super().__init__()
+
+    async def create_invoice(self, amount_usd: float, account: str, memo: str) -> float:
+        while 1:
+            try:
+                mob_price_exact = await self.usd2mob(amount_usd, perturb=True)
+                await self.invoice_manager.create_invoice(
+                    account, mc_util.mob2pmob(mob_price_exact), memo
+                )
+                return mob_price_exact
+            except asyncpg.UniqueViolationError:
+                pass
 
     async def monitor_wallet(self) -> None:
         last_transactions: dict[str, dict[str, str]] = {}
