@@ -5,7 +5,7 @@ import hashlib
 import json
 import os
 import time
-from typing import Union
+from typing import Union, Any
 
 import aiohttp
 import base58
@@ -134,6 +134,165 @@ class pKVStoreClient:
             if maybe_res:
                 return get_cleartext_value(maybe_res)
             return ""
+
+
+class fastpKVStoreClient:
+    """Strongly consistent, persistent storage.
+    Stores a sneak table mapping keys to their existence to update faster.
+    On top of Postgresql and Postgrest.
+    """
+
+    def __init__(
+        self,
+        base_url: str = "https://vwaurvyhomqleagryqcc.supabase.co/rest/v1/keyvalue",
+        auth_str: str = pAUTH,
+        namespace: str = NAMESPACE,
+    ):
+        self.url = base_url
+        self.conn = aiohttp.ClientSession()
+        self.auth = auth_str
+        self.namespace = get_safe_key(namespace)
+        self.exists = {}
+        self.headers = {
+            "Content-Type": "application/json",
+            "apikey": f"{self.auth}",
+            "Authorization": f"Bearer {self.auth}",
+            "Prefer": "return=representation",
+        }
+
+    async def post(self, key: str, data: str, ttl_seconds: int = 600) -> str:
+        key = get_safe_key(key)
+        data = get_safe_value(data)
+        # try to set
+        if self.exists.get(key):
+            async with self.conn.patch(
+                f"{self.url}?key_=eq.{key}&namespace=eq.{self.namespace}",
+                headers=self.headers,
+                data=json.dumps(
+                    dict(
+                        value=data,
+                        updated_at=time.time(),
+                        namespace=self.namespace,
+                    )
+                ),
+            ) as resp:
+                return await resp.json()
+        async with self.conn.post(
+            f"{self.url}",
+            headers=self.headers,
+            data=json.dumps(
+                dict(
+                    key_=key,
+                    value=data,
+                    created_at=time.time(),
+                    namespace=self.namespace,
+                )
+            ),
+        ) as resp:
+            resp_text = await resp.text()
+            # if set fails
+            if "duplicate key value violates unique constraint" in resp_text:
+                self.exists[key] = True
+                # do update (patch not post)
+                async with self.conn.patch(
+                    f"{self.url}?key_=eq.{key}&namespace=eq.{self.namespace}",
+                    headers=self.headers,
+                    data=json.dumps(
+                        dict(
+                            value=data,
+                            updated_at=time.time(),
+                            namespace=self.namespace,
+                        )
+                    ),
+                ) as resp:
+                    return await resp.json()
+            return json.loads(resp_text)
+
+    async def get(self, key: str) -> str:
+        """Get and return value of an object with the specified key and namespace"""
+        key = get_safe_key(key)
+        async with self.conn.get(
+            f"{self.url}?select=value&key_=eq.{key}&namespace=eq.{self.namespace}",
+            headers={
+                "Accept": "application/octet-stream",
+                "apikey": f"{self.auth}",
+                "Authorization": f"Bearer {self.auth}",
+            },
+        ) as resp:
+            maybe_res = await resp.text()
+            if maybe_res:
+                self.exists[key] = True
+                return get_cleartext_value(maybe_res)
+            return ""
+
+
+class aPersistDict:
+    """Async, consistent, persistent storage.
+    A Python dict that synchronously backs up its contents to Postgresql.
+    Care is taken to do this in an asynchronous manner.
+    This can be used for
+        - inventory
+        - subscribers
+        - config info
+    in a way that are persisted across reboots.
+    No schemas and privacy preserving, but could be faster.
+    Each write takes aboout X ms.
+    """
+
+    def __init__(self, *args, **kwargs) -> None:
+        """If an argument is provided or a 'tag' keyword argument is passed...
+        this will be used as a tag for backup / restore.
+        """
+        self.tag = ""
+        if args:
+            self.tag = args[0]
+        if "tag" in kwargs:
+            self.tag = kwargs.pop("tag")
+        self.dict_ = {}
+        self.client = fastpKVStoreClient()
+        self.rwlock = asyncio.Lock()
+        self.loop = asyncio.get_event_loop()
+        self.init_task = asyncio.create_task(self.finish_init(**kwargs))
+        self.write_task = None
+
+    def __repr__(self) -> str:
+        return f"a{self.dict_}"
+
+    def __str__(self) -> str:
+        return f"a{self.dict_}"
+
+    async def __getitem__(self, key) -> Any:
+        return await self.get(key)
+
+    def __setitem__(self, key: str, value: Union[float, str]):
+        if self.write_task and not self.write_task.done():
+            raise ValueError("Can't set value. write_task incomplete.")
+        self.write_task = asyncio.create_task(self.set(key, value))
+
+    async def finish_init(self, **kwargs):
+        async with self.rwlock:
+            key = f"Persist_{self.tag}_{NAMESPACE}"
+            result = await self.client.get(key)
+            if result:
+                self.dict_ = json.loads(result)
+            self.dict_.update(**kwargs)
+
+    async def get(self, key, default=None):
+        # always wait for pending writes - where a task has been created but lock not held
+        if self.write_task:
+            await self.write_task
+            self.write_task = None
+        # then grab the lock
+        async with self.rwlock:
+            return self.dict_.get(key, default)
+
+    async def set(self, key, value):
+        async with self.rwlock:
+            self.dict_.update({key: value})
+            key = f"Persist_{self.tag}_{NAMESPACE}"
+            value = json.dumps(self.dict_)
+            val = await self.client.post(key, value)
+            return val
 
 
 class PersistDict(dict):
