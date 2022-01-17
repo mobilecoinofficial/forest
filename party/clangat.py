@@ -67,16 +67,17 @@ class QuestionBot(PayBot):
         return "🍀"
 
     async def do_askfreedemo(self, msg: Message) -> Response:
-        await self.ask_freeform_question(msg.source)
+        answer = await self.ask_freeform_question(msg.source)
         if answer:
             return f"I love {answer} too!"
 
     async def ask_freeform_question(
         self, recipient: str, question_text: str = "What's your favourite colour?"
     ) -> str:
-        self.pending_answers[msg.source] = asyncio.Future()
-        answer = await self.pending_answers.get(msg.source)
-        self.pending_answers.pop(msg.source)
+        await self.send_message(recipient, question_text)
+        self.pending_answers[recipient] = asyncio.Future()
+        answer = await self.pending_answers.get(recipient)
+        self.pending_answers.pop(recipient)
         return answer.full_text
 
     async def ask_yesno_question(
