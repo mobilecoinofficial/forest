@@ -428,7 +428,7 @@ class SimpleAirdrop(Airdrop):  # pylint: disable=too-many-instance-attributes
         """
         total_drop = self.max_entrants * self.drop_amount
         if include_fees:
-            
+
             return (
                 total_drop
                 + self.max_entrants
@@ -458,18 +458,14 @@ class SimpleAirdrop(Airdrop):  # pylint: disable=too-many-instance-attributes
             )
         if not configured_correctly:
             logging.warning("Airdrop is not configured correctly")
-        if can_start:
-            logging.info(
-                "Airdrop configured correctly with sufficient balance, airdrop can start"
-            )
         return can_start
-    
+
     @staticmethod
     def to_pmob(amount: Union[float, int]) -> int:
         """
         Takes amount in mob, returns amount in pmob
         """
-        
+
         return int(mc_util.mob2pmob(amount))
 
     @staticmethod
@@ -518,7 +514,7 @@ class AirDropBot(PayBot):
         """
         admin = get_secret("ADMIN")
         return msg.source == admin
-    
+
     async def handle_message(self, message: Message) -> Response:
         if self.is_admin(message) and isinstance(self.config, SimpleAirdrop):
             if not (message.text or message.command) or message.group:
@@ -542,7 +538,7 @@ class AirDropBot(PayBot):
             return await self.process_payment(message)
 
         return await super().handle_message(message)
-    
+
     async def process_payment(self, message: Message) -> Response:
         """
         Handle refunding of payments to users legitimately entering airdrop or
@@ -565,7 +561,7 @@ class AirDropBot(PayBot):
             status = self.entrant_list.get(message.source,{}).get("status")
             if status == "prepaid":
                 create_task(self.return_payment(message, "prepaid_airdrop_entry"))
-                return f"You've successfully entered the airdrop!"
+                return "You've successfully entered the airdrop!"
             if status == "unpaid":
                 create_task(self.return_payment(message, "duplicate_payment"))
                 return f"You've already entered this airdrop, {refund_without_fees}"
@@ -573,14 +569,14 @@ class AirDropBot(PayBot):
             message.source in self.entrant_list
         ):
             if message.text and "pay me" in message.text.lower():
-                if self.entrant_list.get(message.source) or not (States.LIVE in state):
+                if self.entrant_list.get(message.source) or not States.LIVE in state:
                     return None
                 wallet_address = await self.get_address(message.source)
                 if not wallet_address:
                     return ("You haven't yet enabled Signal Pay! To "
-                            "enable it {SIGNAL_PAY} \n\n after "
+                            f"enable it {SIGNAL_PAY}\n\nAfter "
                             "you've done that, I'll send you the initial "
-                            "Mob!"
+                            f"{conf.entry_price} MoB!"
                             )
                 create_task(self.return_payment(message, "prepay"))
                 return (
@@ -665,10 +661,10 @@ class AirDropBot(PayBot):
             reason,
         )
 
-        await self.send_payment(
-            msg.source, amount_to_send, payment_message, reason
+        result = await self.send_payment(
+            msg.source, amount_to_send, payment_message, 30, comment=reason
         )
-
+        logging.info("Return payment result was %s", result)
         create_task(
             self.record_tx(
                 msg.source,
@@ -729,7 +725,6 @@ class AirDropBot(PayBot):
                     resp += "Make the drop to current entrants by typing /make_drop\n"
                     resp += "Get airdrop stats with /drop_stats\n"
                     resp += "Cancel the drop with /cancel_drop\n"
-                    resp += "\nOther commands:\n" + self.documented_commands()
                     return resp
 
                 resp += "Hello! An aidrop is in progress. "
@@ -747,10 +742,8 @@ class AirDropBot(PayBot):
                     if States.AIRDROP_FULL in state:
                         resp += "unfortunately the airdrop is full. Please check back later!"
                         return resp
-                    if "pay me" in message.text.lower():
-                        if not States.AIRDROP_FINISHED in state:
-                            return await self.process_payment(message)
-
+                    if "pay me" in message.text.lower() and not States.AIRDROP_FINISHED in state:
+                        return await self.process_payment(message)
 
                     resp += (
                         f"{self.name} is currently dropping {conf.drop_amount} to "
@@ -791,7 +784,7 @@ class AirDropBot(PayBot):
                 bot_number=self.bot_number,
             )
 
-            logging.info(f"logging {direction} - {sender}:{amount}:{reason}")
+            logging.info("logging %s - %s:%s:%s", direction, sender, amount, reason)
             await self.db_manager.sd_add_tx(self.config.name, json.dumps(data))
 
     async def get_state(self) -> set[States]:
@@ -808,7 +801,7 @@ class AirDropBot(PayBot):
         num_paid_entrants = len(paid_entrants)
         if isinstance(conf, SimpleAirdrop):
             if conf.max_entrants > 0:
-                if (num_entrants >= conf.max_entrants) and (num_paid_entrants >= num_entrants):
+                if num_paid_entrants >= num_entrants >= conf.max_entrants:
                     states.add(States.AIRDROP_FINISHED)
                     return states
             if not conf.is_configured_correctly():
@@ -842,12 +835,11 @@ class AirDropBot(PayBot):
         logging.debug("state are %s", states)
         return states
 
-    async def distribute_drop(self, num_to_drop: int) -> None:
+    async def distribute_drop(self, num_to_drop: int, max_retries: int = 2) -> None:
         """
         Executes payment of airdrop amount to recipients
-        """ 
+        """
         config = self.config
-        admin = get_secret("ADMIN")
         assert isinstance(config, SimpleAirdrop)
         account_id = await self.mobster.get_account()
         logging.debug("pre allocating transactions for %s users", num_to_drop)
@@ -856,7 +848,7 @@ class AirDropBot(PayBot):
         unpaid = self.get_entrants()
         if num_to_drop > len(unpaid):
             msg = "Number of requested drops above number of users entered, aborting"
-            await self.send_message(admin, msg)
+            await self.send_message(get_secret("ADMIN"), msg)
             return
         drop_amount = int(mc_util.mob2pmob(config.drop_amount))
         unpaid = unpaid[0:num_to_drop]
@@ -875,21 +867,23 @@ class AirDropBot(PayBot):
                     "Here's your airdrop! I've just sent you "
                     f"{float(mc_util.pmob2mob(drop_amount))} MoB! Thank you so much "
                     "for participating!")
-            await self.send_payment(
+            result = await self.send_payment(
                 entrant["number"],
                 drop_amount,
                 payment_message,
-                "airdrop_payout",
+                30,
+                comment="airdrop_payout",
                 input_txo_ids=[utxo_hash]
             )
+            logging.info("payment result is %s", result)
+            
             assert isinstance(entrant_address, str)
             create_task(self.record_tx(get_secret("ADMIN"), "airdrop_payout",
                 drop_amount, "tx_direction_sent", entrant_address,
                 network_block))
             self.entrant_list[entrant["number"]]["status"] = "paid"
-        asyncio.sleep(10)
         drop_stats = await self.get_drop_stats()
-        await self.send_message(admin, drop_stats)
+        await self.send_message(get_secret("ADMIN"), drop_stats)
 
     async def reconcile_data(self, start_block: int) -> dict[str, list]:
         """
@@ -917,7 +911,7 @@ class AirDropBot(PayBot):
         paid_diff = list(paid - fs_paid)
         unpaid_diff = list(unpaid - fs_unpaid)
         return {"mismatch_paid": paid_diff, "mismatch_unpaid": unpaid_diff}
- 
+
     async def get_entrants_from_full_service(self, start_block: int) -> dict[str, list]:
         """
         Get full service record of which entrants have been entered and/or have
