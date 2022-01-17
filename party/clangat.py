@@ -67,7 +67,7 @@ class QuestionBot(PayBot):
         return "🍀"
 
     async def do_askfreedemo(self, msg: Message) -> Response:
-        await self.ask_freeform_question()
+        await self.ask_freeform_question(msg.source)
         if answer:
             return f"I love {answer} too!"
 
