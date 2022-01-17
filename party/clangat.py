@@ -34,8 +34,14 @@ from pdict import *
 class QuestionBot(PayBot):
     def __init__(self):
         self.pending_confirmations: dict[str, asyncio.Future[bool]] = {}
-        self.pending_answers: dict[str, asyncio.Future[str]] = {}
+        self.pending_answers: dict[str, asyncio.Future[Message]] = {}
         super().__init__()
+
+    async def handle_message(self, message: Message) -> Response:
+        if message.full_text and self.pending_answers.get(message.source):
+            self.pending_answers[message.source].set_result(message)
+            return "Thank you for your answer!"
+        return await super().handle_message(message)
 
     async def do_yes(self, msg: Message) -> Response:
         if msg.source not in self.pending_confirmations:
@@ -59,6 +65,19 @@ class QuestionBot(PayBot):
         if answer:
             return "well, that's good!"
         return "🍀"
+
+    async def do_askfreedemo(self, msg: Message) -> Response:
+        await self.ask_freeform_question()
+        if answer:
+            return f"I love {answer} too!"
+
+    async def ask_freeform_question(
+        self, recipient: str, question_text: str = "What's your favourite colour?"
+    ) -> str:
+        self.pending_answers[msg.source] = asyncio.Future()
+        answer = await self.pending_answers.get(msg.source)
+        self.pending_answers.pop(msg.source)
+        return answer.full_text
 
     async def ask_yesno_question(
         self, recipient: str, question_text: str = "Are you sure? yes/no"
@@ -172,6 +191,7 @@ class ClanGat(PayBotPro):
 
     @requires_admin
     async def do_dump2(self, msg: Message) -> Response:
+        obj = (msg.arg1 or "").lower()
         dump = {}
         for eventcode in list(self.event_owners.keys()) + list(self.list_owners.keys()):
             event = {}
@@ -204,6 +224,7 @@ class ClanGat(PayBotPro):
             ]
         if user_owns_list_obj:
             return json.dumps(self.event_lists.get(obj, []), indent=2)
+        return "You're not authorized."
 
     async def do_stop(self, msg: Message) -> Response:
         if (
@@ -211,6 +232,7 @@ class ClanGat(PayBotPro):
             and msg.arg1 in self.event_lists
             and msg.source in self.event_lists.get(msg.arg1, [])
         ):
+            self.event_lists[msg.arg1].remove(msg.source)
             return f"Okay, removed you from {msg.arg1}"
         elif not msg.arg1:
             for list_ in self.event_lists:
@@ -304,29 +326,6 @@ class ClanGat(PayBotPro):
             return "completed sends"
         return "failed"
 
-    async def do_slow_blast(self, msg: Message) -> Response:
-        obj = (msg.arg1 or "").lower()
-        param = msg.arg2
-        value = msg.arg3
-        user = msg.source
-        user_owns_list_obj = obj in self.list_owners and user in self.list_owners.get(
-            obj, []
-        )
-        user_owns_event_obj = obj in self.list_owners and user in self.list_owners.get(
-            obj, []
-        )
-        if (user_owns_list_obj or user_owns_event_obj) and param:
-            for target_user in self.event_lists[obj]:
-                await self.send_message(target_user, param)
-                for owner in list(
-                    set(self.event_owners.get(obj, []) + self.list_owners.get(obj, []))
-                ):
-                    await self.send_message(
-                        owner,
-                        f"OK, sent '{param}' to 1 of {len(self.event_lists[obj])} people on list {obj}: {target_user}",
-                    )
-                await asyncio.sleep(10)
-
     async def do_send(self, msg: Message) -> Response:
         obj = msg.arg1
         param = msg.arg2
@@ -350,28 +349,26 @@ class ClanGat(PayBotPro):
             obj in self.event_owners and user in self.event_owners.get(obj, [])
         )
         list_ = []
+        sent = []
         success = False
         if (user_owns_list_obj or user_owns_event_obj) and param:
             success = True
-            for target_user in list(
+            target_users = list(
                 set(self.event_lists.get(obj, []) + self.event_attendees.get(obj, []))
+            )
+            if not await self.ask_yesno_question(
+                "Are you sure you want to blast {len(target_users)}? (yes/no)"
             ):
+                return "ok, let's not."
+            for target_user in target_users:
                 await self.send_message(target_user, param)
-                # for owner in list(
-                #    set(self.event_owners.get(obj, []) + self.list_owners.get(obj, []))
-                # ):
-                #    success = True
-                #    await self.send_message(
-                #        owner,
-                #        f"OK, sent '{param}' to 1 of {len(self.event_lists.get(obj, []) + self.event_attendees.get(obj, []))} people via {obj}: {target_user}",
-                #    )
+                sent.append(target_user)
                 await asyncio.sleep(3)
         elif user_owns_event_obj or user_owns_list_obj:
             return "add a message"
-        else:
-            return "nice try - you don't have ownership!"
         if not success:
             return "That didn't work!"
+        return f"blasted {len(sent)} recipients on {obj}"
 
     async def do_subscribe(self, msg: Message) -> Response:
         obj = (msg.arg1 or "").lower()
@@ -591,7 +588,6 @@ https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
                     all_owners += self.event_owners.get(maybe_pending, [])
                     lists += [f"pending: {maybe_pending}"]
 
-            # being really lazy about owners / all_owners here
             try:
                 maybe_user_profile = await self.auxin_req(
                     "getprofile", peer_name=msg.source
@@ -602,6 +598,7 @@ https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
                 user_given = "[error]"
             if code in self.easter_eggs:
                 return self.easter_eggs.get(code)
+            # being really lazy about owners / all_owners here
             for owner in list(set(all_owners)):
                 # don't flood j
                 if "7777" not in owner:
