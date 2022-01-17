@@ -44,6 +44,7 @@ class QuestionBot(PayBot):
         return await super().handle_message(message)
 
     async def do_yes(self, msg: Message) -> Response:
+        """Handles 'yes' in response to a pending_confirmation."""
         if msg.source not in self.pending_confirmations:
             return "Did I ask you a question?"
         else:
@@ -51,6 +52,7 @@ class QuestionBot(PayBot):
             question.set_result(True)
 
     async def do_no(self, msg: Message) -> Response:
+        """Handles 'no' in response to a pending_confirmation."""
         if msg.source not in self.pending_confirmations:
             return "Did I ask you a question?"
         else:
@@ -58,13 +60,10 @@ class QuestionBot(PayBot):
             question.set_result(False)
 
     async def do_askdemo(self, msg: Message) -> Response:
-        await self.send_message(msg.source, "Are you feeling lucky, punk? (yes/no)")
-        self.pending_confirmations[msg.source] = asyncio.Future()
-        answer = await self.pending_confirmations.get(msg.source)
-        self.pending_confirmations.pop(msg.source)
-        if answer:
+        """Asks a yes/no question."""
+        if await self.ask_yesno_question(msg.source, "Are you feeling lucky, punk?"):
             return "well, that's good!"
-        return "🍀"
+        return "sending 🍀"
 
     async def do_askfreedemo(self, msg: Message) -> Response:
         answer = await self.ask_freeform_question(msg.source)
@@ -85,7 +84,24 @@ class QuestionBot(PayBot):
     ) -> bool:
         self.pending_confirmations[recipient] = asyncio.Future()
         await self.send_message(recipient, question_text)
-        return await self.pending_confirmations[recipient]
+        result = await self.pending_confirmations[recipient]
+        self.pending_confirmations.pop(recipient)
+        return result
+
+
+krng = open("/dev/urandom", "rb")
+
+
+def r1dx(x: int = 20) -> int:
+    """returns a random, fair integer from 1 to X as if rolling a dice with the specified number of sides"""
+    max_r = 256
+    assert x <= max_r
+    while True:
+        # get one byte, take as int on [1,256]
+        r = int.from_bytes(krng.read(1), "little") + 1
+        # if byte is less than the max factor of 'x' on the interval max_r, return r%x+1
+        if r < (max_r - (max_r % x) + 1):
+            return (r % x) + 1
 
 
 class PayBotPro(QuestionBot):
@@ -159,7 +175,33 @@ class PayBotPro(QuestionBot):
             return fact.strip()
 
     async def do_rot13(self, msg: Message) -> Response:
+        """rot13 encodes the message.
+        > rot13 hello world
+        uryyb jbeyq"""
         return codecs.encode(msg.text, "rot13")
+
+    async def do_roll(self, msg: Message) -> Response:
+        """Rolls N dice of M sides: ie) roll 1 d20.
+        Optionally accepts a third argument to specify starting at 0 instead of 1."""
+        num_dice, dice_sides, offset = 1, 20, 0
+        if msg.arg1 and msg.arg1.isnumeric():
+            num_dice = int(msg.arg1)
+        if msg.arg2 and msg.arg2.lstrip("d").isnumeric():
+            dice_sides = int(msg.arg2.lstrip("d"))
+        if msg.arg1 and "d" in msg.arg1:
+            maybe_num_dice, maybe_dice_sides = msg.arg1.split("d")
+            if maybe_num_dice.isnumeric():
+                num_dice = int(maybe_num_dice)
+            if maybe_dice_sides.isnumeric():
+                dice_sides = int(maybe_dice_sides)
+        if msg.arg3 and msg.arg3 == "0":
+            offset = 1
+        if dice_sides > 256:
+            return "Try with a smaller number of sides (<256)."
+        return [
+            f"Okay, we rolled {num_dice} {dice_sides}-sided dice!"
+            f"{[r1dx(dice_sides)-offset for _ in range(num_dice)]}"
+        ]
 
 
 class ClanGat(PayBotPro):
