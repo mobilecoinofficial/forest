@@ -27,7 +27,7 @@ RETURNS enqueue_result AS $$
         END IF;
         SELECT coalesce(count(distinct hostname), 0) FROM prompt_queue WHERE status='assigned' INTO result.workers;
         SELECT count(*) FROM prompt_queue 
-            WHERE status='pending' OR status='assigned' AND paid=true 
+            WHERE (status='pending' OR status='assigned') AND paid=true 
             INTO result.queue_length;
         RETURN result;
     END;
@@ -47,7 +47,7 @@ RETURNS enqueue_result AS $$
         END IF;
         SELECT coalesce(count(distinct hostname), 0) FROM prompt_queue WHERE status='assigned' INTO result.workers;
         SELECT count(*) FROM prompt_queue 
-            WHERE status='pending' OR status='assigned' 
+            WHERE (status='pending' OR status='assigned') AND paid=False
             INTO result.queue_length;
         RETURN result;
     END;
