@@ -614,6 +614,8 @@ class Bot(Signal):
             # todo: https://github.com/jazzband/docopt-ng/blob/63094d5fb82a0dcdea59b606b9fecbff0973b6cc/docopt.py#L49
             if hasattr(self, "do_" + message.command):
                 return await getattr(self, "do_" + message.command)(message)
+            if message.group:
+                return None
             suggest_help = " Try /help." if hasattr(self, "do_help") else ""
             return f"Sorry! Command {message.command} not recognized!" + suggest_help
         if message.text == "TERMINATE":
