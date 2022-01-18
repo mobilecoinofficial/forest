@@ -1,3 +1,7 @@
+## 1.0.4
+
+- Jaccard distance for correcting typo. Use first word as command.
+
 ## 1.0.3
 
 - do_update sets profile picture from attachment (#56)
