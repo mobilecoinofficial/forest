@@ -225,6 +225,16 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         queue_length = (await self.queue.length())[0].get("len")
         return f"queue size: {queue_length}"
 
+    async def do_prefix(self, msg: Message) -> str:
+        assert msg.tokens and len(msg.tokens) >= 2
+        prefix = msg.tokens[0]
+        msg.command = msg.tokens[1].lstrip("/")
+        msg.tokens = msg.tokens[2:]
+        msg.text = " ".join(msg.tokens)
+        resp = await self.handle_message(msg)
+        if resp:
+            return prefix + " " + resp
+
     async def do_list_queue(self, _: Message) -> str:
         q = "; ".join(prompt.get("prompt") for prompt in await self.queue.list_queue())
         return q or "queue empty"
@@ -435,7 +445,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         resp = await self.do_imagine(msg)
         return resp.replace("you are", f'"{prompt}" is')
 
-    @requires_admin
+    @hide
     async def do_gpt(self, msg: Message) -> str:
         response = openai.Completion.create(  # type: ignore
             engine="davinci",
