@@ -815,7 +815,7 @@ class PayBot(Bot):
         # TODO: add a lock around two-part build/submit Or
         # TODO: add explicit utxo handling
         # TODO: add task which keeps full-service filled
-        prop = await self.mob_request(
+        raw_prop = await self.mob_request(
             "build_transaction",
             account_id=account_id,
             recipient_public_address=address,
@@ -823,17 +823,18 @@ class PayBot(Bot):
             fee=str(int(1e12 * 0.0004)),
             **params,
         )
+
+        prop = raw_prop["result"]["tx_proposal"]
+        tx_id = raw_prop["result"]["transaction_log_id"]
         if confirm_tx_timeout:
             await self.mob_request(
                 "submit_transaction",
-                tx_proposal=prop["result"]["tx_proposal"],
-                comment=params.get("comment", {}),
+                tx_proposal=prop,
+                comment=params.get("comment", ""),
                 account_id=account_id,
             )
         else:
-            await self.mob_request(
-                "submit_transaction", tx_proposal=prop["result"]["tx_proposal"]
-            )
+            await self.mob_request("submit_transaction", tx_proposal=prop)
         receipt_resp = await self.mob_request(
             "create_receiver_receipts",
             tx_proposal=prop,
@@ -852,8 +853,7 @@ class PayBot(Bot):
             status = "tx_status_pending"
             for i in range(confirm_tx_timeout):
                 tx_status = await self.mob_request(
-                    "get_transaction_log",
-                    transaction_log_id=prop.get("result", {}).get("transaction_log_id"),
+                    "get_transaction_log", transaction_log_id=tx_id
                 )
                 status = (
                     tx_status.get("result", {}).get("transaction_log", {}).get("status")
@@ -874,7 +874,7 @@ class PayBot(Bot):
                         tx_status.get("result"),
                     )
                     break
-                asyncio.sleep(1)
+                await asyncio.sleep(1)
 
             if status == "tx_status_pending":
                 logging.warning(
@@ -883,7 +883,7 @@ class PayBot(Bot):
                     tx_status.get("result"),
                 )
             resp = await resp_fut
-            resp.status = status
+            resp.status, resp.transaction_log_id = status, tx_id  # type: ignore
             return resp
 
         if receipt_message:
