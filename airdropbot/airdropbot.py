@@ -1,7 +1,7 @@
 #!/usr/bi:n/python3.9
 # pylint: disable=too-many-branches disable=too-many-return-statements disable=line-too-long
 # pylint: disable=too-many-arguments disable=too-many-nested-blocks
-# pylint: disable=too-many-lines disable=unused-argument
+# pylint: disable=too-many-lines disable=unused-argument disable=too-many-public-methods
 """Executable file which starts up a bot which does mobilecoin airdrops"""
 import logging
 import json
@@ -16,10 +16,11 @@ import mc_util
 from forest.core import PayBot, app, Message, Response, requires_admin, hide
 from forest.utils import get_secret
 from forest.pghelp import Loop, PGExpressions, PGInterface
+from forest.payments_monitor import delete_indices
 
 FEE_MOB = 0.0004
 FEE_PMOB = 400000000
-SIGNAL_PAY = 'go to Signal Settings > Payments > Activate Payments > Accept and Agree to Terms to activate signal payments!'
+SIGNAL_PAY = "go to Signal Settings > Payments > Activate Payments > Accept and Agree to Terms to activate signal payments!"
 
 AirdropPGExpressions = PGExpressions(
     table="aidrops",
@@ -130,6 +131,7 @@ class Airdrop:
     """
     Base aidrop configuration type
     """
+
     name: str = "no_airdrop"
     # pylint: disable=R0201
     def is_configured_correctly(self) -> bool:
@@ -162,11 +164,13 @@ class SimpleAirdrop(Airdrop):  # pylint: disable=too-many-instance-attributes
             welcome="Welcome to aidrop setup, I will now ask series of questions to setup "
             "your drop\nYou may exit this at anytime by typing another /command "
             "or by typing 'exit' at anytime",
-            entry_price=("What's the entry price for this airdrop? The amount "
-            "entered here will be pre-dropped to users, which they will "
-            "then pay back immediately to enter the airdrop. \n\nEnter an "
-            "integer or decimal number representing the amount of MoB "
-            "users will need to pay to enter"),
+            entry_price=(
+                "What's the entry price for this airdrop? The amount "
+                "entered here will be pre-dropped to users, which they will "
+                "then pay back immediately to enter the airdrop. \n\nEnter an "
+                "integer or decimal number representing the amount of MoB "
+                "users will need to pay to enter"
+            ),
             entry_price_invalid="Entry price must be a positive number, please re-enter",
             drop_amount="How many MoB will be given out to each entrant when the airdrop starts? (enter integer or decimal)",
             drop_amount_invalid="Drop amount must be a positive number, please re-enter",
@@ -414,7 +418,9 @@ class SimpleAirdrop(Airdrop):  # pylint: disable=too-many-instance-attributes
         self.end_dialog()
         return ""
 
-    def get_total_airdrop_amount(self, include_fees: bool = True, padding: float = 0.05) -> float:
+    def get_total_airdrop_amount(
+        self, include_fees: bool = True, padding: float = 0.05
+    ) -> float:
         """
         Calculate total aidrop pot
 
@@ -429,12 +435,7 @@ class SimpleAirdrop(Airdrop):  # pylint: disable=too-many-instance-attributes
         total_drop = self.max_entrants * self.drop_amount
         if include_fees:
 
-            return (
-                total_drop
-                + self.max_entrants
-                * ( FEE_MOB * 3)
-                + total_drop*padding
-            )
+            return total_drop + self.max_entrants * (FEE_MOB * 3) + total_drop * padding
         return total_drop
 
     def is_ready_to_launch(self, balance: Union[float, int]) -> bool:
@@ -505,6 +506,8 @@ class AirDropBot(PayBot):
         self.config: Airdrop = Airdrop()
         self.entrant_list: dict = {}
         self.db_manager = AirdropManager()
+        self.txo_pools: dict[str, dict[str, int]] = {}
+        self.resource_lock = asyncio.Lock()
         super().__init__()
 
     @staticmethod
@@ -558,7 +561,7 @@ class AirDropBot(PayBot):
         if message.source in self.entrant_list and isinstance(
             self.config, SimpleAirdrop
         ):
-            status = self.entrant_list.get(message.source,{}).get("status")
+            status = self.entrant_list.get(message.source, {}).get("status")
             if status == "prepaid":
                 create_task(self.return_payment(message, "prepaid_airdrop_entry"))
                 return "You've successfully entered the airdrop!"
@@ -573,18 +576,19 @@ class AirDropBot(PayBot):
                     return None
                 wallet_address = await self.get_address(message.source)
                 if not wallet_address:
-                    return ("You haven't yet enabled Signal Pay! To "
-                            f"enable it {SIGNAL_PAY}\n\nAfter "
-                            "you've done that, I'll send you the initial "
-                            f"{conf.entry_price} MoB!"
-                            )
+                    return (
+                        "You haven't yet enabled Signal Pay! To "
+                        f"enable it {SIGNAL_PAY}\n\nAfter "
+                        "you've done that, I'll send you the initial "
+                        f"{conf.entry_price} MoB!"
+                    )
                 create_task(self.return_payment(message, "prepay"))
                 return (
-                        f"Okay! I'm sending you {conf.entry_price + FEE_MOB} "
-                        f"MoB, send me back {conf.entry_price} MoB to enter the "
-                        f"airdrop. Once entered, you will be dropped "
-                        f"{conf.drop_amount} MoB once the airdrop starts!"
-                        )
+                    f"Okay! I'm sending you {conf.entry_price + FEE_MOB} "
+                    f"MoB, send me back {conf.entry_price} MoB to enter the "
+                    f"airdrop. Once entered, you will be dropped "
+                    f"{conf.drop_amount} MoB once the airdrop starts!"
+                )
             create_task(self.return_payment(message, "airdrop_entry"))
             return f"You've successfully entered the airdrop! Since you sent your own MoB {refund_with_fees}"
         create_task(self.return_payment(message, "Unexpected"))
@@ -609,18 +613,18 @@ class AirDropBot(PayBot):
         amount_received = 0
         payment_message = "Your payment has been refunded!"
         if reason == "prepay":
-            amount_to_send =  conf.to_pmob(conf.entry_price) + fee
+            amount_to_send = conf.to_pmob(conf.entry_price) + fee
             payment_message = f"I've sent you {conf.to_mob(amount_to_send)} MoB"
             self.entrant_list[msg.source] = dict(
-                    status="prepaid",
-                    wallet_address=wallet_address,
-                    number=msg.source,
-                    entry_block=entry_block
-                    )
+                status="prepaid",
+                wallet_address=wallet_address,
+                number=msg.source,
+                entry_block=entry_block,
+            )
 
         if msg.payment:
             logging.info("attempting to confirm payment from %s", msg.source)
-            amount_received = await self.mobster.get_receipt_amount_pmob(msg.payment["receipt"]) # type: ignore
+            amount_received = await self.mobster.get_receipt_amount_pmob(msg.payment["receipt"])  # type: ignore
             assert isinstance(amount_received, int)
             amount_to_send = amount_received - fee
             create_task(
@@ -646,10 +650,12 @@ class AirDropBot(PayBot):
                 entry_block=entry_block,
             )
             num_entrants = len(self.get_entrants("paid"))
-            if isinstance(conf, InteractiveAirdrop) and num_entrants >= conf.max_entrants:
+            if (
+                isinstance(conf, InteractiveAirdrop)
+                and num_entrants >= conf.max_entrants
+            ):
                 full_msg = f"Airdrop is full with {num_entrants}/{conf.max_entrants} entrants, please make drop by typing /make_drop"
                 create_task(self.send_message(get_secret("ADMIN"), full_msg))
-
 
         if amount_to_send < 0 or reason == "prepaid_airdrop_entry":
             return
@@ -660,9 +666,13 @@ class AirDropBot(PayBot):
             msg.source,
             reason,
         )
+        async with self.resource_lock:
+            amt = conf.to_pmob(conf.entry_price)
+            input_txos = await self.get_txos_from_pool('entry', [amt])
 
         result = await self.send_payment(
-            msg.source, amount_to_send, payment_message, 30, comment=reason
+            msg.source, amount_to_send, payment_message, 30, comment=reason,
+            input_txo_ids=input_txos
         )
         logging.info("Return payment result was %s", result)
         create_task(
@@ -691,23 +701,31 @@ class AirDropBot(PayBot):
             if not isinstance(conf, InteractiveAirdrop) or (States.SETUP in state):
                 if self.is_admin(message):
                     if not isinstance(conf, InteractiveAirdrop):
-                        resp = ("Hi admin, no aidrop is currently configured. Type "
-                        "/setup_airdrop to configure one\n")
+                        resp = (
+                            "Hi admin, no aidrop is currently configured. Type "
+                            "/setup_airdrop to configure one\n"
+                        )
                         resp += "\nOther commands:\n" + self.documented_commands()
                         return resp
                     if not conf.is_configured_correctly():
-                        resp = ("Hi admin, an airdrop configuration is in progress. "
-                        "Further configuration is needed, type /setup_airdrop "
-                        "to enter airdrop setup\n")
+                        resp = (
+                            "Hi admin, an airdrop configuration is in progress. "
+                            "Further configuration is needed, type /setup_airdrop "
+                            "to enter airdrop setup\n"
+                        )
                     else:
                         resp = "Hi admin, airdrop configuration is complete\n"
                     if States.NEEDS_FUNDING in state:
-                        resp += ("\nThe airdrop wallet does not have enough funds "
-                        f"please add at least {conf.get_total_airdrop_amount()} "
-                        "to the wallet before launching the airdrop\n")
+                        resp += (
+                            "\nThe airdrop wallet does not have enough funds "
+                            f"please add at least {conf.get_total_airdrop_amount()} "
+                            "to the wallet before launching the airdrop\n"
+                        )
                     if States.READY_TO_LAUNCH in state:
-                        resp = ("Hi admin, airdrop configuration is complete and "
-                        "fully funded, you can launch it by typing /launch_airdrop\n")
+                        resp = (
+                            "Hi admin, airdrop configuration is complete and "
+                            "fully funded, you can launch it by typing /launch_airdrop\n"
+                        )
                     resp += "\nYou can check airdrop configuration using /drop_stats\n"
                     resp += "\nOther commands:\n" + self.documented_commands()
                     return resp
@@ -733,16 +751,21 @@ class AirDropBot(PayBot):
                     if status == "unpaid":
                         resp += "You've already entered the Airdrop! You'll receive your MoB soon. "
                     if status == "prepaid":
-                        resp += (f"I've sent you {conf.entry_price + FEE_MOB} MoB! Please "
-                        f"send {conf.entry_price} back and you will be entered "
-                        "into the airdrop!")
+                        resp += (
+                            f"I've sent you {conf.entry_price + FEE_MOB} MoB! Please "
+                            f"send {conf.entry_price} back and you will be entered "
+                            "into the airdrop!"
+                        )
                     if status == "paid":
                         resp = "Your MoB has been delivered! I appreciate you so much for participating, come back soon! "
                 if not self.entrant_list.get(message.source):
                     if States.AIRDROP_FULL in state:
                         resp += "unfortunately the airdrop is full. Please check back later!"
                         return resp
-                    if "pay me" in message.text.lower() and not States.AIRDROP_FINISHED in state:
+                    if (
+                        "pay me" in message.text.lower()
+                        and not States.AIRDROP_FINISHED in state
+                    ):
                         return await self.process_payment(message)
 
                     resp += (
@@ -758,6 +781,86 @@ class AirDropBot(PayBot):
                     )
                 return resp
         return None
+
+    async def preallocate_txo_pool(self, name: str, txos: list[int]) -> None:
+        """
+        Preallocate a list of txos
+
+        args:
+          name (str): txo pool to allocate into
+          txos (list[int]): list of pmob valued amounts to turn into utxos
+        """
+        if name in self.txo_pools:
+            await self.remove_spent_utxos(self.txo_pools[name])
+
+        off_limit_txos = {}
+        for _, pool in self.txo_pools.items():
+            off_limit_txos.update(pool)
+        account_id = await self.mobster.get_account()
+        utxos = await self.mobster.preallocate_txos(account_id,
+                txo_list=txos, frozen_inputs = off_limit_txos)
+
+        if name in self.txo_pools:
+            self.txo_pools[name].update(utxos)
+            return
+        self.txo_pools[name] = utxos
+
+    async def remove_spent_utxos(self, txos: dict[str, int]) -> dict[str, int]:
+        """
+        Remove txos from txo_pool list in place if they're already spent
+
+        args:
+          txos (dict): dict of txos to prune
+
+        Returns
+          (list): list of txo amounts removed
+        """
+        txos_removed = {}
+        for txo_id in txos.keys():
+            if not await self.mobster.is_txo_unspent(txo_id):
+                txos_removed[txo_id] = txos.pop(txo_id)
+        return txos_removed
+
+    async def get_txos_from_pool(
+        self, pool: str, txo_list: list[int]
+    ) -> dict[str, int]:
+        """
+        Grab utxos and validate utxos are available prior to spend,
+
+        args:
+          pool (str): name of txo pool
+          txo_list (list[int): list of amts to retrieve
+
+        Returns:
+          dict[str, int]: dictionary of utxos to use
+        """
+        utxos: dict[str, int] = {}
+        if not pool in self.txo_pools:
+            logging.warning("txo pool '%s' does not exist", pool)
+            return utxos
+
+        await self.remove_spent_utxos(self.txo_pools[pool])
+        remove_list: list[int] = []
+        for i in range(len(txo_list)): # pylint: disable=consider-using-enumerate
+            if self.txo_pools[pool]:
+                for txo_id, utxo_amt in self.txo_pools[pool].items():
+                    if utxo_amt >= txo_list[i]:
+                        utxos[txo_id] = utxo_amt
+                        remove_list.append(i)
+                        self.txo_pools[pool].pop(txo_id)
+                        break
+
+        # Double check ensure txos are valid
+        delete_indices(txo_list, remove_list)
+        invalid = await self.remove_spent_utxos(utxos)
+        for _, amt in invalid.items():
+            txo_list.append(amt)
+
+        if len(txo_list) > 0:
+            await self.preallocate_txo_pool(pool, txo_list)
+            await asyncio.sleep(10)
+            utxos.update(await self.get_txos_from_pool(pool, txo_list))
+        return utxos
 
     async def record_tx(
         self,
@@ -841,46 +944,55 @@ class AirDropBot(PayBot):
         """
         config = self.config
         assert isinstance(config, SimpleAirdrop)
-        account_id = await self.mobster.get_account()
         logging.debug("pre allocating transactions for %s users", num_to_drop)
-        pool = await self.mobster.preallocate_txos(account_id,[config.to_pmob(config.drop_amount)]*(num_to_drop + 1))
-        await asyncio.sleep(10)
-        unpaid = self.get_entrants()
+        unpaid = self.get_entrants("unpaid")
         if num_to_drop > len(unpaid):
             msg = "Number of requested drops above number of users entered, aborting"
             await self.send_message(get_secret("ADMIN"), msg)
             return
-        drop_amount = int(mc_util.mob2pmob(config.drop_amount))
+        drop_amount = config.to_pmob(config.drop_amount)
         unpaid = unpaid[0:num_to_drop]
         network_block = await self.mobster.get_current_network_block()
         for entrant in unpaid:
+            logging.info("Attempting to pay %s", entrant.get("number"))
             entrant_address = await self.get_address(entrant["number"])
-            logging.info("Attempting to pay %s",entrant.get("number"))
-            logging.info("Entrant profile: %s", entrant)
             if not isinstance(entrant_address, str):
-                logging.warning("could not payment address for %s, skipping", entrant.get("number"))
+                logging.warning(
+                        "could not get payment address for %s, skipping", entrant.get("number")
+                        )
                 continue
-            await asyncio.sleep(4)  # avoid rate limit
-            utxo = pool.pop(-1)
-            utxo_hash = utxo[0]
+            async with self.resource_lock:
+                pool = await self.get_txos_from_pool('drop', [drop_amount])
+            txo_ids = list(pool.keys())
+            logging.debug("Attempting to pay %s with wallet: %s with txos: %s",
+                    entrant.get("number"), entrant_address, pool)
+            await asyncio.sleep(3)  # avoid rate limit
             payment_message = (
-                    "Here's your airdrop! I've just sent you "
-                    f"{float(mc_util.pmob2mob(drop_amount))} MoB! Thank you so much "
-                    "for participating!")
+                "Here's your airdrop! I've just sent you "
+                f"{config.drop_amount} MoB! Thank you so much "
+                "for participating!"
+            )
             result = await self.send_payment(
                 entrant["number"],
                 drop_amount,
                 payment_message,
                 30,
                 comment="airdrop_payout",
-                input_txo_ids=[utxo_hash]
+                input_txo_ids=txo_ids,
             )
             logging.info("payment result is %s", result)
-            
+
             assert isinstance(entrant_address, str)
-            create_task(self.record_tx(get_secret("ADMIN"), "airdrop_payout",
-                drop_amount, "tx_direction_sent", entrant_address,
-                network_block))
+            create_task(
+                self.record_tx(
+                    get_secret("ADMIN"),
+                    "airdrop_payout",
+                    drop_amount,
+                    "tx_direction_sent",
+                    entrant_address,
+                    network_block,
+                )
+            )
             self.entrant_list[entrant["number"]]["status"] = "paid"
         drop_stats = await self.get_drop_stats()
         await self.send_message(get_secret("ADMIN"), drop_stats)
@@ -939,7 +1051,10 @@ class AirDropBot(PayBot):
                 and isinstance(otxos, list)
             ):
                 for txo in otxos:
-                    if record.get("comment") in ["prepaid_airdrop_entry","airdrop_entry"] and txo.get(_id):
+                    if record.get("comment") in [
+                        "prepaid_airdrop_entry",
+                        "airdrop_entry",
+                    ] and txo.get(_id):
                         entrants.add(txo.get(_id))
                     if record.get("comment") == "airdrop_payout" and txo.get(_id):
                         paid_entrants.add(txo.get(_id))
@@ -950,7 +1065,7 @@ class AirDropBot(PayBot):
             "unpaid_entrants": list(unpaid_entrants),
         }
 
-    def get_entrants(self, status: str = "unpaid", num_only:bool=False) -> list:
+    def get_entrants(self, status: str = "unpaid", num_only: bool = False) -> list:
         """
         Get entrants based on paid or unpaid status
 
@@ -1024,19 +1139,23 @@ class AirDropBot(PayBot):
             finances = "Wallet Balance: Error getting balance!"
         resp = f"{finances}\n" + f"{repr(conf)}"
         if States.LIVE in state:
-            prefix = (f"Airdrop live\n # of entrants: {num_entrants}\n"
-                    f"# of entrants given starter MoB: {num_prepaid}\n"
-                    f"# of entrants fully entered: {num_entered}\n"
-                    f"# of entrants paid in full: {num_paid}\n")
+            prefix = (
+                f"Airdrop live\n # of entrants: {num_entrants}\n"
+                f"# of entrants given starter MoB: {num_prepaid}\n"
+                f"# of entrants fully entered: {num_entered}\n"
+                f"# of entrants paid in full: {num_paid}\n"
+            )
             if States.NEEDS_FUNDING in state:
                 prefix += "CRITICAL: AIRDROP HAS ENTRANTS BUT LACKS FUNDING, FUND IMMEDIATELY\n"
             if States.AIRDROP_FULL in state:
                 prefix += "AIRDROP FULL!\n"
             return prefix + resp
         if States.AIRDROP_FINISHED in state:
-            prefix = ("Airdrop Finished! "
-            f"{num_entrants}/{len(self.get_entrants('paid'))} entrants paid "
-            f"{conf.drop_amount} MoB. Type /finish_airdrop to cleanup drop\n")
+            prefix = (
+                "Airdrop Finished! "
+                f"{num_entrants}/{len(self.get_entrants('paid'))} entrants paid "
+                f"{conf.drop_amount} MoB. Type /finish_airdrop to cleanup drop\n"
+            )
             return prefix + resp
         if States.SETUP in state:
             setup_done = conf.is_configured_correctly()
@@ -1072,6 +1191,12 @@ class AirDropBot(PayBot):
                 time = datetime.utcnow().strftime("%Y_%m_%d_%H")
                 name = f"simple_airdrop_{block_height}_{time}"
                 conf.set_airdrop(block_height, name)
+                async with self.resource_lock:
+                    drop_txos = [conf.to_pmob(conf.drop_amount)]*conf.max_entrants
+                    self.preallocate_txo_pool('drop', drop_txos)
+                async with self.resource_lock:
+                    entry_txos = [conf.to_pmob(conf.entry_price)]*conf.max_entrants
+                    self.preallocate_txo_pool('entry', entry_txos)
                 await self.db_manager.create_simple_airdrop(
                     name, block_height, "simple"
                 )
@@ -1126,7 +1251,9 @@ class AirDropBot(PayBot):
                 return "Entrants exist who have not been paid, please make a drop before cancelling"
             resp = "Cancelling drop"
         if States.SETUP in state:
-            resp = "Airdrop configuration cancelled, you can configure another at anytime"
+            resp = (
+                "Airdrop configuration cancelled, you can configure another at anytime"
+            )
         self.config = Airdrop()
         self.entrant_list = {}
         return resp

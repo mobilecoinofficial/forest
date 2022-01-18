@@ -3,6 +3,7 @@
 # Copyright (c) 2021 The Forest Team
 # pylint: disable=invalid-name disable=line-too-long disable=missing-module-docstring disable=consider-using-with
 # pylint: disable=too-many-locals disable=too-many-arguments disable=bare-except
+# pylint: disable=consider-using-enumerate
 import asyncio
 import base64
 import json
@@ -95,6 +96,16 @@ class LedgerManager(PGInterface):
         loop: Loop = None,
     ) -> None:
         super().__init__(queries, database, loop)
+
+
+def delete_indices(list_object: list, indices: list[int]) -> None:
+    """
+    Delete elements of specific list
+    """
+    indices = sorted(indices, reverse=True)
+    for idx in indices:
+        if idx < len(list_object):
+            list_object.pop(idx)
 
 
 # def auxin_addr_to_b58(auxin_output: str) -> str:
@@ -223,6 +234,23 @@ class Mobster:  # pylint: disable=too-many-public-methods
             except asyncpg.UniqueViolationError:
                 pass
 
+    async def is_txo_unspent(self, txo_id: str) -> bool:
+        """
+        Check if txo is unspent
+
+        args:
+            txo_id (str): unique hash identifying the txo
+
+        Returns:
+          bool: Boolean indicating if txo exists
+        """
+        txo = await self.get_txo(txo_id)
+        account_id = txo.get("txo",{}).get("received_account_id")
+        status = txo.get("txo",{}).get("account_status_map",{}).get(account_id,{}).get("txo_status")
+        if status == "txo_status_unspent":
+            return True
+        return False
+
     async def import_account(self) -> dict:
         """
         import mobilecoin account with an account mnemonic
@@ -302,6 +330,19 @@ class Mobster:  # pylint: disable=too-many-public-methods
             )
         )["result"]["balance"]["unspent_pmob"]
         return int(value)
+
+    async def get_txo(self, txo_id: str) -> dict:
+        """
+        Get data on specific transaction output (txo) id
+
+        args:
+          txo_id (str): id of the transaction output to examine
+
+        Returns:
+          dict: information about txo
+        """
+        result = await self.req_("get_txo", txo_id=txo_id)
+        return result["result"]
 
     async def get_transactions(self, account_id: str) -> dict[str, dict[str, dict]]:
         """
@@ -593,8 +634,9 @@ class Mobster:  # pylint: disable=too-many-public-methods
         return result.get("result", {})
 
     async def preallocate_txos(
-        self, account_id: str, txo_list: list[int], address: str = ""
-    ) -> list[tuple[str, int]]:
+            self, account_id: str, txo_list: list[int], frozen_inputs:
+            Optional[dict[str, Any]] = None, address: str = ""
+    ) -> dict[str, int]:
         """
         Pre-allocate UTXOS in exact amount for a list of amounts. Used when a
         large amount of transactions need to be sent.
@@ -602,10 +644,22 @@ class Mobster:  # pylint: disable=too-many-public-methods
         args:
           account_id (str): account_id of the account to allocate the txos within
           txo_list (list[int]): list of transaction amounts in pmob to allocate
-
+          frozen_inputs (dict[str, Any]): dict of txo_ids that should not be
+          used as inputs for txo_pre_allocation. key of this dict should be the
+          txo_id
+          address (str): address to send txo outputs to (default: main address of
+          account)
 
         """
         unspent_utxos = await self.filter_utxos(account_id)
+
+        ##Remove any txos currently being tracked from list
+        if isinstance(frozen_inputs, dict):
+            txs_to_remove = []
+            for i in range(len(unspent_utxos)):
+                if frozen_inputs.get(unspent_utxos[i][0]):
+                    txs_to_remove.append(i)
+            delete_indices(unspent_utxos, txs_to_remove)
         txo_list = sorted(txo_list, reverse=True)
         logging.info("attempting pre_allocation of: %s", txo_list)
         total_requested = sum(txo_list) + FEE*len(txo_list)
@@ -634,6 +688,7 @@ class Mobster:  # pylint: disable=too-many-public-methods
                         submit=True,
                         comment="txo_allocation",
                     )
+                    logging.info(tx_prop.get("result",{}).get("transaction_log"))
                     await asyncio.sleep(5)
                     otxos = (
                         tx_prop.get("result", {})
@@ -648,7 +703,7 @@ class Mobster:  # pylint: disable=too-many-public-methods
                     )
                     break
             unspent_utxos = await self.filter_utxos(account_id)
-        return output_txos
+        return {utxo[0]:utxo[1] for utxo in output_txos}
 
     async def create_account(self, name: str) -> dict:
         """

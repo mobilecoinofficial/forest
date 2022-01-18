@@ -2,11 +2,12 @@
 # Copyright (c) 2021 MobileCoin Inc.
 # Copyright (c) 2021 The Forest Team
 
+
 """
 The core chatbot framework: Message, Signal, Bot, and app
 """
 import asyncio
-import asyncio.subprocess as subprocess  # https://github.com/PyCQA/pylint/issues/1469
+import asyncio.subprocess as subprocess  # pylint: disable=consider-using-from-import
 import base64
 import datetime
 import json
@@ -44,12 +45,15 @@ roundtrip_summary = Summary("roundtrip_s", "Roundtrip message response time")
 
 MessageParser = AuxinMessage if utils.AUXIN else StdioMessage
 logging.info("Using message parser: %s", MessageParser)
-fee_pmob = int(1e12 * 0.0004)
+FEE_PMOB = int(1e12 * 0.0004)
 
 
 def rpc(
     method: str, param_dict: Optional[dict] = None, _id: str = "1", **params: Any
 ) -> dict:
+    """
+    Wrap parameters in standard jsonrpc format
+    """
     return {
         "jsonrpc": "2.0",
         "method": method,
@@ -764,7 +768,7 @@ class PayBot(Bot):
             "build_gift_code",
             account_id=await self.mobster.get_account(),
             value_pmob=str(int(amount_pmob)),
-            fee=str(fee_pmob),
+            fee=str(FEE_PMOB),
             memo="Gift code built with MOBot!",
         )
         prop = raw_prop["result"]["tx_proposal"]
@@ -779,7 +783,7 @@ class PayBot(Bot):
         return [
             "Built Gift Code",
             b58,
-            f"redeemable for {str(mc_util.pmob2mob(amount_pmob-fee_pmob)).rstrip('0')} MOB",
+            f"redeemable for {str(mc_util.pmob2mob(amount_pmob-FEE_PMOB)).rstrip('0')} MOB",
         ]
 
     async def send_payment(  # pylint: disable=too-many-locals
