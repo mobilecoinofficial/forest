@@ -60,6 +60,10 @@ def rpc(
     }
 
 
+def uuid4() -> str:
+    return str(uuid.uuid4())
+
+
 def fmt_ms(ts: int) -> str:
     return datetime.datetime.utcfromtimestamp(ts / 1000).isoformat()
 
@@ -270,7 +274,7 @@ class Signal:
         self, req: Optional[dict] = None, future_key: str = ""
     ) -> Message:
         if req:
-            future_key = req["method"] + "-" + str(round(time.time()))
+            future_key = req["method"] + "-" + str(round(time.time())) + "-" + uuid4()
             logging.info("expecting response id: %s", future_key)
             req["id"] = future_key
             self.pending_requests[future_key] = asyncio.Future()
@@ -310,7 +314,7 @@ class Signal:
             params["mobilecoinAddress"] = payment_address
         if profile_path:
             params["avatarFile"] = profile_path
-        future_key = f"setProfile-{int(time.time()*1000)}"
+        future_key = f"setProfile-{int(time.time()*1000)}-{uuid4()}"
         await self.auxincli_input_queue.put(rpc("setProfile", params, future_key))
         return future_key
 
@@ -390,7 +394,7 @@ class Signal:
                     return ""
             params["destination" if utils.AUXIN else "recipient"] = str(recipient)
         # maybe use rpc() instead
-        future_key = f"send-{int(time.time()*1000)}-{hex(hash(msg))[-4:]}"
+        future_key = f"send-{int(time.time()*1000)}-{hex(hash(msg))[-4:]}-{uuid4()}"
         json_command: JSON = {
             "jsonrpc": "2.0",
             "id": future_key,
