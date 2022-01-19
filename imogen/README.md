@@ -1,26 +1,49 @@
 # Imogen: Imoge Generator
 
-Imogen is a Signal Bot that generates Images using VQGan and CLIP. To have Imogen Generate an Imoge for you. You can join her group chat at:
+Imogen is a Signal Bot that generates Images using VQGan and CLIP. To have Imogen Generate an Imoge for you you can join the group chat or message Imogen directly.
 
 [Imogen Public](https://signal.group/#CjQKIBMsSPcIQYNjlSA1C1NqvapdjiZX31bdrCpH4ZI9BbwEEhAHOP7DVF1GjizAzYmOnDcY)
+
+[DM Imogen](https://signal.me/#p/+2406171657)
 
 ## How To Use
 
 In a Group or a DM message:
 
 ```
-/imagine {prompt} 
+/imagine [prompt]
 ```
 
-And Imogen will generate an Image for you based on prompt.
+And Imogen will generate an Image for you based on the prompt.
 
 <img src="examples/imagine.png">
 
+```
+/paint [prompt]
+```
 
+Will generate an image using the wikiart database, which produces more painty images. 
+
+
+There are some special commands to specify style for the image.
+- /dark_fantasy
+- /pastel,
+- /psychic,
+- /synthwave,
+- /ukiyo,
+- /vibrant
+
+These are equivalent to appending the style after the imagine prompt. `/dark_fantasy Link` -> `/imagine dark fantasy Link`
+
+Imogen can probably draw in many more styles than those, try out asking for a style, or ask her to channel a particular artist.
 
 ## Priority Queue ##
 
-You can pay Imogen to have your requests be prioritised. To pay for the priority queue DM Imogen and attach a payment. 0.1 Mob gets you 5 priority requests. You can request an imagen for the priority queue with the /priority command
+Imogen features a priority queue that will guarantee your image is generated sooner in times of high activity. To make use of Imogen's paid features you must send her a payment with Signal Pay. To do this first make sure you have Payments enabled on Signal. Then DM Imogen and attach a payment using the + button.
+
+![](examples/payment.jpg) ![](examples/payment2.jpg)
+
+ 
 
 ## Available Commands ##
 
