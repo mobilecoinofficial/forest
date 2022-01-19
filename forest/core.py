@@ -803,7 +803,7 @@ class PayBot(Bot):
         amount_pmob: int,
         receipt_message: str = "Transaction sent!",
         confirm_tx_timeout: int = 0,
-        **params: Any,
+        comment: str,
     ) -> Optional[Message]:
         address = await self.get_address(recipient)
         account_id = await self.mobster.get_account()
@@ -812,9 +812,7 @@ class PayBot(Bot):
                 recipient, "sorry, couldn't get your MobileCoin address"
             )
             return None
-        # TODO: add a lock around two-part build/submit Or
         # TODO: add explicit utxo handling
-        # TODO: add task which keeps full-service filled
         raw_prop = await self.mob_request(
             "build_transaction",
             account_id=account_id,
@@ -823,14 +821,13 @@ class PayBot(Bot):
             fee=str(int(1e12 * 0.0004)),
             **params,
         )
-
         prop = raw_prop["result"]["tx_proposal"]
         tx_id = raw_prop["result"]["transaction_log_id"]
         if confirm_tx_timeout:
             await self.mob_request(
                 "submit_transaction",
                 tx_proposal=prop,
-                comment=params.get("comment", ""),
+                comment=comment,
                 account_id=account_id,
             )
         else:
