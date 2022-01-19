@@ -267,7 +267,7 @@ class Signal:
         self, req: Optional[dict] = None, future_key: str = ""
     ) -> Message:
         if req:
-            future_key = req["method"] + "-" + str(round(time.time()*10000))
+            future_key = req["method"] + "-" + str(round(time.time() * 10000))
             logging.info("expecting response id: %s", future_key)
             req["id"] = future_key
             self.pending_requests[future_key] = asyncio.Future()
@@ -394,7 +394,7 @@ class Signal:
                     return ""
             params["destination" if utils.AUXIN else "recipient"] = str(recipient)
         # maybe use rpc() instead
-        future_key = f"send-{int(time.time()*1000)}-{hex(hash(msg))[-4:]}"
+        future_key = f"send-{int(time.time()*10000)}-{hex(hash(msg))[-4:]}"
         json_command: JSON = {
             "jsonrpc": "2.0",
             "id": future_key,
@@ -862,10 +862,10 @@ async def send_message_handler(request: web.Request) -> web.Response:
     if not session:
         return web.Response(status=504, text="Sorry, no live workers.")
     msg_data = await request.text()
-    await session.send_message(
+    future_key = await session.send_message(
         account, msg_data, endsession=request.query.get("endsession")
     )
-    return web.json_response({"status": "sent"})
+    return web.json_response((await session.wait_resp(future_key=future_key)).blob)
 
 
 async def admin_handler(request: web.Request) -> web.Response:

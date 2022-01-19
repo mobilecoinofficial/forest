@@ -9,7 +9,7 @@ import logging
 import random
 import ssl
 import time
-from typing import Optional, Any
+from typing import Optional
 
 import aiohttp
 import asyncpg
@@ -127,14 +127,18 @@ class Mobster:
         async with mob_req as resp:
             return await resp.json()
 
-    async def get_all_txos_for_account(self) -> dict[str, Any]:
+    async def get_all_txos_for_account(self):
         txos = (
             (
-                await self.req_(
-                    "get_all_txos_for_account", account_id=await self.get_account()
+                (
+                    await self.req_(
+                        "get_all_txos_for_account", account_id=await self.get_account()
+                    )
                 )
-            ).get("result", {})
-        ).get("txo_map", {})
+            )
+            .get("result", {})
+            .get("txo_map", {})
+        )
 
         return txos
 
@@ -153,9 +157,7 @@ class Mobster:
             return sorted_
         return {}
 
-    async def split_txos_slow(
-        self, output_millimob: int = 100, target_quantity: int = 200
-    ) -> str:
+    async def split_txos_slow(self, output_millimob=100, target_quantity=200) -> str:
         utxos = list(reversed(await self.get_utxos()))
         built = 0
         i = 0
@@ -394,7 +396,7 @@ class Mobster:
 
 
 class StatefulMobster(Mobster):
-    def __init__(self) -> None:
+    def __init__(self):
         self.ledger_manager = LedgerManager()
         self.invoice_manager = InvoiceManager()
         super().__init__()

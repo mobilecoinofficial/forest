@@ -212,13 +212,13 @@ class ClanGat(PayBotPro):
         self.event_limits: dict[str, int] = PersistDict("event_limits")
         self.event_prompts: dict[str, str] = PersistDict("event_prompts")
         self.event_prices: dict[str, float] = PersistDict("event_prices")
-        self.event_image_urls: dict[str, str] = PersistDict("event_images")
+        self.event_images: dict[str, str] = PersistDict("event_images")
         self.event_owners: dict[str, list[str]] = PersistDict("event_owners")
         self.event_attendees: dict[str, list[str]] = PersistDict("event_attendees")
         self.event_lists: dict[str, list[str]] = PersistDict("event_lists")
         self.list_owners: dict[str, list[str]] = PersistDict("list_owners")
         self.easter_eggs: dict[str, str] = PersistDict("easter_eggs")
-        self.successful_pays: dict[str, list[str]] = PersistDict("list_payouts")
+        self.successful_pays: dict[str, list[str]] = PersistDict("successful_pays")
         self.pay_lock: asyncio.Lock = asyncio.Lock()
         # okay, this now maps the tag (restore key) of each of the above to the instance of the PersistDict class
         self.state = {
@@ -399,7 +399,7 @@ class ClanGat(PayBotPro):
             target_users = list(
                 set(self.event_lists.get(obj, []) + self.event_attendees.get(obj, []))
             )
-            if not await self.ask_yesno_question(
+            if not await self.ask_yesno_question(msg.source,
                 "Are you sure you want to blast {len(target_users)}? (yes/no)"
             ):
                 return "ok, let's not."
@@ -444,9 +444,9 @@ class ClanGat(PayBotPro):
             msg.source, f"Are you sure you want to remove {msg.arg1} from {parameters}?"
         ):
             for state_ in self.state.keys():
-                self.state[state_] = {
-                    k: v for (k, v) in self.state[state_].items() if k != msg.arg1
-                }
+                if msg.arg1 in self.__getattribute__(state_):
+                    self.__getattribute__(state_).pop(msg.arg1)
+                    self.__getattribute__(state_).save_state()
             return f"Okay, removed {msg.arg1}"
 
     async def do_set(self, msg: Message) -> Response:
@@ -502,7 +502,7 @@ class ClanGat(PayBotPro):
             self.event_prices[param] = None
             self.event_attendees[param] = []
             self.event_lists[param] = []
-            self.event_image_urls[param] = ""
+            self.event_images[param] = ""
             self.list_owners[param] = [user]
             self.event_prompts[param] = ""
             successs = True
@@ -514,7 +514,7 @@ class ClanGat(PayBotPro):
         ):
             self.event_lists[param] = []
             self.list_owners[param] = [user]
-            self.event_image_urls[param] = ""
+            self.event_images[param] = ""
             return f"created list {param}, time to add some invitees and blast 'em"
         elif obj == "event" and not param:
             return ("please provide an event code to create!", "> add event TEAMNYE22")
