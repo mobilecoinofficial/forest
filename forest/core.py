@@ -513,6 +513,15 @@ def hide(command: Callable) -> Callable:
     hidden_command.hide = True  # type: ignore
     return hidden_command
 
+def group_help_text(text: str) -> Callable:
+    def decorate(command: Callable) -> Callable:
+        @wraps(command)
+        async def group_help_text_command(self: "Bot", msg: Message) -> Response:
+            return await command(self, msg)
+
+        group_help_text_command.__group_doc__ = text # type: ignore
+        return group_help_text_command
+    return decorate
 
 class Bot(Signal):
     """Handles messages and command dispatch, as well as basic commands.
@@ -651,7 +660,12 @@ class Bot(Signal):
             return None
         if msg.arg1:
             try:
-                doc = getattr(self, f"do_{msg.arg1}").__doc__
+                cmd = getattr(self, f"do_{msg.arg1}")
+                if hasattr(cmd, "__group_doc__") and msg.group:
+                    if hasattr(getattr(self, f"do_{msg.arg1}"), "hide"):
+                        raise AttributeError("Pretend this never happened.")
+                    return dedent(cmd.__group_doc__).strip()
+                doc = cmd.__doc__
                 if doc:
                     if hasattr(getattr(self, f"do_{msg.arg1}"), "hide"):
                         raise AttributeError("Pretend this never happened.")
