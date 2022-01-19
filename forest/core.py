@@ -267,7 +267,7 @@ class Signal:
         self, req: Optional[dict] = None, future_key: str = ""
     ) -> Message:
         if req:
-            future_key = req["method"] + "-" + str(round(time.time()))
+            future_key = req["method"] + "-" + str(round(time.time()*10000))
             logging.info("expecting response id: %s", future_key)
             req["id"] = future_key
             self.pending_requests[future_key] = asyncio.Future()
