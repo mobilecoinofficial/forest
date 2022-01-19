@@ -28,6 +28,7 @@ from forest.core import (
     hide,
     requires_admin,
     run_bot,
+    group_help_text,
 )
 
 
@@ -115,17 +116,19 @@ messages = dict(
     Please sent Imogen a payment, or message Imogen with the /credit command to learn how to add credit for priority features
     """,
     rate_limit="Slow down",
-    tip_message="""
-    If you like Imogen's art, you can show your support by donating within Signal Payments.
-    Send Imogen a message with the command "/tip" for donation instructions.  Every time she creates an image, it costs $0.09
-    Imogen shares tips with collaborators! If you like an Imogen Imoge, react ❤️  t️o it. When an Imoge gets multiple reactions, the person who prompted the Imoge will be awarded a tip (currently 0.1 MOB).
-    """.strip(),
     activate_payments="""
-    Thank you for collaborating with Imogen, if you'd like to support the project you can send her a tip of any amount with Signal Pay.
+    You can use Signal Payments to tip Imogen and make use of the priority features.
+
+    To attach a payment, do the following in a direct message:
+    -Hit the Plus Sign
+    -Select "Payment"
+    -Type your payment amount and hit Pay
+
+    You will receive a message from Imogen with your new balance. You can check your current balance with "/balance".
+
+    If you write “Tip” in the notes section for the payment, the payment automatically gets allocated as a tip and doesn’t increase your Imogen balance.
 
     If you get "This person has not activated payments", try messaging me with /ping. 
-
-    If you have payments activated, simply click on the plus sign and choose payment.
 
     If you don't have Payments activated follow these instructions to activate it.
 
@@ -135,8 +138,29 @@ messages = dict(
 
     For more information on Signal Payments visit:
 
-    https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments""",
+    https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments
+
+    To top up your Mobilecoin balance, follow these instructions: https://mobilecoin.com/news/how-to-buy-mob-in-the-us
+
+    """,
 )
+
+tip_messages = [
+    """
+    If you like Imogen's art, you can show your support by donating within Signal Payments.
+
+    Send Imogen a message with the command "/tip" for donation instructions.
+
+    Imogen shares tips with collaborators! If you like an Imogen Imoge, react ❤️  t️o it. When an Imoge gets multiple reactions, the person who prompted the Imoge will be awarded a tip.
+    """,
+    """
+    Want to skip the line? Imogen offers a priority queue for a cost of 0.01 mob per image.
+
+    DM funds to Imogen as a Signal payment and then you can submit priority request with /priority or tip Imogen with /tip [amnt].
+
+    Just want to tip Imogen? Send Imogen a payment with the note set to "Tip"
+    """,
+]
 
 
 class Imogen(PayBot):  # pylint: disable=too-many-public-methods
@@ -225,15 +249,16 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         queue_length = (await self.queue.length())[0].get("len")
         return f"queue size: {queue_length}"
 
-    async def do_prefix(self, msg: Message) -> str:
+    async def do_prefix(self, msg: Message) -> Response:
         assert msg.tokens and len(msg.tokens) >= 2
         prefix = msg.tokens[0]
         msg.command = msg.tokens[1].lstrip("/")
         msg.tokens = msg.tokens[2:]
         msg.text = " ".join(msg.tokens)
         resp = await self.handle_message(msg)
-        if resp:
+        if resp and isinstance(resp, str):
             return prefix + " " + resp
+        return resp
 
     async def do_list_queue(self, _: Message) -> str:
         q = "; ".join(prompt.get("prompt") for prompt in await self.queue.list_queue())
@@ -250,6 +275,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         return json.loads(await get_output(worker_status)) or "no workers running"
 
     async def do_balance(self, msg: Message) -> Response:
+        "returns your Imogen balance in USD for priority requests and tips"
         if msg.group:
             return (
                 "To make use of Imogen's paid features, please message Imogen directly."
@@ -264,8 +290,14 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         # lookup last group the person submitted a prompt in
         # await self.queue.last_active_group(msg.source)
         # await self.send_message("Imogen got {amount}")
+        value = await self.mobster.pmob2usd(amount_pmob)
+        if "tip" in msg.payment.get("note", "").lower():
+            await self.mobster.ledger_manager.put_usd_tx(
+                msg.source, -value * 100, msg.payment["note"]
+            )
+            return "Thank you for tipping Imogen! Your tip will be used to improve Imogen and shared with collaborators"
         rate = self.image_rate_cents / 100
-        prompts = int(await self.mobster.pmob2usd(amount_pmob) / rate)
+        prompts = int(value / rate)
         total = int(await self.get_user_balance(msg.source) / rate)
         return f"You now have an additional {prompts} priority prompts. Total: {total}"
 
@@ -362,7 +394,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
 
     async def do_paint(self, msg: Message) -> str:
         """/paint <prompt>
-        Generate an image using the WikiArt dataset and your prompt, generates painting-like images. Requests handled on the Free queue.
+        Generate an image using the WikiArt dataset and your prompt, generates painting-like images. Requests handled on the free queue.
         """
         params = {
             "vqgan_config": "wikiart_16384.yaml",
@@ -371,8 +403,8 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         return await self.enqueue_prompt(msg, params, False, False)
 
     async def do_priority_paint(self, msg: Message) -> str:
-        """/paint <prompt>
-        Generate an image using the WikiArt dataset and your prompt, generates painting-like images. Requests handled on the Free queue.
+        """/priority_paint <prompt>
+        Like /paint but places your request on the priority queue. Priority items get dedicated workers when available and bypass the free queue.
         """
         params = {
             "vqgan_config": "wikiart_16384.yaml",
@@ -473,8 +505,37 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
             return await self.do_imagine(message)
         return await super().default(message)
 
-    async def do_tip(self, _: Message) -> str:
-        return dedent(messages["activate_payments"]).strip()
+    @group_help_text(
+        """
+        To send imogen a tip, first send imogen a payment, and then you can use /tip [amnt] to tip Imogen from your balance.
+
+        To send Imogen payments, please DM her and use the command /signalpay for instructions
+        """
+    )
+    async def do_tip(self, msg: Message) -> str:
+        """
+        If you already have Imogen balance, you can use `/tip [amount]` to send that amount in USD as a tip to Imogen.
+
+        You can also type `/tip all` To check your imogen balance, type /balance.
+
+        To top up your balance, simply send Imogen a payment with Signal. For instructions on how to send payments with Signal, type /signalpay.
+        """
+        if msg.arg1 and msg.arg1.lower() in ("all", "everything"):
+            amount = await self.get_user_balance(msg.source)
+        else:
+            try:
+                amount = float((msg.arg1 or "").strip("$"))
+                if amount < 0.01:
+                    return "/tip requires amounts in USD"
+            except ValueError:
+                return f"Couldn't parse {msg.arg1} as an amount"
+        await self.mobster.ledger_manager.put_usd_tx(msg.source, amount, "tip")
+        return f"Thank you for tipping ${amount:.2f}"
+
+    async def do_signalpay(self, msg: Message) -> Response:
+        if msg.group:
+            return "To send Imogen a payment, please message Imogen directly."
+        return messages["activate_payments"]
 
     # eh
     # async def async_shutdown(self):
@@ -562,9 +623,8 @@ async def store_image_handler(  # pylint: disable=too-many-locals
             None, message, attachments=[str(path)], group=prompt.group_id, **quote  # type: ignore
         )
         if random.random() < 0.03:
-            asyncio.create_task(
-                bot.send_message(None, messages["tip_message"], group=prompt.group_id)
-            )
+            msg = dedent(random.choice(tip_messages)).strip()
+            asyncio.create_task(bot.send_message(None, msg, group=prompt.group_id))
     else:
         rpc_id = await bot.send_message(
             prompt.author, message, attachments=[str(path)], **quote  # type: ignore
