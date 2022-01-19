@@ -513,15 +513,18 @@ def hide(command: Callable) -> Callable:
     hidden_command.hide = True  # type: ignore
     return hidden_command
 
+
 def group_help_text(text: str) -> Callable:
     def decorate(command: Callable) -> Callable:
         @wraps(command)
         async def group_help_text_command(self: "Bot", msg: Message) -> Response:
             return await command(self, msg)
 
-        group_help_text_command.__group_doc__ = text # type: ignore
+        group_help_text_command.__group_doc__ = text  # type: ignore
         return group_help_text_command
+
     return decorate
+
 
 class Bot(Signal):
     """Handles messages and command dispatch, as well as basic commands.
