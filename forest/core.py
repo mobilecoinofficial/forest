@@ -797,13 +797,16 @@ class PayBot(Bot):
             f"redeemable for {str(mc_util.pmob2mob(amount_pmob-fee_pmob)).rstrip('0')} MOB",
         ]
 
-    async def send_payment(
+    async def send_payment(  # pylint: disable=too-many-locals
         self,
         recipient: str,
         amount_pmob: int,
         receipt_message: str = "Transaction sent!",
+        confirm_tx_timeout: int = 0,
+        **params: Any,
     ) -> Optional[Message]:
         address = await self.get_address(recipient)
+        account_id = await self.mobster.get_account()
         if not address:
             await self.send_message(
                 recipient, "sorry, couldn't get your MobileCoin address"
@@ -814,13 +817,24 @@ class PayBot(Bot):
         # TODO: add task which keeps full-service filled
         raw_prop = await self.mob_request(
             "build_transaction",
-            account_id=await self.mobster.get_account(),
+            account_id=account_id,
             recipient_public_address=address,
             value_pmob=str(int(amount_pmob)),
             fee=str(int(1e12 * 0.0004)),
+            **params,
         )
+
         prop = raw_prop["result"]["tx_proposal"]
-        await self.mob_request("submit_transaction", tx_proposal=prop)
+        tx_id = raw_prop["result"]["transaction_log_id"]
+        if confirm_tx_timeout:
+            await self.mob_request(
+                "submit_transaction",
+                tx_proposal=prop,
+                comment=params.get("comment", ""),
+                account_id=account_id,
+            )
+        else:
+            await self.mob_request("submit_transaction", tx_proposal=prop)
         receipt_resp = await self.mob_request(
             "create_receiver_receipts",
             tx_proposal=prop,
@@ -832,9 +846,49 @@ class PayBot(Bot):
         # pass our beautifully composed spicy JSON content to auxin.
         # message body is ignored in this case.
         payment_notif = await self.send_message(recipient, "", content=content)
+        resp_fut = asyncio.create_task(self.wait_resp(future_key=payment_notif))
+
+        if confirm_tx_timeout:
+            logging.debug("Attempting to confirm tx status for %s", recipient)
+            status = "tx_status_pending"
+            for i in range(confirm_tx_timeout):
+                tx_status = await self.mob_request(
+                    "get_transaction_log", transaction_log_id=tx_id
+                )
+                status = (
+                    tx_status.get("result", {}).get("transaction_log", {}).get("status")
+                )
+                if status == "tx_status_succeeded":
+                    logging.info(
+                        "Tx to %s suceeded - tx data: %s",
+                        recipient,
+                        tx_status.get("result"),
+                    )
+                    if receipt_message:
+                        await self.send_message(recipient, receipt_message)
+                        break
+                if status == "tx_status_failed":
+                    logging.warning(
+                        "Tx to %s failed - tx data: %s",
+                        recipient,
+                        tx_status.get("result"),
+                    )
+                    break
+                await asyncio.sleep(1)
+
+            if status == "tx_status_pending":
+                logging.warning(
+                    "Tx to %s timed out - tx data: %s",
+                    recipient,
+                    tx_status.get("result"),
+                )
+            resp = await resp_fut
+            resp.status, resp.transaction_log_id = status, tx_id  # type: ignore
+            return resp
+
         if receipt_message:
             await self.send_message(recipient, receipt_message)
-        return await self.wait_resp(future_key=payment_notif)
+        return await resp_fut
 
 
 async def no_get(request: web.Request) -> web.Response:
