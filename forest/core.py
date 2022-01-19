@@ -47,6 +47,8 @@ MessageParser = AuxinMessage if utils.AUXIN else StdioMessage
 logging.info("Using message parser: %s", MessageParser)
 FEE_PMOB = int(1e12 * 0.0004)
 
+def uuid4() -> str:
+    return str(uuid.uuid4())
 
 def rpc(
     method: str, param_dict: Optional[dict] = None, _id: str = "1", **params: Any
@@ -200,7 +202,6 @@ class Signal:
 
     async def enqueue_blob_messages(self, blob: JSON) -> None:
         message_blob: Optional[JSON] = None
-        logging.info(blob)
         if "params" in blob:
             if isinstance(blob["params"], list):
                 for msg in blob["params"]:
@@ -268,7 +269,7 @@ class Signal:
         self, req: Optional[dict] = None, future_key: str = ""
     ) -> Message:
         if req:
-            future_key = req["method"] + "-" + str(round(time.time()))
+            future_key = req["method"] + "-" + str(round(time.time())) + "-" + uuid4()
             logging.info("expecting response id: %s", future_key)
             req["id"] = future_key
             self.pending_requests[future_key] = asyncio.Future()
@@ -309,7 +310,7 @@ class Signal:
             params["about"] = about
         if avatar:
             params["avatarFile"] = avatar
-        future_key = f"setProfile-{int(time.time()*1000)}"
+        future_key = f"setProfile-{int(time.time()*1000)}-{uuid4()}"
         await self.auxincli_input_queue.put(rpc("setProfile", params, future_key))
         return future_key
 
@@ -389,7 +390,7 @@ class Signal:
                     return ""
             params["destination" if utils.AUXIN else "recipient"] = str(recipient)
         # maybe use rpc() instead
-        future_key = f"send-{int(time.time()*1000)}-{hex(hash(msg))[-4:]}"
+        future_key = f"send-{int(time.time()*1000)}-{hex(hash(msg))[-4:]}-{uuid4()}"
         json_command: JSON = {
             "jsonrpc": "2.0",
             "id": future_key,
@@ -406,7 +407,6 @@ class Signal:
 
     async def respond(self, target_msg: Message, msg: Response) -> str:
         """Respond to a message depending on whether it's a DM or group"""
-        logging.info(target_msg.source)
         if not target_msg.source:
             logging.error(target_msg.blob)
         if not utils.AUXIN and target_msg.group:
@@ -522,11 +522,8 @@ class Bot(Signal):
         """Read messages from the queue and pass each message to handle_message
         If that returns a non-empty string, send it as a response"""
         async for message in self.auxincli_output_iter():
-            logging.info(message)
             if message.id and message.id in self.pending_requests:
-                logging.debug("setting result for future %s: %s", message.id, message)
                 self.pending_requests[message.id].set_result(message)
-                logging.debug("future_set")
                 sent_json_message = {}
                 if message.id in self.pending_messages_sent:
                     sent_json_message = self.pending_messages_sent.pop(message.id)
@@ -544,17 +541,14 @@ class Bot(Signal):
                     self.pause = True
                     await asyncio.sleep(4)
                     m_hash = message.id.split("-")[-1]
-                    future_key = f"retry-send-{int(time.time()*1000)}-{m_hash}"
+                    future_key = f"retry-send-{int(time.time()*1000)}-{m_hash}-{uuid4()}"
                     self.pending_messages_sent[future_key] = sent_json_message
                     self.pending_requests[future_key] = asyncio.Future()
                     await self.auxincli_input_queue.put(sent_json_message)
-                logging.debug("continuing")
                 continue
-            logging.debug("putting response task into queue")
             self.pending_response_tasks = [
                 task for task in self.pending_response_tasks if not task.done()
             ] + [asyncio.create_task(self.time_response(message))]
-            logging.debug("done putting task in")
 
     # maybe this is merged with dispatch_message?
     async def time_response(self, message: Message) -> None:
