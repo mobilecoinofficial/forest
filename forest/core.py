@@ -803,7 +803,7 @@ class PayBot(Bot):
         amount_pmob: int,
         receipt_message: str = "Transaction sent!",
         confirm_tx_timeout: int = 0,
-        comment: str,
+        **params: Any,
     ) -> Optional[Message]:
         address = await self.get_address(recipient)
         account_id = await self.mobster.get_account()
@@ -827,7 +827,7 @@ class PayBot(Bot):
             await self.mob_request(
                 "submit_transaction",
                 tx_proposal=prop,
-                comment=comment,
+                comment=params.get("comment", ""),
                 account_id=account_id,
             )
         else:
