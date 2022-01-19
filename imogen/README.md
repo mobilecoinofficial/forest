@@ -130,9 +130,13 @@ You can give imogen multiple prompts separated by "//" and Imogen will generate 
 Example:  
 `/imagine Jane // Cake `
 
-### Distort: ###
+<img width=250px src="examples/video.png">  <img width=250px src="examples/video2.gif">
+
+### Transform: ###
 You can combine the starting image and the video functionality to make images that dissolve into imoges. 
 Attach an image and use one of the generative commands starting with Slash.
-with image attached /imagine // Cake
+with image attached 
+`/imagine // greek bust`
 
 
+<img width=250px src="examples/video3.png">  <img width=250px src="examples/video4.gif">o
