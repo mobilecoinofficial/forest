@@ -531,7 +531,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
                     return "/tip requires amounts in USD"
             except ValueError:
                 return f"Couldn't parse {msg.arg1} as an amount"
-        await self.mobster.ledger_manager.put_usd_tx(msg.source, -amount*100, "tip")
+        await self.mobster.ledger_manager.put_usd_tx(msg.source, -amount * 100, "tip")
         return f"Thank you for tipping ${amount:.2f}"
 
     async def do_signalpay(self, msg: Message) -> Response:
