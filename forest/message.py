@@ -4,10 +4,24 @@ We're using this because you can have `{"attachments": null}` in JSON, which
 breaks our typing if we expect Message.attachments to be list[str].
 Using `or` like this is a bit of a hack, but it's what we've got.
 """
-# import shlex
+import shlex
+import unicodedata
+import json
 from typing import Optional
 
 from forest.utils import logging
+
+
+def unicode_character_name(i: int) -> str:
+    try:
+        return unicodedata.name(chr(i))
+    except ValueError:
+        return ""
+
+
+unicode_quotes = [
+    chr(i) for i in range(0, 0x10FFF) if "QUOTATION MARK" in unicode_character_name(i)
+]
 
 
 class Message:
@@ -27,6 +41,10 @@ class Message:
     quoted_text: str
     source: str
     payment: dict
+    arg0: str
+    arg1: Optional[str]
+    arg2: Optional[str]
+    arg3: Optional[str]
     reactions: dict[str, str]
     # reaction: Optional[Reaction]
     # quote: Optional[Quote]
@@ -38,20 +56,22 @@ class Message:
         self.tokens: Optional[list[str]] = None
         if not self.text:
             return
-        if self.text.startswith("/"):
-            # if you need tokens, do this yourself with shlex...
+        command = None
+        try:
+            try:
+                command, *self.tokens = json.loads(self.text)
+            except json.JSONDecodeError:
+                # replace quote
+                clean_quote_text = self.text
+                for quote in unicode_quotes:
+                    clean_quote_text.replace(quote, "'")
+                command, *self.tokens = shlex.split(clean_quote_text)
+        except ValueError:
             command, *self.tokens = self.text.split(" ")
-            self.command = command[1:].lower()  # remove /
-        else:
-            self.tokens = self.text.split(" ")
-        if (
-            not self.command
-            and self.tokens
-            and "help" in self.tokens
-            and "Documented" not in self.text
-        ):
-            self.command = "help"
-        self.arg1 = self.tokens[0] if self.tokens else None
+        self.command = command.removeprefix("/").lower()
+        self.arg0 = command
+        if self.tokens:
+            self.arg1, self.arg2, self.arg3, *_ = self.tokens + [""] * 3
         self.text = " ".join(self.tokens)
 
     def to_dict(self) -> dict:
