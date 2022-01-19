@@ -805,6 +805,12 @@ class PayBot(Bot):
         confirm_tx_timeout: int = 0,
         **params: Any,
     ) -> Optional[Message]:
+        """
+        If confirm_tx_timeout is not 0, we wait that many seconds for the tx
+        to complete before sending receipt_message to receipient
+        params are pasted to the full-service build_transaction call.
+        some useful params are comment and input_txo_ids
+        """
         address = await self.get_address(recipient)
         account_id = await self.mobster.get_account()
         if not address:
@@ -863,7 +869,7 @@ class PayBot(Bot):
                     )
                     if receipt_message:
                         await self.send_message(recipient, receipt_message)
-                        break
+                    break
                 if status == "tx_status_failed":
                     logging.warning(
                         "Tx to %s failed - tx data: %s",
