@@ -520,6 +520,8 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
 
         To top up your balance, simply send Imogen a payment with Signal. For instructions on how to send payments with Signal, type /signalpay.
         """
+        if msg.arg1 is None:
+            return dedent(self.do_tip.__doc__).strip()
         if msg.arg1 and msg.arg1.lower() in ("all", "everything"):
             amount = await self.get_user_balance(msg.source)
         else:
@@ -529,7 +531,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
                     return "/tip requires amounts in USD"
             except ValueError:
                 return f"Couldn't parse {msg.arg1} as an amount"
-        await self.mobster.ledger_manager.put_usd_tx(msg.source, amount, "tip")
+        await self.mobster.ledger_manager.put_usd_tx(msg.source, -amount*100, "tip")
         return f"Thank you for tipping ${amount:.2f}"
 
     async def do_signalpay(self, msg: Message) -> Response:
