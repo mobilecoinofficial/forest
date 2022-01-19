@@ -429,6 +429,26 @@ class ClanGat(PayBotPro):
             return self.do_add.__doc__
         return "Welcome to The Hotline!\nEvents and announcement lists can be unlocked by messaging the bot the secret code at any time.\n\nAccolades, feature requests, and support questions can be directed to the project maintainers at https://signal.group/#CjQKILH5dkoz99TKxwG7T3TaVAuskMq4gybSplYDfTq-vxUrEhBhuy19A4DbvBqm7PfnBn3I ."
 
+    async def do_remove(self, msg: Message) -> Response:
+        """Removes a given event by code, if the msg source is the owner."""
+        if not (
+            msg.source in self.event_owners.get(msg.arg1, "")
+            or msg.source in self.list_owners.get(msg.arg1, "")
+        ):
+            return f"Sorry, it doesn't look like you own {msg.arg1}."
+        parameters = []
+        for state_ in self.state.keys():
+            if msg.arg1 in self.state[state_]:
+                parameters += [state_]
+        if await self.ask_yesno_question(
+            msg.source, f"Are you sure you want to remove {msg.arg1} from {parameters}?"
+        ):
+            for state_ in self.state.keys():
+                self.state[state_] = {
+                    k: v for (k, v) in self.state[state_].items() if k != msg.arg1
+                }
+            return f"Okay, removed {msg.arg1}"
+
     async def do_set(self, msg: Message) -> Response:
         """Set is an alias for add"""
         return await self.do_add(msg)
