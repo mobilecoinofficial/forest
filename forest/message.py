@@ -59,6 +59,7 @@ class Message:
         command = None
         try:
             try:
+                # this won't work
                 command, *self.tokens = json.loads(self.text)
             except json.JSONDecodeError:
                 # replace quote
@@ -68,8 +69,7 @@ class Message:
                 command, *self.tokens = shlex.split(clean_quote_text)
         except ValueError:
             command, *self.tokens = self.text.split(" ")
-        self.command = command.removeprefix("/").lower()
-        self.arg0 = command
+        self.arg0 = self.command = command.removeprefix("/").lower()
         if self.tokens:
             self.arg1, self.arg2, self.arg3, *_ = self.tokens + [""] * 3
         self.text = " ".join(self.tokens)

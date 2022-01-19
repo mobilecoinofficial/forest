@@ -558,9 +558,6 @@ class Bot(Signal):
             self.start_process()
         )  # maybe cancel on sigint?
         self.queue_task = asyncio.create_task(self.handle_messages())
-        if utils.get_secret("MONITOR_WALLET"):
-            # currently spams and re-credits the same invoice each reboot
-            asyncio.create_task(self.mobster.monitor_wallet())
 
     async def handle_messages(self) -> None:
         """Read messages from the queue and pass each message to handle_message
@@ -629,7 +626,9 @@ class Bot(Signal):
     def match_command(self, inp: str) -> tuple[float, str]:
         return sorted(((jaccard(inp, cmd), cmd) for cmd in self.commands))[-1]
 
-    async def handle_message(self, message: Message) -> Response:
+    async def handle_message(  # pylint: disable=too-many-return-statements
+        self, message: Message
+    ) -> Response:
         """Method dispatch to do_x commands and goodies.
         Overwrite this to add your own non-command logic,
         but call super().handle_message(message) at the end"""
@@ -655,7 +654,7 @@ class Bot(Signal):
 
     def documented_commands(self) -> str:
         commands = ", ".join(
-            name.replace("do_", '"') + '"'
+            name.removeprefix("do_")
             for name in dir(self)
             if name.startswith("do_")
             and not hasattr(getattr(self, name), "hide")

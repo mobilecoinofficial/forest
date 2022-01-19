@@ -254,7 +254,6 @@ These are the environment variables and flags that the bots read to work. Not al
 ## Binary flags
 - `NO_DOWNLOAD`: don't download a signal-cli datastore, instead use what's in the current working directory.
 - `NO_MEMFS`: if this isn't set, MEMFS is started, making a fake filesystem in `./data` and used to upload the signal-cli datastore to the database whenever it is changed. If not `NO_DOWNLOAD`, also create an equivalent tmpdir at /tmp/local-signal, chdir to it, and symlink signal-cli process and avatar.
-- `MONITOR_WALLET`: monitor transactions from full-service. Relevant only if you're giving users a payment address to send mobilecoin to instead of using signal pay.  Experimental, do not use.
 - `LOGFILES`: create a debug.log.
 - `ADMIN_METRICS`: send python and roundtrip timedeltas for each command to ADMIN.
 
