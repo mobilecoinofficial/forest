@@ -23,6 +23,7 @@ import glob
 
 from asyncio import Queue, StreamReader, StreamWriter
 from asyncio.subprocess import PIPE
+from decimal import Decimal
 from functools import wraps
 from textwrap import dedent
 from typing import Any, AsyncIterator, Callable, Optional, Type, Union
@@ -692,7 +693,7 @@ class PayBot(Bot):
     @requires_admin
     async def do_balance(self, _: Message) -> Response:
         """Returns bot balance in MOB."""
-        return f"Bot has balance of {pmob2mob(await self.mobster.get_balance()).quantize(Decimal('1.0000'))} MOB"
+        return f"Bot has balance of {mc_util.pmob2mob(await self.mobster.get_balance()).quantize(Decimal('1.0000'))} MOB"
 
     async def handle_message(self, message: Message) -> Response:
         if message.payment:
