@@ -208,6 +208,7 @@ class Signal:
 
     async def enqueue_blob_messages(self, blob: JSON) -> None:
         message_blob: Optional[JSON] = None
+        logging.info(blob)
         if "params" in blob:
             if isinstance(blob["params"], list):
                 for msg in blob["params"]:
@@ -225,6 +226,8 @@ class Signal:
                 message_blob = blob
             else:
                 logging.warning(blob["result"])
+        if "error" in blob:
+            message_blob = blob
         if message_blob:
             return await self.auxincli_output_queue.put(MessageParser(message_blob))
 
@@ -267,6 +270,7 @@ class Signal:
     # In the next section, we see how the input queue is populated and consumed
 
     pending_requests: dict[str, asyncio.Future[Message]] = {}
+    pending_messages_sent: dict[str, dict] = {}
 
     async def wait_resp(
         self, req: Optional[dict] = None, future_key: str = ""
@@ -276,6 +280,7 @@ class Signal:
             logging.info("expecting response id: %s", future_key)
             req["id"] = future_key
             self.pending_requests[future_key] = asyncio.Future()
+            self.pending_messages_sent[future_key] = req
             await self.auxincli_input_queue.put(req)
         # when the result is received, the future will be set
         response = await self.pending_requests[future_key]
@@ -399,6 +404,7 @@ class Signal:
             "method": "send",
             "params": params,
         }
+        self.pending_messages_sent[future_key] = json_command
         self.pending_requests[future_key] = asyncio.Future()
         await self.auxincli_input_queue.put(json_command)
         return future_key
@@ -435,18 +441,42 @@ class Signal:
             )
         )
 
+    # maybe merge with write_commands?
     async def auxincli_input_iter(self) -> AsyncIterator[dict]:
         """Provides an asynchronous iterator over pending auxin-cli commands"""
         while True:
             command = await self.auxincli_input_queue.get()
             yield command
 
-    # maybe merge with the above?
+    backoff = False
+
+    messages_until_rate_limit = 50.0
+    last_update = time.time()
+
+    def update_and_check_rate_limit(self) -> bool:
+        elapsed, self.last_update = (time.time() - self.last_update, time.time())
+        rate = 1  # theoretically 1 at least message per second is allowed
+        self.messages_until_rate_limit = min(
+            self.messages_until_rate_limit + elapsed * rate, 60
+        )
+        return self.messages_until_rate_limit > 1
+
     async def write_commands(self, pipe: StreamWriter) -> None:
         """Encode and write pending auxin-cli commands"""
         async for msg in self.auxincli_input_iter():
+            if self.backoff:
+                logging.info("pausing message writes before retrying")
+                await asyncio.sleep(4)
+                self.backoff = False
+            while not self.update_and_check_rate_limit():
+                logging.info(
+                    "waiting for rate limit (current: %s)",
+                    self.messages_until_rate_limit,
+                )
+                await asyncio.sleep(1)
+            self.messages_until_rate_limit -= 1
             if not msg.get("method"):
-                print(msg)
+                logging.error("msg without method: %s", msg)
             if msg.get("method") != "receive":
                 logging.info("input to signal: %s", json.dumps(msg))
             if pipe.is_closing():
@@ -516,6 +546,23 @@ class Bot(Signal):
             if message.id and message.id in self.pending_requests:
                 logging.debug("setting result for future %s: %s", message.id, message)
                 self.pending_requests[message.id].set_result(message)
+                if (
+                    message.error
+                    and "status: 413" in message.error["data"]
+                    and message.id in self.pending_messages_sent
+                ):
+                    sent_json_message = self.pending_messages_sent.pop(message.id)
+                    warn = termcolor.colored(
+                        "waiting to retry send after rate limit. message: %s", "red"
+                    )
+                    logging.warning(warn, sent_json_message)
+                    self.backoff = True
+                    await asyncio.sleep(4)
+                    msg_hash = message.id.split("-")[-1]
+                    future_key = f"retry-send-{int(time.time()*1000)}-{msg_hash}"
+                    self.pending_messages_sent[future_key] = sent_json_message
+                    self.pending_requests[future_key] = asyncio.Future()
+                    await self.auxincli_input_queue.put(sent_json_message)
                 continue
             self.pending_response_tasks = [
                 task for task in self.pending_response_tasks if not task.done()
@@ -828,30 +875,52 @@ class PayBot(Bot):
             f"redeemable for {str(mc_util.pmob2mob(amount_pmob-fee_pmob)).rstrip('0')} MOB",
         ]
 
-    async def send_payment(
+    # FIXME: clarify signature and return details/docs
+    async def send_payment(  # pylint: disable=too-many-locals
         self,
         recipient: str,
         amount_pmob: int,
         receipt_message: str = "Transaction sent!",
+        confirm_tx_timeout: int = 0,
+        **params: Any,
     ) -> Optional[Message]:
+        """
+        If confirm_tx_timeout is not 0, we wait that many seconds for the tx
+        to complete before sending receipt_message to receipient
+        params are pasted to the full-service build_transaction call.
+        some useful params are comment and input_txo_ids
+        """
         address = await self.get_address(recipient)
+        account_id = await self.mobster.get_account()
         if not address:
             await self.send_message(
                 recipient, "sorry, couldn't get your MobileCoin address"
             )
             return None
-        # TODO: add a lock around two-part build/submit Or
         # TODO: add explicit utxo handling
-        # TODO: add task which keeps full-service filled
         raw_prop = await self.mob_request(
             "build_transaction",
-            account_id=await self.mobster.get_account(),
+            account_id=account_id,
             recipient_public_address=address,
             value_pmob=str(int(amount_pmob)),
             fee=str(int(1e12 * 0.0004)),
+            **params,
         )
         prop = raw_prop["result"]["tx_proposal"]
-        await self.mob_request("submit_transaction", tx_proposal=prop)
+        tx_id = raw_prop["result"]["transaction_log_id"]
+        # this is to NOT log transactions into the full service DB if the sender
+        # wants it private.
+        if confirm_tx_timeout:
+            # putting the account_id into the request logs it to full service,
+            await self.mob_request(
+                "submit_transaction",
+                tx_proposal=prop,
+                comment=params.get("comment", ""),
+                account_id=account_id,
+            )
+        else:
+            # if you omit account_id, it doesn't get logged
+            await self.mob_request("submit_transaction", tx_proposal=prop)
         receipt_resp = await self.mob_request(
             "create_receiver_receipts",
             tx_proposal=prop,
@@ -863,9 +932,50 @@ class PayBot(Bot):
         # pass our beautifully composed spicy JSON content to auxin.
         # message body is ignored in this case.
         payment_notif = await self.send_message(recipient, "", content=content)
+        resp_fut = asyncio.create_task(self.wait_resp(future_key=payment_notif))
+
+        if confirm_tx_timeout:
+            logging.debug("Attempting to confirm tx status for %s", recipient)
+            status = "tx_status_pending"
+            for i in range(confirm_tx_timeout):
+                tx_status = await self.mob_request(
+                    "get_transaction_log", transaction_log_id=tx_id
+                )
+                status = (
+                    tx_status.get("result", {}).get("transaction_log", {}).get("status")
+                )
+                if status == "tx_status_succeeded":
+                    logging.info(
+                        "Tx to %s suceeded - tx data: %s",
+                        recipient,
+                        tx_status.get("result"),
+                    )
+                    if receipt_message:
+                        await self.send_message(recipient, receipt_message)
+                    break
+                if status == "tx_status_failed":
+                    logging.warning(
+                        "Tx to %s failed - tx data: %s",
+                        recipient,
+                        tx_status.get("result"),
+                    )
+                    break
+                await asyncio.sleep(1)
+
+            if status == "tx_status_pending":
+                logging.warning(
+                    "Tx to %s timed out - tx data: %s",
+                    recipient,
+                    tx_status.get("result"),
+                )
+            resp = await resp_fut
+            # the calling function can use these to check the payment status
+            resp.status, resp.transaction_log_id = status, tx_id  # type: ignore
+            return resp
+
         if receipt_message:
             await self.send_message(recipient, receipt_message)
-        return await self.wait_resp(future_key=payment_notif)
+        return await resp_fut
 
 
 async def no_get(request: web.Request) -> web.Response:
