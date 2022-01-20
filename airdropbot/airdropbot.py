@@ -3,6 +3,7 @@
 # pylint: disable=too-many-arguments disable=too-many-nested-blocks disable=too-many-locals
 # pylint: disable=too-many-lines disable=unused-argument disable=too-many-public-methods
 """Executable file which starts up a bot which does mobilecoin airdrops"""
+import ast
 import logging
 import json
 import asyncio
@@ -493,10 +494,6 @@ class SimpleAirdrop(Airdrop):  # pylint: disable=too-many-instance-attributes
             resp += f"\nDrop Total + Fees: {total}"
         return resp
 
-
-InteractiveAirdrop = Union[SimpleAirdrop]
-
-
 class AirDropBot(PayBot):
     """
     Bot which takes airdrop entrants and provides a drop!
@@ -675,7 +672,7 @@ class AirDropBot(PayBot):
             )
             num_entrants = len(self.get_entrants("paid"))
             if (
-                isinstance(self.config, InteractiveAirdrop)
+                isinstance(self.config, SimpleAirdrop)
                 and num_entrants >= self.config.max_entrants
             ):
                 full_msg = f"Airdrop is full with {num_entrants}/{self.config.max_entrants} entrants, please make drop by typing /make_drop"
@@ -765,9 +762,9 @@ class AirDropBot(PayBot):
                 if message.source in self.get_entrants("paid", num_only=True):
                     return "Your MoB has been delivered! I appreciate you so much for participating, come back soon! "
                 return "Hello there, the airdrop recently in progress has finished! Please check back later"
-            if not isinstance(conf, InteractiveAirdrop) or (States.SETUP in state):
+            if not isinstance(conf, SimpleAirdrop) or (States.SETUP in state):
                 if self.is_admin(message):
-                    if not isinstance(conf, InteractiveAirdrop):
+                    if not isinstance(conf, SimpleAirdrop):
                         resp = (
                             "Hi admin, no aidrop is currently configured. Type "
                             "/setup_airdrop to configure one\n"
@@ -1229,7 +1226,7 @@ class AirDropBot(PayBot):
         entered = self.get_entrants("unpaid", num_only=True)
         failed = self.get_entrants("failed", num_only=True)
         wallet_balance = await self.mobster.get_wallet_balance()
-        assert isinstance(conf, InteractiveAirdrop)
+        assert isinstance(conf, SimpleAirdrop)
         if wallet_balance >= 0:
             finances = f"Wallet Balance: {wallet_balance}"
         else:
@@ -1288,7 +1285,7 @@ class AirDropBot(PayBot):
         if States.LIVE in state:
             return "Airdrop already in progress, cannot launch new aidrop"
 
-        if isinstance(conf, InteractiveAirdrop) and States.SETUP in state:
+        if isinstance(conf, SimpleAirdrop) and States.SETUP in state:
             if States.READY_TO_LAUNCH in state:
                 block_height = await self.mobster.get_current_network_block()
                 if block_height < 0:
@@ -1338,7 +1335,7 @@ class AirDropBot(PayBot):
         if States.ERROR in state:
             return "Airdrop is in error state, cannot enter setup"
         if States.SETUP in state:
-            assert isinstance(self.config, InteractiveAirdrop)
+            assert isinstance(self.config, SimpleAirdrop)
             self.config.enter_dialog(Dialog.ADMIN_AIRDROP_SETUP)
             return self.config.get_next_dialog()
         return "Unknown Error, cannot setup airdrop"
