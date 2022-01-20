@@ -1,12 +1,21 @@
 # Imogen: Imoge Generator
 
-Imogen is a Signal Bot that generates Images using VQGan and CLIP. To have Imogen Generate an Imoge for you you can join the group chat or message Imogen directly.
+Imogen is a Signal Bot that generates Images using VQGan and CLIP. To have Imogen Generate an Imoge for you you can join one of the group chats or message Imogen directly.
 
-[Imogen Public](https://signal.group/#CjQKIBMsSPcIQYNjlSA1C1NqvapdjiZX31bdrCpH4ZI9BbwEEhAHOP7DVF1GjizAzYmOnDcY)
+## Imogen Group Chats ##
 
-[DM Imogen](https://signal.me/#p/+2406171657)
+[Imogen Public](https://signal.group/#CjQKIBMsSPcIQYNjlSA1C1NqvapdjiZX31bdrCpH4ZI9BbwEEhAHOP7DVF1GjizAzYmOnDcY), the original Imogen group.
 
-## How To Use
+[I, Imogen](https://signal.group/#CjQKIEP344g-nF0eIcaZkORbofLzTSlD5DKOUeGEFbus-w9uEhBzb6Q51MWZw6nSDkGLhwKN), newer Imogen group.
+
+[Imogen (direct message)](https://signal.me/#p/+14159495511
+)
+
+## Twitter ##
+
+Imogen posts all her images on (her Twitter account)[].
+
+# How To Use #
 
 In a Group or a DM message:
 
@@ -139,4 +148,15 @@ with image attached
 `/imagine // greek bust`
 
 
-<img width=250px src="examples/video3.png">  <img width=250px src="examples/video4.gif">o
+<img width=250px src="examples/video3.png">  <img width=250px src="examples/video4.gif">
+
+# Under the Hood #
+
+Imogen is composed of two separate systems. There's the machine learning program that trains the models to generate the images. And then there's the queue management system and Signal interface. The code in this repository constitutes the latter.
+
+## Contributing to Imogen ## 
+
+We welcome pull requests, and issues, but most importantly you can contribute to Imogen by collaborating with her. Join the Signal Groups, make art with her, use her paid features and tip her. 
+
+There's often discussions about the science and machine learning models behind Imogen on these groups, and you can help by participating on those.
+
