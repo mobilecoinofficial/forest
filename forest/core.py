@@ -797,6 +797,7 @@ class PayBot(Bot):
             f"redeemable for {str(mc_util.pmob2mob(amount_pmob-fee_pmob)).rstrip('0')} MOB",
         ]
 
+    # FIXME: clarify signature and return details/docs
     async def send_payment(  # pylint: disable=too-many-locals
         self,
         recipient: str,
@@ -829,7 +830,10 @@ class PayBot(Bot):
         )
         prop = raw_prop["result"]["tx_proposal"]
         tx_id = raw_prop["result"]["transaction_log_id"]
+        # this is to NOT log transactions into the full service DB if the sender
+        # wants it private.
         if confirm_tx_timeout:
+            # putting the account_id into the request logs it to full service,
             await self.mob_request(
                 "submit_transaction",
                 tx_proposal=prop,
@@ -837,6 +841,7 @@ class PayBot(Bot):
                 account_id=account_id,
             )
         else:
+            # if you omit account_id, it doesn't get logged
             await self.mob_request("submit_transaction", tx_proposal=prop)
         receipt_resp = await self.mob_request(
             "create_receiver_receipts",
@@ -886,6 +891,7 @@ class PayBot(Bot):
                     tx_status.get("result"),
                 )
             resp = await resp_fut
+            # the calling function can use these to check the payment status
             resp.status, resp.transaction_log_id = status, tx_id  # type: ignore
             return resp
 
