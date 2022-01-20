@@ -245,6 +245,8 @@ class Mobster:  # pylint: disable=too-many-public-methods
           bool: Boolean indicating if txo exists
         """
         txo = await self.get_txo(txo_id)
+        if not txo:
+            return False
         account_id = txo.get("txo",{}).get("received_account_id")
         status = txo.get("txo",{}).get("account_status_map",{}).get(account_id,{}).get("txo_status")
         if status == "txo_status_unspent":
@@ -342,7 +344,10 @@ class Mobster:  # pylint: disable=too-many-public-methods
           dict: information about txo
         """
         result = await self.req_("get_txo", txo_id=txo_id)
-        return result["result"]
+        if isinstance(result, dict):
+            if result.get("result"):
+                return result["result"]
+            return result
 
     async def get_transactions(self, account_id: str) -> dict[str, dict[str, dict]]:
         """

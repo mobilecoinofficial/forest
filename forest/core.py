@@ -442,7 +442,7 @@ class Signal:
     pause = False
 
     # maybe merge with the above?
-    message_allowance = 50
+    message_allowance = 45
     last_sent = time.time()
 
     def update_rate_limit(self) -> bool:
@@ -731,7 +731,7 @@ class PayBot(Bot):
         """Pass a request through to full-service, but send a message to an admin in case of error"""
         result = await self.mobster.req_(method, **params)
         if "error" in result:
-            await self.admin(f"{params}\n{result}")
+            logging.warning("%s \n%s",params, result)
         return result
 
     async def fs_receipt_to_payment_message_content(
@@ -810,16 +810,21 @@ class PayBot(Bot):
         prop = raw_prop["result"]["tx_proposal"]
         tx_id = raw_prop["result"]["transaction_log_id"]
         if confirm_tx_timeout:
-            await self.mob_request(
+            s_result = await self.mob_request(
                 "submit_transaction",
                 tx_proposal=prop,
                 comment=params.get("comment", ""),
                 account_id=account_id,
             )
         else:
-            await self.mob_request(
+            s_result = await self.mob_request(
                 "submit_transaction", tx_proposal=prop
             )
+        
+        if isinstance(s_result, dict) and s_result.get("error"):
+            msg = MessageParser({})
+            msg.status, msg.transaction_log_id = "tx_status_failed", tx_id
+            return msg
         receipt_resp = await self.mob_request(
             "create_receiver_receipts",
             tx_proposal=prop,
