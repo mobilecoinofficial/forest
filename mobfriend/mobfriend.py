@@ -1,10 +1,9 @@
 #!/usr/bin/python3.9
-import ast
 import asyncio
 import glob
 import logging
 from decimal import Decimal
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 import aioprocessing
 import base58
@@ -17,7 +16,7 @@ from amzqr import amzqr
 from scan import scan
 
 import mc_util
-from forest.core import Message, PayBot, Response, app, hide, requires_admin
+from forest.core import Message, PayBot, Response, app, hide
 from mc_util import mob2pmob, pmob2mob
 
 FEE = int(1e12 * 0.0004)
