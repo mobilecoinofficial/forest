@@ -634,22 +634,18 @@ class Bot(Signal):
             for node in parsed_stmts.body:
                 ast.increment_lineno(node)
             assert isinstance(parsed_fn.body[0], ast.AsyncFunctionDef)
+            # replace the empty async def _async_exec_f(): pass body
+            # with the AST parsed from the message
             parsed_fn.body[0].body = parsed_stmts.body
             code = compile(parsed_fn, filename="<ast>", mode="exec")
             exec(code, env)  # pylint: disable=exec-used
             return await eval(f"{fn_name}()", env)  # pylint: disable=eval-used
 
-        if msg.tokens and len(msg.tokens):
+        if msg.full_text and len(msg.tokens) > 1:
             source_blob = (
-                msg.blob.get("content", {})
-                .get("text_message", "")
-                .replace("eval", "", 1)
-                .replace("Eval", "", 1)
-                .lstrip("/")
-                .lstrip(" ")
+                msg.full_text.replace("eval", "", 1).replace("Eval", "", 1).lstrip("/ ")
             )
-            if source_blob:
-                return str(await async_exec(source_blob, locals()))
+            return str(await async_exec(source_blob, locals()))
         return None
 
     async def do_ping(self, message: Message) -> str:
