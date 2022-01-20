@@ -1,10 +1,9 @@
 #!/usr/bin/python3.9
-import ast
 import asyncio
 import glob
 import logging
 from decimal import Decimal
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 import aioprocessing
 import base58
@@ -17,7 +16,7 @@ from amzqr import amzqr
 from scan import scan
 
 import mc_util
-from forest.core import Message, PayBot, Response, app, hide, requires_admin
+from forest.core import Message, PayBot, Response, app, hide
 from mc_util import mob2pmob, pmob2mob
 
 FEE = int(1e12 * 0.0004)
@@ -172,41 +171,6 @@ class MobFriend(PayBot):
             self.no_repay.remove(msg.source)
         return f"Received {str(pmob2mob(amount_pmob)).rstrip('0')}MOB. Thank you for the tip!"
 
-    @requires_admin
-    async def do_eval(self, msg: Message) -> Response:
-        """/eval [lines]
-        Evaluates a few lines of Python.
-        Preface a value or expression with with "return" to reply with result."""
-
-        async def async_exec(stmts: str, env: Optional[dict]) -> Any:
-            parsed_stmts = ast.parse(stmts)
-            fn_name = "_async_exec_f"
-            fn = f"async def {fn_name}(): pass"
-            parsed_fn = ast.parse(fn)
-            for node in parsed_stmts.body:
-                ast.increment_lineno(node)
-            assert isinstance(parsed_fn.body[0], ast.AsyncFunctionDef)
-            parsed_fn.body[0].body = parsed_stmts.body
-            code = compile(parsed_fn, filename="<ast>", mode="exec")
-            exec(code, env)  # pylint: disable=exec-used
-            return await eval(f"{fn_name}()", env)  # pylint: disable=eval-used
-
-        if msg.tokens and len(msg.tokens):
-            source_blob = (
-                msg.blob.get("content", {})
-                .get("text_message", "")
-                .replace("/eval", "", 1)
-                .lstrip(" ")
-            )
-            if source_blob:
-                return str(await async_exec(source_blob, locals()))
-        return None
-
-    @requires_admin
-    async def do_balance(self, _: Message) -> Response:
-        """Returns bot balance in MOB."""
-        return f"Bot has balance of {pmob2mob(await self.mobster.get_balance()).quantize(Decimal('1.0000'))} MOB"
-
     @hide
     async def do_check_balance(self, msg: Message) -> Response:
         if not msg.arg1:
@@ -318,23 +282,6 @@ class MobFriend(PayBot):
         payment_request_b58 = mc_util.add_checksum_and_b58(payload.SerializeToString())
         await self._actually_build_wait_and_send_qr(payment_request_b58, msg.source)
         return None
-
-    @requires_admin
-    async def do_fsr(self, msg: Message) -> Response:
-        """
-        Make a request to the Full-Service instance behind the bot. Admin-only.
-        ie) /fsr [command] ([arg1] [val1]( [arg2] [val2])...)"""
-        if not msg.tokens:
-            return "/fsr [command] ([arg1] [val1]( [arg2] [val2]))"
-        if len(msg.tokens) == 1:
-            return await self.mobster.req(dict(method=msg.tokens[0]))
-        if (len(msg.tokens) % 2) == 1:
-            fsr_command = msg.tokens[0]
-            fsr_keys = msg.tokens[1::2]
-            fsr_values = msg.tokens[2::2]
-            params = dict(zip(fsr_keys, fsr_values))
-            return str(await self.mobster.req_(fsr_command, **params))
-        return "/fsr [command] ([arg1] [val1]( [arg2] [val2])...)"
 
     async def do_claim(self, msg: Message) -> Response:
         """
