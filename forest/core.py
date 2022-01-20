@@ -5,6 +5,7 @@
 """
 The core chatbot framework: Message, Signal, Bot, and app
 """
+import ast
 import asyncio
 import asyncio.subprocess as subprocess  # https://github.com/PyCQA/pylint/issues/1469
 import base64
@@ -22,6 +23,7 @@ import glob
 
 from asyncio import Queue, StreamReader, StreamWriter
 from asyncio.subprocess import PIPE
+from decimal import Decimal
 from functools import wraps
 from textwrap import dedent
 from typing import Any, AsyncIterator, Callable, Optional, Type, Union
@@ -614,9 +616,37 @@ class Bot(Signal):
 
     async def do_printerfact(self, _: Message) -> str:
         "Learn a fact about printers"
-        async with self.client_session.get("https://colbyolson.com/printers") as resp:
+        async with self.client_session.get(
+            utils.get_secret("FACT_SOURCE") or "https://colbyolson.com/printers"
+        ) as resp:
             fact = await resp.text()
         return fact.strip()
+
+    @requires_admin
+    async def do_eval(self, msg: Message) -> Response:
+        """Evaluates a few lines of Python. Preface with "return" to reply with result."""
+
+        async def async_exec(stmts: str, env: Optional[dict]) -> Any:
+            parsed_stmts = ast.parse(stmts)
+            fn_name = "_async_exec_f"
+            my_fn = f"async def {fn_name}(): pass"
+            parsed_fn = ast.parse(my_fn)
+            for node in parsed_stmts.body:
+                ast.increment_lineno(node)
+            assert isinstance(parsed_fn.body[0], ast.AsyncFunctionDef)
+            # replace the empty async def _async_exec_f(): pass body
+            # with the AST parsed from the message
+            parsed_fn.body[0].body = parsed_stmts.body
+            code = compile(parsed_fn, filename="<ast>", mode="exec")
+            exec(code, env)  # pylint: disable=exec-used
+            return await eval(f"{fn_name}()", env)  # pylint: disable=eval-used
+
+        if msg.full_text and len(msg.tokens) > 1:
+            source_blob = (
+                msg.full_text.replace("eval", "", 1).replace("Eval", "", 1).lstrip("/ ")
+            )
+            return str(await async_exec(source_blob, locals()))
+        return None
 
     async def do_ping(self, message: Message) -> str:
         """replies to /ping with /pong"""
@@ -639,6 +669,28 @@ class Bot(Signal):
 
 
 class PayBot(Bot):
+    @requires_admin
+    async def do_fsr(self, msg: Message) -> Response:
+        """
+        Make a request to the Full-Service instance behind the bot. Admin-only.
+        ie) /fsr [command] ([arg1] [val1]( [arg2] [val2])...)"""
+        if not msg.tokens:
+            return "/fsr [command] ([arg1] [val1]( [arg2] [val2]))"
+        if len(msg.tokens) == 1:
+            return await self.mobster.req(dict(method=msg.tokens[0]))
+        if (len(msg.tokens) % 2) == 1:
+            fsr_command = msg.tokens[0]
+            fsr_keys = msg.tokens[1::2]
+            fsr_values = msg.tokens[2::2]
+            params = dict(zip(fsr_keys, fsr_values))
+            return str(await self.mobster.req_(fsr_command, **params))
+        return "/fsr [command] ([arg1] [val1]( [arg2] [val2])...)"
+
+    @requires_admin
+    async def do_balance(self, _: Message) -> Response:
+        """Returns bot balance in MOB."""
+        return f"Bot has balance of {mc_util.pmob2mob(await self.mobster.get_balance()).quantize(Decimal('1.0000'))} MOB"
+
     async def handle_message(self, message: Message) -> Response:
         if message.payment:
             asyncio.create_task(self.handle_payment(message))
