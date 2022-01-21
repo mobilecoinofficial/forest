@@ -112,7 +112,8 @@ redis = aioredis.Redis(host=host, port=int(port), password=password)
 
 
 messages = dict(
-    no_credit="""You have no credit to submit priority requests.
+    no_credit="""
+    You have no credit to submit priority requests.
     Please sent Imogen a payment, or message Imogen with the /credit command to learn how to add credit for priority features
     """,
     rate_limit="Slow down",
