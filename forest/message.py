@@ -39,6 +39,7 @@ class Message:
     attachments: list[dict[str, str]]
     group: Optional[str]
     quoted_text: str
+    mentions: list[dict[str, str]]
     source: str
     payment: dict
     arg0: str
@@ -49,24 +50,23 @@ class Message:
     def __init__(self, blob: dict) -> None:
         self.blob = blob
         # parsing
-        self.command: Optional[str] = None
         self.tokens: Optional[list[str]] = None
         if not self.text:
             return
-        command = None
         try:
             try:
-                command, *self.tokens = json.loads(self.text)
-            except json.JSONDecodeError:
+                arg0, maybe_json = self.text.split(" ", 1)
+                assert json.loads(self.text)
+                self.tokens = maybe_json.split(" ")
+            except (json.JSONDecodeError, AssertionError):
                 # replace quote
                 clean_quote_text = self.text
                 for quote in unicode_quotes:
                     clean_quote_text.replace(quote, "'")
-                command, *self.tokens = shlex.split(clean_quote_text)
+                arg0, *self.tokens = shlex.split(clean_quote_text)
         except ValueError:
-            command, *self.tokens = self.text.split(" ")
-        self.command = command.removeprefix("/").lower()
-        self.arg0 = command
+            arg0, *self.tokens = self.text.split(" ")
+        self.arg0 = arg0.removeprefix("/").lower()
         if self.tokens:
             self.arg1, self.arg2, self.arg3, *_ = self.tokens + [""] * 3
         self.text = " ".join(self.tokens)
@@ -113,6 +113,8 @@ class AuxinMessage(Message):
         msg = (content.get("source") or {}).get("dataMessage") or {}
         self.text = self.full_text = msg.get("body") or ""
         self.attachments: list[dict[str, str]] = msg.get("attachments", [])
+        # "bodyRanges":[{"associatedValue":{"mentionUuid":"fc4457f0-c683-44fe-b887-fe3907d7762e"},"length":1,"start":0}] ... no groups anyway
+        self.mentions = []
         self.group = msg.get("group") or msg.get("groupV2") or ""
         maybe_quote = msg.get("quote")
         self.address = blob.get("Address", {})
@@ -163,6 +165,8 @@ class StdioMessage(Message):
         msg = envelope.get("dataMessage", {})
         # "attachments":[{"contentType":"image/png","filename":"image.png","id":"1484072582431702699","size":2496}]}
         self.attachments: list[dict[str, str]] = msg.get("attachments")
+        # "mentions":[{"name":"+447927948360","number":"+447927948360","uuid":"fc4457f0-c683-44fe-b887-fe3907d7762e","start":0,"length":1}
+        self.mentions = msg.get("mentions") or []
         self.full_text = self.text = msg.get("message", "")
         self.group: Optional[str] = msg.get("groupInfo", {}).get(
             "groupId"
