@@ -38,7 +38,7 @@ from ulid2 import generate_ulid_as_base32 as get_uid
 
 # framework
 import mc_util
-from forest import autosave, datastore, payments_monitor, pghelp, utils
+from forest import autosave, datastore, payments_monitor, pghelp, utils, string_dist
 from forest.message import AuxinMessage, Message, StdioMessage
 
 JSON = dict[str, Any]
@@ -65,12 +65,6 @@ def rpc(
 
 def fmt_ms(ts: int) -> str:
     return datetime.datetime.utcfromtimestamp(ts / 1000).isoformat()
-
-
-def jaccard(s1: str, s2: str) -> float:
-    intersection = len(list(set(s1).intersection(s2)))
-    union = (len(s1) + len(s2)) - intersection
-    return float(intersection) / union
 
 
 class Signal:
@@ -489,10 +483,18 @@ class Signal:
 Datapoint = tuple[int, str, float]  # timestamp in ms, command/info, latency in seconds
 
 
+def is_admin(msg: Message) -> bool:
+    return (
+        msg.source == utils.get_secret("ADMIN")
+        or msg.group == utils.get_secret("ADMIN_GROUP")
+        or msg.source in utils.get_secret("ADMINS").split(",")
+    )
+
+
 def requires_admin(command: Callable) -> Callable:
     @wraps(command)
     async def admin_command(self: "Bot", msg: Message) -> Response:
-        if msg.source == utils.get_secret("ADMIN"):
+        if is_admin(msg):
             return await command(self, msg)
         return "you must be an admin to use this command"
 
@@ -583,7 +585,7 @@ class Bot(Signal):
                 asyncio.create_task(self.admin(f"{message}\n{exception_traceback}"))
             )
         python_delta = round(time.time() - start_time, 3)
-        note = message.command or ""
+        note = message.arg0 or ""
         if future_key:
             logging.debug("awaiting future %s", future_key)
             result = await self.wait_resp(future_key=future_key)
@@ -599,25 +601,46 @@ class Bot(Signal):
                     f"command: {note}. python delta: {python_delta}s. roundtrip delta: {roundtrip_delta}s",
                 )
 
-    # imagin, imogen, imagen, image, imagines, imahine, imoge,
-    # list_que, status_list; dark, synthwav, synthese, "fantasy,"; bing
-    # could you embedify these instead of recalculating string distance? or cache
-    def match_command(self, inp: str) -> tuple[float, str]:
-        return sorted(((jaccard(inp, cmd), cmd) for cmd in self.commands))[-1]
+    def is_command(self, msg: Message) -> bool:
+        # "mentions":[{"name":"+447927948360","number":"+447927948360","uuid":"fc4457f0-c683-44fe-b887-fe3907d7762e","start":0,"length":1}
+        has_slash = msg.full_text and msg.full_text.startswith("/")
+        return has_slash or any(
+            mention.get("number") == self.bot_number for mention in msg.mentions
+        )
+
+    def match_command(self, msg: Message) -> str:
+        if not msg.arg0:
+            return ""
+        # happy part direct match
+        if hasattr(self, "do_" + msg.arg0):
+            return msg.arg0
+        # always match in dms, only match /commands or @bot in groups
+        if utils.get_secret("ENABLE_MAGIC") and (not msg.group or self.is_command(msg)):
+            # don't leak admin commands
+            valid_commands = self.commands if is_admin(msg) else self.visible_commands
+            # closest match
+            score, cmd = string_dist.match(msg.arg0, valid_commands)
+            if score < (float(utils.get_secret("TYPO_THRESHOLD") or 0.3)):
+                return cmd
+            # check if there's a unique expansion
+            expansions = [
+                expanded_cmd
+                for expanded_cmd in valid_commands
+                if cmd.startswith(msg.arg0)
+            ]
+            if len(expansions) == 1:
+                return expansions[0]
+        return ""
 
     async def handle_message(self, message: Message) -> Response:
         """Method dispatch to do_x commands and goodies.
         Overwrite this to add your own non-command logic,
         but call super().handle_message(message) at the end"""
-        if message.arg0:
-            if hasattr(self, "do_" + message.arg0):
-                return await getattr(self, "do_" + message.arg0)(message)
-            score, cmd = self.match_command(message.arg0)
-            if score > float(utils.get_secret("TYPO_THRESHOLD") or 0.7):
-                return await getattr(self, "do_" + cmd)(message)
-            expansions = [cmd for cmd in self.commands if cmd.startswith(message.arg0)]
-            if len(expansions) == 1:
-                return await getattr(self, "do_" + expansions[0])(message)
+        # try to get a direct match, or a fuzzy match if appropriate
+        if cmd := self.match_command(message):
+            # invoke the function and return the response
+            return await getattr(self, "do_" + cmd)(message)
+        if not message.group:
             suggest_help = ' Try "help".' if hasattr(self, "do_help") else ""
             return f"Sorry! Command {message.arg0} not recognized!" + suggest_help
         if message.text == "TERMINATE":
@@ -626,7 +649,7 @@ class Bot(Signal):
 
     def documented_commands(self) -> str:
         commands = ", ".join(
-            name.replace("do_", '"') + '"'
+            name.removeprefix("do_")
             for name in dir(self)
             if name.startswith("do_")
             and not hasattr(getattr(self, name), "hide")
@@ -689,9 +712,7 @@ class Bot(Signal):
             return await eval(f"{fn_name}()", env)  # pylint: disable=eval-used
 
         if msg.full_text and len(msg.tokens) > 1:
-            source_blob = (
-                msg.full_text.replace("eval", "", 1).replace("Eval", "", 1).lstrip("/ ")
-            )
+            source_blob = msg.full_text.replace(msg.arg0, "", 1).lstrip("/ ")
             return str(await async_exec(source_blob, locals()))
         return None
 
@@ -703,8 +724,14 @@ class Bot(Signal):
 
     @hide
     async def do_uptime(self, _: Message) -> str:
-        """Returns a message containing the bot uptime (in seconds)."""
-        return f"Uptime: {int(time.time() - self.start_time)}sec"
+        """Returns a message containing the bot uptime."""
+        tot_mins, sec = divmod(int(time.time() - self.start_time), 60)
+        hr, mins = divmod(tot_mins, 60)
+        t = "Uptime: "
+        t += f"{hr}h" if hr else ""
+        t += f"{mins}m" if mins else ""
+        t += f"{sec}s"
+        return t
 
     @hide
     async def do_pong(self, message: Message) -> str:
@@ -998,21 +1025,27 @@ async def send_message_handler(request: web.Request) -> web.Response:
     Turn this off, authenticate, or obfuscate in prod to someone from using your bot to spam people
     """
     account = request.match_info.get("phonenumber")
-    session = request.app.get("bot")
-    if not session:
+    bot = request.app.get("bot")
+    if not bot:
         return web.Response(status=504, text="Sorry, no live workers.")
     msg_data = await request.text()
-    await session.send_message(
+    rpc_id = await bot.send_message(
         account, msg_data, endsession=request.query.get("endsession")
     )
-    return web.json_response({"status": "sent"})
+    resp = await bot.wait_resp(future_key=rpc_id)
+    return web.json_response({"status": "sent", "sent_ts": resp.timestamp})
 
 
 async def admin_handler(request: web.Request) -> web.Response:
     bot = request.app.get("bot")
     if not bot:
         return web.Response(status=504, text="Sorry, no live workers.")
-    msg = urllib.parse.unquote(request.query.get("message", ""))
+    arg = urllib.parse.unquote(request.query.get("message", "")).strip()
+    data = (await request.text()).strip()
+    if arg.strip() and data.strip():
+        msg = f"{arg}\n{data}"
+    else:
+        msg = arg or data
     await bot.admin(msg)
     return web.Response(text="OK")
 
