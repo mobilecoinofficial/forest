@@ -986,7 +986,9 @@ class QuestionBot(PayBot):
 
     async def handle_message(self, message: Message) -> Response:
         if message.full_text and self.pending_answers.get(message.source):
-            self.pending_answers[message.source].set_result(message)
+            probably_future = self.pending_answers[message.source]
+            if probably_future:
+                probably_future.set_result(message)
             return
         return await super().handle_message(message)
 
@@ -995,18 +997,20 @@ class QuestionBot(PayBot):
         """Handles 'yes' in response to a pending_confirmation."""
         if msg.source not in self.pending_confirmations:
             return "Did I ask you a question?"
-        else:
-            question = self.pending_confirmations.get(msg.source)
+        question = self.pending_confirmations.get(msg.source)
+        if question:
             question.set_result(True)
+        return
 
     @hide
     async def do_no(self, msg: Message) -> Response:
         """Handles 'no' in response to a pending_confirmation."""
         if msg.source not in self.pending_confirmations:
             return "Did I ask you a question?"
-        else:
-            question = self.pending_confirmations.get(msg.source)
+        question = self.pending_confirmations.get(msg.source)
+        if question:
             question.set_result(False)
+        return
 
     @hide
     async def do_askdemo(self, msg: Message) -> Response:
@@ -1020,6 +1024,7 @@ class QuestionBot(PayBot):
         answer = await self.ask_freeform_question(msg.source)
         if answer:
             return f"I love {answer} too!"
+        return
 
     async def ask_freeform_question(
         self, recipient: str, question_text: str = "What's your favourite colour?"
