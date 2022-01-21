@@ -496,10 +496,6 @@ class Signal:
 Datapoint = tuple[int, str, float]  # timestamp in ms, command/info, latency in seconds
 
 
-class UserError(Exception):
-    pass
-
-
 def is_admin(msg: Message) -> bool:
     return (
         msg.source == utils.get_secret("ADMIN")
@@ -602,7 +598,7 @@ class Bot(Signal):
                 asyncio.create_task(self.admin(f"{message}\n{exception_traceback}"))
             )
         python_delta = round(time.time() - start_time, 3)
-        note = message.command or ""
+        note = message.arg0 or ""
         if future_key:
             logging.debug("awaiting future %s", future_key)
             result = await self.wait_resp(future_key=future_key)
@@ -617,22 +613,6 @@ class Bot(Signal):
                 await self.admin(
                     f"command: {note}. python delta: {python_delta}s. roundtrip delta: {roundtrip_delta}s",
                 )
-
-    async def handle_reaction(self, msg: Message) -> Response:
-        """
-        route a reaction to the original message.
-        #if the number of reactions that message has is a fibonacci number, notify the message's author
-        this is probably flakey, because signal only gives us timestamps and
-        not message IDs
-        """
-        assert isinstance(msg.reaction, Reaction)
-        react = msg.reaction
-        logging.debug("reaction from %s targeting %s", msg.source, react.ts)
-        if react.author != self.bot_number or react.ts not in self.sent_messages:
-            return None
-        self.sent_messages[react.ts]["reactions"][msg.source] = react.emoji
-        logging.debug("found target message %s", repr(self.sent_messages[react.ts]))
-        return None
 
     def is_command(self, msg: Message) -> bool:
         # "mentions":[{"name":"+447927948360","number":"+447927948360","uuid":"fc4457f0-c683-44fe-b887-fe3907d7762e","start":0,"length":1}
@@ -650,9 +630,7 @@ class Bot(Signal):
         # always match in dms, only match /commands or @bot in groups
         if not msg.group or self.is_command(msg):
             # don't leak admin commands
-            valid_commands = (
-                self.commands if is_admin(msg) else self.visible_commands
-            )
+            valid_commands = self.commands if is_admin(msg) else self.visible_commands
             # closest match
             score, cmd = match(msg.arg0, valid_commands)
             if score > (float(utils.get_secret("TYPO_THRESHOLD") or 0.7)):
@@ -667,15 +645,10 @@ class Bot(Signal):
                 return expansions[0]
         return ""
 
-    async def handle_message(  # pylint: disable=too-many-return-statements
-        self, message: Message
-    ) -> Response:
+    async def handle_message(self, message: Message) -> Response:
         """Method dispatch to do_x commands and goodies.
         Overwrite this to add your own non-command logic,
         but call super().handle_message(message) at the end"""
-        if message.reaction:
-            logging.info("saw a reaction")
-            return await self.handle_reaction(message)
         if cmd := self.match_command(message):
             return await getattr(self, "do_" + cmd)(message)
         if not message.group:
