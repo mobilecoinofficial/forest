@@ -415,6 +415,8 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
 
     def make_prefix(prefix: str) -> Callable:  # type: ignore  # pylint: disable=no-self-argument
         async def wrapped(self: "Imogen", msg: Message) -> str:
+            if msg.group and msg.group == utils.get_secret("ADMIN_GROUP"):
+                return None
             msg.text = f"{prefix} {msg.text}"
             return await self.do_imagine(msg)
 
