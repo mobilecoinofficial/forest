@@ -73,6 +73,13 @@ def jaccard(s1: str, s2: str) -> float:
     return float(intersection) / union
 
 
+# imagin, imogen, imagen, image, imagines, imahine, imoge,
+# list_que, status_list; dark, synthwav, synthese, "fantasy,"; bing
+# could you embedify these instead of recalculating string distance? or cache
+def match(inp: str, valid: list[str]) -> tuple[float, str]:
+    return sorted(((jaccard(inp, cmd), cmd) for cmd in valid))[-1]
+
+
 class Signal:
     """
     Represents a auxin-cli session.
@@ -489,10 +496,22 @@ class Signal:
 Datapoint = tuple[int, str, float]  # timestamp in ms, command/info, latency in seconds
 
 
+class UserError(Exception):
+    pass
+
+
+def is_admin(msg: Message) -> bool:
+    return (
+        msg.source == utils.get_secret("ADMIN")
+        or msg.group == utils.get_secret("ADMIN_GROUP")
+        or msg.source in utils.get_secret("ADMINS").split(",")
+    )
+
+
 def requires_admin(command: Callable) -> Callable:
     @wraps(command)
     async def admin_command(self: "Bot", msg: Message) -> Response:
-        if msg.source == utils.get_secret("ADMIN"):
+        if is_admin(msg):
             return await command(self, msg)
         return "you must be an admin to use this command"
 
@@ -599,25 +618,67 @@ class Bot(Signal):
                     f"command: {note}. python delta: {python_delta}s. roundtrip delta: {roundtrip_delta}s",
                 )
 
-    # imagin, imogen, imagen, image, imagines, imahine, imoge,
-    # list_que, status_list; dark, synthwav, synthese, "fantasy,"; bing
-    # could you embedify these instead of recalculating string distance? or cache
-    def match_command(self, inp: str) -> tuple[float, str]:
-        return sorted(((jaccard(inp, cmd), cmd) for cmd in self.commands))[-1]
+    async def handle_reaction(self, msg: Message) -> Response:
+        """
+        route a reaction to the original message.
+        #if the number of reactions that message has is a fibonacci number, notify the message's author
+        this is probably flakey, because signal only gives us timestamps and
+        not message IDs
+        """
+        assert isinstance(msg.reaction, Reaction)
+        react = msg.reaction
+        logging.debug("reaction from %s targeting %s", msg.source, react.ts)
+        if react.author != self.bot_number or react.ts not in self.sent_messages:
+            return None
+        self.sent_messages[react.ts]["reactions"][msg.source] = react.emoji
+        logging.debug("found target message %s", repr(self.sent_messages[react.ts]))
+        return None
 
-    async def handle_message(self, message: Message) -> Response:
+    def is_command(self, msg: Message) -> bool:
+        # "mentions":[{"name":"+447927948360","number":"+447927948360","uuid":"fc4457f0-c683-44fe-b887-fe3907d7762e","start":0,"length":1}
+        has_slash = msg.full_text and msg.full_text.startswith("/")
+        return has_slash or any(
+            mention.get("number") == self.bot_number for mention in msg.mentions
+        )
+
+    def match_command(self, msg: Message) -> str:
+        if not msg.arg0:
+            return ""
+        # happy part direct match
+        if hasattr(self, "do_" + msg.arg0):
+            return msg.arg0
+        # always match in dms, only match /commands or @bot in groups
+        if not msg.group or self.is_command(msg):
+            # don't leak admin commands
+            valid_commands = (
+                self.commands if is_admin(msg) else self.visible_commands
+            )
+            # closest match
+            score, cmd = match(msg.arg0, valid_commands)
+            if score > (float(utils.get_secret("TYPO_THRESHOLD") or 0.7)):
+                return cmd
+            # check if there's a unique expansion
+            expansions = [
+                expanded_cmd
+                for expanded_cmd in valid_commands
+                if cmd.startswith(msg.arg0)
+            ]
+            if len(expansions) == 1:
+                return expansions[0]
+        return ""
+
+    async def handle_message(  # pylint: disable=too-many-return-statements
+        self, message: Message
+    ) -> Response:
         """Method dispatch to do_x commands and goodies.
         Overwrite this to add your own non-command logic,
         but call super().handle_message(message) at the end"""
-        if message.arg0:
-            if hasattr(self, "do_" + message.arg0):
-                return await getattr(self, "do_" + message.arg0)(message)
-            score, cmd = self.match_command(message.arg0)
-            if score > float(utils.get_secret("TYPO_THRESHOLD") or 0.7):
-                return await getattr(self, "do_" + cmd)(message)
-            expansions = [cmd for cmd in self.commands if cmd.startswith(message.arg0)]
-            if len(expansions) == 1:
-                return await getattr(self, "do_" + expansions[0])(message)
+        if message.reaction:
+            logging.info("saw a reaction")
+            return await self.handle_reaction(message)
+        if cmd := self.match_command(message):
+            return await getattr(self, "do_" + cmd)(message)
+        if not message.group:
             suggest_help = ' Try "help".' if hasattr(self, "do_help") else ""
             return f"Sorry! Command {message.arg0} not recognized!" + suggest_help
         if message.text == "TERMINATE":
@@ -626,7 +687,7 @@ class Bot(Signal):
 
     def documented_commands(self) -> str:
         commands = ", ".join(
-            name.replace("do_", '"') + '"'
+            name.removeprefix("do_")
             for name in dir(self)
             if name.startswith("do_")
             and not hasattr(getattr(self, name), "hide")
@@ -703,8 +764,14 @@ class Bot(Signal):
 
     @hide
     async def do_uptime(self, _: Message) -> str:
-        """Returns a message containing the bot uptime (in seconds)."""
-        return f"Uptime: {int(time.time() - self.start_time)}sec"
+        """Returns a message containing the bot uptime."""
+        tot_mins, sec = divmod(int(time.time() - self.start_time), 60)
+        hr, mins = divmod(tot_mins, 60)
+        t = "Uptime: "
+        t += f"{hr}h" if hr else ""
+        t += f"{mins}m" if mins else ""
+        t += f"{sec}s"
+        return t
 
     @hide
     async def do_pong(self, message: Message) -> str:
@@ -998,21 +1065,27 @@ async def send_message_handler(request: web.Request) -> web.Response:
     Turn this off, authenticate, or obfuscate in prod to someone from using your bot to spam people
     """
     account = request.match_info.get("phonenumber")
-    session = request.app.get("bot")
-    if not session:
+    bot = request.app.get("bot")
+    if not bot:
         return web.Response(status=504, text="Sorry, no live workers.")
     msg_data = await request.text()
-    await session.send_message(
+    rpc_id = await bot.send_message(
         account, msg_data, endsession=request.query.get("endsession")
     )
-    return web.json_response({"status": "sent"})
+    resp = await bot.wait_resp(future_key=rpc_id)
+    return web.json_response({"status": "sent", "sent_ts": resp.timestamp})
 
 
 async def admin_handler(request: web.Request) -> web.Response:
     bot = request.app.get("bot")
     if not bot:
         return web.Response(status=504, text="Sorry, no live workers.")
-    msg = urllib.parse.unquote(request.query.get("message", ""))
+    arg = urllib.parse.unquote(request.query.get("message", "")).strip()
+    data = (await request.text()).strip()
+    if arg.strip() and data.strip():
+        msg = f"{arg}\n{data}"
+    else:
+        msg = arg or data
     await bot.admin(msg)
     return web.Response(text="OK")
 
