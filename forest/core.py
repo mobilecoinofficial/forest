@@ -72,6 +72,12 @@ def jaccard(s1: str, s2: str) -> float:
     return float(intersection) / union
 
 
+# imagin, imogen, imagen, image, imagines, imahine, imoge,
+# list_que, status_list; dark, synthwav, synthese, "fantasy,"; bing
+# could you embedify these instead of recalculating string distance? or cache
+def match_command(inp: str, valid: list[str]) -> tuple[float, str]:
+    return sorted(((jaccard(inp, cmd), cmd) for cmd in valid))[-1]
+
 class Signal:
     """
     Represents a auxin-cli session.
@@ -529,12 +535,18 @@ class UserError(Exception):
     pass
 
 
+def is_admin(msg: Message) -> bool:
+    return (
+        msg.source == utils.get_secret("ADMIN")
+        or msg.group == utils.get_secret("ADMIN_GROUP")
+        or msg.source in utils.get_secret("ADMINS").split(",")
+    )
+
+
 def requires_admin(command: Callable) -> Callable:
     @wraps(command)
     async def admin_command(self: "Bot", msg: Message) -> Response:
-        if msg.source == utils.get_secret("ADMIN") or msg.group == utils.get_secret(
-            "ADMIN_GROUP"
-        ):
+        if is_admin(msg):
             return await command(self, msg)
         return "you must be an admin to use this command"
 
@@ -669,11 +681,6 @@ class Bot(Signal):
         logging.debug("found target message %s", repr(self.sent_messages[react.ts]))
         return None
 
-    # imagin, imogen, imagen, image, imagines, imahine, imoge,
-    # list_que, status_list; dark, synthwav, synthese, "fantasy,"; bing
-    # could you embedify these instead of recalculating string distance? or cache
-    def match_command(self, inp: str) -> tuple[float, str]:
-        return sorted(((jaccard(inp, cmd), cmd) for cmd in self.commands))[-1]
 
     async def handle_message(  # pylint: disable=too-many-return-statements
         self, message: Message
@@ -687,14 +694,15 @@ class Bot(Signal):
         if message.arg0:
             if hasattr(self, "do_" + message.arg0):
                 return await getattr(self, "do_" + message.arg0)(message)
-            score, cmd = self.match_command(message.arg0)
+            if message.group:
+                return None
+            valid = self.commands if is_admin(message) else self.visible_commands
+            score, cmd = match_command(message.arg0, valid)
             if score > (float(utils.get_secret("TYPO_THRESHOLD") or 0.7)):
                 return await getattr(self, "do_" + cmd)(message)
             expansions = [cmd for cmd in self.commands if cmd.startswith(message.arg0)]
             if len(expansions) == 1:
                 return await getattr(self, "do_" + expansions[0])(message)
-            if message.group:
-                return None
             suggest_help = ' Try "help".' if hasattr(self, "do_help") else ""
             return f"Sorry! Command {message.arg0} not recognized!" + suggest_help
         if message.text == "TERMINATE":
