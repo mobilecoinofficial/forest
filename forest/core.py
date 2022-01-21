@@ -75,8 +75,9 @@ def jaccard(s1: str, s2: str) -> float:
 # imagin, imogen, imagen, image, imagines, imahine, imoge,
 # list_que, status_list; dark, synthwav, synthese, "fantasy,"; bing
 # could you embedify these instead of recalculating string distance? or cache
-def match_command(inp: str, valid: list[str]) -> tuple[float, str]:
+def match(inp: str, valid: list[str]) -> tuple[float, str]:
     return sorted(((jaccard(inp, cmd), cmd) for cmd in valid))[-1]
+
 
 class Signal:
     """
@@ -681,6 +682,38 @@ class Bot(Signal):
         logging.debug("found target message %s", repr(self.sent_messages[react.ts]))
         return None
 
+    def is_command(self, msg: Message) -> bool:
+        # "mentions":[{"name":"+447927948360","number":"+447927948360","uuid":"fc4457f0-c683-44fe-b887-fe3907d7762e","start":0,"length":1}
+        has_slash = msg.full_text and msg.full_text.startswith("/")
+        return has_slash or any(
+            mention.get("number") == self.bot_number for mention in msg.mentions
+        )
+
+    def match_command(self, msg: Message) -> str:
+        if not msg.arg0:
+            return ""
+        # happy part direct match
+        if hasattr(self, "do_" + msg.arg0):
+            return msg.arg0
+        # always match in dms, only match /commands or @bot in groups
+        if not msg.group or self.is_command(msg):
+            # don't leak admin commands
+            valid_commands = (
+                self.commands if is_admin(msg) else self.visible_commands
+            )
+            # closest match
+            score, cmd = match(msg.arg0, valid_commands)
+            if score > (float(utils.get_secret("TYPO_THRESHOLD") or 0.7)):
+                return cmd
+            # check if there's a unique expansion
+            expansions = [
+                expanded_cmd
+                for expanded_cmd in valid_commands
+                if cmd.startswith(msg.arg0)
+            ]
+            if len(expansions) == 1:
+                return expansions[0]
+        return ""
 
     async def handle_message(  # pylint: disable=too-many-return-statements
         self, message: Message
@@ -691,18 +724,9 @@ class Bot(Signal):
         if message.reaction:
             logging.info("saw a reaction")
             return await self.handle_reaction(message)
-        if message.arg0:
-            if hasattr(self, "do_" + message.arg0):
-                return await getattr(self, "do_" + message.arg0)(message)
-            if message.group:
-                return None
-            valid = self.commands if is_admin(message) else self.visible_commands
-            score, cmd = match_command(message.arg0, valid)
-            if score > (float(utils.get_secret("TYPO_THRESHOLD") or 0.7)):
-                return await getattr(self, "do_" + cmd)(message)
-            expansions = [cmd for cmd in self.commands if cmd.startswith(message.arg0)]
-            if len(expansions) == 1:
-                return await getattr(self, "do_" + expansions[0])(message)
+        if cmd := self.match_command(message):
+            return await getattr(self, "do_" + cmd)(message)
+        if not message.group:
             suggest_help = ' Try "help".' if hasattr(self, "do_help") else ""
             return f"Sorry! Command {message.arg0} not recognized!" + suggest_help
         if message.text == "TERMINATE":
