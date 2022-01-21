@@ -978,6 +978,68 @@ class PayBot(Bot):
         return await resp_fut
 
 
+class QuestionBot(PayBot):
+    def __init__(self, *args, **kwargs):
+        self.pending_confirmations: dict[str, asyncio.Future[bool]] = {}
+        self.pending_answers: dict[str, asyncio.Future[Message]] = {}
+        super().__init__(*args, **kwargs)
+
+    async def handle_message(self, message: Message) -> Response:
+        if message.full_text and self.pending_answers.get(message.source):
+            self.pending_answers[message.source].set_result(message)
+            return
+        return await super().handle_message(message)
+
+    @hide
+    async def do_yes(self, msg: Message) -> Response:
+        """Handles 'yes' in response to a pending_confirmation."""
+        if msg.source not in self.pending_confirmations:
+            return "Did I ask you a question?"
+        else:
+            question = self.pending_confirmations.get(msg.source)
+            question.set_result(True)
+
+    @hide
+    async def do_no(self, msg: Message) -> Response:
+        """Handles 'no' in response to a pending_confirmation."""
+        if msg.source not in self.pending_confirmations:
+            return "Did I ask you a question?"
+        else:
+            question = self.pending_confirmations.get(msg.source)
+            question.set_result(False)
+
+    @hide
+    async def do_askdemo(self, msg: Message) -> Response:
+        """Asks a yes/no question."""
+        if await self.ask_yesno_question(msg.source, "Are you feeling lucky, punk?"):
+            return "well, that's good!"
+        return "sending 🍀"
+
+    @hide
+    async def do_askfreedemo(self, msg: Message) -> Response:
+        answer = await self.ask_freeform_question(msg.source)
+        if answer:
+            return f"I love {answer} too!"
+
+    async def ask_freeform_question(
+        self, recipient: str, question_text: str = "What's your favourite colour?"
+    ) -> str:
+        await self.send_message(recipient, question_text)
+        self.pending_answers[recipient] = asyncio.Future()
+        answer = await self.pending_answers.get(recipient)
+        self.pending_answers.pop(recipient)
+        return answer.full_text
+
+    async def ask_yesno_question(
+        self, recipient: str, question_text: str = "Are you sure? yes/no"
+    ) -> bool:
+        self.pending_confirmations[recipient] = asyncio.Future()
+        await self.send_message(recipient, question_text)
+        result = await self.pending_confirmations[recipient]
+        self.pending_confirmations.pop(recipient)
+        return result
+
+
 async def no_get(request: web.Request) -> web.Response:
     raise web.HTTPFound(location="https://signal.org/")
 
@@ -1071,4 +1133,4 @@ def run_bot(bot: Type[Bot], local_app: web.Application = app) -> None:
 
 
 if __name__ == "__main__":
-    run_bot(Bot)
+    run_bot(QuestionBot)
