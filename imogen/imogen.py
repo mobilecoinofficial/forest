@@ -114,7 +114,8 @@ redis = aioredis.Redis(host=host, port=int(port), password=password)
 messages = dict(
     no_credit="""
     You have no credit to submit priority requests.
-    Please sent Imogen a payment, or message Imogen with the /credit command to learn how to add credit for priority features
+
+    Please sent Imogen a payment. You can learn more about sending payments with the /signalpay command.
     """,
     rate_limit="Slow down",
     activate_payments="""
@@ -142,7 +143,6 @@ messages = dict(
     https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments
 
     To top up your Mobilecoin balance, follow these instructions: https://mobilecoin.com/news/how-to-buy-mob-in-the-us
-
     """,
 )
 
@@ -538,7 +538,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
     async def do_signalpay(self, msg: Message) -> Response:
         if msg.group:
             return "To send Imogen a payment, please message Imogen directly."
-        return messages["activate_payments"]
+        return dedent(messages["activate_payments"]).strip()
 
     # eh
     # async def async_shutdown(self):
