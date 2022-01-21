@@ -38,7 +38,7 @@ from ulid2 import generate_ulid_as_base32 as get_uid
 
 # framework
 import mc_util
-from forest import autosave, datastore, payments_monitor, pghelp, utils
+from forest import autosave, datastore, payments_monitor, pghelp, utils, string_dist
 from forest.message import AuxinMessage, Message, StdioMessage
 
 JSON = dict[str, Any]
@@ -65,19 +65,6 @@ def rpc(
 
 def fmt_ms(ts: int) -> str:
     return datetime.datetime.utcfromtimestamp(ts / 1000).isoformat()
-
-
-def jaccard(s1: str, s2: str) -> float:
-    intersection = len(list(set(s1).intersection(s2)))
-    union = (len(s1) + len(s2)) - intersection
-    return float(intersection) / union
-
-
-# imagin, imogen, imagen, image, imagines, imahine, imoge,
-# list_que, status_list; dark, synthwav, synthese, "fantasy,"; bing
-# could you embedify these instead of recalculating string distance? or cache
-def match(inp: str, valid: list[str]) -> tuple[float, str]:
-    return sorted(((jaccard(inp, cmd), cmd) for cmd in valid))[-1]
 
 
 class Signal:
@@ -632,7 +619,7 @@ class Bot(Signal):
             # don't leak admin commands
             valid_commands = self.commands if is_admin(msg) else self.visible_commands
             # closest match
-            score, cmd = match(msg.arg0, valid_commands)
+            score, cmd = string_dist.match(msg.arg0, valid_commands)
             if score > (float(utils.get_secret("TYPO_THRESHOLD") or 0.7)):
                 return cmd
             # check if there's a unique expansion
@@ -649,7 +636,9 @@ class Bot(Signal):
         """Method dispatch to do_x commands and goodies.
         Overwrite this to add your own non-command logic,
         but call super().handle_message(message) at the end"""
+        # try to get a direct match, or a fuzzy match if appropriate
         if cmd := self.match_command(message):
+            # invoke the function and return the response
             return await getattr(self, "do_" + cmd)(message)
         if not message.group:
             suggest_help = ' Try "help".' if hasattr(self, "do_help") else ""
@@ -723,9 +712,7 @@ class Bot(Signal):
             return await eval(f"{fn_name}()", env)  # pylint: disable=eval-used
 
         if msg.full_text and len(msg.tokens) > 1:
-            source_blob = (
-                msg.full_text.replace("eval", "", 1).replace("Eval", "", 1).lstrip("/ ")
-            )
+            source_blob = msg.full_text.replace(msg.arg0, "", 1).lstrip("/ ")
             return str(await async_exec(source_blob, locals()))
         return None
 
