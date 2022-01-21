@@ -673,8 +673,8 @@ class Bot(Signal):
         # bail on the easy path
         if maybe_command and hasattr(self, "do_" + maybe_command):
             return await getattr(self, "do_" + maybe_command)(message)
-        # if we didn't match...
-        if maybe_command:
+        # if we didn't match and magic is enabled...
+        if maybe_command and utils.get_secret("ENABLE_MAGIC"):
             # get the closest command
             score, cmd = self.match_command(maybe_command)
             if score < int(utils.get_secret("TYPO_THRESHOLD") or 3):
