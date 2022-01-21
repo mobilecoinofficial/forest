@@ -615,12 +615,12 @@ class Bot(Signal):
         if hasattr(self, "do_" + msg.arg0):
             return msg.arg0
         # always match in dms, only match /commands or @bot in groups
-        if not msg.group or self.is_command(msg):
+        if utils.get_secret("ENABLE_MAGIC") and (not msg.group or self.is_command(msg)):
             # don't leak admin commands
             valid_commands = self.commands if is_admin(msg) else self.visible_commands
             # closest match
             score, cmd = string_dist.match(msg.arg0, valid_commands)
-            if score > (float(utils.get_secret("TYPO_THRESHOLD") or 0.7)):
+            if score < (float(utils.get_secret("TYPO_THRESHOLD") or 0.3)):
                 return cmd
             # check if there's a unique expansion
             expansions = [
