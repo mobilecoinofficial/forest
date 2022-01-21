@@ -34,6 +34,7 @@ from aiohttp import web
 from phonenumbers import NumberParseException
 from prometheus_async import aio
 from prometheus_client import Histogram, Summary
+from ulid2 import generate_ulid_as_base32 as get_uid
 
 # framework
 import mc_util
@@ -305,7 +306,7 @@ class Signal:
         self, req: Optional[dict] = None, future_key: str = ""
     ) -> Message:
         if req:
-            future_key = req["method"] + "-" + str(round(time.time()))
+            future_key = req["method"] + "-" + get_uid()
             logging.info("expecting response id: %s", future_key)
             req["id"] = future_key
             self.pending_requests[future_key] = asyncio.Future()
@@ -346,7 +347,7 @@ class Signal:
             params["mobilecoinAddress"] = payment_address
         if profile_path:
             params["avatarFile"] = profile_path
-        future_key = f"setProfile-{int(time.time()*1000)}"
+        future_key = f"setProfile-{get_uid()}"
         await self.auxincli_input_queue.put(rpc("setProfile", params, future_key))
         return future_key
 
@@ -435,7 +436,7 @@ class Signal:
                     return ""
             params["destination" if utils.AUXIN else "recipient"] = str(recipient)
         # maybe use rpc() instead
-        future_key = f"send-{int(time.time()*1000)}-{hex(hash(msg))[-4:]}"
+        future_key = f"send-{get_uid()}"
         json_command: JSON = {
             "jsonrpc": "2.0",
             "id": future_key,
@@ -623,8 +624,7 @@ class Bot(Signal):
                     logging.warning(warn, sent_json_message)
                     self.backoff = True
                     await asyncio.sleep(4)
-                    msg_hash = message.id.split("-")[-1]
-                    future_key = f"retry-send-{int(time.time()*1000)}-{msg_hash}"
+                    future_key = f"retry-send-{get_uid()}"
                     self.pending_messages_sent[future_key] = sent_json_message
                     self.pending_requests[future_key] = asyncio.Future()
                     await self.auxincli_input_queue.put(sent_json_message)
