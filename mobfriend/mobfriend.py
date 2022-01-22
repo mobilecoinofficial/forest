@@ -20,6 +20,7 @@ import mc_util
 from forest.core import Message, QuestionBot, Response, app, hide, utils
 from mc_util import mob2pmob, pmob2mob
 from forest.pdictng import aPersistDict
+
 FEE = int(1e12 * 0.0004)
 REQUEST_TIME = Summary("request_processing_seconds", "Time spent processing request")
 
@@ -32,7 +33,6 @@ class MobFriend(QuestionBot):
     def __init__(self):
         self.notes = aPersistDict("notes")
         super().__init__()
-
 
     async def handle_message(self, message: Message) -> Response:
         if message.attachments and len(message.attachments):
@@ -56,18 +56,24 @@ class MobFriend(QuestionBot):
             if contents:
                 self.user_images.pop(message.source)
                 payload = message.arg1 = contents[-1][1].decode()
-                await self.send_message(message.source, f"Found a QR! Contains:\n{payload}")
+                await self.send_message(
+                    message.source, f"Found a QR! Contains:\n{payload}"
+                )
                 return await self.do_check(message)
             if not message.arg0:
                 return f"OK, saving this template for when you make a QR later!"
         return await super().handle_message(message)
 
     async def do_add(self, msg: Message) -> Response:
-        if (msg.arg1 and msg.arg1 != "note") or not await self.ask_yesno_question(msg.source, "Would you like to add a note for future users?"):
+        if (msg.arg1 and msg.arg1 != "note") or not await self.ask_yesno_question(
+            msg.source, "Would you like to add a note for future users?"
+        ):
             return "Okay! If you ever want to add a note, you can say 'add note'!"
-        keyword = await self.ask_freeform_question(msg.source, "What keywords for your note?")
+        keyword = await self.ask_freeform_question(
+            msg.source, "What keywords for your note?"
+        )
         body = await self.ask_freeform_question(msg.source, "What should the note say?")
-        blob = dict(From = msg.uuid.split('-')[-1], Keywords= keyword, Message=f"\"{body}\"")
+        blob = dict(From=msg.uuid.split("-")[-1], Keywords=keyword, Message=f'"{body}"')
         await self.send_message(msg.source, blob)
         if not await self.ask_yesno_question(msg.source, "Share this with others?"):
             return "Okay, feel free to try again."
@@ -292,7 +298,10 @@ class MobFriend(QuestionBot):
             payload.payment_request.memo = " ".join(msg.tokens[1:])
         payment_request_b58 = mc_util.add_checksum_and_b58(payload.SerializeToString())
         await self._actually_build_wait_and_send_qr(payment_request_b58, msg.source)
-        await self.send_message(msg.source, "Your friend can scan this code in the MobileCoin wallet and use it to pay you on Signal.")
+        await self.send_message(
+            msg.source,
+            "Your friend can scan this code in the MobileCoin wallet and use it to pay you on Signal.",
+        )
         return None
 
     async def do_paywallet(self, msg: Message) -> Response:
@@ -413,12 +422,24 @@ class MobFriend(QuestionBot):
         if msg.arg0 and msg.arg0.isalnum() and len(msg.arg0) > 100 and not msg.tokens:
             msg.arg1 = msg.full_text
             return await self.do_check(msg)
-        if msg.arg0 and any([msg.arg0 in key for key in self.notes.dict_]) and (await self.ask_yesno_question(msg.source, f"There are one or more notes matching {msg.arg0}.\n\nWould you like to view them?")):
+        if (
+            msg.arg0
+            and len(msg.arg0) > 1
+            and any([msg.arg0 in key.lower() for key in self.notes.dict_])
+            and (
+                await self.ask_yesno_question(
+                    msg.source,
+                    f"There are one or more notes matching {msg.arg0}.\n\nWould you like to view them?",
+                )
+            )
+        ):
             for keywords in self.notes.dict_:
                 if msg.arg0 in keywords.lower():
                     await self.send_message(msg.source, await self.notes.get(keywords))
         elif msg.arg0:
-            await self.send_message(utils.get_secret("ADMIN"), f"{msg.source} says '{msg.full_text}'")
+            await self.send_message(
+                utils.get_secret("ADMIN"), f"{msg.source} says '{msg.full_text}'"
+            )
             return [
                 "Hi, I'm MOBot!",
                 "I can help you accomplish various tasks in the MobileCoin ecosystem, like\n making and scanning QR codes,\n making and decoding payment requests, and\n making and redeeming Gift Codes.\n\nWould you like to 'make' or 'check' something? You can also send a QR code at any time and I'll try and decode it.",
