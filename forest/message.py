@@ -53,24 +53,23 @@ class Message:
     def __init__(self, blob: dict) -> None:
         self.blob = blob
         # parsing
-        self.command: Optional[str] = None
         self.tokens: Optional[list[str]] = None
         if not self.text:
             return
-        command = None
         try:
             try:
-                # this won't work
-                command, *self.tokens = json.loads(self.text)
-            except json.JSONDecodeError:
+                arg0, maybe_json = self.text.split(" ", 1)
+                assert json.loads(self.text)
+                self.tokens = maybe_json.split(" ")
+            except (json.JSONDecodeError, AssertionError):
                 # replace quote
                 clean_quote_text = self.text
                 for quote in unicode_quotes:
                     clean_quote_text.replace(quote, "'")
-                command, *self.tokens = shlex.split(clean_quote_text)
+                arg0, *self.tokens = shlex.split(clean_quote_text)
         except ValueError:
-            command, *self.tokens = self.text.split(" ")
-        self.arg0 = self.command = command.removeprefix("/").lower()
+            arg0, *self.tokens = self.text.split(" ")
+        self.arg0 = arg0.removeprefix("/").lower()
         if self.tokens:
             self.arg1, self.arg2, self.arg3, *_ = self.tokens + [""] * 3
         self.text = " ".join(self.tokens)
