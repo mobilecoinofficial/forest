@@ -530,7 +530,7 @@ https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
         return await self.do_purchase(message)
 
     async def default(self, msg: Message) -> Response:
-        code = msg.command
+        code = msg.arg0
         if code == "+":
             return await self.do_purchase(msg)
         elif code == "?":

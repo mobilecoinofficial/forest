@@ -45,5 +45,5 @@ COPY --from=builder /app/target/release/auxin-cli /app/auxin-cli
 COPY --from=libbuilder /app/venv/lib/python3.9/site-packages /app/
 COPY ./forest/ /app/forest/
 COPY ./mc_util/ /app/mc_util/
-COPY ./pdict.py ./clangat.py /app/
+COPY ./clangat.py /app/
 ENTRYPOINT ["/usr/bin/python3.9", "/app/clangat.py"]
