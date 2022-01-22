@@ -38,7 +38,7 @@ from ulid2 import generate_ulid_as_base32 as get_uid
 
 # framework
 import mc_util
-from forest import autosave, datastore, payments_monitor, pghelp, utils
+from forest import autosave, datastore, payments_monitor, pghelp, utils, string_dist
 from forest.message import AuxinMessage, Message, Reaction, StdioMessage
 
 JSON = dict[str, Any]
@@ -65,19 +65,6 @@ def rpc(
 
 def fmt_ms(ts: int) -> str:
     return datetime.datetime.utcfromtimestamp(ts / 1000).isoformat()
-
-
-def jaccard(s1: str, s2: str) -> float:
-    intersection = len(list(set(s1).intersection(s2)))
-    union = (len(s1) + len(s2)) - intersection
-    return float(intersection) / union
-
-
-# imagin, imogen, imagen, image, imagines, imahine, imoge,
-# list_que, status_list; dark, synthwav, synthese, "fantasy,"; bing
-# could you embedify these instead of recalculating string distance? or cache
-def match(inp: str, valid: list[str]) -> tuple[float, str]:
-    return sorted(((jaccard(inp, cmd), cmd) for cmd in valid))[-1]
 
 
 class Signal:
@@ -650,7 +637,7 @@ class Bot(Signal):
                 asyncio.create_task(self.admin(f"{message}\n{exception_traceback}"))
             )
         python_delta = round(time.time() - start_time, 3)
-        note = message.command or ""
+        note = message.arg0 or ""
         if future_key:
             logging.debug("awaiting future %s", future_key)
             result = await self.wait_resp(future_key=future_key)
@@ -696,14 +683,12 @@ class Bot(Signal):
         if hasattr(self, "do_" + msg.arg0):
             return msg.arg0
         # always match in dms, only match /commands or @bot in groups
-        if not msg.group or self.is_command(msg):
+        if utils.get_secret("ENABLE_MAGIC") and (not msg.group or self.is_command(msg)):
             # don't leak admin commands
-            valid_commands = (
-                self.commands if is_admin(msg) else self.visible_commands
-            )
+            valid_commands = self.commands if is_admin(msg) else self.visible_commands
             # closest match
-            score, cmd = match(msg.arg0, valid_commands)
-            if score > (float(utils.get_secret("TYPO_THRESHOLD") or 0.7)):
+            score, cmd = string_dist.match(msg.arg0, valid_commands)
+            if score < (float(utils.get_secret("TYPO_THRESHOLD") or 0.3)):
                 return cmd
             # check if there's a unique expansion
             expansions = [
@@ -724,9 +709,11 @@ class Bot(Signal):
         if message.reaction:
             logging.info("saw a reaction")
             return await self.handle_reaction(message)
+        # try to get a direct match, or a fuzzy match if appropriate
         if cmd := self.match_command(message):
+            # invoke the function and return the response
             return await getattr(self, "do_" + cmd)(message)
-        if not message.group:
+        if message.arg0 and not message.group:
             suggest_help = ' Try "help".' if hasattr(self, "do_help") else ""
             return f"Sorry! Command {message.arg0} not recognized!" + suggest_help
         if message.text == "TERMINATE":
@@ -807,9 +794,7 @@ class Bot(Signal):
             return await eval(f"{fn_name}()", env)  # pylint: disable=eval-used
 
         if msg.full_text and len(msg.tokens) > 1:
-            source_blob = (
-                msg.full_text.replace("eval", "", 1).replace("Eval", "", 1).lstrip("/ ")
-            )
+            source_blob = msg.full_text.replace(msg.arg0, "", 1).lstrip("/ ")
             return str(await async_exec(source_blob, locals()))
         return None
 

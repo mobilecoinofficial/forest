@@ -250,13 +250,14 @@ These are the environment variables and flags that the bots read to work. Not al
 - `ROOT_DIR`: specify the directory where the data file is stored, as well as where the signal-cli executable is.
 - `SIGNAL_CLI_PATH`: specify where the signal-cli executable is if it is not in ROOT_DIR.
 - `LOGLEVEL`: what log level to use for console logs (DEBUG, INFO, WARNING, ERROR).
-- `TYPO_THRESHOLD`: Minimum Jaccard string distance for typo correction. 1 is only exact matches. Default: 0.7
+- `TYPO_THRESHOLD`: maximum normalized Levenshtein edit distance for typo correction. 0 is only exact matches, 1 is any match. Default: 0.3
 
 ## Binary flags
 - `NO_DOWNLOAD`: don't download a signal-cli datastore, instead use what's in the current working directory.
 - `NO_MEMFS`: if this isn't set, MEMFS is started, making a fake filesystem in `./data` and used to upload the signal-cli datastore to the database whenever it is changed. If not `NO_DOWNLOAD`, also create an equivalent tmpdir at /tmp/local-signal, chdir to it, and symlink signal-cli process and avatar.
 - `LOGFILES`: create a debug.log.
 - `ADMIN_METRICS`: send python and roundtrip timedeltas for each command to ADMIN.
+- `ENABLE_MAGIC`: use string distence and expansions 
 
 ## Contributing
 
