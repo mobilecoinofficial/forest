@@ -159,9 +159,6 @@ class PersistDict(dict):
         dict_.update(**kwargs)
         super().__init__(**dict_)
 
-    def __getitem__(self, key: str) -> Any:
-        return super().__getitem__(key)
-
     def save_state(self) -> Any:
         """JSON serialize and update self."""
         jsond = json.dumps(self)
