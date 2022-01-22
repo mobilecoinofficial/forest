@@ -154,7 +154,7 @@ class PersistDict(dict):
         # creates a new event loop on a separate thread, invokes async_get function, returns result
         result = self.thread_pool.submit(asyncio.run, async_get()).result()
         dict_ = {}
-        if isinstance(result, str):
+        if isinstance(result, str) and result:
             dict_ = json.loads(result)
         dict_.update(**kwargs)
         super().__init__(**dict_)
