@@ -115,6 +115,8 @@ messages = dict(
     no_credit="""
     You have no credit to submit priority requests.
 
+    Priority requests cost $0.10 each, bypass the free queue, and get dedicated workers when available.
+
     Please sent Imogen a payment. You can learn more about sending payments with the /signalpay command.
     """,
     rate_limit="Slow down",
@@ -253,7 +255,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
     async def do_prefix(self, msg: Message) -> Response:
         assert msg.tokens and len(msg.tokens) >= 2
         prefix = msg.tokens[0]
-        msg.command = msg.tokens[1].lstrip("/")
+        msg.arg0= msg.tokens[1].lstrip("/")
         msg.tokens = msg.tokens[2:]
         msg.text = " ".join(msg.tokens)
         resp = await self.handle_message(msg)
@@ -277,13 +279,15 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
 
     async def do_balance(self, msg: Message) -> Response:
         "returns your Imogen balance in USD for priority requests and tips"
+        balance = await self.get_user_balance(msg.source)
+        prompts = int(balance / (self.image_rate_cents / 100))
+        balance = f"Your current Imogen balance is ${balance:.2f} ({prompts} priority prompts)"
         if msg.group:
+            await self.send_message(msg.source, balance)
             return (
                 "To make use of Imogen's paid features, please message Imogen directly."
             )
-        balance = await self.get_user_balance(msg.source)
-        prompts = int(balance / (self.image_rate_cents / 100))
-        return f"Your current Imogen balance is ${balance:.2f} ({prompts} priority prompts)"
+        return balance
 
     image_rate_cents = 10
 
@@ -539,6 +543,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
 
     async def do_signalpay(self, msg: Message) -> Response:
         if msg.group:
+            await self.send_message(msg.source, dedent(messages["activate_payments"]).strip())
             return "To send Imogen a payment, please message Imogen directly."
         return dedent(messages["activate_payments"]).strip()
 
