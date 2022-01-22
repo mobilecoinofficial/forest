@@ -6,16 +6,23 @@ name = "pypi"
 [packages]
 aioprocessing = "*"
 asyncpg = "*"
-aiohttp = {extras = [ "speedups",], version = "*"}
 base58 = "*"
 phonenumberslite = "*"
 prometheus_async = "*"
 prometheus_client = "*"
 protobuf = "*"
 termcolor = "*"
+ulid2 = "*"
+pycryptodome = "*"
 
 [requires]
 python_version = "3.9"
 
 [pipenv]
 allow_prereleases = true
+
+[dev-packages]
+
+[packages.aiohttp]
+extras = [ "speedups",]
+version = "*"
