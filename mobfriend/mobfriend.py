@@ -1,4 +1,5 @@
 #!/usr/bin/python3.9
+import os
 import asyncio
 import glob
 import logging
@@ -16,17 +17,22 @@ from amzqr import amzqr
 from scan import scan
 
 import mc_util
-from forest.core import Message, PayBot, Response, app, hide
+from forest.core import Message, QuestionBot, Response, app, hide, utils
 from mc_util import mob2pmob, pmob2mob
-
+from forest.pdictng import aPersistDict
 FEE = int(1e12 * 0.0004)
 REQUEST_TIME = Summary("request_processing_seconds", "Time spent processing request")
 
 
-class MobFriend(PayBot):
+class MobFriend(QuestionBot):
     no_repay: list[str] = []
     exchanging_gift_code: list[str] = []
     user_images: Dict[str, str] = {}
+
+    def __init__(self):
+        self.notes = aPersistDict("notes")
+        super().__init__()
+
 
     async def handle_message(self, message: Message) -> Response:
         if message.attachments and len(message.attachments):
@@ -38,15 +44,34 @@ class MobFriend(PayBot):
                 attachment_paths = glob.glob(f"/tmp/unnamed_attachment_{timestamp}.*")
                 if len(attachment_paths) > 0:
                     attachment_path = attachment_paths.pop()
+                    if ".jpeg" in attachment_path:
+                        os.rename(
+                            attachment_path, attachment_path.replace(".jpeg", ".jpg", 1)
+                        )
+                        attachment_path = attachment_path.replace(".jpeg", ".jpg", 1)
                     self.user_images[message.source] = f"{attachment_path}"
             else:
                 self.user_images[message.source] = f"/tmp/{attachment_path}"
             contents = scan(self.user_images[message.source])
             if contents:
-                return contents[-1][1].decode()
-            if not message.command:
-                return f"OK, saving this image as {attachment_path} for later!"
+                self.user_images.pop(message.source)
+                payload = message.arg1 = contents[-1][1].decode()
+                await self.send_message(message.source, f"Found a QR! Contains:\n{payload}")
+                return await self.do_check(message)
+            if not message.arg0:
+                return f"OK, saving this template for when you make a QR later!"
         return await super().handle_message(message)
+
+    async def do_add(self, msg: Message) -> Response:
+        if (msg.arg1 and msg.arg1 != "note") or not await self.ask_yesno_question(msg.source, "Would you like to add a note for future users?"):
+            return "Okay! If you ever want to add a note, you can say 'add note'!"
+        keyword = await self.ask_freeform_question(msg.source, "What keywords for your note?")
+        body = await self.ask_freeform_question(msg.source, "What should the note say?")
+        blob = dict(From = msg.uuid.split('-')[-1], Keywords= keyword, Message=f"\"{body}\"")
+        await self.send_message(msg.source, blob)
+        if not await self.ask_yesno_question(msg.source, "Share this with others?"):
+            return "Okay, feel free to try again."
+        await self.notes.set(keyword, blob)
 
     async def _actually_build_wait_and_send_qr(
         self, text: str, user_id: str, image_path: Any = None
@@ -79,6 +104,11 @@ class MobFriend(PayBot):
         await self.send_message(user_id, text, attachments=[f"/tmp/{save_name}"])
         return save_name
 
+    async def do_signalme(self, _: Message) -> Response:
+        """signalme
+        Returns a link to share the bot with friends!"""
+        return f"https://signal.me/#p/{self.bot_number}"
+
     async def do_clear(self, msg: Message) -> Response:
         """Clears (if relevant) any saved images."""
         if msg.source in self.user_images:
@@ -98,7 +128,6 @@ class MobFriend(PayBot):
         await self._actually_build_wait_and_send_qr(str(msg.arg1), msg.source)
         return None
 
-    @hide
     async def do_makegift(self, msg: Message) -> Response:
         """
         /makegift
@@ -186,14 +215,24 @@ class MobFriend(PayBot):
         memo = status.get("result", {}).get("gift_code_memo") or "None"
         if "Claimed" in claimed:
             return "This gift code has already been redeemed!"
-        return f"Gift code can be redeemed for {(mob_amt).quantize(Decimal('1.0000'))}MOB. ({pmob} picoMOB)\nMemo: {memo}"
+        return [
+            f"Gift code can be redeemed for {(mob_amt).quantize(Decimal('1.0000'))}MOB. ({pmob} picoMOB)\nMemo: {memo}"
+            + "\nTo redeem, send:",
+            f"redeem {msg.arg1}",
+        ]
 
     async def do_check(self, msg: Message) -> Response:
         """
         /check [base58 code]
         Helps identify a b58 code. If it's a gift code, it will return the balance."""
         if not msg.arg1:
-            return "/do_check [base58 code]"
+            msg.arg1 = await self.ask_freeform_question(
+                msg.source,
+                "Provide a MobileCoin request, address, or gift code as b58 and I'll tell you what it does!",
+            )
+            if msg.arg1.lower() in "stop,exit,quit,no,none":
+                return "Okay, nevermind about that"
+            return await self.do_check(msg)
         status = await self.mobster.req_("check_b58_type", b58_code=msg.arg1)
         if status and status.get("result", {}).get("b58_type") == "PaymentRequest":
             status["result"]["data"]["type"] = "PaymentRequest"
@@ -203,7 +242,8 @@ class MobFriend(PayBot):
             return status.get("result", {}).get("data")
         if status and status.get("result", {}).get("b58_type") == "TransferPayload":
             return await self.do_check_balance(msg)
-        return status.get("result")
+        print(status)
+        return status.get("result") or status.get("error")
 
     async def do_show_details(self, msg: Message) -> Response:
         """
@@ -252,6 +292,7 @@ class MobFriend(PayBot):
             payload.payment_request.memo = " ".join(msg.tokens[1:])
         payment_request_b58 = mc_util.add_checksum_and_b58(payload.SerializeToString())
         await self._actually_build_wait_and_send_qr(payment_request_b58, msg.source)
+        await self.send_message(msg.source, "Your friend can scan this code in the MobileCoin wallet and use it to pay you on Signal.")
         return None
 
     async def do_paywallet(self, msg: Message) -> Response:
@@ -268,15 +309,30 @@ class MobFriend(PayBot):
         address = msg.arg1
         amount = msg.arg2
         memo = msg.arg3 or ""
-        if not address:
-            return "Please provide your b58 address as the first argument!"
+        if not address or len(address) < 50:
+            await self.send_message(
+                msg.source,
+                "Please provide a b58 address to be used for this payment request!",
+            )
         payload = mc_util.printable_pb2.PrintableWrapper()
         address_proto = mc_util.b58_wrapper_to_protobuf(address)
         if not address_proto:
-            return "Sorry, could not find a valid address!"
+            await self.send_message(
+                msg.source, "Sorry, could not find a valid address!"
+            )
+            msg.arg1 = await self.ask_freeform_question(
+                msg.source, "What address would you like to use?"
+            )
+            return await self.do_paywallet(msg)
         payload.payment_request.public_address.CopyFrom(address_proto.public_address)
         if not amount or not amount.replace(".", "0", 1).isnumeric():
-            return "Sorry, you need to provide a price (in MOB)!"
+            await self.send_message(
+                msg.source, "Sorry, you need to provide a price (in MOB)!"
+            )
+            msg.arg2 = await self.ask_freeform_question(
+                msg.source, "What price would you like to use? (in MOB)"
+            )
+            return await self.do_paywallet(msg)
         payload.payment_request.value = mob2pmob(Decimal(amount))
         payload.payment_request.memo = memo
         payment_request_b58 = mc_util.add_checksum_and_b58(payload.SerializeToString())
@@ -294,6 +350,8 @@ class MobFriend(PayBot):
         )
         amount_pmob = check_status.get("result", {}).get("gift_code_value")
         claimed = check_status.get("result", {}).get("gift_code_status", "")
+        if not await self.ask_yesno_question(msg.source):
+            return "Okay, not doing that!"
         status = await self.mobster.req_(
             "claim_gift_code",
             gift_code_b58=msg.arg1,
@@ -310,6 +368,64 @@ class MobFriend(PayBot):
         return f"Sorry, that doesn't look like a valid code.\nDEBUG: {status.get('result')}"
 
     do_redeem = hide(do_claim)
+
+    async def do_make(self, msg: Message) -> Response:
+        if not msg.arg1:
+            maybe_resp = msg.arg1 = await self.ask_freeform_question(
+                msg.source,
+                "Would you like to make a QR, (payment) request, or gift (code.\nTo proceed, you can reply one of 'qr', 'request', or 'gift'.",
+            )
+        else:
+            maybe_resp = msg.arg1
+        if maybe_resp.lower() == "qr":
+            maybe_payload = await self.ask_freeform_question(
+                msg.source, "What content would you like to include in this QR code?"
+            )
+            if maybe_payload:
+                msg.arg1 = maybe_payload
+                return await self.do_makeqr(msg)
+        elif maybe_resp.lower() == "request":
+            target = await self.ask_freeform_question(
+                msg.source,
+                "Who should this pay, you or someone else?\nYou can reply 'me' or 'else'.",
+            )
+            if target.lower() == "me":
+                msg.arg1 = await self.get_address(msg.source)
+            else:
+                msg.arg1 = await self.ask_freeform_question(
+                    msg.source, "What MobileCoin address should this request pay?"
+                )
+            msg.arg2 = await self.ask_freeform_question(
+                msg.source, "For how many MOB should this request be made?"
+            )
+            msg.arg3 = await self.ask_freeform_question(
+                msg.source, "What memo would you like to use? ('None' for empty"
+            )
+            if msg.arg3.lower() == "none":
+                msg.arg3 = ""
+            _do_paywallet = await self.do_paywallet(msg)
+            return "You can copy and paste your payment result here to test it.\nIf you don't like your result, you can try again!"
+        elif maybe_resp.lower().startswith("gift"):
+            return await self.do_makegift(msg)
+        return "I'm sorry, I didn't get that."
+
+    async def default(self, msg: Message) -> Response:
+        if msg.arg0 and msg.arg0.isalnum() and len(msg.arg0) > 100 and not msg.tokens:
+            msg.arg1 = msg.full_text
+            return await self.do_check(msg)
+        if msg.arg0 and any([msg.arg0 in key for key in self.notes.dict_]) and (await self.ask_yesno_question(msg.source, f"There are one or more notes matching {msg.arg0}.\n\nWould you like to view them?")):
+            for keywords in self.notes.dict_:
+                if msg.arg0 in keywords.lower():
+                    await self.send_message(msg.source, await self.notes.get(keywords))
+        elif msg.arg0:
+            await self.send_message(utils.get_secret("ADMIN"), f"{msg.source} says '{msg.full_text}'")
+            return [
+                "Hi, I'm MOBot!",
+                "I can help you accomplish various tasks in the MobileCoin ecosystem, like\n making and scanning QR codes,\n making and decoding payment requests, and\n making and redeeming Gift Codes.\n\nWould you like to 'make' or 'check' something? You can also send a QR code at any time and I'll try and decode it.",
+            ]
+        return None
+
+    do_help = default
 
 
 if __name__ == "__main__":

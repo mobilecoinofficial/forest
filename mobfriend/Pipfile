@@ -12,12 +12,17 @@ termcolor = "*"
 prometheus_async = "*"
 prometheus_client = "*"
 protobuf = "*"
+ulid2 = "*"
+pillow = "*"
+pycryptodome = "*"
 
 [requires]
 python_version = "3.9"
 
 [pipenv]
 allow_prereleases = true
+
+[dev-packages]
 
 [packages.aiohttp]
 extras = [ "speedups",]

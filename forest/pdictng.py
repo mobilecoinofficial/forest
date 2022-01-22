@@ -21,7 +21,7 @@ AESKEY = base58.b58decode(os.getenv("AESKEY", "kWKuomB9Ty3GcJ9yA1yED").encode())
 
 if not AESKEY or len(AESKEY) not in [16, 32]:
     raise ValueError(
-        "Need to set 128b or 256b (16 or 32 byte) AESKEY envvar for persistence. It should be base58 encoded."
+        f"Need to set 128b or 256b (16 or 32 byte) not {len(AESKEY)}b AESKEY envvar for persistence. It should be base58 encoded."
     )
 
 pAUTH = os.getenv("PAUTH", "")

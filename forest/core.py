@@ -640,9 +640,6 @@ class Bot(Signal):
         if cmd := self.match_command(message):
             # invoke the function and return the response
             return await getattr(self, "do_" + cmd)(message)
-        if message.arg0 and not message.group:
-            suggest_help = ' Try "help".' if hasattr(self, "do_help") else ""
-            return f"Sorry! Command {message.arg0} not recognized!" + suggest_help
         if message.text == "TERMINATE":
             return "signal session reset"
         return await self.default(message)
