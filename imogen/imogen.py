@@ -255,7 +255,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
     async def do_prefix(self, msg: Message) -> Response:
         assert msg.tokens and len(msg.tokens) >= 2
         prefix = msg.tokens[0]
-        msg.arg0= msg.tokens[1].lstrip("/")
+        msg.arg0 = msg.tokens[1].lstrip("/")
         msg.tokens = msg.tokens[2:]
         msg.text = " ".join(msg.tokens)
         resp = await self.handle_message(msg)
@@ -281,13 +281,13 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         "returns your Imogen balance in USD for priority requests and tips"
         balance = await self.get_user_balance(msg.source)
         prompts = int(balance / (self.image_rate_cents / 100))
-        balance = f"Your current Imogen balance is ${balance:.2f} ({prompts} priority prompts)"
+        balance_msg = f"Your current Imogen balance is ${balance:.2f} ({prompts} priority prompts)"
         if msg.group:
-            await self.send_message(msg.source, balance)
+            await self.send_message(msg.source, balance_msg)
             return (
                 "To make use of Imogen's paid features, please message Imogen directly."
             )
-        return balance
+        return balance_msg
 
     image_rate_cents = 10
 
@@ -418,7 +418,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         return await self.enqueue_prompt(msg, params, False, True)
 
     def make_prefix(prefix: str) -> Callable:  # type: ignore  # pylint: disable=no-self-argument
-        async def wrapped(self: "Imogen", msg: Message) -> str:
+        async def wrapped(self: "Imogen", msg: Message) -> Response:
             if msg.group and msg.group == utils.get_secret("ADMIN_GROUP"):
                 return None
             msg.text = f"{prefix} {msg.text}"
@@ -543,7 +543,9 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
 
     async def do_signalpay(self, msg: Message) -> Response:
         if msg.group:
-            await self.send_message(msg.source, dedent(messages["activate_payments"]).strip())
+            await self.send_message(
+                msg.source, dedent(messages["activate_payments"]).strip()
+            )
             return "To send Imogen a payment, please message Imogen directly."
         return dedent(messages["activate_payments"]).strip()
 
