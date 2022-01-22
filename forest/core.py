@@ -979,10 +979,10 @@ class PayBot(Bot):
 
 
 class QuestionBot(PayBot):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, bot_number: Optional[str] = None) -> None:
         self.pending_confirmations: dict[str, asyncio.Future[bool]] = {}
         self.pending_answers: dict[str, asyncio.Future[Message]] = {}
-        super().__init__(*args, **kwargs)
+        super().__init__(bot_number)
 
     async def handle_message(self, message: Message) -> Response:
         if message.full_text and self.pending_answers.get(message.source):
@@ -1000,7 +1000,7 @@ class QuestionBot(PayBot):
         question = self.pending_confirmations.get(msg.source)
         if question:
             question.set_result(True)
-        return
+        return None
 
     @hide
     async def do_no(self, msg: Message) -> Response:
@@ -1010,7 +1010,7 @@ class QuestionBot(PayBot):
         question = self.pending_confirmations.get(msg.source)
         if question:
             question.set_result(False)
-        return
+        return None
 
     @hide
     async def do_askdemo(self, msg: Message) -> Response:
@@ -1024,16 +1024,16 @@ class QuestionBot(PayBot):
         answer = await self.ask_freeform_question(msg.source)
         if answer:
             return f"I love {answer} too!"
-        return
+        return None
 
     async def ask_freeform_question(
         self, recipient: str, question_text: str = "What's your favourite colour?"
     ) -> str:
         await self.send_message(recipient, question_text)
-        self.pending_answers[recipient] = asyncio.Future()
-        answer = await self.pending_answers.get(recipient)
+        answer_future = self.pending_answers[recipient] = asyncio.Future()
+        answer = await answer_future
         self.pending_answers.pop(recipient)
-        return answer.full_text
+        return answer.full_text or ""
 
     async def ask_yesno_question(
         self, recipient: str, question_text: str = "Are you sure? yes/no"
