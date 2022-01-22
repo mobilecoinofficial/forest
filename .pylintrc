@@ -22,3 +22,7 @@ ignored-classes=PrintableWrapper
 
 [VARIABLES]
 dummy-variables-rgx=(_|dummy|unused|i)
+
+[SIMILARITY]
+min-similarity-lines=9
+ignore-imports=yes
