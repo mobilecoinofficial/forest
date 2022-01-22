@@ -8,11 +8,11 @@ import hashlib
 import json
 import os
 import time
-from typing import Union, Any, Optional
+from typing import Union, Any, Optional, cast
 
 import aiohttp
 import base58
-from Crypto.Cipher import AES
+from Crypto.Cipher import AES, _mode_eax
 
 NAMESPACE = os.getenv("FLY_APP_NAME") or open("/etc/hostname").read().strip()
 SALT = os.getenv("SALT", "ECmG8HtNNMWb4o2bzyMqCmPA6KTYJPCkd")
@@ -32,15 +32,15 @@ if not pAUTH:
 
 def encrypt(data: bytes, key: bytes) -> bytes:
     """Accepts data (as arbitrary length bytearray) and key (as 16B or 32B bytearray) and returns authenticated and encrypted blob (as bytearray)"""
-    cipher = AES.new(key, AES.MODE_EAX)
-    ciphertext, authtag = cipher.encrypt_and_digest(data)
+    cipher = cast(_mode_eax.EaxMode, AES.new(key, AES.MODE_EAX))
+    ciphertext, authtag = cipher.encrypt_and_digest(data)  # pylint: disable
     return cipher.nonce + authtag + ciphertext
 
 
 def decrypt(data: bytes, key: bytes) -> bytes:
     """Accepts ciphertext (as arbitrary length bytearray) and key (as 16B or 32B bytearray) and returns decrypted (plaintext) blob (as bytearray)"""
-    cipher = AES.new(key, AES.MODE_EAX, data[:16])
-    return cipher.decrypt_and_verify(data[32:], data[16:32])
+    cipher = cast(_mode_eax.EaxMode, AES.new(key, AES.MODE_EAX, data[:16]))
+    return cipher.decrypt_and_verify(data[32:], data[16:32])  # pylint: disable
 
 
 def get_safe_key(key_: str) -> str:
