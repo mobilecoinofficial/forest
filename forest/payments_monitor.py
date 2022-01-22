@@ -151,7 +151,6 @@ class Mobster:  # pylint: disable=too-many-public-methods
             logging.error(result)
         return result
 
-
     async def req(self, data: dict) -> dict:
         """
         Make json rpc request to Mobilecoin full-service api using a dictionary
@@ -267,10 +266,13 @@ class Mobster:  # pylint: disable=too-many-public-methods
         return await self.req({"method": "import_account", "params": params})
 
     # cache?
-    async def get_address(self, index: int = 0) -> str:
+    async def get_address(self, index: int = 0, account_id: str="") -> str:
         """
         Get main address in wallet for a specific account
         """
+        if account_id:
+            res = await self.req_("get_account", account_id=account_id)
+            return res.get("result",{}).get("account",{}).get("main_address","")
         res = await self.req({"method": "get_all_accounts"})
         acc_id = res["result"]["account_ids"][index]
         return res["result"]["account_map"][acc_id]["main_address"]
@@ -589,12 +591,32 @@ class Mobster:  # pylint: disable=too-many-public-methods
         txos = await self.req_("get_all_txos_for_account", account_id=account_id)
         return txos.get("result", {}).get("txo_map", {})
 
+    async def get_filtered_balance(self, locked_txos: dict[str,Any]) -> int:
+        """
+        Return of wallet minus already locked transactions
+
+        args:
+          locked_txos (dict): Dict of txo_ids of locked transactions to filter
+          out of the totalremove from result
+
+        Returns:
+          int: wallet balance in pmob minus filtered transactions
+        """
+        account_id = await self.get_account()
+        utxos = await self.filter_utxos(
+                account_id,
+                locked_txos=locked_txos
+                )
+
+        return sum([utxo[1] for utxo in utxos])
+
     async def filter_utxos(
         self,
         account_id: str,
         txo_status: str = "txo_status_unspent",
         max_val: Union[int, float] = 0,
         min_val: int = 0,
+        locked_txos: Optional[dict] = None
     ) -> list[tuple[str, int]]:
         """
         Get all txos matching specific criterion
@@ -604,6 +626,8 @@ class Mobster:  # pylint: disable=too-many-public-methods
           get unpsent txos or "txo_status_spent" to get spent txos
           max_val (int): maximum value in pmob
           min_val (int): minimum value in pmob
+          locked_txos (dict): Dict of txo_ids to remove from result. Dict
+          keys should be txo_id hashes that are desired to remove.
         """
         if max_val <= 0:
             max_val = float("inf")
@@ -616,7 +640,14 @@ class Mobster:  # pylint: disable=too-many-public-methods
             == txo_status
             and (max_val > int(v.get("value_pmob")) > min_val)
         ]
-        return sorted(utxos, key=lambda txo_value: txo_value[1], reverse=True)
+        unspent_utxos = sorted(utxos, key=lambda txo_value: txo_value[1], reverse=True)
+        if isinstance(locked_txos, dict):
+            txs_to_remove = []
+            for i in range(len(unspent_utxos)):
+                if locked_txos.get(unspent_utxos[i][0]):
+                    txs_to_remove.append(i)
+            delete_indices(unspent_utxos, txs_to_remove)
+        return unspent_utxos
 
     async def build_split_txo_transaction(
         self, txo_id: str, output_values: list[int], **params: str
@@ -638,8 +669,59 @@ class Mobster:  # pylint: disable=too-many-public-methods
         result = await self.req(data)
         return result.get("result", {})
 
+    async def cleanup_utxos(self, account_id: str, max_single_txo: int,
+            locked_txos: Optional[dict[str,Any]] = None, largest_first: bool=False) -> list[tuple[str,int]]:
+        """
+        Consolidate wallet txos from smallest to largest into a single txo of
+        specified size
+
+        args:
+          acount_id (str): Mobilecoin wallet account_id
+          max_single_txo (int): Size (in pmob) of transaction to consolidate to
+          locked_txos (dict[str, Any]): dict of txo_ids that should not be
+          used as inputs for txo_pre_allocation. key of this dict should be the
+          txo_id
+        """
+
+        addy = await self.get_address(account_id=account_id)
+        while True:
+            utxos = await self.filter_utxos(account_id, locked_txos=locked_txos)
+            if largest_first:
+                txo_slice = utxos[:16]
+            else:
+                txo_slice = utxos[-16:]
+            free_amount = sum([txo[1] for txo in utxos])
+            if free_amount - FEE <= max_single_txo:
+                logging.warning("Non-reserved utxos total: %s is less than requested consolidation %s, cannot allocate",
+                        free_amount - FEE, max_single_txo)
+                return utxos
+
+            tail_amt = sum([txo[1] for txo in txo_slice])
+            if tail_amt - FEE > max_single_txo:
+                chosen_utxos = []
+                tail_amt = 0
+                for utxo in reversed(txo_slice):
+                    if utxo[1] >= max_single_txo:
+                        break
+                    chosen_utxos.append(utxo)
+                    tail_amt = sum([txo[1] for txo in chosen_utxos])
+                    if tail_amt - FEE > max_single_txo:
+                        break
+                if tail_amt > 0 and len(chosen_utxos) > 1:
+                    await self.build_transaction(account_id, tail_amt - FEE,
+                            addy, input_txo_ids = [txo[0] for txo in
+                                chosen_utxos], submit=True, comment="utxo_cleanup")
+                return await self.filter_utxos(account_id,
+                        locked_txos=locked_txos)
+            
+            await self.build_transaction(account_id, tail_amt - FEE,
+                        addy, input_txo_ids = [txo[0] for txo in
+                            txo_slice], submit=True, comment="utxo_cleanup")
+            #Sleep to make sure full service doesn't eat transactions??
+            await asyncio.sleep(4)
+
     async def preallocate_txos(
-            self, account_id: str, txo_list: list[int], frozen_inputs:
+            self, account_id: str, txo_list: list[int], locked_txos:
             Optional[dict[str, Any]] = None, address: str = ""
     ) -> dict[str, int]:
         """
@@ -649,57 +731,56 @@ class Mobster:  # pylint: disable=too-many-public-methods
         args:
           account_id (str): account_id of the account to allocate the txos within
           txo_list (list[int]): list of transaction amounts in pmob to allocate
-          frozen_inputs (dict[str, Any]): dict of txo_ids that should not be
+          locked_txos (dict[str, Any]): dict of txo_ids that should not be
           used as inputs for txo_pre_allocation. key of this dict should be the
           txo_id
           address (str): address to send txo outputs to (default: main address of
           account)
 
         """
-        unspent_utxos = await self.filter_utxos(account_id)
-
-        ##Remove any txos currently being tracked from list
-        if isinstance(frozen_inputs, dict):
-            txs_to_remove = []
-            for i in range(len(unspent_utxos)):
-                if frozen_inputs.get(unspent_utxos[i][0]):
-                    txs_to_remove.append(i)
-            delete_indices(unspent_utxos, txs_to_remove)
-        txo_list = sorted(txo_list, reverse=True)
-        logging.info("attempting pre_allocation of: %s", txo_list)
-        total_requested = sum(txo_list) + FEE*len(txo_list)
-        total_available = sum([txo[1] for txo in unspent_utxos])
-        if total_available < total_requested:
-            raise ValueError("Not enough available in account to allocate txos")
-        tx_list_split = [txo_list[i : i + 15] for i in range(0, len(txo_list), 15)]
-        output_txos = []
         if not address:
-            address = await self.get_address()
-        for sublist in tx_list_split:
-            send_list = []
+            address = await self.get_address(account_id=account_id)
+        unspent_utxos = await self.filter_utxos(account_id,
+                locked_txos=locked_txos)
+        txo_list = sorted(txo_list, reverse=True)
+        split_txos = [txo_list[i : i + 15] for i in range(0, len(txo_list), 15)]
+        logging.info("attempting pre_allocation of utxos: %s", txo_list)
+        free = sum([txo[1] for txo in unspent_utxos])
+        requested = sum(txo_list)+FEE*(len(txo_list) + len(split_txos))
+        if free < requested:
+            logging.warning("requested/free: %s/%s can't allocate", requested, free)
+            return {}
+        output_txos = []
+        for sublist in split_txos:
             utxo_inputs = []
             txo_total = sum(sublist) + FEE*len(sublist)
             logging.info("Allocating %s txos totaling %s Pmob", len(sublist), txo_total)
+            if txo_total < sum([txo[1] for txo in unspent_utxos[:15]]) + FEE:
+                    await self.cleanup_utxos(account_id, requested,
+                        locked_txos=locked_txos, largest_first=True)
+                    unspent_utxos = await self.filter_utxos(account_id,
+                            locked_txos=locked_txos)
             for utxo in unspent_utxos:
                 utxo_inputs.append(utxo)
                 logging.debug("utxo_inputs are %s", utxo_inputs)
-                input_amt = sum([utxo[1] for utxo in utxo_inputs])
-                if input_amt > txo_total:
-                    send_list = [(address, amt + FEE) for amt in sublist]
+                if sum([utxo[1] for utxo in utxo_inputs]) >= txo_total:
                     tx_prop = await self.build_transaction(
                         account_id,
-                        addresses_and_values=send_list,
+                        addresses_and_values= [(address, amt + FEE) for amt in sublist],
                         input_txo_ids=[utxo[0] for utxo in utxo_inputs],
                         submit=True,
                         comment="txo_allocation",
                     )
                     logging.info(tx_prop.get("result",{}).get("transaction_log"))
-                    await asyncio.sleep(5)
+                    await asyncio.sleep(3)
                     otxos = (
                         tx_prop.get("result", {})
                         .get("transaction_log", {})
                         .get("output_txos")
                     )
+                    if otxos == None:
+                        utxo_inputs = []
+                        continue
                     output_txos.extend(
                         [
                             (utxo.get("txo_id_hex"), int(utxo.get("value_pmob")))
@@ -707,7 +788,7 @@ class Mobster:  # pylint: disable=too-many-public-methods
                         ]
                     )
                     break
-            unspent_utxos = await self.filter_utxos(account_id)
+            unspent_utxos = await self.filter_utxos(account_id, locked_txos=locked_txos)
         return {utxo[0]:utxo[1] for utxo in output_txos}
 
     async def create_account(self, name: str) -> dict:

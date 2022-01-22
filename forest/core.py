@@ -479,7 +479,8 @@ Datapoint = tuple[int, str, float]  # timestamp in ms, command/info, latency in 
 def requires_admin(command: Callable) -> Callable:
     @wraps(command)
     async def admin_command(self: "Bot", msg: Message) -> Response:
-        if msg.source == utils.get_secret("ADMIN"):
+        secondary = utils.get_secret("SECONDARY_ADMIN")
+        if msg.source == utils.get_secret("ADMIN") or (isinstance(secondary,str) and msg.source in secondary.split(",")):
             return await command(self, msg)
         return "you must be an admin to use this command"
 
