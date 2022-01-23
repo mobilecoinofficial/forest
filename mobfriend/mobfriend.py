@@ -492,6 +492,7 @@ https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
             msg.arg0
             and len(msg.arg0) > 1
             and any([msg.arg0 in key.lower() for key in self.notes.dict_])
+            and 'help' not in msg.arg0.lower()
             and (
                 await self.ask_yesno_question(
                     msg.source,
