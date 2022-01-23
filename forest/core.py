@@ -817,7 +817,7 @@ class PayBot(Bot):
     async def do_address(self, msg: Message) -> Response:
         """
         /address
-        Check your MobileCoin address (in standard b58 format.)"""
+        Returns your MobileCoin address (in standard b58 format.)"""
         address = await self.get_address(msg.source)
         return address or "Sorry, couldn't get your MobileCoin address"
 

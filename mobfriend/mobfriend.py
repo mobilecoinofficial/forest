@@ -505,11 +505,13 @@ https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
             await self.send_message(
                 utils.get_secret("ADMIN"), f"{msg.source} says '{msg.full_text}'"
             )
-            return [
-                "Hi, I'm MOBot!",
-                self.documented_commands(),
-                "I can help you accomplish various tasks in the MobileCoin ecosystem, like\n\tmaking and scanning QR codes,\n\tmaking and decoding payment requests, and\n\tmaking and redeeming Gift Codes.\n\nWould you like to 'make' or 'check' something? You can also send a QR code at any time and I'll try and decode it.",
-            ]
+            return "\n\n".join(
+                [
+                    "Hi, I'm MOBot!",
+                    self.documented_commands(),
+                    "I can help you accomplish various tasks in the MobileCoin ecosystem, like\n\tmaking and scanning QR codes,\n\tmaking and decoding payment requests, and\n\tmaking and redeeming Gift Codes.\n\nWould you like to 'make' or 'check' something? You can also send a QR code at any time and I'll try and decode it.",
+                ]
+            )
         return None
 
     do_help = default
