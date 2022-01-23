@@ -52,23 +52,25 @@ class Message:
 
     def __init__(self, blob: dict) -> None:
         self.blob = blob
-        # parsing
-        self.tokens: Optional[list[str]] = None
-        if not self.text:
-            return
+        self.tokens: list[str] = []
+        if self.text:
+            self.parse_text(self.text)
+
+    def parse_text(self, text: str) -> None:
+        "set current self.text and tokenization to text"
         try:
             try:
-                arg0, maybe_json = self.text.split(" ", 1)
-                assert json.loads(self.text)
+                arg0, maybe_json = text.split(" ", 1)
+                assert json.loads(text)
                 self.tokens = maybe_json.split(" ")
             except (json.JSONDecodeError, AssertionError):
                 # replace quote
-                clean_quote_text = self.text
+                clean_quote_text = text
                 for quote in unicode_quotes:
                     clean_quote_text.replace(quote, "'")
                 arg0, *self.tokens = shlex.split(clean_quote_text)
         except ValueError:
-            arg0, *self.tokens = self.text.split(" ")
+            arg0, *self.tokens = text.split(" ")
         self.arg0 = arg0.removeprefix("/").lower()
         if self.tokens:
             self.arg1, self.arg2, self.arg3, *_ = self.tokens + [""] * 3

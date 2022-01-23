@@ -669,16 +669,21 @@ class Bot(Signal):
         logging.debug("found target message %s", repr(self.sent_messages[react.ts]))
         return None
 
-    def is_command(self, msg: Message) -> bool:
+    def mentions_us(self, msg: Message) -> bool:
         # "mentions":[{"name":"+447927948360","number":"+447927948360","uuid":"fc4457f0-c683-44fe-b887-fe3907d7762e","start":0,"length":1}
-        has_slash = msg.full_text and msg.full_text.startswith("/")
-        return has_slash or any(
-            mention.get("number") == self.bot_number for mention in msg.mentions
-        )
+        return any(mention.get("number") == self.bot_number for mention in msg.mentions)
+
+    def is_command(self, msg: Message) -> bool:
+        if msg.full_text:
+            return msg.full_text.startswith("/") or self.mentions_us(msg)
+        return False
 
     def match_command(self, msg: Message) -> str:
         if not msg.arg0:
             return ""
+        # probably wrong
+        if self.mentions_us(msg) and msg.full_text:
+            msg.parse_text(msg.full_text.lstrip("\N{Object Replacement Character} "))
         # happy part direct match
         if hasattr(self, "do_" + msg.arg0):
             return msg.arg0

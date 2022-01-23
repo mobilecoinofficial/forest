@@ -154,7 +154,7 @@ tip_messages = [
 
     Send Imogen a message with the command "/tip" for donation instructions.
 
-    Imogen shares tips with collaborators! If you like an Imogen Imoge, react ❤️  t️o it. When an Imoge gets multiple reactions, the person who prompted the Imoge will be awarded a tip.
+    Imogen shares tips with collaborators! If you like an Imoge, react ❤️  t️o it. When an Imoge gets multiple reactions, the person who prompted the Imoge will be awarded a tip.
     """,
     """
     Want to skip the line? Imogen offers a priority queue for a cost of 0.01 mob per image.
@@ -246,6 +246,24 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         await self.admin(f"need to pay {prompt_author}")
         # await self.send_payment_using_linked_device(prompt_author, await self.mobster.get_balance() * 0.1)
         return None
+
+    def match_command(self, msg: Message) -> str:
+        logging.info("in match cmd %s", msg.text)
+        if msg.full_text and msg.full_text.lower().startswith("computer"):
+            logging.info("startswith computer")
+            kept_length = len(
+                msg.full_text.lower()
+                .removeprefix("computer")
+                .lstrip(", ")
+                .removeprefix("please")
+                .lstrip()
+            )
+            # re-parse the tokenization without the prefix
+            msg.parse_text(msg.text[-kept_length:])
+        return super().match_command(msg)
+
+    async def do_beep(self, _: Message) -> str:
+        return "beep"
 
     async def do_status(self, _: Message) -> str:
         "shows queue size"
