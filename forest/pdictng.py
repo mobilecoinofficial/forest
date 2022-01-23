@@ -19,10 +19,13 @@ SALT = os.getenv("SALT", "ECmG8HtNNMWb4o2bzyMqCmPA6KTYJPCkd")
 # build your AESKEY envvar with this: cat /dev/urandom | head -c 32 | base58
 AESKEY = base58.b58decode(os.getenv("AESKEY", "kWKuomB9Ty3GcJ9yA1yED").encode()) * 2
 
-if not AESKEY or len(AESKEY) not in [16, 32]:
+if not AESKEY or len(AESKEY) not in [16, 32, 64]:
     raise ValueError(
         "Need to set 128b or 256b (16 or 32 byte) AESKEY envvar for persistence. It should be base58 encoded."
     )
+
+if len(AESKEY) == 64:
+    AESKEY = AESKEY[:32]
 
 pAUTH = os.getenv("PAUTH", "")
 
@@ -214,6 +217,7 @@ class aPersistDict:
         self.write_task = asyncio.create_task(self.set(key, value))
 
     async def finish_init(self, **kwargs: Any) -> None:
+        """Does the asynchrnous part of the initialisation process."""
         async with self.rwlock:
             key = f"Persist_{self.tag}_{NAMESPACE}"
             result = await self.client.get(key)
@@ -222,6 +226,7 @@ class aPersistDict:
             self.dict_.update(**kwargs)
 
     async def get(self, key: str, default: Optional[Any] = None) -> Optional[Any]:
+        """Analogous to dict().get() - but async. Waits until writes have completed on the backend before returning results."""
         # always wait for pending writes - where a task has been created but lock not held
         if self.write_task:
             await self.write_task
@@ -234,11 +239,26 @@ class aPersistDict:
         async with self.rwlock:
             return self.dict_.keys()
 
+    async def remove(self, key: str) -> None:
+        """Removes a value from the map, if it exists."""
+        await self.set(key, None)
+        return None
+
+    async def pop(self, key: str, default: Any = None) -> Any:
+        """Returns and removes a value if it exists"""
+        res = await self.get(key, default)
+        await self.set(key, None)
+        return res
 
     async def set(self, key: str, value: Any) -> Any:
         """Sets a value at a given key, returns metadata."""
         async with self.rwlock:
-            self.dict_.update({key: value})
+            if key and value:
+                self.dict_.update({key: value})
+            elif key and not value and key in self.dict_:
+                self.dict_.pop(key)
+            elif key and key not in self.dict_:
+                return None
             key = f"Persist_{self.tag}_{NAMESPACE}"
             value = json.dumps(self.dict_)
             val = await self.client.post(key, value)
