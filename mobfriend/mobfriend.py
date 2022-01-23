@@ -1,5 +1,6 @@
 #!/usr/bin/python3.9
 import os
+import os.path
 import asyncio
 import glob
 import logging
@@ -17,7 +18,7 @@ from amzqr import amzqr
 from scan import scan
 
 import mc_util
-from forest.core import Message, QuestionBot, Response, app, hide, utils
+from forest.core import Message, QuestionBot, Response, app, hide, utils, requires_admin
 from mc_util import mob2pmob, pmob2mob
 from forest.pdictng import aPersistDict
 
@@ -36,23 +37,34 @@ class MobFriend(QuestionBot):
 
     async def handle_message(self, message: Message) -> Response:
         if message.attachments and len(message.attachments):
-            await asyncio.sleep(2)
             attachment_info = message.attachments[0]
             attachment_path = attachment_info.get("fileName")
             timestamp = attachment_info.get("uploadTimestamp")
-            if attachment_path is None:
-                attachment_paths = glob.glob(f"/tmp/unnamed_attachment_{timestamp}.*")
-                if len(attachment_paths) > 0:
-                    attachment_path = attachment_paths.pop()
-                    if ".jpeg" in attachment_path:
-                        os.rename(
-                            attachment_path, attachment_path.replace(".jpeg", ".jpg", 1)
-                        )
-                        attachment_path = attachment_path.replace(".jpeg", ".jpg", 1)
-                    self.user_images[message.source] = f"{attachment_path}"
+            download_success = False
+            download_path = '/dev/null'
+            for _ in range(6):
+                if attachment_path is None:
+                    attachment_paths = glob.glob(f"/tmp/unnamed_attachment_{timestamp}.*")
+                    if len(attachment_paths) > 0:
+                        attachment_path = attachment_paths.pop()
+                        if ".jpeg" in attachment_path:
+                            os.rename(
+                                attachment_path, attachment_path.replace(".jpeg", ".jpg", 1)
+                            )
+                            attachment_path = attachment_path.replace(".jpeg", ".jpg", 1)
+                        download_path = self.user_images[message.source] = f"{attachment_path}"
+                else:
+                    download_path = self.user_images[message.source] = f"/tmp/{attachment_path}"
+                if not (os.path.exists(download_path) and os.path.getsize(download_path) == attachment_info.get("size", 1)):
+                    await asyncio.sleep(4)
+                else:
+                    download_success = True
+                    break
+                download_success = False
+            if download_success:
+                contents = scan(self.user_images[message.source])
             else:
-                self.user_images[message.source] = f"/tmp/{attachment_path}"
-            contents = scan(self.user_images[message.source])
+                contents = None
             if contents:
                 self.user_images.pop(message.source)
                 payload = message.arg1 = contents[-1][1].decode()
@@ -61,7 +73,7 @@ class MobFriend(QuestionBot):
                 )
                 return await self.do_check(message)
             if not message.arg0:
-                return f"OK, saving this template for when you make a QR later!"
+                return f"OK, saving this template as {download_path} for when you make a QR later!"
         return await super().handle_message(message)
 
     async def do_add(self, msg: Message) -> Response:
@@ -95,7 +107,6 @@ class MobFriend(QuestionBot):
                 dict(
                     version=1,
                     level="H",
-                    colorized=False,
                     contrast=1.0,
                     brightness=1.0,
                     picture=image_path,
@@ -170,7 +181,7 @@ class MobFriend(QuestionBot):
         return "Couldn't find a tip in process to cancel!"
 
     @time(REQUEST_TIME)  # type: ignore
-    @hide
+    @requires_admin
     async def do_pay(self, msg: Message) -> Response:
         if msg.arg1:
             payment_notif_sent = await self.send_payment(
