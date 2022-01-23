@@ -2,10 +2,13 @@
 import os
 import os.path
 import asyncio
+import json
 import glob
 import logging
 from decimal import Decimal
 from typing import Any, Dict
+from textwrap import dedent
+
 
 import aioprocessing
 import base58
@@ -13,6 +16,7 @@ from aiohttp import web
 from prometheus_async import aio
 from prometheus_async.aio import time
 from prometheus_client import Summary
+from google.protobuf import json_format
 
 from amzqr import amzqr
 from scan import scan
@@ -41,21 +45,33 @@ class MobFriend(QuestionBot):
             attachment_path = attachment_info.get("fileName")
             timestamp = attachment_info.get("uploadTimestamp")
             download_success = False
-            download_path = '/dev/null'
+            download_path = "/dev/null"
             for _ in range(6):
                 if attachment_path is None:
-                    attachment_paths = glob.glob(f"/tmp/unnamed_attachment_{timestamp}.*")
+                    attachment_paths = glob.glob(
+                        f"/tmp/unnamed_attachment_{timestamp}.*"
+                    )
                     if len(attachment_paths) > 0:
                         attachment_path = attachment_paths.pop()
                         if ".jpeg" in attachment_path:
                             os.rename(
-                                attachment_path, attachment_path.replace(".jpeg", ".jpg", 1)
+                                attachment_path,
+                                attachment_path.replace(".jpeg", ".jpg", 1),
                             )
-                            attachment_path = attachment_path.replace(".jpeg", ".jpg", 1)
-                        download_path = self.user_images[message.source] = f"{attachment_path}"
+                            attachment_path = attachment_path.replace(
+                                ".jpeg", ".jpg", 1
+                            )
+                        download_path = self.user_images[
+                            message.source
+                        ] = f"{attachment_path}"
                 else:
-                    download_path = self.user_images[message.source] = f"/tmp/{attachment_path}"
-                if not (os.path.exists(download_path) and os.path.getsize(download_path) == attachment_info.get("size", 1)):
+                    download_path = self.user_images[
+                        message.source
+                    ] = f"/tmp/{attachment_path}"
+                if not (
+                    os.path.exists(download_path)
+                    and os.path.getsize(download_path) == attachment_info.get("size", 1)
+                ):
                     await asyncio.sleep(4)
                 else:
                     download_success = True
@@ -71,16 +87,21 @@ class MobFriend(QuestionBot):
                 await self.send_message(
                     message.source, f"Found a QR! Contains:\n{payload}"
                 )
-                return await self.do_check(message)
+                # if it's plausibly b58, check it
+                if all([char in base58.alphabet.decode() for char in payload]):
+                    return await self.do_check(message)
+                return None
             if not message.arg0:
                 return f"OK, saving this template as {download_path} for when you make a QR later!"
         return await super().handle_message(message)
 
     async def do_add(self, msg: Message) -> Response:
-        if (msg.arg1 and msg.arg1 != "note") or not await self.ask_yesno_question(
-            msg.source, "Would you like to add a note for future users?"
-        ):
-            return "Okay! If you ever want to add a note, you can say 'add note'!"
+        """Adds a note for other users and the administrators."""
+        if not msg.arg1 and not msg.arg1 == "note":
+            if not await self.ask_yesno_question(
+                msg.source, "Would you like to add a note for future users?"
+            ):
+                return "Okay! If you ever want to add a note, you can say 'add note'!"
         keyword = await self.ask_freeform_question(
             msg.source, "What keywords for your note?"
         )
@@ -158,7 +179,7 @@ class MobFriend(QuestionBot):
             self.no_repay.append(msg.source)
         if msg.source not in self.exchanging_gift_code:
             self.exchanging_gift_code.append(msg.source)
-        return "Your next transaction will be converted into a MobileCoin Gift Code that can be redeemed in other wallets.\nBe sure to include an extra 0.0008MOB to pay the network fees!"
+        return "Your next Signal Pay transaction will be converted into a MobileCoin Gift Code that can be redeemed in other wallets.\nYou may now send the bot MOB. For help, send the word 'payments'.\nBe sure to include an extra 0.0008MOB to pay the network fees!"
 
     async def do_tip(self, msg: Message) -> Response:
         """
@@ -219,6 +240,7 @@ class MobFriend(QuestionBot):
 
     @hide
     async def do_check_balance(self, msg: Message) -> Response:
+        """Checks balance of a gift code."""
         if not msg.arg1:
             return "/check_balance [gift code b58]"
         status = await self.mobster.req_(
@@ -259,7 +281,6 @@ class MobFriend(QuestionBot):
             return status.get("result", {}).get("data")
         if status and status.get("result", {}).get("b58_type") == "TransferPayload":
             return await self.do_check_balance(msg)
-        print(status)
         return status.get("result") or status.get("error")
 
     async def do_show_details(self, msg: Message) -> Response:
@@ -269,7 +290,8 @@ class MobFriend(QuestionBot):
         if msg.arg1:
             details = mc_util.b58_wrapper_to_protobuf(msg.arg1)
             if details:
-                return str(details)
+                output = json_format.MessageToDict(details)
+                return json.dumps(output, indent=2)
             return "Sorry, the provided code has an invalid checksum."
         return "Please provide a base58 code!"
 
@@ -390,6 +412,7 @@ class MobFriend(QuestionBot):
     do_redeem = hide(do_claim)
 
     async def do_make(self, msg: Message) -> Response:
+        """Enter a dialog workflow where you can create a payment request, QR code, or gift code."""
         if not msg.arg1:
             maybe_resp = msg.arg1 = await self.ask_freeform_question(
                 msg.source,
@@ -429,7 +452,39 @@ class MobFriend(QuestionBot):
             return await self.do_makegift(msg)
         return "I'm sorry, I didn't get that."
 
+    @hide
+    async def do_payments(self, _: Message) -> Response:
+        helptext = """If you have payments activated, open the conversation on your Signal mobile app, click on the plus (+) sign and choose payment.\n\nIf you don't have Payments activated follow these instructions to activate it.
+
+1. Update Signal app: https://signal.org/install/
+2. Open Signal, tap on the icon in the top left for Settings. If you don’t see *Payments*, reboot your phone. It can take a few hours.
+3. Tap *Payments* and *Activate Payments*
+
+For more information on Signal Payments visit:
+
+https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
+        return helptext
+
     async def default(self, msg: Message) -> Response:
+        code = msg.arg0
+        if code == "+":
+            return await self.do_payments(msg)
+        elif code == "?":
+            code = msg.arg0 = "help"
+        elif code == "y":
+            return await self.do_yes(msg)
+        elif code == "n":
+            return await self.do_no(msg)
+        elif code == "help" and msg.arg1:
+            try:
+                doc = getattr(self, f"do_{msg.arg1}").__doc__
+                if doc:
+                    if hasattr(getattr(self, f"do_{msg.arg1}"), "hide"):
+                        raise AttributeError("Pretend this never happened.")
+                    return dedent(doc).strip().lstrip("/")
+                return f"{msg.arg1} isn't documented, sorry :("
+            except AttributeError:
+                return f"No such command '{msg.arg1}'"
         if msg.arg0 and msg.arg0.isalnum() and len(msg.arg0) > 100 and not msg.tokens:
             msg.arg1 = msg.full_text
             return await self.do_check(msg)
@@ -453,7 +508,8 @@ class MobFriend(QuestionBot):
             )
             return [
                 "Hi, I'm MOBot!",
-                "I can help you accomplish various tasks in the MobileCoin ecosystem, like\n making and scanning QR codes,\n making and decoding payment requests, and\n making and redeeming Gift Codes.\n\nWould you like to 'make' or 'check' something? You can also send a QR code at any time and I'll try and decode it.",
+                self.documented_commands(),
+                "I can help you accomplish various tasks in the MobileCoin ecosystem, like\n\tmaking and scanning QR codes,\n\tmaking and decoding payment requests, and\n\tmaking and redeeming Gift Codes.\n\nWould you like to 'make' or 'check' something? You can also send a QR code at any time and I'll try and decode it.",
             ]
         return None
 
