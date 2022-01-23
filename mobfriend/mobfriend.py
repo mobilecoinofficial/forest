@@ -381,12 +381,12 @@ class MobFriend(QuestionBot):
         await self._actually_build_wait_and_send_qr(payment_request_b58, msg.source)
         return None
 
-    async def do_claim(self, msg: Message) -> Response:
+    async def do_redeem(self, msg: Message) -> Response:
         """
-        /claim [base58 gift code]
+        /redeem [base58 gift code]
         Claims a gift code! Redeems a provided code to the bot's wallet and sends the redeemed balance."""
         if not msg.arg1:
-            return "/claim [base58 gift code]"
+            return "/redeem [base58 gift code]"
         check_status = await self.mobster.req_(
             "check_gift_code_status", gift_code_b58=msg.arg1
         )
@@ -408,8 +408,6 @@ class MobFriend(QuestionBot):
             amount_mob = pmob2mob(amount_pmob - FEE).quantize(Decimal("1.0000"))
             return f"Claimed a gift code containing {amount_mob}MOB.\nTransaction ID: {status.get('result', {}).get('txo_id')}"
         return f"Sorry, that doesn't look like a valid code.\nDEBUG: {status.get('result')}"
-
-    do_redeem = hide(do_claim)
 
     async def do_make(self, msg: Message) -> Response:
         """Enter a dialog workflow where you can create a payment request, QR code, or gift code."""
