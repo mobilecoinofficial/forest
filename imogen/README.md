@@ -1,17 +1,14 @@
 # Imogen: Imoge Generator
 
-Imogen is a Signal Bot that generates images using VQGan and CLIP. These images are often affectionately referred to as Imoges. To have Imogen Generate an Imoge for you you can join one of the group chats or message Imogen directly.
+Imogen is a Signal Bot that generates images using VQGan and CLIP. These images are often affectionately referred to as Imoges. To have Imogen Generate an Imoge for you you can join Imogen's Signal Group Chat.
 
-## Imogen Group Chats ##
 
-[Imogen Public](https://signal.group/#CjQKIBMsSPcIQYNjlSA1C1NqvapdjiZX31bdrCpH4ZI9BbwEEhAHOP7DVF1GjizAzYmOnDcY), the original Imogen group.
+### Imogen on Signal
 
-[I, Imogen](https://signal.group/#CjQKIEP344g-nF0eIcaZkORbofLzTSlD5DKOUeGEFbus-w9uEhBzb6Q51MWZw6nSDkGLhwKN), newer Imogen group.
+[I, Imogen](https://signal.group/#CjQKIEP344g-nF0eIcaZkORbofLzTSlD5DKOUeGEFbus-w9uEhBzb6Q51MWZw6nSDkGLhwKN), Signal Group Chat where you can request Imoges.
+<br>
 
-[Imogen (direct message)](https://signal.me/#p/+14159495511
-)
-
-## Twitter ##
+### Imogen on Twitter ###
 
 Imogen posts all her images on [her Twitter account](https://twitter.com/dreambs3). With that in mind, please be mindful of your prompts to Imogen. Ask an administrator if you want an Imoge taken down from Twitter.
 
@@ -58,6 +55,9 @@ Imogen can draw in many more styles than those, try asking for a style you like,
 ## Priority Queue ##
 
 Imogen features a priority queue that will guarantee your image is generated sooner in times of high activity. To make use of Imogen's paid features you must send her a payment with Signal Pay. To do this first make sure you have Payments enabled on Signal. Then DM Imogen and attach a payment using the + button.
+
+[DM Imogen](https://signal.me/#p/+14159495511
+)
 
 <img width=250px src="examples/payment.jpg">  <img width=250px src="examples/payment3.jpg"> 
 
