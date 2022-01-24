@@ -939,15 +939,26 @@ class PayBot(Bot):
         # wants it private.
         if confirm_tx_timeout:
             # putting the account_id into the request logs it to full service,
-            await self.mob_request(
+            tx_result = await self.mob_request(
                 "submit_transaction",
                 tx_proposal=prop,
                 comment=params.get("comment", ""),
                 account_id=account_id,
             )
+
         else:
-            # if you omit account_id, it doesn't get logged
-            await self.mob_request("submit_transaction", tx_proposal=prop)
+            # if you omit account_id, tx doesn't get logged. Good for privacy,
+            # but transactions can't be confirmed by the sending party (you)!
+            tx_result = await self.mob_request("submit_transaction", tx_proposal=prop)
+
+        if not isinstance(tx_result, dict) or not tx_result.get("result"):
+            # avoid sending tx receipt if there's a tx submission error
+            # and send error message back to tx sender
+            logging.warning("tx submit error for tx_id: %s", tx_id)
+            msg = MessageParser({})
+            msg.status, msg.transaction_log_id = "tx_status_failed", tx_id
+            return msg
+
         receipt_resp = await self.mob_request(
             "create_receiver_receipts",
             tx_proposal=prop,
