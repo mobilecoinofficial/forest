@@ -14,7 +14,32 @@ So, let's get started
 
 Auxin CLI is a rust-based Signal command line client that allows sending and receiving Signal messages. It is not yet a full replacement to Signal-cli, but it also supports certain features of Signal that Signal-cli does not. Namely, payments.
 
-Here's how to install Signal-cli and activate Payments for your bot's signal account.
+Here's how to install Auxin-cli and activate Payments for your bot's signal account.
+
+### Install prerequisites ###
+
+You'll need a working rust enviornment on your system to build Auxin. 
+- [Follow these instructions to install rust on your computer.](https://www.rust-lang.org/learn/get-started) 
+- Then change your default rust toolchain to the [nightly channel](https://rust-lang.github.io/rustup/concepts/channels.html):
+    ```bash
+    rustup default nightly
+    ```
+- Finally verify that rust installed correctly by running `cargo --version`:
+    ```bash
+    cargo --version
+    ```
+    ```bash
+    cargo 1.60.0-nightly (95bb3c92b 2022-01-18)
+    ```  
+<br>
+
+### Building Auxin-cli from source
+
+Once you have rust set up properly you can build Auxin-cli from source. 
+
+- Clone the [Auxin repo](https://github.com/mobilecoinofficial/auxin)
+    ``` bash
+    ```
 
 ## Full Service ##
 
