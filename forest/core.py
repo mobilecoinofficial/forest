@@ -40,6 +40,7 @@ from ulid2 import generate_ulid_as_base32 as get_uid
 import mc_util
 from forest import autosave, datastore, payments_monitor, pghelp, utils, string_dist
 from forest.message import AuxinMessage, Message, StdioMessage
+from forest.health_service import create_handled_task
 
 JSON = dict[str, Any]
 Response = Union[str, list, dict[str, str], None]
@@ -537,10 +538,23 @@ class Bot(Signal):
         self.restart_task = asyncio.create_task(
             self.start_process()
         )  # maybe cancel on sigint?
-        self.queue_task = asyncio.create_task(self.handle_messages())
+        self.queue_task = create_handled_task(
+            self.handle_messages(),
+            message="handle_messages failed, restarting",
+            error_handler=self.restart_handle_messages,
+        )
         if utils.get_secret("MONITOR_WALLET"):
             # currently spams and re-credits the same invoice each reboot
             asyncio.create_task(self.mobster.monitor_wallet())
+
+    async def restart_handle_messages(self) -> None:
+        logging.info("Info attempting to restart handle_messages")
+        self.queue = create_handled_task(
+            self.handle_messages(),
+            message="handle_messages failed, restarting",
+            error_handler=self.restart_handle_messages,
+        )
+        logging.info("Handle message task restarted")
 
     async def handle_messages(self) -> None:
         """Read messages from the queue and pass each message to handle_message
