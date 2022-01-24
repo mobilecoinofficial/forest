@@ -35,7 +35,7 @@ class MobFriend(QuestionBot):
     exchanging_gift_code: list[str] = []
     user_images: Dict[str, str] = {}
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.notes = aPersistDict("notes")
         super().__init__()
 
@@ -77,10 +77,9 @@ class MobFriend(QuestionBot):
                     download_success = True
                     break
                 download_success = False
-            if download_success:
-                contents = scan(self.user_images[message.source])
-            else:
-                contents = None
+            contents = (
+                scan(self.user_images[message.source]) if download_success else None
+            )
             if contents:
                 self.user_images.pop(message.source)
                 payload = message.arg1 = contents[-1][1].decode()
@@ -88,7 +87,7 @@ class MobFriend(QuestionBot):
                     message.source, f"Found a QR! Contains:\n{payload}"
                 )
                 # if it's plausibly b58, check it
-                if all([char in base58.alphabet.decode() for char in payload]):
+                if all(char in base58.alphabet.decode() for char in payload):
                     return await self.do_check(message)
                 return None
             if not message.arg0:
@@ -106,11 +105,14 @@ class MobFriend(QuestionBot):
             msg.source, "What keywords for your note?"
         )
         body = await self.ask_freeform_question(msg.source, "What should the note say?")
-        blob = dict(From=msg.uuid.split("-")[-1], Keywords=keyword, Message=f'"{body}"')
+        blob = dict(
+            From=(msg.uuid or "").split("-")[-1], Keywords=keyword, Message=f'"{body}"'
+        )
         await self.send_message(msg.source, blob)
         if not await self.ask_yesno_question(msg.source, "Share this with others?"):
             return "Okay, feel free to try again."
         await self.notes.set(keyword, blob)
+        return "Saved!"
 
     async def _actually_build_wait_and_send_qr(
         self, text: str, user_id: str, image_path: Any = None
@@ -288,7 +290,7 @@ class MobFriend(QuestionBot):
         /showdetails [base58 code]
         Returns detailed information about a base58 code."""
         if msg.arg1:
-            details = mc_util.b58_wrapper_to_protobuf(msg.arg1)
+            details = mc_util.b58_wrapper_to_protobuf(msg.arg1 or "")
             if details:
                 output = json_format.MessageToDict(details)
                 return json.dumps(output, indent=2)
@@ -463,11 +465,11 @@ For more information on Signal Payments visit:
 https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
         return helptext
 
-    async def default(self, msg: Message) -> Response:
-        code = msg.arg0
+    async def default(self, message: Message) -> Response:
+        msg, code = message, message.arg0
         if code == "+":
             return await self.do_payments(msg)
-        elif code == "?":
+        if code == "?":
             code = msg.arg0 = "help"
         elif code == "y":
             return await self.do_yes(msg)
@@ -487,10 +489,12 @@ https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
             msg.arg1 = msg.full_text
             return await self.do_check(msg)
         if (
-            msg.arg0
-            and len(msg.arg0) > 1
-            and any([msg.arg0 in key.lower() for key in self.notes.dict_])
-            and "help" not in msg.arg0.lower()
+            msg.arg0  # if there's a word
+            and len(msg.arg0) > 1  # not a character
+            and any(
+                [msg.arg0 in key.lower() for key in self.notes.dict_]
+            )  # and it shows up as a keyword for a note
+            and "help" not in msg.arg0.lower()  # and it's not 'help'
             and (
                 await self.ask_yesno_question(
                     msg.source,
@@ -498,6 +502,7 @@ https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
                 )
             )
         ):
+            # ask for confirmation and then return all notes
             for keywords in self.notes.dict_:
                 if msg.arg0 in keywords.lower():
                     await self.send_message(msg.source, await self.notes.get(keywords))
