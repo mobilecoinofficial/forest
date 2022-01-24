@@ -841,7 +841,7 @@ class AirDropBot(PayBot):
                     resp += "Make the drop to current entrants by typing /make_drop\n\n"
                     resp += "Get airdrop stats with /drop_stats "
                     resp += "adding -verbose or -utxos after /drop_stats will give detailed information\n\n"
-                    resp += "Cancel the drop with /cancel_drop\n"
+                    resp += "Cancel the drop with /cancel_airdrop\n"
                     return resp
 
                 resp += "Hello! An airdrop is in progress. "
@@ -1380,7 +1380,10 @@ class AirDropBot(PayBot):
                     await self.db_manager.create_simple_airdrop(
                         name, block_height, "simple"
                     )
-                    return f"Airdrop launched at block: {block_height}, {self.name} will now accept payments. Airdrop UUID is: {name}"
+                    resp = f"Airdrop launched at block: {block_height}\n{self.bot_number} "
+                    resp += f"will now accept payments. Airdrop UUID is:{name}\n\n"
+                    resp += "You can now announce this airdrop!"
+                    return resp
                 amount_to_add = max(0, conf.max_entrants - txos_drop) * (
                     conf.drop_amount + FEE_MOB
                 ) + max(0, conf.max_entrants - txos_entry) * (
