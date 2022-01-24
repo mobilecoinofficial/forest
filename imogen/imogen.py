@@ -68,6 +68,7 @@ QueueExpressions = pghelp.PGExpressions(
         reaction_count INTEGER DEFAULT 0,
         reaction_map JSONB DEFAULT jsonb '{}',
         elapsed_gpu INT DEFAULT null,
+        seed TEXT,
         loss FLOAT DEFAULT null,
         filepath TEXT DEFAULT null,
         version TEXT DEFAULT null,
@@ -75,6 +76,7 @@ QueueExpressions = pghelp.PGExpressions(
         url TEXT DEFAULT 'https://imogen-renaissance.fly.dev/',
         sent_ts BIGINT DEFAULT null,
         errors INTEGER DEFAULT 0);""",
+    enqueue_any="SELECT enqueue_prompt(prompt:=$1, _author:=$2, signal_ts:=$3, group_id:=$4, params:=$5, url:=$6)",
     enqueue_free="SELECT enqueue_free_prompt(prompt:=$1, _author:=$2, signal_ts:=$3, group_id:=$4, params:=$5, url:=$6)",
     enqueue_paid="SELECT enqueue_paid_prompt(prompt:=$1, author:=$2, signal_ts:=$3, group_id:=$4, params:=$5, url:=$6)",
     length="SELECT count(id) AS len FROM {self.table} WHERE status='pending' OR status='assigned';",
@@ -378,6 +380,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
             group=msg.group or "",
             params=params,
         )
+        # result = (await self.queue.enqueue_any(*prompt.as_args()))[0].get("enqueue_prompt")
         if paid:
             result = (await self.queue.enqueue_paid(*prompt.as_args()))[0].get(
                 "enqueue_paid_prompt"
@@ -403,20 +406,23 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         return f"you are #{result['queue_length']} in{priority} line{deets}"
 
     async def do_imagine(self, msg: Message) -> str:
-        """/imagine [prompt]
+        """
+        /imagine [prompt]
         Generates an image based on your prompt.
         Request is handled in the free queue, every free request is addressed and generated sequentially.
         """
         return await self.enqueue_prompt(msg, {}, True, False)
 
     async def do_priority(self, msg: Message) -> str:
-        """/imagine [prompt]
+        """
+        /imagine [prompt]
         Like /imagine but places your request on a priority queue. Priority items get dedicated workers and bypass the free queue.
         """
         return await self.enqueue_prompt(msg, {}, True, True)
 
     async def do_paint(self, msg: Message) -> str:
-        """/paint <prompt>
+        """
+        /paint <prompt>
         Generate an image using the WikiArt dataset and your prompt, generates painting-like images. Requests handled on the free queue.
         """
         params = {
@@ -426,7 +432,8 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         return await self.enqueue_prompt(msg, params, False, False)
 
     async def do_priority_paint(self, msg: Message) -> str:
-        """/priority_paint <prompt>
+        """
+        /priority_paint <prompt>
         Like /paint but places your request on the priority queue. Priority items get dedicated workers when available and bypass the free queue.
         """
         params = {
@@ -483,6 +490,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
 
     @hide
     async def do_spitball(self, msg: Message) -> str:
+        "Spitball a prompt"
         prompt = (
             "text prompts for a neural network that are aiming to be artistic, "
             'short descriptive phrases of bizarre, otherworldly scenes: "'
@@ -560,6 +568,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         return f"Thank you for tipping ${amount:.2f}"
 
     async def do_signalpay(self, msg: Message) -> Response:
+        "Learn about sending payments on Signal"
         if msg.group:
             await self.send_message(
                 msg.source, dedent(messages["activate_payments"]).strip()

@@ -61,7 +61,7 @@ class Message:
         try:
             try:
                 arg0, maybe_json = text.split(" ", 1)
-                assert json.loads(text)
+                assert json.loads(maybe_json)
                 self.tokens = maybe_json.split(" ")
             except (json.JSONDecodeError, AssertionError):
                 # replace quote
