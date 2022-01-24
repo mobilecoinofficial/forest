@@ -230,6 +230,11 @@ class aPersistDict:
         async with self.rwlock:
             return self.dict_.get(key, default)
 
+    async def keys(self) -> List[str]:
+        async with self.rwlock:
+            return self.dict_.keys()
+
+
     async def set(self, key: str, value: Any) -> Any:
         """Sets a value at a given key, returns metadata."""
         async with self.rwlock:
