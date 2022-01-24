@@ -283,9 +283,9 @@ class MobFriend(QuestionBot):
             return await self.do_check_balance(msg)
         return status.get("result") or status.get("error")
 
-    async def do_show_details(self, msg: Message) -> Response:
+    async def do_showdetails(self, msg: Message) -> Response:
         """
-        /show_details [base58 code]
+        /showdetails [base58 code]
         Returns detailed information about a base58 code."""
         if msg.arg1:
             details = mc_util.b58_wrapper_to_protobuf(msg.arg1)
