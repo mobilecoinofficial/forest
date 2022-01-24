@@ -1,6 +1,6 @@
 # Imogen: Imoge Generator
 
-Imogen is a Signal Bot that generates Images using VQGan and CLIP. To have Imogen Generate an Imoge for you you can join one of the group chats or message Imogen directly.
+Imogen is a Signal Bot that generates images using VQGan and CLIP. These images are often affectionately referred to as Imoges. To have Imogen Generate an Imoge for you you can join one of the group chats or message Imogen directly.
 
 ## Imogen Group Chats ##
 
@@ -13,7 +13,7 @@ Imogen is a Signal Bot that generates Images using VQGan and CLIP. To have Imoge
 
 ## Twitter ##
 
-Imogen posts all her images on (her Twitter account)[].
+Imogen posts all her images on [her Twitter account](https://twitter.com/dreambs3). With that in mind, please be mindful of your prompts to Imogen. Ask an administrator if you want an Imoge taken down from Twitter.
 
 # How To Use #
 
@@ -72,6 +72,10 @@ You can now use the `/priority` command to requests images on the priority queue
 You can check your current balance with `/balance`.
 
 <img width=250px src="examples/balance.jpg">
+
+### Additional Perks of the Priority Queue ###
+
+There's a per person limit of how many prompts you can have Imogen generate at once. Priority requests bypass that Limit. There might also be additional paid prompt in the future. If you have a good idea for a paid feature, please submit it as a feature request.
 
  
 <br>
@@ -145,7 +149,7 @@ Example:
 You can combine the starting image and the video functionality to make images that dissolve into imoges. 
 Attach an image and use one of the generative commands starting with Slash.
 with image attached 
-`/imagine // greek bust`
+`/imagine // cake`
 
 
 <img width=250px src="examples/video3.png">  <img width=250px src="examples/video4.gif">
@@ -158,5 +162,5 @@ Imogen is composed of two separate systems. There's the machine learning program
 
 We welcome pull requests, and issues, but most importantly you can contribute to Imogen by collaborating with her. Join the Signal Groups, make art with her, use her paid features and tip her. 
 
-There's often discussions about the science and machine learning models behind Imogen on these groups, and you can help by participating on those.
+There's often discussions about the science and machine learning models behind Imogen on these groups, and you can help by participating in those discussions.
 
