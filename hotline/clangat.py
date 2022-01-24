@@ -29,6 +29,7 @@ from mc_util import pmob2mob
 FEE = int(1e12 * 0.0004)
 REQUEST_TIME = Summary("request_processing_seconds", "Time spent processing request")
 
+
 class QuestionBot(PayBot):
     def __init__(self):
         self.pending_confirmations: dict[str, asyncio.Future[bool]] = {}
@@ -391,13 +392,13 @@ class ClanGat(PayBotPro):
             return f"Sorry, it doesn't look like you own {msg.arg1}."
         parameters = []
         for state_ in self.state.keys():
-            if 'egg' not in state_ and msg.arg1 in self.state[state_]:
+            if "egg" not in state_ and msg.arg1 in self.state[state_]:
                 parameters += [state_]
         if await self.ask_yesno_question(
             msg.source, f"Are you sure you want to remove {msg.arg1} from {parameters}?"
         ):
             for state_ in self.state.keys():
-                if 'egg' not in state_ and msg.arg1 in self.__getattribute__(state_):
+                if "egg" not in state_ and msg.arg1 in self.__getattribute__(state_):
                     self.__getattribute__(state_).pop(msg.arg1)
                     self.__getattribute__(state_).save_state()
             return f"Okay, removed {msg.arg1}"
