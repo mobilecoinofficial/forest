@@ -44,7 +44,7 @@ from forest.message import AuxinMessage, Message, StdioMessage
 JSON = dict[str, Any]
 Response = Union[str, list, dict[str, str], None]
 
-roundtrip_histogram = Histogram("roundtrip_h", "Roundtrip message response time")
+roundtrip_histogram = Histogram("roundtrip_h", "Roundtrip message response time")  # type: ignore
 roundtrip_summary = Summary("roundtrip_s", "Roundtrip message response time")
 
 MessageParser = AuxinMessage if utils.AUXIN else StdioMessage
@@ -593,8 +593,8 @@ class Bot(Signal):
             self.auxin_roundtrip_latency.append(
                 (message.timestamp, note, roundtrip_delta)
             )
-            roundtrip_summary.observe(roundtrip_delta)
-            roundtrip_histogram.observe(roundtrip_delta)
+            roundtrip_summary.observe(roundtrip_delta)  # type: ignore
+            roundtrip_histogram.observe(roundtrip_delta)  # type: ignore
             logging.info("noted roundtrip time: %s", roundtrip_delta)
             if utils.get_secret("ADMIN_METRICS"):
                 await self.admin(
@@ -640,9 +640,6 @@ class Bot(Signal):
         if cmd := self.match_command(message):
             # invoke the function and return the response
             return await getattr(self, "do_" + cmd)(message)
-        if message.arg0 and not message.group:
-            suggest_help = ' Try "help".' if hasattr(self, "do_help") else ""
-            return f"Sorry! Command {message.arg0} not recognized!" + suggest_help
         if message.text == "TERMINATE":
             return "signal session reset"
         return await self.default(message)
@@ -820,7 +817,7 @@ class PayBot(Bot):
     async def do_address(self, msg: Message) -> Response:
         """
         /address
-        Check your MobileCoin address (in standard b58 format.)"""
+        Returns your MobileCoin address (in standard b58 format.)"""
         address = await self.get_address(msg.source)
         return address or "Sorry, couldn't get your MobileCoin address"
 
