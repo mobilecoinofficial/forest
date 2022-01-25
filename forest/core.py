@@ -44,8 +44,8 @@ from forest.message import AuxinMessage, Message, StdioMessage
 JSON = dict[str, Any]
 Response = Union[str, list, dict[str, str], None]
 
-roundtrip_histogram = Histogram("roundtrip_h", "Roundtrip message response time")
-roundtrip_summary = Summary("roundtrip_s", "Roundtrip message response time")
+roundtrip_histogram = Histogram("roundtrip_h", "Roundtrip message response time")  # type: ignore
+roundtrip_summary = Summary("roundtrip_s", "Roundtrip message response time")  # type: ignore
 
 MessageParser = AuxinMessage if utils.AUXIN else StdioMessage
 logging.info("Using message parser: %s", MessageParser)
@@ -593,8 +593,8 @@ class Bot(Signal):
             self.auxin_roundtrip_latency.append(
                 (message.timestamp, note, roundtrip_delta)
             )
-            roundtrip_summary.observe(roundtrip_delta)
-            roundtrip_histogram.observe(roundtrip_delta)
+            roundtrip_summary.observe(roundtrip_delta)  # type: ignore
+            roundtrip_histogram.observe(roundtrip_delta)  # type: ignore
             logging.info("noted roundtrip time: %s", roundtrip_delta)
             if utils.get_secret("ADMIN_METRICS"):
                 await self.admin(
