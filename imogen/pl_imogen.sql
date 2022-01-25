@@ -23,7 +23,7 @@ RETURNS enqueue_result AS $$
             INSERT INTO imogen_ledger (account, amount_usd_cents, memo, ts) 
                 VALUES(_author, -10, prompt_id::text, CURRENT_TIMESTAMP);
             SELECT true, true, get_balance(_author) >= 0.10 INTO result.success, result.paid, result.balance_remaining;
-            SELECT coalesce(count(distinct hostname), 0) FROM prompt_queue WHERE status='assigned' INTO result.workers;
+            SELECT coalesce(count(distinct hostname), 0) FROM prompt_queue WHERE status='assigned'AND paid=true INTO result.workers;
             SELECT count(*) FROM prompt_queue 
                 WHERE (status='pending' OR status='assigned') AND paid=true 
                 INTO result.queue_length;
@@ -31,7 +31,7 @@ RETURNS enqueue_result AS $$
             INSERT INTO prompt_queue (prompt, paid, author, signal_ts, group_id, params, url)
                 VALUES (prompt, false, _author, signal_ts, group_id, params, url);
             SELECT true, false, false INTO result.success, result.paid, result.balance_remaining;
-            SELECT coalesce(count(distinct hostname), 0) FROM prompt_queue WHERE status='assigned' INTO result.workers;
+            SELECT coalesce(count(distinct hostname), 0) FROM prompt_queue WHERE status='assigned' AND paid=false INTO result.workers;
             SELECT count(*) FROM prompt_queue 
                 WHERE (status='pending' OR status='assigned') AND paid=False
                 INTO result.queue_length;
