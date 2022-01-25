@@ -45,7 +45,7 @@ JSON = dict[str, Any]
 Response = Union[str, list, dict[str, str], None]
 
 roundtrip_histogram = Histogram("roundtrip_h", "Roundtrip message response time")  # type: ignore
-roundtrip_summary = Summary("roundtrip_s", "Roundtrip message response time")  # type: ignore
+roundtrip_summary = Summary("roundtrip_s", "Roundtrip message response time")
 
 MessageParser = AuxinMessage if utils.AUXIN else StdioMessage
 logging.info("Using message parser: %s", MessageParser)
