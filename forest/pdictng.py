@@ -8,7 +8,8 @@ import hashlib
 import json
 import os
 import time
-from typing import Union, Any, Optional, cast
+import logging
+from typing import Union, Any, Optional, cast, List
 
 import aiohttp
 import base58
@@ -209,9 +210,11 @@ class aPersistDict:
         return f"a{self.dict_}"
 
     async def __getitem__(self, key: str) -> Any:
+        logging.debug("get:" + self.tag)
         return await self.get(key)
 
     def __setitem__(self, key: str, value: Union[float, str]) -> None:
+        logging.debug("setitem:" + self.tag)
         if self.write_task and not self.write_task.done():
             raise ValueError("Can't set value. write_task incomplete.")
         self.write_task = asyncio.create_task(self.set(key, value))
@@ -227,6 +230,7 @@ class aPersistDict:
 
     async def get(self, key: str, default: Optional[Any] = None) -> Optional[Any]:
         """Analogous to dict().get() - but async. Waits until writes have completed on the backend before returning results."""
+        logging.debug("get:" + self.tag)
         # always wait for pending writes - where a task has been created but lock not held
         if self.write_task:
             await self.write_task
@@ -236,30 +240,56 @@ class aPersistDict:
             return self.dict_.get(key, default)
 
     async def keys(self) -> List[str]:
+        logging.debug("keys:" + self.tag)
         async with self.rwlock:
             return self.dict_.keys()
 
     async def remove(self, key: str) -> None:
         """Removes a value from the map, if it exists."""
+        logging.debug("remove:" + self.tag)
         await self.set(key, None)
         return None
 
+    async def extend(self, key: str, value: str) -> None:
+        """Since one cannot simply add to a coroutine, this function exists.
+        If the key exists and the value is None, or an empty array, the provided value is added to a(the) list at that value."""
+        logging.debug("extend:" + self.tag)
+        value_to_extend = []
+        async with self.rwlock:
+            value_to_extend = self.dict_.get(key, [])
+            value_to_extend.append(value)
+            return await self._set(key, value_to_extend)
+
+    async def remove_from(self, key: str, not_value: str) -> None:
+        """Removes a value specified from the list, if present."""
+        logging.debug("remove_from:" + self.tag)
+        async with self.rwlock:
+            values_without_specified = [
+                el for el in self.dict_.get(key, []) if not_value != el
+            ]
+            return await self._set(key, values_without_specified)
+
     async def pop(self, key: str, default: Any = None) -> Any:
         """Returns and removes a value if it exists"""
+        logging.debug("pop:" + self.tag)
         res = await self.get(key, default)
         await self.set(key, None)
         return res
 
+    async def _set(self, key: str, value: Any) -> Any:
+        """Sets a value at a given key, returns metadata.
+        This function exists so *OTHER FUNCTIONS* holding the lock can set values."""
+        logging.debug("_set:" + self.tag)
+        if key != None and value != None:
+            self.dict_.update({key: value})
+        elif key and value != None and key in self.dict_:
+            self.dict_.pop(key)
+        key = f"Persist_{self.tag}_{NAMESPACE}"
+        value = json.dumps(self.dict_)
+        return await self.client.post(key, value)
+
     async def set(self, key: str, value: Any) -> Any:
         """Sets a value at a given key, returns metadata."""
+        logging.debug("set:" + self.tag)
         async with self.rwlock:
-            if key and value:
-                self.dict_.update({key: value})
-            elif key and not value and key in self.dict_:
-                self.dict_.pop(key)
-            elif key and key not in self.dict_:
-                return None
-            key = f"Persist_{self.tag}_{NAMESPACE}"
-            value = json.dumps(self.dict_)
-            val = await self.client.post(key, value)
-            return val
+            return await self._set(key, value)
