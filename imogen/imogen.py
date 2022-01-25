@@ -84,6 +84,10 @@ QueueExpressions = pghelp.PGExpressions(
     list_queue="SELECT prompt FROM {self.table} WHERE status='pending' OR status='assigned' ORDER BY signal_ts ASC",
     react="UPDATE {self.table} SET reaction_map = reaction_map || $2::jsonb WHERE sent_ts=$1;",
     last_active_group="SELECT group_id FROM prompt_queue WHERE author=$1 AND group_id<>'' ORDER BY id DESC LIMIT 1",
+    costs="""select
+    (select 0.860*sum(elapsed_gpu)/3600.0 from prompt_queue where inserted_ts > (select min(inserted_ts) from prompt_queue where paid=true and author<>'+***REMOVED***') and inserted_ts is not null and author<>'+***REMOVED***') as cost,
+    (select sum(amount_usd_cents/100.0) from imogen_ledger where amount_usd_cents>0 and account<>'+***REMOVED***') as revenue;
+    """,
 )
 
 openai.api_key = utils.get_secret("OPENAI_API_KEY")
@@ -107,11 +111,9 @@ if not utils.LOCAL:
 worker_status = "kubectl get pods -o json| jq '.items[] | {(.metadata.name): .status.phase}' | jq -s add"
 jobcount = r"kubectl get jobs --no-headers | awk '$2 ~ /0\/1/ && $1 ~ /paid/ {print $1}' | wc -l"
 
-
 password, rest = utils.get_secret("REDIS_URL").removeprefix("redis://:").split("@")
 host, port = rest.split(":")
 redis = aioredis.Redis(host=host, port=int(port), password=password)
-
 
 messages = dict(
     no_credit="""
@@ -120,6 +122,9 @@ messages = dict(
     Priority requests cost $0.10 each, bypass the free queue, and get dedicated workers when available.
 
     Please sent Imogen a payment. You can learn more about sending payments with the /signalpay command.
+    """,
+    last_paid="""
+    You balance has reached $0. Please re-up your support of Imogen by sending a payment. This will continue your premium membership and priority queuing!
     """,
     rate_limit="Slow down",
     activate_payments="""
@@ -150,20 +155,20 @@ messages = dict(
     """,
 )
 
-tip_messages = [
+auto_messages = [
     """
     If you like Imogen's art, you can show your support by donating within Signal Payments.
 
     Send Imogen a message with the command "/tip" for donation instructions.
 
-    Imogen shares tips with collaborators! If you like an Imoge, react ❤️  t️o it. When an Imoge gets multiple reactions, the person who prompted the Imoge will be awarded a tip.
+    Imogen shares tips with collaborators! If you like an Imoge, react t️o it. When an Imoge gets multiple reactions, the person who prompted the Imoge will be awarded a tip.
     """,
     """
     Want to skip the line? Imogen offers a priority queue for a cost of 0.01 mob per image.
 
     DM funds to Imogen as a Signal payment and then you can submit priority request with /priority or tip Imogen with /tip [amnt].
 
-    Just want to tip Imogen? Send Imogen a payment with the note set to "Tip"
+    Just want to tip Imogen? Send Imogen a payment with the note set to "tip"
     """,
 ]
 
@@ -250,7 +255,6 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         return None
 
     def match_command(self, msg: Message) -> str:
-        logging.info("in match cmd %s", msg.text)
         if msg.full_text and msg.full_text.lower().startswith("computer"):
             logging.info("startswith computer")
             kept_length = len(
@@ -297,6 +301,10 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         "shows worker state"
         return json.loads(await get_output(worker_status)) or "no workers running"
 
+    @hide
+    async def do_costs(self, _: Message) -> str:
+        return repr((await self.queue.costs())[0])
+
     async def do_balance(self, msg: Message) -> Response:
         "returns your Imogen balance in USD for priority requests and tips"
         balance = await self.get_user_balance(msg.source)
@@ -324,7 +332,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         rate = self.image_rate_cents / 100
         prompts = int(value / rate)
         total = int(await self.get_user_balance(msg.source) / rate)
-        return f"You now have an additional {prompts} priority prompts. Total: {total}"
+        return f"Thank you for supporting Imogen! You now have an additional {prompts} priority prompts. Total: {total}. Your prompts will automatically get dedicated workers and bypass the free queue."
 
     async def ensure_free_worker(self) -> bool:
         # maybe check for the case of one running/completed pod and zero assigned workers
@@ -337,6 +345,9 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
 
     async def ensure_paid_worker(self, enqueue_result: dict) -> bool:
         queue_length = enqueue_result["queue_length"]
+        workers_in_db = enqueue_result["workers"]
+        if workers_in_db and queue_length / workers_in_db < 5:
+            return False
         workers = int(await get_output(jobcount))
         if workers == 0 or queue_length / workers > 5 and workers < 6:
             spec = open("paid-imagegen-job.yaml").read()
@@ -366,7 +377,6 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         msg: Message,
         params: dict,
         attachments: bool = False,
-        paid: bool = False,
     ) -> str:
         if not msg.text.strip():
             return "A prompt is required"
@@ -380,21 +390,20 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
             group=msg.group or "",
             params=params,
         )
-        # result = (await self.queue.enqueue_any(*prompt.as_args()))[0].get("enqueue_prompt")
-        if paid:
-            result = (await self.queue.enqueue_paid(*prompt.as_args()))[0].get(
-                "enqueue_paid_prompt"
-            )
-            logging.info(result)
+        result = (await self.queue.enqueue_any(*prompt.as_args()))[0].get(
+            "enqueue_prompt"
+        )
+        logging.info(result)
+        if result.get("paid"):
             if not result.get("success"):
                 return dedent(messages["no_credit"]).strip()
             worker_created = await self.ensure_paid_worker(result)
+            if not result.get("balance_remaining"):
+                asyncio.create_task(
+                    self.send_message(msg.source, dedent(messages["last_paid"]).strip())
+                )
             priority = " priority"
         else:
-            result = (await self.queue.enqueue_free(*prompt.as_args()))[0].get(
-                "enqueue_free_prompt"
-            )
-            logging.info(result)
             if not result.get("success"):
                 return dedent(messages["rate_limit"]).strip()
             worker_created = await self.ensure_free_worker()
@@ -411,14 +420,11 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         Generates an image based on your prompt.
         Request is handled in the free queue, every free request is addressed and generated sequentially.
         """
-        return await self.enqueue_prompt(msg, {}, True, False)
+        return await self.enqueue_prompt(msg, {}, attachments=True)
 
+    @hide
     async def do_priority(self, msg: Message) -> str:
-        """
-        /imagine [prompt]
-        Like /imagine but places your request on a priority queue. Priority items get dedicated workers and bypass the free queue.
-        """
-        return await self.enqueue_prompt(msg, {}, True, True)
+        return await self.do_imagine(msg)
 
     async def do_paint(self, msg: Message) -> str:
         """
@@ -429,18 +435,15 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
             "vqgan_config": "wikiart_16384.yaml",
             "vqgan_checkpoint": "wikiart_16384.ckpt",
         }
-        return await self.enqueue_prompt(msg, params, False, False)
+        return await self.enqueue_prompt(msg, params, attachments=True)
 
+    @hide
     async def do_priority_paint(self, msg: Message) -> str:
         """
         /priority_paint <prompt>
         Like /paint but places your request on the priority queue. Priority items get dedicated workers when available and bypass the free queue.
         """
-        params = {
-            "vqgan_config": "wikiart_16384.yaml",
-            "vqgan_checkpoint": "wikiart_16384.ckpt",
-        }
-        return await self.enqueue_prompt(msg, params, False, True)
+        return await self.do_paint(msg)
 
     def make_prefix(prefix: str) -> Callable:  # type: ignore  # pylint: disable=no-self-argument
         async def wrapped(self: "Imogen", msg: Message) -> Response:
@@ -661,8 +664,8 @@ async def store_image_handler(  # pylint: disable=too-many-locals
         rpc_id = await bot.send_message(
             None, message, attachments=[str(path)], group=prompt.group_id, **quote  # type: ignore
         )
-        if random.random() < 0.03:
-            msg = dedent(random.choice(tip_messages)).strip()
+        if random.random() < 0.04:
+            msg = dedent(random.choice(auto_messages)).strip()
             asyncio.create_task(bot.send_message(None, msg, group=prompt.group_id))
     else:
         rpc_id = await bot.send_message(
