@@ -22,70 +22,12 @@ from prometheus_client import Summary
 
 import mc_util
 from forest import utils
-from forest.core import Message, PayBot, Response, app, hide, requires_admin
+from forest.core import Message, QuestionBot, Response, app, hide, requires_admin
 from forest.pdictng import aPersistDict
 from mc_util import pmob2mob
 
 FEE = int(1e12 * 0.0004)
 REQUEST_TIME = Summary("request_processing_seconds", "Time spent processing request")
-
-
-class QuestionBot(PayBot):
-    def __init__(self):
-        self.pending_confirmations: dict[str, asyncio.Future[bool]] = {}
-        self.pending_answers: dict[str, asyncio.Future[Message]] = {}
-        super().__init__()
-
-    async def handle_message(self, message: Message) -> Response:
-        if message.full_text and self.pending_answers.get(message.source):
-            self.pending_answers[message.source].set_result(message)
-            return "Thank you for your answer!"
-        return await super().handle_message(message)
-
-    async def do_yes(self, msg: Message) -> Response:
-        """Handles 'yes' in response to a pending_confirmation."""
-        if msg.uuid not in self.pending_confirmations:
-            return "Did I ask you a question?"
-        else:
-            question = self.pending_confirmations.get(msg.uuid)
-            question.set_result(True)
-
-    async def do_no(self, msg: Message) -> Response:
-        """Handles 'no' in response to a pending_confirmation."""
-        if msg.uuid not in self.pending_confirmations:
-            return "Did I ask you a question?"
-        else:
-            question = self.pending_confirmations.get(msg.uuid)
-            question.set_result(False)
-
-    async def do_askdemo(self, msg: Message) -> Response:
-        """Asks a yes/no question."""
-        if await self.ask_yesno_question(msg.uuid, "Are you feeling lucky, punk?"):
-            return "well, that's good!"
-        return "sending 🍀"
-
-    async def do_askfreedemo(self, msg: Message) -> Response:
-        answer = await self.ask_freeform_question(msg.uuid)
-        if answer:
-            return f"I love {answer} too!"
-
-    async def ask_freeform_question(
-        self, recipient: str, question_text: str = "What's your favourite colour?"
-    ) -> str:
-        await self.send_message(recipient, question_text)
-        self.pending_answers[recipient] = asyncio.Future()
-        answer = await self.pending_answers.get(recipient)
-        self.pending_answers.pop(recipient)
-        return answer.full_text
-
-    async def ask_yesno_question(
-        self, recipient: str, question_text: str = "Are you sure? yes/no"
-    ) -> bool:
-        self.pending_confirmations[recipient] = asyncio.Future()
-        await self.send_message(recipient, question_text)
-        result = await self.pending_confirmations[recipient]
-        self.pending_confirmations.pop(recipient)
-        return result
 
 
 krng = open("/dev/urandom", "rb")
@@ -512,9 +454,7 @@ class ClanGat(PayBotPro):
                 await self.list_owners.extend(param, value)
                 success = True
             elif obj == "invitees":
-                await self.event_lists(
-                    param, (await self.event_lists.get(param)) + [value]
-                )
+                await self.event_lists.extend(param, value)
                 success = True
             elif obj == "prompt":
                 # todo add validation
@@ -590,7 +530,9 @@ https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
             ):
                 await self.event_lists.extend(code, msg.uuid)
                 if await self.event_prompts.get(code):
-                    await self.send_message(msg.uuid, await self.event_prompts.get(code))
+                    await self.send_message(
+                        msg.uuid, await self.event_prompts.get(code)
+                    )
                 return f"Added you to the {code} list!"
             else:
                 return f"Sorry, {code} is full!"
