@@ -521,7 +521,7 @@ https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
             )
         return None
 
-    async def do_help(msg: Message) -> Response:
+    async def do_help(self, msg: Message) -> Response:
         return await self.default(msg)
 
 
