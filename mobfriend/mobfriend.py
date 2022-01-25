@@ -82,9 +82,10 @@ class MobFriend(QuestionBot):
             )
             if contents:
                 self.user_images.pop(message.source)
+                # pylint: disable=unsubscriptable-object
                 payload = message.arg1 = contents[-1][
                     1
-                ].decode()  # pylint: disable=unsubscriptable-object
+                ].decode()
                 await self.send_message(
                     message.source, f"Found a QR! Contains:\n{payload}"
                 )
@@ -467,9 +468,10 @@ For more information on Signal Payments visit:
 https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
         return helptext
 
+    # pylint: disable=too-many-branches,too-many-return-statements
     async def default(
         self, message: Message
-    ) -> Response:  # pylint: disable=too-many-branches,too-many-return-statements
+    ) -> Response:
         msg, code = message, message.arg0
         if code == "+":
             return await self.do_payments(msg)
