@@ -740,8 +740,11 @@ class Mobster:  # pylint: disable=too-many-public-methods
                         comment="utxo_cleanup",
                     )
 
-                    tx_log = tx_prop.get("result",
-                            {}).get("transaction_log").get("transaction_log_id","")
+                    tx_log = (
+                        tx_prop.get("result", {})
+                        .get("transaction_log")
+                        .get("transaction_log_id", "")
+                    )
                     confirmation = await self.confirm_transaction(tx_log)
                 final_utxo_state = await self.filter_utxos(account_id)
                 logging.info("final state of utxos in wallet %s", final_utxo_state)
@@ -757,8 +760,11 @@ class Mobster:  # pylint: disable=too-many-public-methods
                 comment="utxo_cleanup",
             )
             # Sleep to make sure full service doesn't eat transactions??
-            tx_log = tx_prop.get("result",
-            {}).get("transaction_log").get("transaction_log_id","")
+            tx_log = (
+                tx_prop.get("result", {})
+                .get("transaction_log")
+                .get("transaction_log_id", "")
+            )
             confirmation = await self.confirm_transaction(tx_log)
 
     async def confirm_transaction(self, tx_log_id: str, timeout: int = 20) -> bool:
@@ -782,7 +788,10 @@ class Mobster:  # pylint: disable=too-many-public-methods
             if status == "tx_status_succeeded":
                 return True
             if status == "tx_status_failed":
-                logging.warning("transaction failed, log: %s",txo_data.get("result",{}).get("transaction_log",{}))
+                logging.warning(
+                    "transaction failed, log: %s",
+                    txo_data.get("result", {}).get("transaction_log", {}),
+                )
                 return False
             await asyncio.sleep(1)
             txo_data = await self.get_transaction_log(tx_log_id)
@@ -823,19 +832,19 @@ class Mobster:  # pylint: disable=too-many-public-methods
         split_txos = [txo_list[i : i + 15] for i in range(0, len(txo_list), 15)]
         free = sum([txo[1] for txo in unspent_utxos])
         requested = sum(txo_list) + FEE * (len(txo_list) + len(split_txos) + 1)
-        free_largest_50 = sum([txo[1] for txo in unspent_utxos[: len(txo_list)]])
+        free_largest = [txo[1] for txo in unspent_utxos[: len(txo_list)]]
 
         logging.info("attempting pre_allocation of utxos: %s", txo_list)
         if free < requested:
             logging.warning("requested/free: %s/%s can't allocate", requested, free)
             return {}
-        if free_largest_50 < requested:
-            logging.warning("Too much txo fragmentation, consolidating")
+        if sum(free_largest) < requested:
             logging.info(
-                "Largest 50 txos totaled %s, requested %s", free_largest_50, requested
-            )
-            logging.debug(
-                "First %s txos: %s", len(txo_list), unspent_utxos[: len(txo_list)]
+                "Largest %s txos totaled %s, requested %s\n\nlargest txos: %s",
+                len(free_largest),
+                sum(free_largest),
+                requested,
+                free_largest,
             )
             await self.cleanup_utxos(
                 account_id, requested, locked_txos=_locked_txos, largest_first=True
@@ -849,46 +858,74 @@ class Mobster:  # pylint: disable=too-many-public-methods
             utxo_inputs = []
             txo_total = sum(sublist) + FEE * len(sublist)
             logging.info("Allocating %s txos totaling %s Pmob", len(sublist), txo_total)
-            for utxo in unspent_utxos:
-                utxo_inputs.append(utxo)
-                logging.debug("utxo_inputs are %s", utxo_inputs)
-                if sum([utxo[1] for utxo in utxo_inputs]) >= txo_total:
-                    tx_prop = await self.build_transaction(
-                        account_id,
-                        addresses_and_values=[(address, amt + FEE) for amt in sublist],
-                        input_txo_ids=[utxo[0] for utxo in utxo_inputs],
-                        submit=True,
-                        comment="txo_allocation",
-                    )
-                    tx_log = tx_prop.get("result", {}).get("transaction_log",
-                            {}).get("transaction_log_id","")
-                    confirmation = await self.confirm_transaction(tx_log)
-                    logging.info("transaction successful: %s", confirmation)
-
-                    otxos = (
-                        tx_prop.get("result", {})
-                        .get("transaction_log", {})
-                        .get("output_txos")
-                    )
-                    if otxos == None:
-                        utxo_inputs = []
-                        unspent_utxos = await self.filter_utxos( account_id,
-                                locked_txos = _locked_txos
+            retries = 0
+            while retries <= 2:
+                for utxo in unspent_utxos:
+                    utxo_inputs.append(utxo)
+                    logging.debug("utxo_inputs are %s", utxo_inputs)
+                    if sum([utxo[1] for utxo in utxo_inputs]) >= txo_total:
+                        try:
+                            tx_prop = await self.build_transaction(
+                                account_id,
+                                addresses_and_values=[
+                                    (address, amt + FEE) for amt in sublist
+                                ],
+                                input_txo_ids=[utxo[0] for utxo in utxo_inputs],
+                                submit=True,
+                                comment="txo_allocation",
+                            )
+                        except Exception as e:  # pylint: disable=broad-except
+                            logging.warning(
+                                "aiohttp connection error %s on retry %s, retrying",
+                                e,
+                                retries,
+                            )
+                            retries += 1
+                            break
+                        tx_log = tx_prop.get("result", {}).get("transaction_log", {})
+                        if "error" in tx_prop or not isinstance(
+                            tx_log.get("output_txos"), list
+                        ):
+                            if "error" in tx_prop:
+                                logging.warning(
+                                    "full service api error on retry %s - error: %s",
+                                    retries,
+                                    tx_prop,
+                                )
+                            else:
+                                logging.warning(
+                                    "no output txos detected on retry %s, retrying",
+                                    retries,
+                                )
+                            retries += 1
+                            break
+                        confirmation = await self.confirm_transaction(
+                            tx_log.get("transaction_log_id", "")
                         )
-                        continue
-                    output_txos.extend(
-                        [
-                            (utxo.get("txo_id_hex"), int(utxo.get("value_pmob")))
-                            for utxo in otxos
-                        ]
-                    )
-                    _locked_txos.update(dict(output_txos))
-                    logging.debug("new locked txos are: %s", _locked_txos)
+                        logging.info("transaction successful: %s", confirmation)
+                        if not confirmation:
+                            logging.warning(
+                                "allocation confirmation failed on retry %s, retrying",
+                                retries,
+                            )
+                            retries += 1
+                            break
+                        output_txos.extend(
+                            [
+                                (utxo.get("txo_id_hex"), int(utxo.get("value_pmob")))
+                                for utxo in tx_prop.get("result", {})
+                                .get("transaction_log", {})
+                                .get("output_txos")
+                            ]
+                        )
+                        _locked_txos.update(dict(output_txos))
+                        logging.debug("new locked txos are: %s", _locked_txos)
+                        retries = 1000
+                        break
                 unspent_utxos = await self.filter_utxos(
                     account_id, locked_txos=_locked_txos
                 )
                 logging.debug("new unspent_txos are %s", unspent_utxos)
-                break
         return {utxo[0]: utxo[1] for utxo in output_txos}
 
     async def create_account(self, name: str) -> dict:

@@ -3,14 +3,13 @@
 # pylint: disable=too-many-arguments disable=too-many-nested-blocks disable=too-many-locals
 # pylint: disable=too-many-lines disable=unused-argument disable=too-many-public-methods
 """Executable file which starts up a bot which does mobilecoin airdrops"""
-import ast
 import logging
 import json
 import asyncio
 from datetime import datetime
 from enum import Enum
-from typing import Any, Union, Optional
-from dataclasses import dataclass, field
+from typing import Any, Union, Optional, Type, TypeVar, get_type_hints
+from dataclasses import dataclass, field, asdict
 from asyncio import create_task
 from aiohttp import web
 import mc_util
@@ -19,6 +18,7 @@ from forest.utils import get_secret
 from forest.pghelp import Loop, PGExpressions, PGInterface
 from forest.payments_monitor import delete_indices
 
+T = TypeVar("T", bound="SimpleAirdrop") # pylint: disable=invalid-name
 
 FEE_MOB = 0.0004
 FEE_PMOB = 400000000
@@ -156,8 +156,8 @@ class SimpleAirdrop(Airdrop):  # pylint: disable=too-many-instance-attributes
     max_entrants: int = -1
     start_block: int = -1
     dialog: Dialog = Dialog.NONE
-    setup_script: dict[str, str] = field(default_factory=dict)
-    drop_script: dict[str, str] = field(default_factory=dict)
+    setup_script: dict = field(default_factory=dict)
+    drop_script: dict = field(default_factory=dict)
     dialog_state: dict = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -482,6 +482,23 @@ class SimpleAirdrop(Airdrop):  # pylint: disable=too-many-instance-attributes
         """
 
         return float(round(mc_util.pmob2mob(amount), 4))
+
+    def asdict(self) -> dict:
+        """
+        Output dataclass as dict
+        """
+        return asdict(self)
+
+    @classmethod
+    def fromdict(cls: Type[T], dictionary: dict) -> T:  # ignore: type
+        """
+        Rebuilds dataclass from dict representation of dataclass
+        """
+        for attr, atype in get_type_hints(cls).items():
+            print((attr, atype, dictionary.get(attr)))
+            if not isinstance(dictionary.get(attr), atype):
+                return cls()
+        return cls(**dictionary)
 
     def __repr__(self) -> str:
         resp = (
@@ -1380,7 +1397,9 @@ class AirDropBot(PayBot):
                     await self.db_manager.create_simple_airdrop(
                         name, block_height, "simple"
                     )
-                    resp = f"Airdrop launched at block: {block_height}\n{self.bot_number} "
+                    resp = (
+                        f"Airdrop launched at block: {block_height}\n{self.bot_number} "
+                    )
                     resp += f"will now accept payments. Airdrop UUID is:{name}\n\n"
                     resp += "You can now announce this airdrop!"
                     return resp
@@ -1477,7 +1496,7 @@ class AirDropBot(PayBot):
         Squashes transactions in wallet so tey can be allocated correctly
         """
         account_id = await self.mobster.get_account()
-        locked_txos: dict[str, Any] = {} 
+        locked_txos: dict[str, Any] = {}
         balance = await self.mobster.get_filtered_balance(locked_txos)
         if not clean_all:
             for pool, utxos in self.txo_pools.items():
