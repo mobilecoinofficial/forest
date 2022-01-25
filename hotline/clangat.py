@@ -23,7 +23,7 @@ from prometheus_client import Summary
 import mc_util
 from forest import utils
 from forest.core import Message, PayBot, Response, app, hide, requires_admin
-from forest.pdict import PersistDict
+from forest.pdictng import aPersistDict
 from mc_util import pmob2mob
 
 FEE = int(1e12 * 0.0004)
@@ -44,28 +44,28 @@ class QuestionBot(PayBot):
 
     async def do_yes(self, msg: Message) -> Response:
         """Handles 'yes' in response to a pending_confirmation."""
-        if msg.source not in self.pending_confirmations:
+        if msg.uuid not in self.pending_confirmations:
             return "Did I ask you a question?"
         else:
-            question = self.pending_confirmations.get(msg.source)
+            question = self.pending_confirmations.get(msg.uuid)
             question.set_result(True)
 
     async def do_no(self, msg: Message) -> Response:
         """Handles 'no' in response to a pending_confirmation."""
-        if msg.source not in self.pending_confirmations:
+        if msg.uuid not in self.pending_confirmations:
             return "Did I ask you a question?"
         else:
-            question = self.pending_confirmations.get(msg.source)
+            question = self.pending_confirmations.get(msg.uuid)
             question.set_result(False)
 
     async def do_askdemo(self, msg: Message) -> Response:
         """Asks a yes/no question."""
-        if await self.ask_yesno_question(msg.source, "Are you feeling lucky, punk?"):
+        if await self.ask_yesno_question(msg.uuid, "Are you feeling lucky, punk?"):
             return "well, that's good!"
         return "sending 🍀"
 
     async def do_askfreedemo(self, msg: Message) -> Response:
-        answer = await self.ask_freeform_question(msg.source)
+        answer = await self.ask_freeform_question(msg.uuid)
         if answer:
             return f"I love {answer} too!"
 
@@ -156,85 +156,92 @@ class PayBotPro(QuestionBot):
 class ClanGat(PayBotPro):
     def __init__(self):
         self.no_repay: list[str] = []
-        self.pending_orders: dict[str, str] = PersistDict("pending_orders")
-        self.event_limits: dict[str, int] = PersistDict("event_limits")
-        self.event_prompts: dict[str, str] = PersistDict("event_prompts")
-        self.event_prices: dict[str, float] = PersistDict("event_prices")
-        self.event_images: dict[str, str] = PersistDict("event_images")
-        self.event_owners: dict[str, list[str]] = PersistDict("event_owners")
-        self.event_attendees: dict[str, list[str]] = PersistDict("event_attendees")
-        self.event_lists: dict[str, list[str]] = PersistDict("event_lists")
-        self.list_owners: dict[str, list[str]] = PersistDict("list_owners")
-        self.easter_eggs: dict[str, str] = PersistDict("easter_eggs")
-        self.successful_pays: dict[str, list[str]] = PersistDict("successful_pays")
+        self.pending_orders: dict[str, str] = aPersistDict("pending_orders")
+        self.event_limits: dict[str, int] = aPersistDict("event_limits")
+        self.event_prompts: dict[str, str] = aPersistDict("event_prompts")
+        self.event_prices: dict[str, float] = aPersistDict("event_prices")
+        self.event_images: dict[str, str] = aPersistDict("event_images")
+        self.event_owners: dict[str, list[str]] = aPersistDict("event_owners")
+        self.event_attendees: dict[str, list[str]] = aPersistDict("event_attendees")
+        self.event_lists: dict[str, list[str]] = aPersistDict("event_lists")
+        self.list_owners: dict[str, list[str]] = aPersistDict("list_owners")
+        self.easter_eggs: dict[str, str] = aPersistDict("easter_eggs")
+        self.successful_pays: dict[str, list[str]] = aPersistDict("successful_pays")
         self.pay_lock: asyncio.Lock = asyncio.Lock()
         # okay, this now maps the tag (restore key) of each of the above to the instance of the PersistDict class
         self.state = {
             self.__getattribute__(attr).tag: self.__getattribute__(attr)
             for attr in dir(self)
-            if isinstance(self.__getattribute__(attr), PersistDict)
+            if isinstance(self.__getattribute__(attr), aPersistDict)
         }
         super().__init__()
 
     @requires_admin
     async def do_dump(self, msg: Message) -> Response:
-        return json.dumps(self.state, indent=2)
+        return json.dumps({k: v.dict_ for k, v in self.state.items()}, indent=2)
 
     @requires_admin
     async def do_dump2(self, msg: Message) -> Response:
         obj = (msg.arg1 or "").lower()
         dump = {}
-        for eventcode in list(self.event_owners.keys()) + list(self.list_owners.keys()):
+        for eventcode in list(await self.event_owners.keys()) + list(
+            await self.list_owners.keys()
+        ):
             event = {}
             for parameters in self.state:
-                if self.state[parameters].get(eventcode):
-                    event[parameters] = self.state[parameters].get(eventcode)
+                if await self.state[parameters].get(eventcode):
+                    event[parameters] = await self.state[parameters].get(eventcode)
             dump[eventcode] = event
-        return json.dumps(dump, indent=2)
+        return json.dumps(dump if not obj else dump.get(obj), indent=2)
 
     async def do_check(self, msg: Message) -> Response:
         obj = (msg.arg1 or "").lower()
         param = msg.arg2
         value = msg.arg3
-        user = msg.source
+        user = msg.uuid
         user_owns_event_obj = (
-            obj in self.event_owners and user in self.event_owners.get(obj, [])
+            obj in await self.event_owners.keys()
+            and user in await self.event_owners.get(obj, [])
         )
-        user_owns_list_obj = obj in self.list_owners and user in self.list_owners.get(
-            obj, []
+        user_owns_list_obj = (
+            obj in await self.list_owners.keys()
+            and user in await self.list_owners.get(obj, [])
         )
         if user_owns_event_obj:
             return [
                 f"code: {obj}",
-                f"prompt: {self.event_prompts.get(obj)}",
-                f"limit: {self.event_limits.get(obj)}",
-                f"price: {self.event_prices.get(obj)}MOB/ea",
-                f"owned by: {self.event_owners.get(obj)}",
-                f"attendees: {self.event_attendees.get(obj)}",
-                f"lists: {len(self.event_lists.get(obj,[]))} members",
+                f"prompt: {await self.event_prompts.get(obj)}",
+                f"limit: {await self.event_limits.get(obj)}",
+                f"price: {await self.event_prices.get(obj)}MOB/ea",
+                f"owned by: {await self.event_owners.get(obj)}",
+                f"attendees: {await self.event_attendees.get(obj)}",
+                f"lists: {len(await self.event_lists.get(obj,[]))} members",
             ]
         if user_owns_list_obj:
-            return json.dumps(self.event_lists.get(obj, []), indent=2)
+            return json.dumps(await self.event_lists.get(obj, []), indent=2)
         return "You're not authorized."
 
     async def do_stop(self, msg: Message) -> Response:
+        removed = 0
         if (
             msg.arg1
-            and msg.arg1 in self.event_lists
-            and msg.source in self.event_lists.get(msg.arg1, [])
+            and msg.arg1 in await self.event_lists.keys()
+            and msg.uuid in await self.event_lists.get(msg.arg1, [])
         ):
-            self.event_lists[msg.arg1].remove(msg.source)
+            await self.event_lists[msg.arg1].remove(msg.uuid)
             return f"Okay, removed you from {msg.arg1}"
         elif not msg.arg1:
-            for list_ in self.event_lists:
-                if msg.source in self.event_lists[list_]:
-                    self.event_lists[list_] = [
-                        el for el in self.event_lists[list_] if msg.source != el
-                    ]
+            for list_ in await self.event_lists.keys():
+                if msg.uuid in await self.event_lists.get(list_, []):
+                    await self.event_lists.remove_from(list_, msg.uuid)
                     await self.send_message(
-                        msg.source,
+                        msg.uuid,
                         f"Removed you from list {list_}, to rejoin send 'subscribe {list_}'",
                     )
+                    removed += 1
+        if removed:
+            return "You're not on any lists!"
+        return None
 
     @requires_admin
     async def do_pay(self, msg: Message) -> Response:
@@ -247,33 +254,32 @@ class ClanGat(PayBotPro):
         maybe_number = utils.signal_format(list_)
         if maybe_number:
             to_send = [maybe_number]
-            await self.send_message(msg.source, f"okay, using {maybe_number}")
+            await self.send_message(msg.uuid, f"okay, using {maybe_number}")
         if not len(to_send) and not (
-            list_ in self.event_lists or list_ in self.event_attendees
+            list_ in await self.event_lists.keys()
+            or list_ in await self.event_attendees.keys()
         ):
             return "Sorry, that's not a valid list or number!"
         if not len(to_send):
-            to_send = self.event_lists.get(list_, []) or self.event_attendees.get(
+            to_send = await self.event_lists.get(
                 list_, []
-            )
-        total = len(to_send) * amount
+            ) or await self.event_attendees.get(list_, [])
+        save_key = f"{list_}_{amount}_{message}"
+        filtered_send_list = [
+            user
+            for user in to_send
+            if user not in await self.successful_pays.get(save_key, [])
+        ]
+        total_mmob = len(filtered_send_list) * amount
+        if len(to_send) and not len(filtered_send_list):
+            return "already sent to this combination, change the message to continue"
         await self.send_message(
-            msg.source, f"about to send {total}mmob to {len(to_send)} folks on {list_}"
+            msg.uuid,
+            f"about to send {total_mmob}mmob to {len(filtered_send_list)} folks on {list_}",
         )
-        if not await self.ask_yesno_question(msg.source):
+        if not await self.ask_yesno_question(msg.uuid):
             return "OK, canceling"
         async with self.pay_lock:
-            save_key = f"{list_}_{amount}_{message}"
-            if save_key not in self.successful_pays:
-                self.successful_pays[save_key] = []
-            else:
-                filtered_send_list = [
-                    user
-                    for user in to_send
-                    if user not in self.successful_pays[save_key]
-                ]
-                if not len(filtered_send_list):
-                    return "already sent to this combination, change the message to continue"
             utxos = await self.mobster.get_utxos()
             valid_utxos = [
                 utxo
@@ -282,12 +288,12 @@ class ClanGat(PayBotPro):
             ]
             if len(valid_utxos) < len(to_send):
                 await self.send_message(
-                    msg.source, "Insufficient number of utxos!\nBuilding more..."
+                    msg.uuid, "Insufficient number of utxos!\nBuilding more..."
                 )
                 building_msg = await self.mobster.split_txos_slow(
                     amount, (len(to_send) - len(valid_utxos))
                 )
-                await self.send_message(msg.source, building_msg)
+                await self.send_message(msg.uuid, building_msg)
                 utxos = await self.mobster.get_utxos()
                 valid_utxos = [
                     utxo
@@ -296,9 +302,7 @@ class ClanGat(PayBotPro):
                 ]
             failed = []
             # filter out users who have already received payments for a given combo of list+amount+message
-            for target in [
-                user for user in to_send if user not in self.successful_pays[save_key]
-            ]:
+            for target in filtered_send_list:
                 result = await self.send_payment(
                     recipient=target,
                     amount_pmob=amount * 1_000_000_000,
@@ -311,9 +315,9 @@ class ClanGat(PayBotPro):
                     failed += [target]
                 else:
                     # persist user as successfully paid
-                    self.successful_pays[save_key] += [target]
+                    await self.successful_pays.extend(save_key, target)
                 await asyncio.sleep(1)
-            await self.send_message(msg.source, f"failed on\n{failed}")
+            await self.send_message(msg.uuid, f"failed on\n{failed}")
             return "completed sends"
         return "failed"
 
@@ -332,12 +336,14 @@ class ClanGat(PayBotPro):
         blast <eventname> "message"
         """
         obj, param, value = (msg.arg1 or "").lower(), (msg.arg2 or ""), msg.arg3
-        user = msg.source
-        user_owns_list_obj = obj in self.list_owners and user in self.list_owners.get(
-            obj, []
+        user = msg.uuid
+        user_owns_list_obj = (
+            obj in await self.list_owners.keys()
+            and user in await self.list_owners.get(obj, [])
         )
         user_owns_event_obj = (
-            obj in self.event_owners and user in self.event_owners.get(obj, [])
+            obj in await self.event_owners.keys()
+            and user in await self.event_owners.get(obj, [])
         )
         list_ = []
         sent = []
@@ -345,13 +351,16 @@ class ClanGat(PayBotPro):
         if (user_owns_list_obj or user_owns_event_obj) and param:
             success = True
             target_users = list(
-                set(self.event_lists.get(obj, []) + self.event_attendees.get(obj, []))
+                set(
+                    await self.event_lists.get(obj, [])
+                    + await self.event_attendees.get(obj, [])
+                )
             )
             # send preview
-            await self.send_message(msg.source, param)
+            await self.send_message(msg.uuid, param)
             # ask for confirmation
             if not await self.ask_yesno_question(
-                msg.source,
+                msg.uuid,
                 f"Are you sure you want to blast this to {len(target_users)}? (yes/no)",
             ):
                 return "ok, let's not."
@@ -369,11 +378,11 @@ class ClanGat(PayBotPro):
 
     async def do_subscribe(self, msg: Message) -> Response:
         obj = (msg.arg1 or "").lower()
-        if obj in self.event_lists:
-            if msg.source in self.event_lists[obj]:
+        if obj in await self.event_lists.keys():
+            if msg.uuid in await self.event_lists[obj]:
                 return f"You're already on the {obj} list!"
             else:
-                self.event_lists[obj] += [msg.source]
+                await self.event_lists.extend(obj, msg.uuid)
                 return f"Added you to the {obj} list!"
         else:
             return f"Sorry, I couldn't find a list called {obj} - to create your own, try 'add list {obj}'."
@@ -384,23 +393,24 @@ class ClanGat(PayBotPro):
         return "Welcome to The Hotline!\nEvents and announcement lists can be unlocked by messaging the bot the secret code at any time.\n\nAccolades, feature requests, and support questions can be directed to the project maintainers at https://signal.group/#CjQKILH5dkoz99TKxwG7T3TaVAuskMq4gybSplYDfTq-vxUrEhBhuy19A4DbvBqm7PfnBn3I ."
 
     async def do_remove(self, msg: Message) -> Response:
-        """Removes a given event by code, if the msg source is the owner."""
+        """Removes a given event by code, if the msg.uuid is the owner."""
         if not (
-            msg.source in self.event_owners.get(msg.arg1, "")
-            or msg.source in self.list_owners.get(msg.arg1, "")
+            msg.uuid in await self.event_owners.get(msg.arg1, "")
+            or msg.uuid in await self.list_owners.get(msg.arg1, "")
         ):
             return f"Sorry, it doesn't look like you own {msg.arg1}."
         parameters = []
         for state_ in self.state.keys():
-            if "egg" not in state_ and msg.arg1 in self.state[state_]:
+            if "egg" not in state_ and msg.arg1 in (await self.state[state_].keys()):
                 parameters += [state_]
         if await self.ask_yesno_question(
-            msg.source, f"Are you sure you want to remove {msg.arg1} from {parameters}?"
+            msg.uuid, f"Are you sure you want to remove {msg.arg1} from {parameters}?"
         ):
             for state_ in self.state.keys():
-                if "egg" not in state_ and msg.arg1 in self.__getattribute__(state_):
-                    self.__getattribute__(state_).pop(msg.arg1)
-                    self.__getattribute__(state_).save_state()
+                if "egg" not in state_ and msg.arg1 in (
+                    await self.__getattribute__(state_).keys()
+                ):
+                    await self.__getattribute__(state_).pop(msg.arg1)
             return f"Okay, removed {msg.arg1}"
 
     async def do_set(self, msg: Message) -> Response:
@@ -420,98 +430,106 @@ class ClanGat(PayBotPro):
         > add list COWORKERS
         """
         obj, param, value = (msg.arg1 or "").lower(), (msg.arg2 or "").lower(), msg.arg3
-        user = msg.source
+        user = msg.uuid
         user_owns_event_param = (
-            param in self.event_owners and user in self.event_owners.get(param, [])
+            param in await self.event_owners.keys()
+            and user in await self.event_owners.get(param, [])
         )
         user_owns_list_param = (
-            param in self.list_owners and user in self.list_owners.get(param, [])
+            param in await self.list_owners.keys()
+            and user in await self.list_owners.get(param, [])
         )
         objs = "event list owner price prompt limit invitees blast".split()
         success = False
         if (
             obj == "egg"
             and (
-                param not in self.easter_eggs
-                or msg.source in self.easter_eggs.get(param, "")
+                param not in await self.easter_eggs.keys()
+                or msg.uuid in await self.easter_eggs.get(param, "")
             )
             and value
         ):
-            maybe_old_message = self.easter_eggs.get(param, "")
+            maybe_old_message = await self.easter_eggs.get(param, "")
             if maybe_old_message:
-                self.send_message(msg.source, f"replacing: {maybe_old_message}")
-                self.easter_eggs[param] = f"{value} - updated by {msg.source}"
+                self.send_message(msg.uuid, f"replacing: {maybe_old_message}")
+                self.easter_eggs[param] = f"{value} - updated by {msg.uuid}"
                 return f"Updated {param} to read {value}"
             else:
-                self.easter_eggs[param] = f"{value} - added by {msg.source}"
-                return f'Added an egg! "{param}" now returns\n > {value} - added by {msg.source}'
-        elif obj == "egg" and param in self.easter_eggs:
+                self.easter_eggs[param] = f"{value} - added by {msg.uuid}"
+                return f'Added an egg! "{param}" now returns\n > {value} - added by {msg.uuid}'
+        elif obj == "egg" and param in await self.easter_eggs.keys():
             return f"Sorry, egg already has value {self.easter_eggs.get(param)}. Please message support to change it."
         if (
             obj == "event"
-            and param not in self.event_owners
-            and param not in self.list_owners
+            and param not in await self.event_owners.keys()
+            and param not in await self.list_owners.keys()
         ):
-            self.event_owners[param] = [user]
-            self.event_prices[param] = None
-            self.event_attendees[param] = []
-            self.event_lists[param] = []
-            self.event_images[param] = ""
-            self.list_owners[param] = [user]
-            self.event_prompts[param] = ""
+            await self.event_owners.set(param, [user])
+            await self.list_owners.set(param, [user])
+            await self.event_attendees.set(param, [])
+            await self.event_lists.set(param, [])
+            await self.event_images.set(param, [])
+            await self.event_prompts.set(param, "")
             successs = True
             return f'you now own event "{param}", and a list by the same name - time to add price, prompt, and invitees'
         if (
             obj == "list"
-            and param not in self.list_owners
-            and param not in self.event_owners
+            and param not in await self.list_owners.keys()
+            and param not in await self.event_owners.keys()
         ):
-            self.event_lists[param] = []
-            self.list_owners[param] = [user]
-            self.event_images[param] = ""
+            await self.list_owners.set(param, [user])
+            await self.event_lists.set(param, [])
+            await self.event_images.set(param, [])
+            await self.event_prompts.set(param, "")
             return f"created list {param}, time to add some invitees and blast 'em"
         elif obj == "event" and not param:
             return ("please provide an event code to create!", "> add event TEAMNYE22")
         # if the user owns the event and we have a value passed
         if user_owns_event_param and value:
             if obj == "owner":
-                self.event_owners[param] += [value]
+                await self.event_owners.extend(param, value)
                 success = True
             elif obj == "price":
                 # check if string == floatable
                 if value.replace(".", "1", 1).isnumeric():
-                    self.event_prices[param] = float(value)
+                    await self.event_prices.set(param, float(value))
                     success = True
                 else:
                     return "provide a value that's a number please!"
             elif obj == "prompt":
                 # todo add validation
-                self.event_prompts[param] = value
+                await self.event_prompts.set(param, value)
                 success = True
             elif obj == "limit":
                 # check if int
                 if value.isnumeric():
-                    self.event_limits[param] = int(value)
+                    await self.event_limits.set(param, int(value))
                     success = True
                 else:
                     return "please provide a value that's a number, please!"
         if user_owns_list_param and value:
-            if obj == "invitees":
-                self.event_lists[param] += [value]
+            if obj == "owner":
+                await self.list_owners.extend(param, value)
+                success = True
+            elif obj == "invitees":
+                await self.event_lists(
+                    param, (await self.event_lists.get(param)) + [value]
+                )
                 success = True
             elif obj == "prompt":
                 # todo add validation
-                self.event_prompts[param] = value
+                await self.event_prompts.set(param, value)
                 success = True
             elif obj == "limit":
                 # check if int
                 if value.isnumeric():
-                    self.event_limits[param] = int(value)
+                    await self.event_limits.set(param, int(value))
                     success = True
                 else:
                     return "please provide a value that's a number, please!"
         if success:
-            return f"Successfully added {value} to event {param}'s {obj}!"
+            return f"Successfully added '{value}' to event {param}'s {obj}!"
+        return f"Failed to add {value} to event {param}'s {obj}!"
 
     @hide
     async def do_purchase(self, _: Message) -> Response:
@@ -542,80 +560,89 @@ https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
             return await self.do_no(msg)
         # if the event has an owner and a price and there's attendee space and the user hasn't already bought tickets
         if (
-            code in self.event_owners  # event has an owner
-            and code in self.event_prices  # and a price
-            and len(self.event_attendees[code])
-            < self.event_limits.get(code, 1e5)  # and there's space
-            and msg.source
-            not in self.event_attendees[code]  # and they're not already on the list
+            code
+            and code in await self.event_owners.keys()  # event has an owner
+            and code in await self.event_prices.keys()  # and a price
+            and len(await self.event_attendees.get(code, []))
+            < await self.event_limits.get(code, 1e5)  # and there's space
+            and msg.uuid
+            not in await self.event_attendees[
+                code
+            ]  # and they're not already on the list
         ):
-            self.pending_orders[msg.source] = code
+            self.pending_orders[msg.uuid] = code
             return [
-                self.event_prompts.get(code) or "Event Unlocked!",
-                f"You may now make one purchase of up to 2 tickets at {self.event_prices[code]} MOB ea.\nIf you have payments activated, open the conversation on your Signal mobile app, click on the plus (+) sign and choose payment.",
+                await self.event_prompts.get(code) or "Event Unlocked!",
+                f"You may now make one purchase of up to 2 tickets at {await self.event_prices[code]} MOB ea.\nIf you have payments activated, open the conversation on your Signal mobile app, click on the plus (+) sign and choose payment.",
             ]
         # if there's a list but no attendees
-        elif code in self.event_lists and code not in self.event_owners:
-            if msg.source in self.event_lists[code]:
+        elif (
+            code
+            and code in await self.event_lists.keys()
+            and code not in await self.event_owners.keys()
+        ):
+            if msg.uuid in await self.event_lists[code]:
                 return f"You're already on the {code} list!"
-            elif not self.event_limits.get(code) or (
-                self.event_limits.get(code)
-                and len(self.event_lists.get(code)) < self.event_limits.get(code, 1000)
+            elif not await self.event_limits.get(code) or (
+                await self.event_limits.get(code)
+                and len(await self.event_lists.get(code))
+                < await self.event_limits.get(code, 1000)
             ):
-                self.event_lists[code] += [msg.source]
-                if code in self.event_prompts and self.event_prompts.get(code):
-                    await self.send_message(msg.source, self.event_prompts.get(code))
+                await self.event_lists.extend(code, msg.uuid)
+                if await self.event_prompts.get(code):
+                    await self.send_message(msg.uuid, await self.event_prompts.get(code))
                 return f"Added you to the {code} list!"
             else:
                 return f"Sorry, {code} is full!"
         elif (
-            code in self.event_owners  # event has owner
-            and code
-            in self.event_prices  # event has price (not just a stand-alone list)
-            and msg.source in self.event_attendees[code]  # user on the list
+            code
+            and code in await self.event_owners.keys()
+            and code  # event has owner
+            in await self.event_prices.keys()  # event has price (not just a stand-alone list)
+            and msg.uuid in self.event_attendees[code]  # user on the list
         ):
             return f"You're already on the '{code}' list."
         elif code:
             lists = []
             all_owners = []
-            for list_ in self.event_lists:
+            for list_ in await self.event_lists.keys():
                 # if user is on a list
-                if msg.source in self.event_lists[list_]:
-                    owners = self.event_owners.get(list_, [])
-                    owners += self.list_owners.get(list_, [])
+                if msg.uuid in await self.event_lists.get(list_, []):
+                    owners = await self.event_owners.get(list_, [])
+                    owners += await self.list_owners.get(list_, [])
                     all_owners += owners
                     lists += [list_]
                 # if user bought tickets
                 if (
-                    list_ in self.event_attendees
-                    and msg.source in self.event_attendees[list_]
+                    list_ in await self.event_attendees.keys()
+                    and msg.uuid in await self.event_attendees[list_]
                 ):
-                    owners = self.event_owners.get(list_, [])
+                    owners = await self.event_owners.get(list_, [])
                     all_owners += owners
                     lists += [list_]
                 # if user has started buying tickets
-                maybe_pending = self.pending_orders.get(msg.source)
-                if maybe_pending and maybe_pending in self.event_owners:
-                    all_owners += self.event_owners.get(maybe_pending, [])
+                maybe_pending = await self.pending_orders.get(msg.uuid)
+                if maybe_pending and maybe_pending in await self.event_owners.keys():
+                    all_owners += await self.event_owners.get(maybe_pending, [])
                     lists += [f"pending: {maybe_pending}"]
 
             try:
                 maybe_user_profile = await self.auxin_req(
-                    "getprofile", peer_name=msg.source
+                    "getprofile", peer_name=msg.uuid
                 )
-                user_given = maybe_user_profile.blob.get("givenName", "givenName")
+                user_given = self.maybe_user_profile.blob.get("givenName", "givenName")
             except AttributeError:
                 # this returns a Dict containing an error key
                 user_given = "[error]"
-            if code in self.easter_eggs:
-                return self.easter_eggs.get(code)
+            if code in await self.easter_eggs.keys():
+                return await self.easter_eggs.get(code)
             # being really lazy about owners / all_owners here
             for owner in list(set(all_owners)):
                 # don't flood j
                 if "7777" not in owner:
                     await self.send_message(
                         owner,
-                        f"{user_given} ( {msg.source} ) says: {code} {msg.text}\nThey are in {list(set(lists))}",
+                        f"{user_given} ( {msg.uuid} ) says: {code} {msg.text}\nThey are in {list(set(lists))}",
                     )
                     await asyncio.sleep(0.1)
             return "Sorry, I can't help you with that!"
@@ -623,21 +650,21 @@ https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
     @time_(REQUEST_TIME)  # type: ignore
     async def payment_response(self, msg: Message, amount_pmob: int) -> Response:
         amount_mob = float(mc_util.pmob2mob(amount_pmob).quantize(Decimal("1.0000")))
-        if msg.source in self.pending_orders:
-            code = self.pending_orders[msg.source].lower()
-            price = self.event_prices.get(code, 1000)
+        if msg.uuid in await self.pending_orders.keys():
+            code = (await self.pending_orders[msg.uuid]).lower()
+            price = await self.event_prices.get(code, 1000)
             if amount_mob >= price and len(
-                self.event_attendees.get(code, [])
-            ) < self.event_limits.get(code, 1e5):
-                if msg.source not in self.event_attendees[code]:
+                await self.event_attendees.get(code, [])
+            ) < await self.event_limits.get(code, 1e5):
+                if msg.uuid not in await self.event_attendees.get(code, []):
                     end_note = ""
                     if (amount_mob // price) == 2:
-                        self.event_attendees[code] += [msg.source]
+                        await self.event_attendees.extend(code, msg.uuid)
                         end_note = "(times two!)"
-                    self.event_attendees[code] += [msg.source]
-                    return f"Thanks for paying for {self.pending_orders[msg.source]}.\nYou're on the list! {end_note}"
-        if msg.source not in self.no_repay:
-            payment_notif = await self.send_payment(msg.source, amount_pmob - FEE)
+                    await self.event_attendees.extend(code, msg.uuid)
+                    return f"Thanks for paying for {await self.pending_orders[msg.uuid]}.\nYou're on the list! {end_note}"
+        if msg.uuid not in await self.no_repay.keys():
+            payment_notif = await self.send_payment(msg.uuid, amount_pmob - FEE)
             if not payment_notif:
                 return None
             delta = (payment_notif.timestamp - msg.timestamp) / 1000
