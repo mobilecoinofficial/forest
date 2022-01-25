@@ -23,8 +23,8 @@ from scan import scan
 
 import mc_util
 from forest.core import Message, QuestionBot, Response, app, hide, utils, requires_admin
-from mc_util import mob2pmob, pmob2mob
 from forest.pdictng import aPersistDict
+from mc_util import mob2pmob, pmob2mob
 
 FEE = int(1e12 * 0.0004)
 REQUEST_TIME = Summary("request_processing_seconds", "Time spent processing request")
@@ -82,7 +82,9 @@ class MobFriend(QuestionBot):
             )
             if contents:
                 self.user_images.pop(message.source)
-                payload = message.arg1 = contents[-1][1].decode()
+                payload = message.arg1 = contents[-1][
+                    1
+                ].decode()  # pylint: disable=unsubscriptable-object
                 await self.send_message(
                     message.source, f"Found a QR! Contains:\n{payload}"
                 )
@@ -465,7 +467,9 @@ For more information on Signal Payments visit:
 https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
         return helptext
 
-    async def default(self, message: Message) -> Response:
+    async def default(
+        self, message: Message
+    ) -> Response:  # pylint: disable=too-many-branches,too-many-return-statements
         msg, code = message, message.arg0
         if code == "+":
             return await self.do_payments(msg)
@@ -492,7 +496,7 @@ https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
             msg.arg0  # if there's a word
             and len(msg.arg0) > 1  # not a character
             and any(
-                [msg.arg0 in key.lower() for key in self.notes.dict_]
+                msg.arg0 in key.lower() for key in await self.notes.keys()
             )  # and it shows up as a keyword for a note
             and "help" not in msg.arg0.lower()  # and it's not 'help'
             and (
