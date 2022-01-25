@@ -9,7 +9,7 @@ scanner = zbar.Scanner()
 
 
 def scan(image_path: str) -> Any:
-    image = numpy.asarray(Image.open(image_path))
+    image = numpy.asarray(Image.open(image_path).convert("RGB"))
     if len(image.shape) == 3:
         image = zbar.misc.rgb2gray(image)
     results = scanner.scan(image)
