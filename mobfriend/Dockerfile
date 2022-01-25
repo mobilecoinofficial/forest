@@ -1,6 +1,6 @@
 FROM ghcr.io/rust-lang/rust:nightly as builder
 WORKDIR /src
-RUN git clone https://github.com/mobilecoinofficial/auxin && cd auxin && git checkout 0.1.7
+RUN git clone https://github.com/mobilecoinofficial/auxin && cd auxin && git checkout 0.1.8
 WORKDIR /app
 RUN rustup default nightly
 # from https://stackoverflow.com/questions/58473606/cache-rust-dependencies-with-docker-build
@@ -28,7 +28,7 @@ FROM ubuntu:hirsute as libbuilder
 WORKDIR /app
 RUN ln --symbolic --force --no-dereference /usr/share/zoneinfo/EST && echo "EST" > /etc/timezone
 RUN apt update && DEBIAN_FRONTEND="noninteractive" apt upgrade -y
-RUN DEBIAN_FRONTEND="noninteractive" apt install -yy python3.9 python3.9-venv libfuse2 pipenv git
+RUN apt update -y && DEBIAN_FRONTEND="noninteractive" apt install -yy python3.9 python3.9-venv libzbar-dev libfuse2 pipenv git
 RUN python3.9 -m venv /app/venv
 COPY Pipfile.lock Pipfile /app/
 RUN VIRTUAL_ENV=/app/venv pipenv install
