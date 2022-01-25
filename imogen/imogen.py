@@ -164,9 +164,9 @@ auto_messages = [
     Imogen shares tips with collaborators! If you like an Imoge, react t️o it. When an Imoge gets multiple reactions, the person who prompted the Imoge will be awarded a tip.
     """,
     """
-    Want to skip the line? Imogen offers a priority queue for a cost of 0.01 mob per image.
+    Want to skip the line? Imogen offers a priority queue for a cost of $0.10 per image.
 
-    DM funds to Imogen as a Signal payment and then you can submit priority request with /priority or tip Imogen with /tip [amnt].
+    DM funds to Imogen as a Signal payment to become a premium user. You can tip Imogen with /tip [amnt].
 
     Just want to tip Imogen? Send Imogen a payment with the note set to "tip"
     """,
