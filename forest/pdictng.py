@@ -8,7 +8,7 @@ import hashlib
 import json
 import os
 import time
-from typing import Union, Any, Optional, cast
+from typing import Union, Any, Optional, cast, List
 
 import aiohttp
 import base58
@@ -21,7 +21,7 @@ AESKEY = base58.b58decode(os.getenv("AESKEY", "kWKuomB9Ty3GcJ9yA1yED").encode())
 
 if not AESKEY or len(AESKEY) not in [16, 32, 64]:
     raise ValueError(
-        f"Need to set 128b or 256b (16 or 32 byte) not {len(AESKEY)}b AESKEY envvar for persistence. It should be base58 encoded."
+        "Need to set 128b or 256b (16 or 32 byte) AESKEY envvar for persistence. It should be base58 encoded."
     )
 
 if len(AESKEY) == 64:
@@ -235,10 +235,31 @@ class aPersistDict:
         async with self.rwlock:
             return self.dict_.get(key, default)
 
+    async def keys(self) -> List[str]:
+        async with self.rwlock:
+            return list(self.dict_.keys())
+
     async def remove(self, key: str) -> None:
         """Removes a value from the map, if it exists."""
         await self.set(key, None)
         return None
+
+    async def extend(self, key: str, value: str) -> None:
+        """Since one cannot simply add to a coroutine, this function exists.
+        If the key exists and the value is None, or an empty array, the provided value is added to a(the) list at that value."""
+        value_to_extend = []
+        async with self.rwlock:
+            value_to_extend = self.dict_.get(key, [])
+            value_to_extend.append(value)
+            return await self._set(key, value_to_extend)
+
+    async def remove_from(self, key: str, not_value: str) -> None:
+        """Removes a value specified from the list, if present."""
+        async with self.rwlock:
+            values_without_specified = [
+                el for el in self.dict_.get(key, []) if not_value != el
+            ]
+            return await self._set(key, values_without_specified)
 
     async def pop(self, key: str, default: Any = None) -> Any:
         """Returns and removes a value if it exists"""
@@ -246,16 +267,18 @@ class aPersistDict:
         await self.set(key, None)
         return res
 
+    async def _set(self, key: str, value: Any) -> Any:
+        """Sets a value at a given key, returns metadata.
+        This function exists so *OTHER FUNCTIONS* holding the lock can set values."""
+        if key is not None and value is not None:
+            self.dict_.update({key: value})
+        elif key and value is not None and key in self.dict_:
+            self.dict_.pop(key)
+        key = f"Persist_{self.tag}_{NAMESPACE}"
+        value = json.dumps(self.dict_)
+        return await self.client.post(key, value)
+
     async def set(self, key: str, value: Any) -> Any:
         """Sets a value at a given key, returns metadata."""
         async with self.rwlock:
-            if key and value:
-                self.dict_.update({key: value})
-            elif key and not value and key in self.dict_:
-                self.dict_.pop(key)
-            elif key and key not in self.dict_:
-                return None
-            key = f"Persist_{self.tag}_{NAMESPACE}"
-            value = json.dumps(self.dict_)
-            val = await self.client.post(key, value)
-            return val
+            return await self._set(key, value)
