@@ -83,9 +83,7 @@ class MobFriend(QuestionBot):
             if contents:
                 self.user_images.pop(message.source)
                 # pylint: disable=unsubscriptable-object
-                payload = message.arg1 = contents[-1][
-                    1
-                ].decode()
+                payload = message.arg1 = contents[-1][1].decode()
                 await self.send_message(
                     message.source, f"Found a QR! Contains:\n{payload}"
                 )
@@ -362,7 +360,7 @@ class MobFriend(QuestionBot):
                 "Please provide a b58 address to be used for this payment request!",
             )
         payload = mc_util.printable_pb2.PrintableWrapper()
-        address_proto = mc_util.b58_wrapper_to_protobuf(address)
+        address_proto = mc_util.b58_wrapper_to_protobuf(address or "")
         if not address_proto:
             await self.send_message(
                 msg.source, "Sorry, could not find a valid address!"
@@ -469,9 +467,7 @@ https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
         return helptext
 
     # pylint: disable=too-many-branches,too-many-return-statements
-    async def default(
-        self, message: Message
-    ) -> Response:
+    async def default(self, message: Message) -> Response:
         msg, code = message, message.arg0
         if code == "+":
             return await self.do_payments(msg)
