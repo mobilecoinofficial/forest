@@ -98,6 +98,8 @@ class PayBotPro(QuestionBot):
 class ClanGat(PayBotPro):
     def __init__(self):
         self.no_repay: list[str] = []
+        self.address_cache: dict[str, str] = aPersistDict("address_cache")
+        self.profile_cache: dict[str, Any] = aPersistDict("profile_cache")
         self.pending_orders: dict[str, str] = aPersistDict("pending_orders")
         self.pending_funds: dict[str, str] = aPersistDict("pending_funds")
         self.event_limits: dict[str, int] = aPersistDict("event_limits")
@@ -632,15 +634,20 @@ https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
                     all_owners += await self.event_owners.get(maybe_pending, [])
                     lists += [f"pending: {maybe_pending}"]
 
-            # TODO: cache this
-            try:
-                maybe_user_profile = await self.auxin_req(
-                    "getprofile", peer_name=msg.uuid
-                )
-                user_given = self.maybe_user_profile.blob.get("givenName", "givenName")
-            except AttributeError:
-                # this returns a Dict containing an error key
-                user_given = "[error]"
+            maybe_user_profile = await self.profile_cache.get(msg.uuid)
+            if not maybe_user_profile:
+                try:
+                    maybe_user_profile = (await self.auxin_req(
+                        "getprofile", peer_name=msg.uuid
+                    )).blob
+                    user_given = maybe_user_profile.get("givenName", "givenName")
+                    await self.profile_cache.set(msg.uuid, maybe_user_profile)
+                except AttributeError:
+                    # this returns a Dict containing an error key
+                    user_given = "[error]"
+            else:
+                user_given = maybe_user_profile.get("givenName")
+
             if code in await self.easter_eggs.keys():
                 return await self.easter_eggs.get(code)
             # being really lazy about owners / all_owners here
