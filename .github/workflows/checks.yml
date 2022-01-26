@@ -20,7 +20,7 @@ jobs:
         uses: actions/cache@v1
         with:
           path: ~/.local/share/virtualenvs
-          key: '${{ runner.os }}-pipenv-v5-${{ hashFiles(''**/Pipfile.lock'') }}'
+          key: '${{ runner.os }}-pipenv-v8-${{ hashFiles(''**/Pipfile.lock'') }}'
       - name: Install dependencies
         if: steps.cache-pipenv.outputs.cache-hit != 'true'
         run: cp .github/Pipfile .; pipenv install --skip-lock --pre

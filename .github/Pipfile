@@ -23,6 +23,8 @@ protobuf = "*"
 types-termcolor = "*"
 types-protobuf = "*"
 pyqrcode = "*"
+ulid2 = "*"
+pycryptodome = "*"
 
 [packages.aiohttp]
 extras = [ "speedups",]
