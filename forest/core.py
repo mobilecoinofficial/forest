@@ -1014,8 +1014,6 @@ class PayBot(Bot):
             resp.status, resp.transaction_log_id = status, tx_id  # type: ignore
             return resp
 
-        if receipt_message:
-            await self.send_message(recipient, receipt_message)
         return await resp_fut
 
 
