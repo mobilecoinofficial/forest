@@ -108,6 +108,10 @@ class ClanGat(PayBotPro):
         self.no_repay: list[str] = []
         self.address_cache: dict[str, str] = aPersistDict("address_cache")
         self.profile_cache: dict[str, Any] = aPersistDict("profile_cache")
+        self.displayname_cache: dict[str, str] = aPersistDict("displayname_cache")
+        self.displayname_lookup_cache: dict[str, str] = aPersistDict(
+            "displayname_lookup_cache"
+        )
         self.pending_orders: dict[str, str] = aPersistDict("pending_orders")
         self.pending_funds: dict[str, str] = aPersistDict("pending_funds")
         self.event_limits: dict[str, int] = aPersistDict("event_limits")
@@ -130,6 +134,34 @@ class ClanGat(PayBotPro):
         }
         super().__init__()
 
+    async def get_displayname(self, uuid):
+        uuid = uuid.strip("\u2068\u2069")
+        maybe_displayname = await self.displayname_cache.get(uuid)
+        if maybe_displayname:
+            return maybe_displayname
+        maybe_user_profile = await self.profile_cache.get(uuid)
+        if not maybe_user_profile:
+            try:
+                maybe_user_profile = (
+                    await self.auxin_req(
+                        "getprofile", peer_name=uuid.strip("\u2068\u2069")
+                    )
+                ).blob
+                user_given = maybe_user_profile.get("givenName", "givenName")
+                await self.profile_cache.set(uuid, maybe_user_profile)
+            except AttributeError:
+                # this returns a Dict containing an error key
+                user_given = "[error]"
+        else:
+            user_given = maybe_user_profile.get("givenName", "")
+        if "+" not in uuid and "-" in uuid:
+            user_short = user_given + f"_{uuid.split('-')[1]}"
+        else:
+            user_short = user_given + uuid
+        await self.displayname_cache.set(uuid, user_short)
+        await self.displayname_lookup_cache.set(user_short, uuid)
+        return user_short
+
     @requires_admin
     async def do_dump(self, msg: Message) -> Response:
         obj = (msg.arg1 or "").lower()
@@ -151,25 +183,43 @@ class ClanGat(PayBotPro):
         user = msg.uuid
         user_owns_event_obj = user in await self.event_owners.get(obj, [])
         user_owns_list_obj = user in await self.list_owners.get(obj, [])
-        if user_owns_event_obj:
-            return [
-                f"code: {obj}",
-                f"prompt: {await self.event_prompts.get(obj)}",
-                f"limit: {await self.event_limits.get(obj)}",
-                f"price: {await self.event_prices.get(obj)}MOB/ea",
-                f"owned by: {await self.event_owners.get(obj)}",
-                f"attendees: {await self.event_attendees.get(obj)}",
-                f"lists: {len(await self.event_lists.get(obj,[]))} members",
-                f"balance: {await self.payout_balance_mmob.get(obj)}mmob",
-            ]
-        if user_owns_list_obj:
-            return json.dumps(await self.event_lists.get(obj, []), indent=2)
-        return "You're not authorized."
+        if user_owns_list_obj or user_owns_event_obj:
+            return "\n\n".join(
+                [
+                    f"code: {obj}",
+                    f"prompt: {await self.event_prompts.get(obj)}",
+                    f"limit: {await self.event_limits.get(obj)}",
+                    f"join price: {await self.event_prices.get(obj, 0)}MOB/ea",
+                    f"event owned by: {[await self.get_displayname(uuid) for uuid in await self.event_owners.get(obj, [])]}",
+                    f"announce list owned by: {[await self.get_displayname(uuid) for uuid in await self.list_owners.get(obj)]}",
+                    f"number paid attendees: {len(await self.event_attendees.get(obj, []))}",
+                    f"paid attendees: {[await self.get_displayname(uuid) for uuid in await self.event_attendees.get(obj, [])]}",
+                    f"list has {len(await self.event_lists.get(obj,[]))} members",
+                    f"list members: {[await self.get_displayname(uuid) for uuid in await self.event_lists.get(obj, [])]}",
+                    f"balance: {await self.payout_balance_mmob.get(obj, 0)}mmob",
+                ]
+            )
+        lists_ = [
+            list_
+            for list_ in await self.event_lists.keys()
+            if msg.uuid in await self.event_lists.get(list_, [])
+        ]
+        owns_event = [
+            list_
+            for list_ in await self.event_lists.keys()
+            if msg.uuid in await self.event_owners.get(list_, [])
+        ]
+        owns_list = [
+            list_
+            for list_ in await self.event_lists.keys()
+            if msg.uuid in await self.list_owners.get(list_, [])
+        ]
+        return f"You're on the list for {lists_}.\n\nYou own these paid events: {owns_event}\n\nYou own these free lists: {owns_list}\n\nFor more information reply: check <code>."
 
     async def do_stop(self, msg: Message) -> Response:
         removed = 0
         if msg.arg1 and msg.uuid in await self.event_lists.get(msg.arg1, []):
-            await self.event_lists[msg.arg1].remove(msg.uuid)
+            await (await self.event_lists[msg.arg1]).remove(msg.uuid)
             return f"Okay, removed you from {msg.arg1}"
         elif not msg.arg1:
             for list_ in await self.event_lists.keys():
@@ -309,10 +359,13 @@ class ClanGat(PayBotPro):
             return "completed sends"
         return "failed"
 
+    @hide
     async def do_send(self, msg: Message) -> Response:
         obj = msg.arg1
         param = msg.arg2
         if obj and param:
+            if obj in await self.displayname_lookup_cache.keys():
+                obj = await self.displayname_lookup_cache.get(obj)
             try:
                 result = await self.send_message(obj, param)
                 return result
@@ -321,11 +374,13 @@ class ClanGat(PayBotPro):
 
     @hide
     async def do_fund(self, msg: Message) -> Response:
-        """fund <listname> "message"
-        fund <eventname> "message"
+        """Allows an owner to add funds for distribution to a list or event.
+        fund <listname>
+        fund <eventname>
         """
         obj, _, _ = (msg.arg1 or "").lower(), (msg.arg2 or ""), msg.arg3
         user = msg.uuid
+        await self.pending_orders.remove(msg.uuid)
         user_owns_list_obj = (
             obj in await self.list_owners.keys()
             and user in await self.list_owners.get(obj, [])
@@ -375,13 +430,13 @@ class ClanGat(PayBotPro):
                 return "ok, let's not."
             # do the blast
             for target_user in target_users:
-                await self.send_message(target_user, param)
+                await self.send_message(target_user.strip("\u2068\u2069"), param)
                 sent.append(target_user)
                 await asyncio.sleep(3)
         elif user_owns_event_obj or user_owns_list_obj:
             return "Try again - and add a message!"
         if not success:
-            return "That didn't work!"
+            return "That didn't work! Try 'blast <list code> 'mymessage'. You can only send to lists you own!"
         # confirm we finished
         return f"Finished sending to {len(sent)} recipients on the {obj} list"
 
@@ -399,7 +454,13 @@ class ClanGat(PayBotPro):
     async def do_help(self, msg: Message) -> Response:
         if msg.arg1 and msg.arg1.lower() == "add":
             return self.do_add.__doc__
-        return "Welcome to The Hotline!\nEvents and announcement lists can be unlocked by messaging the bot the secret code at any time.\n\nAccolades, feature requests, and support questions can be directed to the project maintainers at https://signal.group/#CjQKILH5dkoz99TKxwG7T3TaVAuskMq4gybSplYDfTq-vxUrEhBhuy19A4DbvBqm7PfnBn3I ."
+        return "\n\n".join(
+            [
+                "Hi, I'm MOBot! Welcome to my Hotline!",
+                self.documented_commands(),
+                "\nEvents and announcement lists can be unlocked by messaging the me the secret code at any time.\n\nAccolades, feature requests, and support questions can be directed to my maintainers at https://signal.group/#CjQKILH5dkoz99TKxwG7T3TaVAuskMq4gybSplYDfTq-vxUrEhBhuy19A4DbvBqm7PfnBn3I .",
+            ]
+        )
 
     async def do_remove(self, msg: Message) -> Response:
         """Removes a given event by code, if the msg.uuid is the owner."""
@@ -425,6 +486,7 @@ class ClanGat(PayBotPro):
             return f"Okay, removed {msg.arg1} {lists}"
         return "Okay, not removing"
 
+    @hide
     async def do_set(self, msg: Message) -> Response:
         """Set is an alias for add"""
         return await self.do_add(msg)
@@ -441,7 +503,12 @@ class ClanGat(PayBotPro):
         > add limit TEAMNYE22 200
         > add list COWORKERS
         """
-        obj, param, value = (msg.arg1 or "").lower(), (msg.arg2 or "").lower(), msg.arg3
+        obj, param, value = (
+            (msg.arg1 or "").lower(),
+            (msg.arg2 or "").lower(),
+            msg.arg3 or "",
+        )
+        value = value.strip("\u2068\u2069")
         user = msg.uuid
         user_owns_event_param = (
             param in await self.event_owners.keys()
@@ -470,7 +537,7 @@ class ClanGat(PayBotPro):
                 self.easter_eggs[param] = f"{value} - added by {msg.uuid}"
                 return f'Added an egg! "{param}" now returns\n > {value} - added by {msg.uuid}'
         elif obj == "egg" and param in await self.easter_eggs.keys():
-            return f"Sorry, egg already has value {self.easter_eggs.get(param)}. Please message support to change it."
+            return f"Sorry, egg already has value {await self.easter_eggs.get(param)}. Please message support to change it."
         if (
             obj == "event"
             and param not in await self.event_owners.keys()
@@ -484,7 +551,7 @@ class ClanGat(PayBotPro):
             await self.event_prompts.set(param, "")
             await self.payout_balance_mmob.set(param, 0)
             successs = True
-            return f'you now own event "{param}", and a list by the same name - time to add price, prompt, and invitees'
+            return f'you now own event "{param}", and a list by the same name - time to add price, prompt, and limit'
         if (
             obj == "list"
             and param not in await self.list_owners.keys()
@@ -496,10 +563,18 @@ class ClanGat(PayBotPro):
             await self.event_prompts.set(param, "")
             return f"created list {param}, time to add some invitees and blast 'em"
         elif obj == "event" and not param:
-            return ("please provide an event code to create!", "> add event TEAMNYE22")
+            msg.arg2 = await self.ask_freeform_question(
+                msg.uuid, "What unlock code would you like to use for this event?"
+            )
+            return await self.add(msg)
         # if the user owns the event and we have a value passed
         if user_owns_event_param and value:
             if obj == "owner":
+                new_owner_uuid = await self.displayname_cache.get(value, value)
+                await self.send_message(
+                    new_owner_uuid,
+                    f"You've been added as an owner of {value} by {await self.displayname_cache.get(msg.uuid)}",
+                )
                 await self.event_owners.extend(param, value)
                 success = True
             elif obj == "price":
@@ -588,9 +663,9 @@ https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
             ]
         # if there's a list but no attendees
         elif (
-            code
-            and code in await self.event_lists.keys()
-            and not await self.event_prices.get(code, 0)
+            code  # if there's a code and...
+            and code in await self.event_lists.keys()  # if there's a list and...
+            and not await self.event_prices.get(code, 0)  # and it's free
         ):
             if msg.uuid in await self.event_lists[code]:
                 return f"You're already on the {code} list!"
@@ -608,6 +683,8 @@ https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
                         )
                     await self.event_lists.extend(code, msg.uuid)
                     return f"Added you to the {code} list!"
+                else:
+                    return f"Okay, but you're missing out! \n\nIf you change your mind, unlock the list again by sending '{code}'"
             else:
                 return f"Sorry, {code} is full!"
         elif (
@@ -615,6 +692,7 @@ https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
             and code in await self.event_owners.keys()
             and code  # event has owner
             in await self.event_prices.keys()  # event has price (not just a stand-alone list)
+            and code in await self.event_lists.keys()  # if there's a list and...
             and msg.uuid in await self.event_attendees[code]  # user on the list
         ):
             return f"You're already on the '{code}' list."
@@ -643,20 +721,7 @@ https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
                     all_owners += await self.event_owners.get(maybe_pending, [])
                     lists += [f"pending: {maybe_pending}"]
 
-            maybe_user_profile = await self.profile_cache.get(msg.uuid)
-            if not maybe_user_profile:
-                try:
-                    maybe_user_profile = (
-                        await self.auxin_req("getprofile", peer_name=msg.uuid)
-                    ).blob
-                    user_given = maybe_user_profile.get("givenName", "givenName")
-                    await self.profile_cache.set(msg.uuid, maybe_user_profile)
-                except AttributeError:
-                    # this returns a Dict containing an error key
-                    user_given = "[error]"
-            else:
-                user_given = maybe_user_profile.get("givenName")
-
+            user_given = await self.get_displayname(msg.uuid)
             if code in await self.easter_eggs.keys():
                 return await self.easter_eggs.get(code)
             # being really lazy about owners / all_owners here
@@ -665,7 +730,7 @@ https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
                 if "7777" not in owner:
                     await self.send_message(
                         owner,
-                        f"{user_given} ( {msg.uuid} ) says: {code} {msg.text}\nThey are in {list(set(lists))}",
+                        f"{user_given} ( {msg.source} ) says: {code} {msg.text}\nThey are on the following lists: {list(set(lists))}",
                     )
                     await asyncio.sleep(0.1)
             return "Sorry, I can't help you with that! I'll see if I can find someone who can..."
@@ -687,10 +752,11 @@ https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
                         await self.event_attendees.extend(code, msg.uuid)
                         end_note = "(times two!)"
                     await self.event_attendees.extend(code, msg.uuid)
+                    await self.pending_orders.remove(msg.uuid)
                     return f"Thanks for paying for {await self.pending_orders[msg.uuid]}.\nYou're on the list! {end_note}"
         if msg.uuid in await self.pending_funds.keys():
+            code = await self.pending_funds.pop(msg.uuid)
             await self.payout_balance_mmob.increment(code, amount_mmob)
-            await self.pending_funds.remove(code)
             self.no_repay.remove(msg.uuid)
             return (
                 f"We have credited your event {code} {amount_mob}MOB!\n"
