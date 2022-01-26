@@ -4,8 +4,9 @@ kill_timeout = 5
 
 [env]
 LOGLEVEL="DEBUG"
-BOT_NUMBER="+16696666967_2 "
-IGNORE_FORMAT=1
+SIGNAL="auxin"
+BOT_NUMBER="+14153187534"
+FULL_SERVICE_URL="https://imogen-full-service-real.fly.dev/wallet"
 RUST_LOG="WARN"
 RUST_BACKTRACE="full"
 
@@ -40,12 +41,3 @@ path = "/metrics"
     interval = "15s"
     restart_limit = 6
     timeout = "2s"
-
-  # [[services.http_checks]]
-  #   interval = 10000
-  #   grace_period = "120s"
-  #   method = "get"
-  #   path = "/ping"
-  #   protocol = "http"
-  #   timeout = 2000
-  #   tls_skip_verify = false
