@@ -190,7 +190,7 @@ class ClanGat(PayBotPro):
         list_ = (msg.arg1 or "").lower()
         user_owns_list_ = user in await self.event_owners.get(list_, [])
         balance = await self.payout_balance_mmob.get(list_, 0)
-        if isadmin(msg) or (user_owns_list_ and balance):
+        if is_admin(msg) or (user_owns_list_ and balance):
             async with self.pay_lock:
                 utxos = list((await self.mobster.get_utxos()).items())
                 input_pmob_sum = 0
@@ -204,10 +204,11 @@ class ClanGat(PayBotPro):
                 if not input_txo_ids:
                     return "Something went wrong! Please contact your administrator for support. (not enough utxos)"
                 await self.send_message(msg.uuid, "Waiting for admin approval")
-                await self.ask_yesno_question(
+                if not await self.ask_yesno_question(
                     utils.get_secret("ADMIN"),
                     f"Owner of {list_} requests payout of {balance}. Approve?",
-                )
+                ):
+                    return "Sorry, admin rejected your payout."
                 result = await self.send_payment(
                     recipient=user,
                     amount_pmob=(balance * 1_000_000_000 - FEE),
@@ -216,7 +217,7 @@ class ClanGat(PayBotPro):
                 )
                 if result and not result.status == "tx_status_failed":
                     await self.payout_balance_mmob.decrement(list_, balance)
-                    return "Payed you you {balance}"
+                    return f"Payed you you {balance}"
                 return None
         return "Sorry, can't help you."
 
