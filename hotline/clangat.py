@@ -249,7 +249,7 @@ class ClanGat(PayBotPro):
         total_mmob = len(filtered_send_list) * amount
         if len(to_send) and not len(filtered_send_list):
             return "already sent to this combination, change the message to continue"
-        if not is_admin(msg) or total_mmob > await self.payout_balance_mmob.get(list_, 0):
+        if not is_admin(msg) and (total_mmob > await self.payout_balance_mmob.get(list_, 0)):
             return "Not enough balance remaining on this event!"
         await self.send_message(
             msg.uuid,
