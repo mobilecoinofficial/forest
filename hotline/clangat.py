@@ -22,7 +22,15 @@ from prometheus_client import Summary
 
 import mc_util
 from forest import utils
-from forest.core import Message, QuestionBot, Response, app, hide, requires_admin, is_admin
+from forest.core import (
+    Message,
+    QuestionBot,
+    Response,
+    app,
+    hide,
+    requires_admin,
+    is_admin,
+)
 from forest.pdictng import aPersistDict
 from mc_util import pmob2mob
 
@@ -229,9 +237,7 @@ class ClanGat(PayBotPro):
             await self.send_message(msg.uuid, f"okay, using {maybe_number}")
         user_owns_list_ = user in await self.list_owners.get(list_, [])
         user_owns_event_ = user in await self.event_owners.get(list_, [])
-        if not is_admin(msg) and not (
-            user_owns_event_ or user_owns_list_
-        ):
+        if not is_admin(msg) and not (user_owns_event_ or user_owns_list_):
             return "Sorry, you are not authorized."
         if not len(to_send) and not (
             list_ in await self.event_lists.keys()
@@ -251,7 +257,9 @@ class ClanGat(PayBotPro):
         total_mmob = len(filtered_send_list) * amount
         if len(to_send) and not len(filtered_send_list):
             return "already sent to this combination, change the message to continue"
-        if not is_admin(msg) and (total_mmob > await self.payout_balance_mmob.get(list_, 0)):
+        if not is_admin(msg) and (
+            total_mmob > await self.payout_balance_mmob.get(list_, 0)
+        ):
             return "Not enough balance remaining on this event!"
         await self.send_message(
             msg.uuid,
@@ -637,9 +645,9 @@ https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
             maybe_user_profile = await self.profile_cache.get(msg.uuid)
             if not maybe_user_profile:
                 try:
-                    maybe_user_profile = (await self.auxin_req(
-                        "getprofile", peer_name=msg.uuid
-                    )).blob
+                    maybe_user_profile = (
+                        await self.auxin_req("getprofile", peer_name=msg.uuid)
+                    ).blob
                     user_given = maybe_user_profile.get("givenName", "givenName")
                     await self.profile_cache.set(msg.uuid, maybe_user_profile)
                 except AttributeError:
