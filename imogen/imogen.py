@@ -12,7 +12,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from textwrap import dedent
-from typing import Callable, Optional
+from typing import Callable
 
 import aioredis
 import openai
@@ -174,7 +174,7 @@ auto_messages = [
 
 
 class Imogen(PayBot):  # pylint: disable=too-many-public-methods
-    worker_instance_id: Optional[str] = None
+    prompts: dict[str, str] = {}
 
     async def start_process(self) -> None:
         self.queue = pghelp.PGInterface(
@@ -310,11 +310,11 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         balance = await self.get_user_balance(msg.source)
         prompts = int(balance / (self.image_rate_cents / 100))
         balance_msg = f"Your current Imogen balance is ${balance:.2f} ({prompts} priority prompts)"
-        if msg.group:
-            await self.send_message(msg.source, balance_msg)
-            return (
-                "To make use of Imogen's paid features, please message Imogen directly."
-            )
+        # if msg.group:
+        #     await self.send_message(msg.source, balance_msg)
+        #     return (
+        #         "To make use of Imogen's paid features, please message Imogen directly."
+        #     )
         return balance_msg
 
     image_rate_cents = 10
@@ -421,6 +421,10 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         Request is handled in the free queue, every free request is addressed and generated sequentially.
         """
         return await self.enqueue_prompt(msg, {}, attachments=True)
+
+    async def do_nopost(self, msg: Message) -> str:
+        "Like /imagine, but doesn't post on Twitter"
+        return await self.enqueue_prompt(msg, {"nopost": True}, attachments=True)
 
     @hide
     async def do_priority(self, msg: Message) -> str:
@@ -536,8 +540,9 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         raise Exception("You asked for it~!")
 
     async def default(self, message: Message) -> Response:
-        if message.text and message.text.startswith("/"):
-            message.text = message.text.removeprefix("/")
+        if message.full_text and message.full_text.startswith("/"):
+            message.full_text = message.full_text.removeprefix("/")
+            message.parse_text(message.full_text)
             return await self.do_imagine(message)
         return await super().default(message)
 
