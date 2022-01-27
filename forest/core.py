@@ -523,7 +523,7 @@ class Bot(Signal):
     def __init__(self, bot_number: Optional[str] = None) -> None:
         """Creates AND STARTS a bot that routes commands to do_x handlers"""
         self.client_session = aiohttp.ClientSession()
-        self.mobster = payments_monitor.StatefulMobster()
+        self.mobster = payments_monitor.Mobster()
         self.pongs: dict[str, str] = {}
         self.auxin_roundtrip_latency: list[Datapoint] = []
         self.pending_response_tasks: list[asyncio.Task] = []
