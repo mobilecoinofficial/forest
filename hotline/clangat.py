@@ -355,7 +355,7 @@ class ClanGat(PayBotPro):
                     await self.payout_balance_mmob.decrement(list_, amount)
                     await self.successful_pays.extend(save_key, target)
                 await asyncio.sleep(1)
-            await self.send_message(msg.uuid, f"failed on\n{failed}")
+            await self.send_message(msg.uuid, f"failed on\n{[await self.get_displayname(uuid) for uuid in failed]}")
             return "completed sends"
         return "failed"
 
@@ -454,6 +454,8 @@ class ClanGat(PayBotPro):
     async def do_help(self, msg: Message) -> Response:
         if msg.arg1 and msg.arg1.lower() == "add":
             return self.do_add.__doc__
+        elif msg.arg1 and msg.arg1.lower() == "setup":
+            return self.do_setup.__doc__
         return "\n\n".join(
             [
                 "Hi, I'm MOBot! Welcome to my Hotline!",
@@ -491,6 +493,61 @@ class ClanGat(PayBotPro):
         """Set is an alias for add"""
         return await self.do_add(msg)
 
+    async def do_setup(self, msg: Message) -> Response:
+        "A question-and-answer based workflow for setting up events and lists"
+        if not msg.arg1:
+            msg.arg1 = await self.ask_freeform_question(
+                msg.uuid, "What event or list would you like to setup?"
+            )
+        obj, param, value = (
+            (msg.arg1 or "").lower(),
+            (msg.arg2 or "").lower(),
+            msg.arg3 or "",
+        )
+        value = value.strip("\u2068\u2069")
+        user = msg.uuid
+        user_owns_event_obj = obj and user in await self.event_owners.get(obj, [])
+        user_owns_list_obj = obj and user in await self.list_owners.get(obj, [])
+        event_or_list = "list" if user_owns_list_obj else None
+        event_or_list = "event" if user_owns_event_obj else None
+        if not event_or_list:
+            return "Please try again with a list or event that you own!"
+        if await self.ask_yesno_question(
+            user,
+            f"Would you like to limit the number of individuals who may join this {event_or_list}?",
+        ):
+            msg.arg1 = "limit"
+            msg.arg2 = obj
+            msg.arg3 = await self.ask_freeform_question(
+                user, f"What limit would you like to set?"
+            )
+            await self.send_message(user, await self.do_add(msg))
+        if user_owns_event_obj and await self.ask_yesno_question(
+            user,
+            f"Would you like to change the price from {await self.event_prices.get(obj, 0)}MOB?",
+        ):
+            msg.arg1 = "price"
+            msg.arg2 = obj
+            msg.arg3 = await self.ask_freeform_question(
+                user, f"What price would you like to set for the {obj} event?"
+            )
+            await self.send_message(user, await self.do_add(msg))
+        if event_or_list and await self.ask_yesno_question(
+            user,
+            f"Would you like to set a prompt for {event_or_list} {obj}?\n\nIt is currently: \n'{await self.event_prompts.get(obj)}'",
+        ):
+
+            msg.arg1 = "prompt"
+            msg.arg2 = obj
+            msg.arg3 = await self.ask_freeform_question(
+                user,
+                f"What prompt would you like to set for the {obj} {event_or_list}?",
+            )
+            await self.send_message(user, await self.do_add(msg))
+        msg.arg1 = obj
+        return await self.do_check(msg)
+
+    @hide
     async def do_add(self, msg: Message) -> Response:
         """add event <eventcode>
         > add event TEAMNYE22
@@ -518,28 +575,36 @@ class ClanGat(PayBotPro):
             param in await self.list_owners.keys()
             and user in await self.list_owners.get(param, [])
         )
-        objs = "event list owner price prompt limit invitees blast".split()
+        objs = "event list owner price prompt limit".split()
         success = False
         if (
             obj == "egg"
             and (
                 param not in await self.easter_eggs.keys()
+                or await self.get_displayname(msg.uuid)
+                in await self.easter_eggs.get(param, "")
                 or msg.uuid in await self.easter_eggs.get(param, "")
+                or msg.source in await self.easter_eggs.get(param, "")
             )
             and value
         ):
             maybe_old_message = await self.easter_eggs.get(param, "")
             if maybe_old_message:
                 self.send_message(msg.uuid, f"replacing: {maybe_old_message}")
-                self.easter_eggs[param] = f"{value} - updated by {msg.uuid}"
+                self.easter_eggs[
+                    param
+                ] = f"{value} - updated by {await self.get_displayname(msg.uuid)}"
                 return f"Updated {param} to read {value}"
             else:
-                self.easter_eggs[param] = f"{value} - added by {msg.uuid}"
-                return f'Added an egg! "{param}" now returns\n > {value} - added by {msg.uuid}'
+                self.easter_eggs[
+                    param
+                ] = f"{value} - added by {await self.get_displayname(msg.uuid)}"
+                return f'Added an egg! "{param}" now returns\n > {value} - added by {await self.get_displayname(msg.uuid)}'
         elif obj == "egg" and param in await self.easter_eggs.keys():
             return f"Sorry, egg already has value {await self.easter_eggs.get(param)}. Please message support to change it."
         if (
             obj == "event"
+            and param
             and param not in await self.event_owners.keys()
             and param not in await self.list_owners.keys()
         ):
@@ -551,7 +616,13 @@ class ClanGat(PayBotPro):
             await self.event_prompts.set(param, "")
             await self.payout_balance_mmob.set(param, 0)
             successs = True
-            return f'you now own event "{param}", and a list by the same name - time to add price, prompt, and limit'
+            if await self.ask_yesno_question(
+                user, "Would you like to setup your new event '{param}' now? (yes/no)"
+            ):
+                msg.arg1 = param
+                return await self.do_setup(msg)
+            else:
+                return f'You now own paid event "{param}", and a free list by the same name - use "setup {param}" to configure your event at your convenience!'
         if (
             obj == "list"
             and param not in await self.list_owners.keys()
@@ -561,12 +632,45 @@ class ClanGat(PayBotPro):
             await self.event_lists.set(param, [])
             await self.event_images.set(param, [])
             await self.event_prompts.set(param, "")
-            return f"created list {param}, time to add some invitees and blast 'em"
+            if await self.ask_yesno_question(
+                user, "Would you like to setup your new list '{param}' now? (yes/no)"
+            ):
+                msg.arg1 = param
+                msg.arg2 = ""
+                msg.arg3 = ""
+                return await self.do_setup(msg)
+            else:
+                return f'You now own a free announcement list named {param} - use "setup {param}" to configure your event at your convenience!'
         elif obj == "event" and not param:
             msg.arg2 = await self.ask_freeform_question(
                 msg.uuid, "What unlock code would you like to use for this event?"
             )
+            return await self.do_add(msg)
+        elif obj == "list" and not param:
+            msg.arg2 = await self.ask_freeform_question(
+                msg.uuid, "What unlock code would you like to use for this list?"
+            )
             return await self.add(msg)
+        if (user_owns_event_param or user_owns_list_param) and not value:
+            if user_owns_list_param:
+                valid_options = "owner prompt limit stop".split()
+            elif user_owns_event_param:
+                valid_options = "owner prompt price limit stop".split()
+            while msg.arg2.lower() not in valid_options:
+                msg.arg2 = await self.ask_freeform_question(
+                    msg.uuid,
+                    f"What parameter would you like to set? Your options are {valid_options}",
+                )
+            if msg.arg2.lower() in "stop cancel exit quit":
+                return "Okay, nevermind!"
+            msg.arg3 = await self.ask_freeform_question(
+                msg.uuid,
+                f"What value would you like to set for {msg.arg1}'s {msg.arg2}?",
+            )
+            if msg.arg3.lower() == "stop cancel exit quit":
+                return "Okay, nevermind!"
+            return await self.do_add(msg)
+
         # if the user owns the event and we have a value passed
         if user_owns_event_param and value:
             if obj == "owner":
@@ -583,7 +687,11 @@ class ClanGat(PayBotPro):
                     await self.event_prices.set(param, float(value))
                     success = True
                 else:
-                    return "provide a value that's a number please!"
+                    msg.arg3 = await self.ask_freeform_question(
+                        msg.uuid,
+                        "I didn't understand that, what price would you like to set? (as a number)",
+                    )
+                    return await self.add(msg)
             elif obj == "prompt":
                 # todo add validation
                 await self.event_prompts.set(param, value)
@@ -594,7 +702,11 @@ class ClanGat(PayBotPro):
                     await self.event_limits.set(param, int(value))
                     success = True
                 else:
-                    return "please provide a value that's a number, please!"
+                    msg.arg3 = await self.ask_freeform_question(
+                        msg.uuid,
+                        "I didn't understand that, what limit would you like to set? (as a number)",
+                    )
+                    return await self.do_add(msg)
         if user_owns_list_param and value:
             if obj == "owner":
                 await self.list_owners.extend(param, value)
@@ -612,7 +724,11 @@ class ClanGat(PayBotPro):
                     await self.event_limits.set(param, int(value))
                     success = True
                 else:
-                    return "please provide a value that's a number, please!"
+                    msg.arg3 = await self.ask_freeform_question(
+                        msg.uuid,
+                        "I didn't understand that, what limit would you like to set? (as a number)",
+                    )
+                    return await self.do_add(msg)
         if success:
             return f"Successfully added '{value}' to event {param}'s {obj}!"
         return f"Failed to add {value} to event {param}'s {obj}!"
