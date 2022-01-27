@@ -12,6 +12,10 @@ RUST_BACKTRACE="full"
   allowed_public_ports = []
   auto_rollback = false
 
+[mounts]
+  source = "mobdripper_data"
+  destination = "/app/data"
+
 [metrics]
 port = 8080
 path = "/metrics"

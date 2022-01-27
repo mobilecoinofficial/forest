@@ -6,6 +6,7 @@
 """
 The core chatbot framework: Message, Signal, Bot, and app
 """
+import ast
 import asyncio
 import asyncio.subprocess as subprocess  # pylint: disable=consider-using-from-import
 import base64
@@ -47,8 +48,10 @@ MessageParser = AuxinMessage if utils.AUXIN else StdioMessage
 logging.info("Using message parser: %s", MessageParser)
 FEE_PMOB = int(1e12 * 0.0004)
 
+
 def uuid4() -> str:
     return str(uuid.uuid4())
+
 
 def rpc(
     method: str, param_dict: Optional[dict] = None, _id: str = "1", **params: Any
@@ -480,7 +483,9 @@ def requires_admin(command: Callable) -> Callable:
     @wraps(command)
     async def admin_command(self: "Bot", msg: Message) -> Response:
         secondary = utils.get_secret("SECONDARY_ADMIN")
-        if msg.source == utils.get_secret("ADMIN") or (isinstance(secondary,str) and msg.source in secondary.split(",")):
+        if msg.source == utils.get_secret("ADMIN") or (
+            isinstance(secondary, str) and msg.source in secondary.split(",")
+        ):
             return await command(self, msg)
         return "you must be an admin to use this command"
 
@@ -542,7 +547,9 @@ class Bot(Signal):
                     self.pause = True
                     await asyncio.sleep(4)
                     m_hash = message.id.split("-")[-1]
-                    future_key = f"retry-send-{int(time.time()*1000)}-{m_hash}-{uuid4()}"
+                    future_key = (
+                        f"retry-send-{int(time.time()*1000)}-{m_hash}-{uuid4()}"
+                    )
                     self.pending_messages_sent[future_key] = sent_json_message
                     self.pending_requests[future_key] = asyncio.Future()
                     await self.auxincli_input_queue.put(sent_json_message)
@@ -639,6 +646,33 @@ class Bot(Signal):
             fact = await resp.text()
         return fact.strip()
 
+    @hide
+    @requires_admin
+    async def do_eval(self, msg: Message) -> Response:
+        """Evaluates a few lines of Python. Preface with "return" to reply with result."""
+
+        async def async_exec(stmts: str, env: Optional[dict]) -> Any:
+            parsed_stmts = ast.parse(stmts)
+            fn_name = "_async_exec_f"
+            my_fn = f"async def {fn_name}(): pass"
+            parsed_fn = ast.parse(my_fn)
+            for node in parsed_stmts.body:
+                ast.increment_lineno(node)
+            assert isinstance(parsed_fn.body[0], ast.AsyncFunctionDef)
+            # replace the empty async def _async_exec_f(): pass body
+            # with the AST parsed from the message
+            parsed_fn.body[0].body = parsed_stmts.body
+            code = compile(parsed_fn, filename="<ast>", mode="exec")
+            exec(code, env or globals())  # pylint: disable=exec-used
+            return await eval(
+                f"{fn_name}()", env or globals()
+            )  # pylint: disable=eval-used
+
+        if msg.full_text and len(msg.tokens) > 1:
+            source_blob = msg.full_text.replace(msg.arg0, "", 1).lstrip("/ ")
+            return str(await async_exec(source_blob, locals()))
+        return None
+
     async def do_ping(self, message: Message) -> str:
         """replies to /ping with /pong"""
         if message.text:
@@ -669,6 +703,24 @@ class PayBot(Bot):
     async def get_user_balance(self, account: str) -> float:
         res = await self.mobster.ledger_manager.get_usd_balance(account)
         return float(round(res[0].get("balance"), 2))
+
+    @hide
+    @requires_admin
+    async def do_fsr(self, msg: Message) -> Response:
+        """
+        Make a request to the Full-Service instance behind the bot. Admin-only.
+        ie) /fsr [command] ([arg1] [val1]( [arg2] [val2])...)"""
+        if not msg.tokens:
+            return "/fsr [command] ([arg1] [val1]( [arg2] [val2]))"
+        if len(msg.tokens) == 1:
+            return await self.mobster.req(dict(method=msg.tokens[0]))
+        if (len(msg.tokens) % 2) == 1:
+            fsr_command = msg.tokens[0]
+            fsr_keys = msg.tokens[1::2]
+            fsr_values = msg.tokens[2::2]
+            params = dict(zip(fsr_keys, fsr_values))
+            return str(await self.mobster.req_(fsr_command, **params))
+        return "/fsr [command] ([arg1] [val1]( [arg2] [val2])...)"
 
     async def handle_payment(self, message: Message) -> None:
         """Decode the receipt, then update balances.
@@ -732,7 +784,7 @@ class PayBot(Bot):
         """Pass a request through to full-service, but send a message to an admin in case of error"""
         result = await self.mobster.req_(method, **params)
         if "error" in result:
-            logging.warning("%s \n%s",params, result)
+            logging.warning("%s \n%s", params, result)
         return result
 
     async def fs_receipt_to_payment_message_content(
@@ -789,6 +841,12 @@ class PayBot(Bot):
         confirm_tx_timeout: int = 0,
         **params: Any,
     ) -> Optional[Message]:
+        """
+        If confirm_tx_timeout is not 0, we wait that many seconds for the tx
+        to complete before sending receipt_message to receipient
+        params are pasted to the full-service build_transaction call.
+        some useful params are comment and input_txo_ids
+        """
         address = await self.get_address(recipient)
         account_id = await self.mobster.get_account()
         if not address:
@@ -796,9 +854,7 @@ class PayBot(Bot):
                 recipient, "sorry, couldn't get your MobileCoin address"
             )
             return None
-        # TODO: add a lock around two-part build/submit Or
         # TODO: add explicit utxo handling
-        # TODO: add task which keeps full-service filled
         raw_prop = await self.mob_request(
             "build_transaction",
             account_id=account_id,
@@ -807,25 +863,32 @@ class PayBot(Bot):
             fee=str(int(1e12 * 0.0004)),
             **params,
         )
-
         prop = raw_prop["result"]["tx_proposal"]
         tx_id = raw_prop["result"]["transaction_log_id"]
+        # this is to NOT log transactions into the full service DB if the sender
+        # wants it private.
         if confirm_tx_timeout:
-            s_result = await self.mob_request(
+            # putting the account_id into the request logs it to full service,
+            tx_result = await self.mob_request(
                 "submit_transaction",
                 tx_proposal=prop,
                 comment=params.get("comment", ""),
                 account_id=account_id,
             )
+
         else:
-            s_result = await self.mob_request(
-                "submit_transaction", tx_proposal=prop
-            )
-        
-        if isinstance(s_result, dict) and s_result.get("error"):
+            # if you omit account_id, tx doesn't get logged. Good for privacy,
+            # but transactions can't be confirmed by the sending party (you)!
+            tx_result = await self.mob_request("submit_transaction", tx_proposal=prop)
+
+        if not isinstance(tx_result, dict) or not tx_result.get("result"):
+            # avoid sending tx receipt if there's a tx submission error
+            # and send error message back to tx sender
+            logging.warning("tx submit error for tx_id: %s", tx_id)
             msg = MessageParser({})
             msg.status, msg.transaction_log_id = "tx_status_failed", tx_id
             return msg
+
         receipt_resp = await self.mob_request(
             "create_receiver_receipts",
             tx_proposal=prop,
@@ -843,8 +906,9 @@ class PayBot(Bot):
             logging.debug("Attempting to confirm tx status for %s", recipient)
             status = "tx_status_pending"
             for i in range(confirm_tx_timeout):
-                tx_status = await self.mob_request("get_transaction_log",
-                        transaction_log_id=tx_id)
+                tx_status = await self.mob_request(
+                    "get_transaction_log", transaction_log_id=tx_id
+                )
                 status = (
                     tx_status.get("result", {}).get("transaction_log", {}).get("status")
                 )
@@ -856,7 +920,7 @@ class PayBot(Bot):
                     )
                     if receipt_message:
                         await self.send_message(recipient, receipt_message)
-                        break
+                    break
                 if status == "tx_status_failed":
                     logging.warning(
                         "Tx to %s failed - tx data: %s",
@@ -873,13 +937,13 @@ class PayBot(Bot):
                     tx_status.get("result"),
                 )
             resp = await resp_fut
-            resp.status, resp.transaction_log_id = status, tx_id
+            # the calling function can use these to check the payment status
+            resp.status, resp.transaction_log_id = status, tx_id  # type: ignore
             return resp
 
         if receipt_message:
             await self.send_message(recipient, receipt_message)
         return await resp_fut
-
 
 
 async def no_get(request: web.Request) -> web.Response:
