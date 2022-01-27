@@ -218,8 +218,10 @@ class ClanGat(PayBotPro):
 
     async def do_stop(self, msg: Message) -> Response:
         removed = 0
-        if msg.arg1 and msg.uuid in await self.event_lists.get(msg.arg1, []):
-            await (await self.event_lists[msg.arg1]).remove(msg.uuid)
+        if msg.arg1 and msg.uuid in await self.event_lists.get(
+            (msg.arg1 or "").lower(), []
+        ):
+            await self.event_lists.remove_from((msg.arg1 or "").lower(), msg.uuid)
             return f"Okay, removed you from {msg.arg1}"
         elif not msg.arg1:
             for list_ in await self.event_lists.keys():
@@ -464,8 +466,7 @@ class ClanGat(PayBotPro):
         return "\n\n".join(
             [
                 "Hi, I'm MOBot! Welcome to my Hotline!",
-                self.documented_commands(),
-                "\nEvents and announcement lists can be unlocked by messaging the me the secret code at any time.\n\nAccolades, feature requests, and support questions can be directed to my maintainers at https://signal.group/#CjQKILH5dkoz99TKxwG7T3TaVAuskMq4gybSplYDfTq-vxUrEhBhuy19A4DbvBqm7PfnBn3I .",
+                "\nEvents and announcement lists can be unlocked by messaging me the secret code at any time.\n\nAccolades, feature requests, and support questions can be directed to my maintainers at https://signal.group/#CjQKILH5dkoz99TKxwG7T3TaVAuskMq4gybSplYDfTq-vxUrEhBhuy19A4DbvBqm7PfnBn3I .",
             ]
         )
 
@@ -566,6 +567,10 @@ class ClanGat(PayBotPro):
         > add limit TEAMNYE22 200
         > add list COWORKERS
         """
+        if not msg.arg1:
+            msg.arg1 = await self.ask_freeform_question(
+                msg.uuid, "Would you like to add an event, easteregg, or a list?"
+            )
         obj, param, value = (
             (msg.arg1 or "").lower(),
             (msg.arg2 or "").lower(),
@@ -583,7 +588,7 @@ class ClanGat(PayBotPro):
         )
         objs = "event list owner price prompt limit".split()
         success = False
-        if obj == "egg" and (
+        if (obj == "egg" or obj == "easteregg") and (
             not await self.easter_eggs.get(param, None)
             or await self.get_displayname(msg.uuid)
             in await self.easter_eggs.get(param, "")
@@ -609,7 +614,8 @@ class ClanGat(PayBotPro):
                 return f"Updated {param} to read {value}"
             else:
                 await self.easter_eggs.set(
-                    param, f"{value} - added by {await self.get_displayname(msg.uuid)}"
+                    param.lower(),
+                    f"{value} - added by {await self.get_displayname(msg.uuid)}",
                 )
                 return f'Added an egg! "{param}" now returns\n > {value} - added by {await self.get_displayname(msg.uuid)}'
         elif obj == "egg" and param in await self.easter_eggs.keys():
@@ -669,12 +675,12 @@ class ClanGat(PayBotPro):
                 valid_options = "owner prompt limit stop".split()
             elif user_owns_event_param:
                 valid_options = "owner prompt price limit stop".split()
-            while msg.arg2.lower() not in valid_options:
+            while (msg.arg2 or "").lower() not in valid_options:
                 msg.arg2 = await self.ask_freeform_question(
                     msg.uuid,
                     f"What parameter would you like to set? Your options are {valid_options}",
                 )
-            if msg.arg2.lower() in "stop cancel exit quit":
+            if (msg.arg2 or "").lower() in "stop cancel exit quit":
                 return "Okay, nevermind!"
             msg.arg3 = await self.ask_freeform_question(
                 msg.uuid,
@@ -851,7 +857,7 @@ https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
                     lists += [f"pending: {maybe_pending}"]
 
             user_given = await self.get_displayname(msg.uuid)
-            if msg.full_text in await self.easter_eggs.keys():
+            if msg.full_text in [key.lower() for key in await self.easter_eggs.keys()]:
                 return await self.easter_eggs.get(msg.full_text)
             if code in await self.easter_eggs.keys():
                 return await self.easter_eggs.get(code)
@@ -883,8 +889,9 @@ https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
                         await self.event_attendees.extend(code, msg.uuid)
                         end_note = "(times two!)"
                     await self.event_attendees.extend(code, msg.uuid)
+                    thank_you = f"Thanks for paying for {await self.pending_orders[msg.uuid]}.\nYou're on the list! {end_note}"
                     await self.pending_orders.remove(msg.uuid)
-                    return f"Thanks for paying for {await self.pending_orders[msg.uuid]}.\nYou're on the list! {end_note}"
+                    return thank_you
         if msg.uuid in await self.pending_funds.keys():
             code = await self.pending_funds.pop(msg.uuid)
             await self.payout_balance_mmob.increment(code, amount_mmob)
