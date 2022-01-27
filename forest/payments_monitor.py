@@ -65,6 +65,8 @@ InvoicePGEExpressions = PGExpressions(
     get_invoice_by_amount="SELECT invoice_id, account FROM {self.table} WHERE unique_pmob=$1",
 )
 
+FEE = 4000000000
+
 
 class InvoiceManager(PGInterface):
     def __init__(self) -> None:
@@ -79,6 +81,7 @@ class LedgerManager(PGInterface):
         loop: Loop = None,
     ) -> None:
         super().__init__(queries, database, loop)
+
 
 class Mobster:
     """Class to keep track of a aiohttp session and cached rate"""
@@ -220,9 +223,9 @@ class Mobster:
         )["result"]["balance"]["unspent_pmob"]
         return int(value)
 
-    async def get_signal_address(self, address: str = "" ) -> Optional[str]:
+    async def get_signal_address(self, address: str = "") -> Optional[str]:
         """
-        Convert a Mobilecoin b58 address to b64 protobuf address expected by 
+        Convert a Mobilecoin b58 address to b64 protobuf address expected by
         Signal when setting a Signal Pay address
 
         args:
@@ -238,11 +241,11 @@ class Mobster:
                 logging.warning("no addresses in wallet to convert to signal format")
                 return ""
             address = main_address
-        return mc_util.b58_wrapper_to_b64_public_address(address) 
+        return mc_util.b58_wrapper_to_b64_public_address(address)
 
     async def build_transaction(
         self,
-        account_id: str,
+        account_id: str = "",
         value_pmob: int = -1,
         recipient_public_address: str = "",
         addresses_and_values: Optional[list[tuple[str, int]]] = None,
@@ -272,6 +275,8 @@ class Mobster:
           comment (str): comment to annotate transaction purpose to be stored
           in wallet db
         """
+        if not account_id:
+            account_id = await self.get_account()
         params: dict[str, Any] = {"account_id": account_id}
         method = "build_transaction"
 
@@ -306,8 +311,6 @@ class Mobster:
                 }
             )
         )["result"]["transaction_log_map"]
-
-
 
     async def get_all_transaction_logs_by_block(self) -> dict:
         """
@@ -452,7 +455,6 @@ class Mobster:
         ]
         return sorted(utxos, key=lambda txo_value: txo_value[1], reverse=True)
 
-
     async def confirm_transaction(self, tx_log_id: str, timeout: int = 10) -> bool:
         """
         Confirm a pending transaction success with timeout
@@ -484,7 +486,64 @@ class Mobster:
             logging.warning("Failed to confirm transaction in %s tries", timeout)
         return False
 
+    async def cleanup_utxos(
+        self,
+        max_single_txo: int,
+        account_id: str = "",
+        locked_txos: Optional[dict[str, Any]] = None,
+        largest_first: bool = False,
+    ) -> list[tuple[str, int]]:
+        """
+        Consolidate wallet txos into a single txo of specified size
 
+        args:
+          acount_id (str): Mobilecoin wallet account_id
+          max_single_txo (int): Size (in pmob) of transaction to consolidate to
+          locked_txos (dict[str, Any]): dict of txo_ids to exclude from cleanup
+        """
+
+        logging.info("cleaning up transactions to ceiling of: %s", max_single_txo)
+        if not account_id:
+            account_id = await self.get_account()
+        address = await self.get_address()
+        retries = 0
+        while retries < 2:
+            utxos = await self.filter_txos(account_id, locked_txos=locked_txos)
+            if sum([txo[1] for txo in utxos]) - FEE <= max_single_txo:
+                logging.warning("free utxos less than requested, aborting")
+                return utxos
+
+            txo_slice = utxos[16:]
+            if largest_first:
+                txo_slice = utxos[:16]
+
+            tail_amt = sum([txo[1] for txo in txo_slice])
+            chosen_utxos = txo_slice
+            if tail_amt - FEE > max_single_txo:
+                tail_amt, chosen_utxos = 0, []
+                for utxo in reversed(txo_slice):
+                    tail_amt += utxo[1]
+                    if tail_amt - FEE > max_single_txo:
+                        break
+                    chosen_utxos.append(utxo)
+
+            logging.debug("selected utxos for cleanup %s", txo_slice)
+            if len(chosen_utxos) > 1:
+                prop = await self.build_transaction(
+                    account_id,
+                    tail_amt - FEE,
+                    address,
+                    input_txo_ids=[txo[0] for txo in chosen_utxos],
+                    submit=True,
+                    comment="utxo_cleanup",
+                ) 
+            tx_log_id = prop.get("result", {}).get("transaction_log", {}).get("transaction_log_id", "")
+            if not await self.confirm_transaction(tx_log_id):
+                retries += 1
+            if tail_amt - FEE > max_single_txo:
+                return await self.filter_txos(account_id)
+        logging.warning("Txo condensation failed too many times, aborting")
+        return await self.filter_txos(account_id)
 
     async def monitor_wallet(self) -> None:
         last_transactions: dict[str, dict[str, str]] = {}
