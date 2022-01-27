@@ -355,7 +355,10 @@ class ClanGat(PayBotPro):
                     await self.payout_balance_mmob.decrement(list_, amount)
                     await self.successful_pays.extend(save_key, target)
                 await asyncio.sleep(1)
-            await self.send_message(msg.uuid, f"failed on\n{[await self.get_displayname(uuid) for uuid in failed]}")
+            await self.send_message(
+                msg.uuid,
+                f"failed on\n{[await self.get_displayname(uuid) for uuid in failed]}",
+            )
             return "completed sends"
         return "failed"
 

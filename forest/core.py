@@ -922,7 +922,8 @@ class PayBot(Bot):
         account_id = await self.mobster.get_account()
         if not address:
             await self.send_message(
-                recipient, "sorry, couldn't get your MobileCoin address"
+                recipient,
+                "Sorry, couldn't get your MobileCoin address. Please make sure you have payments enabled, and have messaged me from your phone!",
             )
             return None
         # TODO: add explicit utxo handling
