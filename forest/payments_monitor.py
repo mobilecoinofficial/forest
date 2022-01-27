@@ -9,7 +9,7 @@ import logging
 import random
 import ssl
 import time
-from typing import Optional
+from typing import Optional, Union, Any
 
 import aiohttp
 import asyncpg
@@ -79,21 +79,6 @@ class LedgerManager(PGInterface):
         loop: Loop = None,
     ) -> None:
         super().__init__(queries, database, loop)
-
-
-# def auxin_addr_to_b58(auxin_output: str) -> str:
-# requires protobuf stuff
-#     mc_util.b64_public_address_to_b58_wrapper(
-#         base64.b64encode(
-#             bytes(
-#                 json.loads(auxin_output)
-#                 .get("Address")
-#                 .get("mobileCoinAddress")
-#                 .get("address")
-#             )
-#         )
-#     )
-
 
 class Mobster:
     """Class to keep track of a aiohttp session and cached rate"""
@@ -235,6 +220,83 @@ class Mobster:
         )["result"]["balance"]["unspent_pmob"]
         return int(value)
 
+    async def get_signal_address(self, address: str = "" ) -> Optional[str]:
+        """
+        Convert a Mobilecoin b58 address to b64 protobuf address expected by 
+        Signal when setting a Signal Pay address
+
+        args:
+          address (Optional[str]): Address to convert, if left blank the main
+          address in the account is used
+
+        Returns
+          (str): b64 protobuf address
+        """
+        main_address = await self.get_address()
+        if not address:
+            if not main_address:
+                logging.warning("no addresses in wallet to convert to signal format")
+                return ""
+            address = main_address
+        return mc_util.b58_wrapper_to_b64_public_address(address) 
+
+    async def build_transaction(
+        self,
+        account_id: str,
+        value_pmob: int = -1,
+        recipient_public_address: str = "",
+        addresses_and_values: Optional[list[tuple[str, int]]] = None,
+        input_txo_ids: Optional[list[str]] = None,
+        submit: bool = False,
+        log: bool = False,
+        comment: str = "",
+    ) -> dict:
+        """
+        Build a single_txo or multi_txo transaction. If building a single txo
+        transaction use value_pmob and recipient_public_address args. If
+        building a multi-txo transaction, use the addresses_and_values arg to
+        specify a list of [mobilecoin address, amount] pairs.
+
+        args:
+          account_id (str): account_id of the sending account
+          value_pmob (int): txo value if building a single_txo transaction in picomob
+          recipient_public_address (str): address of recipient for single txo transaction
+          addresses_and_values (list[tuple[str,int]]): List of pairs of addresses and
+          picomob
+          input_txo_ids: list[str]: list of input_txo_ids to use to build the
+          txos. Input txos must be greater than or equal to value being sent in
+          the transaction
+          submit (bool): if true, transaction will be submitted to mobilecoin
+          blockchain
+          log (bool): Log tx proposal in wallet database
+          comment (str): comment to annotate transaction purpose to be stored
+          in wallet db
+        """
+        params: dict[str, Any] = {"account_id": account_id}
+        method = "build_transaction"
+
+        if submit:
+            method = "build_and_submit_transaction"
+        if value_pmob > 0:
+            params["value_pmob"] = str(value_pmob)
+        if recipient_public_address:
+            params["recipient_public_address"] = recipient_public_address
+        if addresses_and_values:
+            value_pairs = [(v[0], str(v[1])) for v in addresses_and_values]
+            params["addresses_and_values"] = value_pairs
+        if input_txo_ids:
+            params["input_txo_ids"] = input_txo_ids
+        if submit and comment:
+            params["comment"] = comment
+        if not submit and log:
+            params["log_tx_proposal"] = log
+        if comment:
+            params["comment"] = comment
+
+        tx_proposal = {"method": method, "params": params}
+        logging.info("building txo_proposal: %s", tx_proposal)
+        return await self.req(tx_proposal)
+
     async def get_transactions(self, account_id: str) -> dict[str, dict[str, str]]:
         return (
             await self.req(
@@ -245,56 +307,7 @@ class Mobster:
             )
         )["result"]["transaction_log_map"]
 
-    async def build_single_txo_proposal(self, recipient: str, amount: str) -> dict:
-        """
-        Build proposal for single txo to single recipient.
 
-        args:
-          recipient (str): Base58 mobilecoin address of recipient
-          amount (int): Amount in picomob to send to address
-
-        returns:
-          dict: Resulting proposal from mobilecoin
-        """
-
-        account_id = await self.get_account()
-        tx_proposal = dict(
-            method="build_transaction",
-            params=dict(
-                account_id=account_id,
-                recipient_public_address=recipient,
-                value_pmob=str(amount),
-                log_tx_proposal=True,
-            ),
-        )
-
-        return await self.req(tx_proposal)
-
-    async def build_multi_txo_proposal(
-        self, txo_proposals: list[tuple[str, str]]
-    ) -> dict:
-        """
-        Submit a multiple txo transaction proposal to full-service api. Txos may
-        be sent to a single address or multiple addresses.
-
-        args:
-          txo_proposals (list[tuple[str, int]]): List of (address, picomob) pairs
-
-        Returns:
-          dict: result of multi-output proposal
-        """
-
-        account_id = await self.get_account()
-        tx_proposal = dict(
-            method="build_transaction",
-            params=dict(
-                account_id=account_id,
-                addresses_and_values=txo_proposals,
-                log_tx_proposal=True,
-            ),
-        )
-
-        return await self.req(tx_proposal)
 
     async def get_all_transaction_logs_by_block(self) -> dict:
         """
@@ -304,8 +317,7 @@ class Mobster:
           dict: transaction records ordered by block
         """
 
-        request = dict(method="get_all_transaction_logs_ordered_by_block")
-        return await self.req(request)
+        return await self.req_("get_all_transaction_logs_ordered_by_block")
 
     async def get_block(self, block: int) -> dict:
         """
@@ -318,8 +330,7 @@ class Mobster:
           dict: block information
         """
 
-        request = dict(method="get_block", params=dict(block_index=str(block)))
-        return await self.req(request)
+        return await self.req_("get_block", block_index=str(block))
 
     async def get_pending_transactions(self, from_block: int = 2) -> list[dict]:
         """
@@ -345,6 +356,135 @@ class Mobster:
                     continue
 
         return pending_transactions
+
+    async def get_wallet_status(self) -> dict:
+        """
+        Get status of wallet, including block information
+
+        Returns:
+          dict: wallet data
+        """
+        return await self.req_("get_wallet_status")
+
+    async def get_current_network_block(self) -> int:
+        """
+        Gets current network block, returns 0 if error
+
+        Returns:
+          int: Current network block or 0 if error
+        """
+
+        data = await self.get_wallet_status()
+
+        try:
+            start_block = int(
+                (
+                    data.get("result", {})
+                    .get("wallet_status", {})
+                    .get("network_block_index", 0)
+                )
+            )
+        except:
+            start_block = 0
+        return start_block
+
+    async def get_all_txos_for_account(self, account_id: str = "") -> dict:
+        """
+        Get all txos for account
+
+        args:
+          account_id (str): mobilecoin account id
+
+        Returns:
+          dict: matching transactions
+        """
+        if not account_id:
+            account_id = await self.get_account()
+        return await self.req_("get_all_txos_for_account", account_id=account_id)
+
+    async def get_transaction_log(self, transaction_log_id: str) -> dict:
+        """
+        Get current status of a transaction
+
+        args:
+          transaction_log_id (str): transaction_log_id (generated by the
+          build_transaction and submit_transaction methods)
+        """
+        logging.info("transaction log id is %s", transaction_log_id)
+        return await self.req_(
+            "get_transaction_log", transaction_log_id=transaction_log_id
+        )
+
+    async def filter_txos(
+        self,
+        account_id: str = "",
+        txo_status: str = "txo_status_unspent",
+        max_val: Union[int, float] = float("inf"),
+        min_val: int = 0,
+        locked_txos: Optional[dict] = None,
+    ) -> list[tuple[str, int]]:
+        """
+        Get ordered txos meeting a specific status
+
+        args:
+          txo_status (str): status of the txo, specify "txo_status_unspent" to
+          get unpsent txos or "txo_status_spent" to get spent txos
+          max_val (int): maximum value in pmob
+          min_val (int): minimum value in pmob
+          locked_txos (dict): txo ids to filter from result
+
+        Returns:
+          (list[tuple[str,int]]): ordered list of matching txos
+        """
+        if not account_id:
+            account_id = await self.get_account()
+        if not locked_txos:
+            locked_txos = {}
+
+        txos = await self.get_all_txos_for_account(account_id)
+        utxos = [
+            (k, int(v.get("value_pmob")))
+            for k, v in txos.get("result", {}).get("txo_map", {}).items()
+            if v.get("account_status_map", {}).get(account_id).get("txo_status")
+            == txo_status
+            and (max_val > int(v.get("value_pmob")) > min_val)
+            and not locked_txos.get(k)
+        ]
+        return sorted(utxos, key=lambda txo_value: txo_value[1], reverse=True)
+
+
+    async def confirm_transaction(self, tx_log_id: str, timeout: int = 10) -> bool:
+        """
+        Confirm a pending transaction success with timeout
+
+        args:
+          tx_log_id (str): transaction log id
+          timeout (int): max time to wait for confirmation
+
+        Return
+          bool: Transaction success/failure
+        """
+        tx_data = await self.get_transaction_log(tx_log_id)
+        if not isinstance(tx_data, dict) or not "result" in tx_data:
+            return False
+
+        time = 0
+        while time < timeout:
+            tx_log = tx_data.get("result", {}).get("transaction_log", {})
+            status = tx_log.get("status")
+            if status == "tx_status_succeeded":
+                return True
+            if status == "tx_status_failed":
+                logging.warning("tx failed, log: %s", tx_log)
+                return False
+            await asyncio.sleep(1)
+            txo_data = await self.get_transaction_log(tx_log_id)
+            time += 1
+        if time >= timeout:
+            logging.warning("Failed to confirm transaction in %s tries", timeout)
+        return False
+
+
 
     async def monitor_wallet(self) -> None:
         last_transactions: dict[str, dict[str, str]] = {}
