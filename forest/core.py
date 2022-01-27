@@ -483,11 +483,13 @@ class Signal:
 Datapoint = tuple[int, str, float]  # timestamp in ms, command/info, latency in seconds
 
 
-def is_admin(msg: Message) -> bool:
+def is_admin(msg: Message) -> Optional[bool]:
     return (
-        msg.source == utils.get_secret("ADMIN")
-        or msg.group == utils.get_secret("ADMIN_GROUP")
-        or msg.source in utils.get_secret("ADMINS").split(",")
+        (msg.source == utils.get_secret("ADMIN"))
+        or (msg.uuid == utils.get_secret("ADMIN"))
+        or (msg.group == utils.get_secret("ADMIN_GROUP"))
+        or (msg.source in utils.get_secret("ADMINS").split(","))
+        or (msg.uuid and msg.uuid in utils.get_secret("ADMINS"))
     )
 
 
@@ -705,8 +707,9 @@ class Bot(Signal):
             # with the AST parsed from the message
             parsed_fn.body[0].body = parsed_stmts.body
             code = compile(parsed_fn, filename="<ast>", mode="exec")
-            exec(code, env)  # pylint: disable=exec-used
-            return await eval(f"{fn_name}()", env)  # pylint: disable=eval-used
+            exec(code, env or globals())  # pylint: disable=exec-used
+            # pylint: disable=eval-used
+            return await eval(f"{fn_name}()", env or globals())
 
         if msg.full_text and len(msg.tokens) > 1:
             source_blob = msg.full_text.replace(msg.arg0, "", 1).lstrip("/ ")
@@ -918,7 +921,8 @@ class PayBot(Bot):
         account_id = await self.mobster.get_account()
         if not address:
             await self.send_message(
-                recipient, "sorry, couldn't get your MobileCoin address"
+                recipient,
+                "Sorry, couldn't get your MobileCoin address. Please make sure you have payments enabled, and have messaged me from your phone!",
             )
             return None
         # TODO: add explicit utxo handling
@@ -930,8 +934,8 @@ class PayBot(Bot):
             fee=str(int(1e12 * 0.0004)),
             **params,
         )
-        prop = raw_prop["result"]["tx_proposal"]
-        tx_id = raw_prop["result"]["transaction_log_id"]
+        prop = raw_prop.get("result", {}).get("tx_proposal")
+        tx_id = raw_prop.get("result", {}).get("transaction_log_id")
         # this is to NOT log transactions into the full service DB if the sender
         # wants it private.
         if confirm_tx_timeout:
@@ -943,6 +947,8 @@ class PayBot(Bot):
                 account_id=account_id,
             )
 
+        elif not prop or not tx_id:
+            tx_result = None
         else:
             # if you omit account_id, tx doesn't get logged. Good for privacy,
             # but transactions can't be confirmed by the sending party (you)!
@@ -1008,8 +1014,6 @@ class PayBot(Bot):
             resp.status, resp.transaction_log_id = status, tx_id  # type: ignore
             return resp
 
-        if receipt_message:
-            await self.send_message(recipient, receipt_message)
         return await resp_fut
 
 
@@ -1020,8 +1024,12 @@ class QuestionBot(PayBot):
         super().__init__(bot_number)
 
     async def handle_message(self, message: Message) -> Response:
-        if message.full_text and self.pending_answers.get(message.source):
-            probably_future = self.pending_answers[message.source]
+        if message.full_text:
+            probably_future = None
+            if message.uuid in self.pending_answers:
+                probably_future = self.pending_answers[message.uuid]
+            if message.source in self.pending_answers:
+                probably_future = self.pending_answers[message.uuid]
             if probably_future:
                 probably_future.set_result(message)
             return
@@ -1030,9 +1038,16 @@ class QuestionBot(PayBot):
     @hide
     async def do_yes(self, msg: Message) -> Response:
         """Handles 'yes' in response to a pending_confirmation."""
-        if msg.source not in self.pending_confirmations:
+        if (
+            msg.uuid not in self.pending_confirmations
+            and msg.source not in self.pending_confirmations
+        ):
             return "Did I ask you a question?"
-        question = self.pending_confirmations.get(msg.source)
+        question = None
+        if msg.uuid and msg.uuid in self.pending_confirmations:
+            question = self.pending_confirmations[msg.uuid]
+        if msg.source and msg.source in self.pending_confirmations:
+            question = self.pending_confirmations[msg.source]
         if question:
             question.set_result(True)
         return None
@@ -1040,25 +1055,18 @@ class QuestionBot(PayBot):
     @hide
     async def do_no(self, msg: Message) -> Response:
         """Handles 'no' in response to a pending_confirmation."""
-        if msg.source not in self.pending_confirmations:
+        if (
+            msg.uuid not in self.pending_confirmations
+            and msg.source not in self.pending_confirmations
+        ):
             return "Did I ask you a question?"
-        question = self.pending_confirmations.get(msg.source)
+        question = None
+        if msg.uuid and msg.uuid in self.pending_confirmations:
+            question = self.pending_confirmations[msg.uuid]
+        if msg.source and msg.source in self.pending_confirmations:
+            question = self.pending_confirmations[msg.source]
         if question:
             question.set_result(False)
-        return None
-
-    @hide
-    async def do_askdemo(self, msg: Message) -> Response:
-        """Asks a yes/no question."""
-        if await self.ask_yesno_question(msg.source, "Are you feeling lucky, punk?"):
-            return "well, that's good!"
-        return "sending 🍀"
-
-    @hide
-    async def do_askfreedemo(self, msg: Message) -> Response:
-        answer = await self.ask_freeform_question(msg.source)
-        if answer:
-            return f"I love {answer} too!"
         return None
 
     async def ask_freeform_question(
