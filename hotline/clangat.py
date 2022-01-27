@@ -515,7 +515,7 @@ class ClanGat(PayBotPro):
         user_owns_event_obj = obj and user in await self.event_owners.get(obj, [])
         user_owns_list_obj = obj and user in await self.list_owners.get(obj, [])
         event_or_list = "list" if user_owns_list_obj else None
-        event_or_list = "event" if user_owns_event_obj else None
+        event_or_list = ("event" if user_owns_event_obj else None) or event_or_list
         if not event_or_list:
             return "Please try again with a list or event that you own!"
         if await self.ask_yesno_question(
