@@ -580,28 +580,34 @@ class ClanGat(PayBotPro):
         )
         objs = "event list owner price prompt limit".split()
         success = False
-        if (
-            obj == "egg"
-            and (
-                param not in await self.easter_eggs.keys()
-                or await self.get_displayname(msg.uuid)
-                in await self.easter_eggs.get(param, "")
-                or msg.uuid in await self.easter_eggs.get(param, "")
-                or msg.source in await self.easter_eggs.get(param, "")
-            )
-            and value
+        if obj == "egg" and (
+            not await self.easter_eggs.get(param, None)
+            or await self.get_displayname(msg.uuid)
+            in await self.easter_eggs.get(param, "")
+            or msg.uuid in await self.easter_eggs.get(param, "")
+            or msg.source in await self.easter_eggs.get(param, "")
         ):
+            if not param:
+                param = await self.ask_freeform_question(
+                    user, "What word or phrase would you like to show the easter egg?"
+                )
             maybe_old_message = await self.easter_eggs.get(param, "")
+            if not value and not maybe_old_message:
+                value = await self.ask_freeform_question(
+                    user,
+                    "What phrase should be returned when the easter egg is revealed?",
+                )
             if maybe_old_message:
                 self.send_message(msg.uuid, f"replacing: {maybe_old_message}")
-                self.easter_eggs[
-                    param
-                ] = f"{value} - updated by {await self.get_displayname(msg.uuid)}"
+                await self.easter_eggs.set(
+                    param,
+                    f"{value} - updated by {await self.get_displayname(msg.uuid)}",
+                )
                 return f"Updated {param} to read {value}"
             else:
-                self.easter_eggs[
-                    param
-                ] = f"{value} - added by {await self.get_displayname(msg.uuid)}"
+                await self.easter_eggs.set(
+                    param, f"{value} - added by {await self.get_displayname(msg.uuid)}"
+                )
                 return f'Added an egg! "{param}" now returns\n > {value} - added by {await self.get_displayname(msg.uuid)}'
         elif obj == "egg" and param in await self.easter_eggs.keys():
             return f"Sorry, egg already has value {await self.easter_eggs.get(param)}. Please message support to change it."
@@ -620,7 +626,7 @@ class ClanGat(PayBotPro):
             await self.payout_balance_mmob.set(param, 0)
             successs = True
             if await self.ask_yesno_question(
-                user, "Would you like to setup your new event '{param}' now? (yes/no)"
+                user, f"Would you like to setup your new event '{param}' now? (yes/no)"
             ):
                 msg.arg1 = param
                 return await self.do_setup(msg)
@@ -636,7 +642,7 @@ class ClanGat(PayBotPro):
             await self.event_images.set(param, [])
             await self.event_prompts.set(param, "")
             if await self.ask_yesno_question(
-                user, "Would you like to setup your new list '{param}' now? (yes/no)"
+                user, f"Would you like to setup your new list '{param}' now? (yes/no)"
             ):
                 msg.arg1 = param
                 msg.arg2 = ""
@@ -841,6 +847,8 @@ https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
                     lists += [f"pending: {maybe_pending}"]
 
             user_given = await self.get_displayname(msg.uuid)
+            if msg.full_text in await self.easter_eggs.keys():
+                return await self.easter_eggs.get(msg.full_text)
             if code in await self.easter_eggs.keys():
                 return await self.easter_eggs.get(code)
             # being really lazy about owners / all_owners here
