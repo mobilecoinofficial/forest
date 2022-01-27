@@ -637,6 +637,7 @@ class ClanGat(PayBotPro):
                 return f'You now own paid event "{param}", and a free list by the same name - use "setup {param}" to configure your event at your convenience!'
         if (
             obj == "list"
+            and param
             and param not in await self.list_owners.keys()
             and param not in await self.event_owners.keys()
         ):
@@ -662,7 +663,7 @@ class ClanGat(PayBotPro):
             msg.arg2 = await self.ask_freeform_question(
                 msg.uuid, "What unlock code would you like to use for this list?"
             )
-            return await self.add(msg)
+            return await self.do_add(msg)
         if (user_owns_event_param or user_owns_list_param) and not value:
             if user_owns_list_param:
                 valid_options = "owner prompt limit stop".split()
@@ -703,7 +704,7 @@ class ClanGat(PayBotPro):
                         msg.uuid,
                         "I didn't understand that, what price would you like to set? (as a number)",
                     )
-                    return await self.add(msg)
+                    return await self.do_add(msg)
             elif obj == "prompt":
                 # todo add validation
                 await self.event_prompts.set(param, value)
