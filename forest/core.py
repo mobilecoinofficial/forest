@@ -726,6 +726,7 @@ class Bot(Signal):
         return await self.default(message)
 
     def documented_commands(self) -> str:
+        # check for only commands that have docstrings 
         commands = ", ".join(
             name.removeprefix("do_")
             for name in dir(self)
@@ -755,14 +756,13 @@ class Bot(Signal):
         if msg.arg1:
             try:
                 cmd = getattr(self, f"do_{msg.arg1}")
+                if hasattr(getattr(self, f"do_{msg.arg1}"), "hide"):
+                    raise AttributeError("Pretend this never happened.")
+                # allow messages to have a different helptext in groups
                 if hasattr(cmd, "__group_doc__") and msg.group:
-                    if hasattr(getattr(self, f"do_{msg.arg1}"), "hide"):
-                        raise AttributeError("Pretend this never happened.")
                     return dedent(cmd.__group_doc__).strip()
                 doc = cmd.__doc__
                 if doc:
-                    if hasattr(getattr(self, f"do_{msg.arg1}"), "hide"):
-                        raise AttributeError("Pretend this never happened.")
                     return dedent(doc).strip()
                 return f"{msg.arg1} isn't documented, sorry :("
             except AttributeError:
