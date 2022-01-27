@@ -398,6 +398,7 @@ class ClanGat(PayBotPro):
             return "Okay, waiting for your funds."
         return "Sorry, can't find an event by that name."
 
+    @hide
     async def do_blast(self, msg: Message) -> Response:
         """blast  <listname> "message"
         blast <eventname> "message"
@@ -443,6 +444,7 @@ class ClanGat(PayBotPro):
         # confirm we finished
         return f"Finished sending to {len(sent)} recipients on the {obj} list"
 
+    @hide
     async def do_subscribe(self, msg: Message) -> Response:
         obj = (msg.arg1 or "").lower()
         if obj in await self.event_lists.keys():
@@ -467,6 +469,7 @@ class ClanGat(PayBotPro):
             ]
         )
 
+    @hide
     async def do_remove(self, msg: Message) -> Response:
         """Removes a given event by code, if the msg.uuid is the owner."""
         if not (
