@@ -1,15 +1,18 @@
 #!/usr/bin/python3.9
 import urllib
+import logging
 from typing import Any, Optional
 
 from aiohttp import web
 
+from forest import pghelp
 from forest.core import Message, PayBot, UserError, app
 from mc_util import mob2pmob
 
 
+
 class ImogenAuxin(PayBot):
-    async def send_payment(  # pylint: disable=too-many-locals
+    async def send_payment(
         self,
         recipient: str,
         amount_pmob: int,
@@ -22,6 +25,7 @@ class ImogenAuxin(PayBot):
                 recipient, amount_pmob, receipt_message, confirm_tx_timeout, **params
             )
         except UserError:
+            logging.info("payment failed")
 #            await self.send_message(recipient, "\N{Zero Width Joiner}")
             return None
             # launch conversion script...
@@ -31,6 +35,7 @@ class ImogenAuxin(PayBot):
 
 
 async def pay_handler(request: web.Request) -> web.Response:
+    logging.info("got pay request")
     bot = request.app.get("bot")
     if not bot:
         return web.Response(status=504, text="Sorry, no live workers.")
@@ -65,4 +70,4 @@ if __name__ == "__main__":
     async def start_wrapper(out_app: web.Application) -> None:
         out_app["bot"] = ImogenAuxin()
 
-    web.run_app(app, port=8081, host="0.0.0.0")
+    web.run_app(app, port=8080, host="0.0.0.0")
