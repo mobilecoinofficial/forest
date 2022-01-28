@@ -102,6 +102,21 @@ pipenv run python -m sample_bots.hellobot
 
 ## Mobile Coin Wallet and Full Service ##
 
+Now for the payments enabled part of payment-enabled Signal bot. 
+
+
+## Setting up a New Wallet ##
+
+## Use the Mobster To Interact with Full Service ##
+
+Running the Mobilecoin Wallet creates a Full Service instance. A Full Service Instance is a Client that talks to Mobilecoin consensus nodes and allows you to submit transactions and receive transactions. The Desktop Wallet uses Full Service to interact with the Mobilecoin Blockchain. You can use this instance of Full Service to create additional accounts and wallets. An Account for the purposes of Full Service is a collection of Wallets. 
+
+Your Wallet is a hash on the blockchain that's tracked on the blockchain. One's wallet is represented by a mnemonic phrase that's created along with the wallet. Full Service also allows you to manage imported wallets, you can import a wallet just by knowing it's entropy. Therefore be very careful with your entropy. Your local instance of full service stores information on a local database, with your entropy. Be very guarded with your full service instance. This is why we recommend using an extra security layer such as certificate pinning to authenticate requests to your full service instance.
+
+You never lose your wallet if you lose your full service instance, but you would lose your transaction history. Full service only keeps transaction history from the point upon which a wallet is created or imported.
+
+it's ok to run a bot like this if you're just running locally on your computer. If you're trying to deploy to a server or a cloud. In any sort of production environment. 
+
 - set up full-service somewhere, like locally. or with https://github.com/i-infra/cert-pinning-demo. if you use the later, you need to take the crypto_secrets file and append it to your dev_secrets.
 - put your FULL_SERVICE_URL in dev_secrets
 - set PROFILE=1
