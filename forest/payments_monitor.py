@@ -552,7 +552,7 @@ class Mobster:  # pylint: disable=too-many-public-methods
         start_block = (
             data.get("result", {})
             .get("wallet_status", {})
-            .get("network_block_index", -1)
+            .get("network_block_height", -1)
         )
         try:
             start_block = int(start_block)
@@ -740,11 +740,8 @@ class Mobster:  # pylint: disable=too-many-public-methods
                         comment="utxo_cleanup",
                     )
 
-                    tx_log = (
-                        tx_prop.get("result", {})
-                        .get("transaction_log")
-                        .get("transaction_log_id", "")
-                    )
+                    tx_log = tx_prop.get("result",
+                            {}).get("transaction_log").get("transaction_log_id","")
                     confirmation = await self.confirm_transaction(tx_log)
                 final_utxo_state = await self.filter_utxos(account_id)
                 logging.info("final state of utxos in wallet %s", final_utxo_state)
@@ -760,11 +757,8 @@ class Mobster:  # pylint: disable=too-many-public-methods
                 comment="utxo_cleanup",
             )
             # Sleep to make sure full service doesn't eat transactions??
-            tx_log = (
-                tx_prop.get("result", {})
-                .get("transaction_log")
-                .get("transaction_log_id", "")
-            )
+            tx_log = tx_prop.get("result",
+            {}).get("transaction_log").get("transaction_log_id","")
             confirmation = await self.confirm_transaction(tx_log)
 
     async def confirm_transaction(self, tx_log_id: str, timeout: int = 20) -> bool:
@@ -788,10 +782,7 @@ class Mobster:  # pylint: disable=too-many-public-methods
             if status == "tx_status_succeeded":
                 return True
             if status == "tx_status_failed":
-                logging.warning(
-                    "transaction failed, log: %s",
-                    txo_data.get("result", {}).get("transaction_log", {}),
-                )
+                logging.warning("transaction failed, log: %s",txo_data.get("result",{}).get("transaction_log",{}))
                 return False
             await asyncio.sleep(1)
             txo_data = await self.get_transaction_log(tx_log_id)
@@ -840,11 +831,8 @@ class Mobster:  # pylint: disable=too-many-public-methods
             return {}
         if sum(free_largest) < requested:
             logging.info(
-                "Largest %s txos totaled %s, requested %s\n\nlargest txos: %s",
-                len(free_largest),
-                sum(free_largest),
-                requested,
-                free_largest,
+                    "Largest %s txos totaled %s, requested %s\n\nlargest txos: %s",
+                len(free_largest), sum(free_largest), requested, free_largest
             )
             await self.cleanup_utxos(
                 account_id, requested, locked_txos=_locked_txos, largest_first=True
@@ -867,55 +855,34 @@ class Mobster:  # pylint: disable=too-many-public-methods
                         try:
                             tx_prop = await self.build_transaction(
                                 account_id,
-                                addresses_and_values=[
-                                    (address, amt + FEE) for amt in sublist
-                                ],
+                                addresses_and_values=[(address, amt + FEE) for amt in sublist],
                                 input_txo_ids=[utxo[0] for utxo in utxo_inputs],
                                 submit=True,
                                 comment="txo_allocation",
                             )
-                        except Exception as e:  # pylint: disable=broad-except
-                            logging.warning(
-                                "aiohttp connection error %s on retry %s, retrying",
-                                e,
-                                retries,
-                            )
+                        except Exception as e: # pylint: disable=broad-except
+                            logging.warning("aiohttp connection error %s on retry %s, retrying", e, retries)
                             retries += 1
                             break
-                        tx_log = tx_prop.get("result", {}).get("transaction_log", {})
-                        if "error" in tx_prop or not isinstance(
-                            tx_log.get("output_txos"), list
-                        ):
+                        tx_log = tx_prop.get("result", {}).get("transaction_log",{})
+                        if "error" in tx_prop or not isinstance(tx_log.get("output_txos"), list):
                             if "error" in tx_prop:
-                                logging.warning(
-                                    "full service api error on retry %s - error: %s",
-                                    retries,
-                                    tx_prop,
-                                )
+                                logging.warning("full service api error on retry %s - error: %s",
+                                    retries, tx_prop)
                             else:
-                                logging.warning(
-                                    "no output txos detected on retry %s, retrying",
-                                    retries,
-                                )
+                                logging.warning("no output txos detected on retry %s, retrying", retries)
                             retries += 1
                             break
-                        confirmation = await self.confirm_transaction(
-                            tx_log.get("transaction_log_id", "")
-                        )
+                        confirmation = await self.confirm_transaction(tx_log.get("transaction_log_id",""))
                         logging.info("transaction successful: %s", confirmation)
                         if not confirmation:
-                            logging.warning(
-                                "allocation confirmation failed on retry %s, retrying",
-                                retries,
-                            )
+                            logging.warning("allocation confirmation failed on retry %s, retrying", retries)
                             retries += 1
                             break
                         output_txos.extend(
                             [
                                 (utxo.get("txo_id_hex"), int(utxo.get("value_pmob")))
-                                for utxo in tx_prop.get("result", {})
-                                .get("transaction_log", {})
-                                .get("output_txos")
+                                for utxo in tx_prop.get("result", {}).get("transaction_log", {}).get("output_txos")
                             ]
                         )
                         _locked_txos.update(dict(output_txos))
