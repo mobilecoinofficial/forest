@@ -783,7 +783,7 @@ class Bot(Signal):
     async def do_eval(self, msg: Message) -> Response:
         """Evaluates a few lines of Python. Preface with "return" to reply with result."""
 
-        async def async_exec(stmts: str, env: Optional[dict]) -> Any:
+        async def async_exec(stmts: str) -> Any:
             parsed_stmts = ast.parse(stmts)
             fn_name = "_async_exec_f"
             my_fn = f"async def {fn_name}(): pass"
@@ -795,12 +795,12 @@ class Bot(Signal):
             # with the AST parsed from the message
             parsed_fn.body[0].body = parsed_stmts.body
             code = compile(parsed_fn, filename="<ast>", mode="exec")
-            exec(code, env)  # pylint: disable=exec-used
-            return await eval(f"{fn_name}()", env)  # pylint: disable=eval-used
+            exec(code)  # pylint: disable=exec-used
+            return await eval(f"{fn_name}()")  # pylint: disable=eval-used
 
         if msg.full_text and len(msg.tokens) > 1:
             source_blob = msg.full_text.replace(msg.arg0, "", 1).lstrip("/ ")
-            return str(await async_exec(source_blob, locals()))
+            return str(await async_exec(source_blob))
         return None
 
     async def do_ping(self, message: Message) -> str:
@@ -1007,10 +1007,7 @@ class PayBot(Bot):
         address = await self.get_address(recipient)
         account_id = await self.mobster.get_account()
         if not address:
-            await self.send_message(
-                recipient, "sorry, couldn't get your MobileCoin address"
-            )
-            return None
+            raise UserError("sorry, couldn't get your MobileCoin address")
         # TODO: add explicit utxo handling
         raw_prop = await self.mob_request(
             "build_transaction",
