@@ -6,7 +6,7 @@ from forest.core import Message, PayBot, app
 from mc_util import mob2pmob
 
 
-class LinkedAuxin(PayBot):
+class ImogenAuxin(PayBot):
     async def send_payment(  # pylint: disable=too-many-locals
         self,
         recipient: str,
