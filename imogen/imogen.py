@@ -223,7 +223,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
             # and timestamp > 1000*(time.time() - 3600)
         ]
         average_reaction_count = max(
-            sum(reaction_counts) / len(reaction_counts) if reaction_counts else 0, 6
+            sum(reaction_counts) / len(reaction_counts) if reaction_counts else 0, 1
         )
         logging.info(
             "average reaction count: %s, current: %s",
@@ -254,7 +254,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
             await self.send_message(None, message, group=msg.group, **quote)
         else:
             await self.send_message(msg.source, message, **quote)
-        await self.admin(f"need to pay {prompt_author}")
+        await self.admin(f"trying to pay {prompt_author}")
         await self.client_session.post(
             utils.get_secret("PURSE_URL") + "/pay",
             data={
@@ -507,6 +507,20 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         return response["choices"][0]["text"].strip()
 
     @hide
+    async def do_gpt(self, msg: Message) -> str:
+        response = openai.Completion.create(  # type: ignore
+            engine="davinci",
+            prompt=msg.text,
+            temperature=0.9,
+            max_tokens=120,
+            top_p=1,
+            frequency_penalty=0.01,
+            presence_penalty=0.6,
+            stop=["\n", " Human:", " AI:"],
+        )
+        return response["choices"][0]["text"].strip()
+
+    @hide
     async def do_spitball(self, msg: Message) -> str:
         "Spitball a prompt"
         prompt = (
@@ -529,18 +543,11 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         return resp.replace("you are", f'"{prompt}" is')
 
     @hide
-    async def do_gpt(self, msg: Message) -> str:
-        response = openai.Completion.create(  # type: ignore
-            engine="davinci",
-            prompt=msg.text,
-            temperature=0.9,
-            max_tokens=120,
-            top_p=1,
-            frequency_penalty=0.01,
-            presence_penalty=0.6,
-            stop=["\n", " Human:", " AI:"],
-        )
-        return response["choices"][0]["text"].strip()
+    async def do_test(self, msg: Message) -> str:
+        if msg.tokens and len(msg.tokens) == 1:
+            msg.text = "a perfectly normal test image"
+        return await self.enqueue_prompt(msg, {"size": [50, 50], "max_iterations": 5}, attachments=True)
+
 
     @hide
     async def do_poke(self, _: Message) -> str:
