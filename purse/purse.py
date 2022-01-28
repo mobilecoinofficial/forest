@@ -1,8 +1,10 @@
 #!/usr/bin/python3.9
 import urllib
+from typing import Any, Optional
+
 from aiohttp import web
 
-from forest.core import Message, PayBot, app
+from forest.core import Message, PayBot, UserError, app
 from mc_util import mob2pmob
 
 
@@ -12,12 +14,16 @@ class ImogenAuxin(PayBot):
         recipient: str,
         amount_pmob: int,
         receipt_message: str = "Transaction sent!",
+        confirm_tx_timeout: int = 0,
         **params: Any,
     ) -> Optional[Message]:
         try:
-            return await super().send_payment(recipient, amount_pmob, receipt_message)
+            return await super().send_payment(
+                recipient, amount_pmob, receipt_message, confirm_tx_timeout, **params
+            )
         except UserError:
-            pass
+#            await self.send_message(recipient, "\N{Zero Width Joiner}")
+            return None
             # launch conversion script...
 
     async def default(self, message: Message) -> None:
@@ -57,6 +63,6 @@ if __name__ == "__main__":
 
     @app.on_startup.append
     async def start_wrapper(out_app: web.Application) -> None:
-        out_app["bot"] = LinkedAuxin()
+        out_app["bot"] = ImogenAuxin()
 
     web.run_app(app, port=8081, host="0.0.0.0")

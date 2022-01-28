@@ -219,7 +219,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
             # and timestamp > 1000*(time.time() - 3600)
         ]
         average_reaction_count = max(
-            sum(reaction_counts) / len(reaction_counts) if reaction_counts else 0, 6
+            sum(reaction_counts) / len(reaction_counts) if reaction_counts else 0, 3
         )
         logging.info(
             "average reaction count: %s, current: %s",
@@ -239,7 +239,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         logging.debug("seding reaction notif")
         logging.info("setting paid=True")
         message_blob["paid"] = True
-        message = f"\N{Object Replacement Character}, your prompt got {current_reaction_count} reactions. Congrats!"
+        message = f"\N{Object Replacement Character}, your prompt got {current_reaction_count} reactions. Congrats! Tried to send you some MOB"
         quote = {
             "quote-timestamp": msg.reaction.ts,
             "quote-author": self.bot_number,
@@ -251,7 +251,14 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         else:
             await self.send_message(msg.source, message, **quote)
         await self.admin(f"need to pay {prompt_author}")
-        # await self.send_payment_using_linked_device(prompt_author, await self.mobster.get_balance() * 0.1)
+        await self.client_session.post(
+            utils.get_secret("PURSE_URL") + "/pay",
+            data={
+                "destination": prompt_author,
+                "amount": 0.01,
+                "message": f"sent you a tip for your prompt getting {current_reaction_count} reactions",
+            },
+        )
         return None
 
     def match_command(self, msg: Message) -> str:
