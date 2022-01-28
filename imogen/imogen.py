@@ -126,7 +126,11 @@ messages = dict(
     last_paid="""
     You balance has reached $0. Please re-up your support of Imogen by sending a payment. This will continue your premium membership and priority queuing!
     """,
-    rate_limit="Slow down",
+    rate_limit="""
+    You currently have the maximum number of free requests in the queue (6), to request another image please wait for one of your requests to be generated, or add credit to your Imogen balance.
+
+    Message Imogen with /balance to see your balance and learn how to add credit.
+    """,
     activate_payments="""
     You can use Signal Payments to tip Imogen and make use of the priority features.
 
@@ -219,7 +223,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
             # and timestamp > 1000*(time.time() - 3600)
         ]
         average_reaction_count = max(
-            sum(reaction_counts) / len(reaction_counts) if reaction_counts else 0, 3
+            sum(reaction_counts) / len(reaction_counts) if reaction_counts else 0, 6
         )
         logging.info(
             "average reaction count: %s, current: %s",
@@ -239,7 +243,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         logging.debug("seding reaction notif")
         logging.info("setting paid=True")
         message_blob["paid"] = True
-        message = f"\N{Object Replacement Character}, your prompt got {current_reaction_count} reactions. Congrats! Tried to send you some MOB"
+        message = f"\N{Object Replacement Character}, your prompt got {current_reaction_count} reactions. Congrats!"
         quote = {
             "quote-timestamp": msg.reaction.ts,
             "quote-author": self.bot_number,
