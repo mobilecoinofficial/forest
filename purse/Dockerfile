@@ -45,4 +45,4 @@ COPY --from=libbuilder /app/venv/lib/python3.9/site-packages /app/
 COPY ./forest/ /app/forest/
 COPY ./mc_util/ /app/mc_util/
 COPY ./linked.py  /app/ 
-ENTRYPOINT ["/usr/bin/python3.9", "/app/linked.py"]
+ENTRYPOINT ["/usr/bin/python3.9", "/app/purse.py"]
