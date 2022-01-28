@@ -1032,7 +1032,7 @@ class QuestionBot(PayBot):
                 probably_future = self.pending_answers[message.uuid]
             if probably_future:
                 probably_future.set_result(message)
-            return
+                return None
         return await super().handle_message(message)
 
     @hide
