@@ -671,24 +671,7 @@ class ClanGat(PayBotPro):
             )
             return await self.do_add(msg)
         if (user_owns_event_param or user_owns_list_param) and not value:
-            if user_owns_list_param:
-                valid_options = "owner prompt limit stop".split()
-            elif user_owns_event_param:
-                valid_options = "owner prompt price limit stop".split()
-            while (msg.arg2 or "").lower() not in valid_options:
-                msg.arg2 = await self.ask_freeform_question(
-                    msg.uuid,
-                    f"What parameter would you like to set? Your options are {valid_options}",
-                )
-            if (msg.arg2 or "").lower() in "stop cancel exit quit":
-                return "Okay, nevermind!"
-            msg.arg3 = await self.ask_freeform_question(
-                msg.uuid,
-                f"What value would you like to set for {msg.arg1}'s {msg.arg2}?",
-            )
-            if msg.arg3.lower() == "stop cancel exit quit":
-                return "Okay, nevermind!"
-            return await self.do_add(msg)
+            return await do_setup(msg)
 
         # if the user owns the event and we have a value passed
         if user_owns_event_param and value:
