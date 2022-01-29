@@ -671,7 +671,7 @@ class ClanGat(PayBotPro):
             )
             return await self.do_add(msg)
         if (user_owns_event_param or user_owns_list_param) and not value:
-            return await do_setup(msg)
+            return await self.do_setup(msg)
 
         # if the user owns the event and we have a value passed
         if user_owns_event_param and value:
