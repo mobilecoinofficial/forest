@@ -408,7 +408,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         params: dict,
         attachments: str = "",
     ) -> str:
-        if not msg.text.strip():
+        if attachments != "target" and not msg.text.strip():
             return "A prompt is required"
         logging.info(msg.full_text)
         if attachments == "init":
