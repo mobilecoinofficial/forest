@@ -2,19 +2,12 @@
 # Copyright (c) 2021 MobileCoin Inc.
 # Copyright (c) 2021 The Forest Team
 
-import ast
 import asyncio
 import codecs
-import hashlib
 import json
-import time
-import logging
-import os
 from decimal import Decimal
 from typing import Any, Optional
 
-import aiohttp
-import base58
 from aiohttp import web
 from prometheus_async import aio
 from prometheus_async.aio import time as time_
@@ -176,14 +169,19 @@ class ClanGat(PayBotPro):
             dump[eventcode] = event
         return json.dumps(dump if not obj else dump.get(obj), indent=2)
 
+    async def check_user_owns(self, user_uuid: str, list_name: str) -> Optional[str]:
+        if user_uuid in await self.event_owners.get(list_name.lower(), []):
+            return "event"
+        if user_uuid in await self.list_owners.get(list_name.lower(), []):
+            return "list"
+        return None
+
     async def do_check(self, msg: Message) -> Response:
         obj = (msg.arg1 or "").lower()
         param = msg.arg2
         value = msg.arg3
         user = msg.uuid
-        user_owns_event_obj = user in await self.event_owners.get(obj, [])
-        user_owns_list_obj = user in await self.list_owners.get(obj, [])
-        if user_owns_list_obj or user_owns_event_obj:
+        if msg.arg1 and await self.check_user_owns(msg.uuid, msg.arg1):
             return "\n\n".join(
                 [
                     f"code: {obj}",
@@ -240,11 +238,13 @@ class ClanGat(PayBotPro):
 
     @hide
     async def do_payout(self, msg: Message) -> Response:
+        """Sweeps all balance for an event to the requesting owner.
+        Prompts admin for approval."""
         user = msg.uuid
         list_ = (msg.arg1 or "").lower()
-        user_owns_list_ = user in await self.event_owners.get(list_, [])
+        user_owns = await self.check_user_owns(user, list_)
         balance = await self.payout_balance_mmob.get(list_, 0)
-        if is_admin(msg) or (user_owns_list_ and balance):
+        if is_admin(msg) or (user_owns and balance):
             async with self.pay_lock:
                 utxos = list((await self.mobster.get_utxos()).items())
                 input_pmob_sum = 0
@@ -273,8 +273,8 @@ class ClanGat(PayBotPro):
                     await self.payout_balance_mmob.decrement(list_, balance)
                     return f"Payed you you {balance}"
                 return None
-        if user_owns_list and not balance:
-            return "Sorry, list {list_} has 0mmob balance!"  # thanks y?!
+        if user_owns and not balance:
+            return "Sorry, {list_} has 0mmob balance!"  # thanks y?!
         return "Sorry, can't help you."
 
     @hide
@@ -292,16 +292,15 @@ class ClanGat(PayBotPro):
         if maybe_number and not list_ in await self.event_lists.keys():
             to_send = [maybe_number]
             await self.send_message(msg.uuid, f"okay, using {maybe_number}")
-        user_owns_list_ = user in await self.list_owners.get(list_, [])
-        user_owns_event_ = user in await self.event_owners.get(list_, [])
-        if not is_admin(msg) and not (user_owns_event_ or user_owns_list_):
+        user_owns = await self.check_user_owns(user, list_)
+        if not is_admin(msg) and not user_owns:
             return "Sorry, you are not authorized."
-        if not len(to_send) and not (
+        if len(to_send) == 0 and not (
             list_ in await self.event_lists.keys()
             or list_ in await self.event_attendees.keys()
         ):
             return "Sorry, that's not a valid list or number!"
-        if not len(to_send):
+        if len(to_send) == 0:
             to_send = await self.event_lists.get(
                 list_, []
             ) or await self.event_attendees.get(list_, [])
@@ -312,7 +311,7 @@ class ClanGat(PayBotPro):
             if user not in await self.successful_pays.get(save_key, [])
         ]
         total_mmob = len(filtered_send_list) * amount
-        if len(to_send) and not len(filtered_send_list):
+        if len(to_send) > 0 and len(filtered_send_list) == 0:
             return "already sent to this combination, change the message to continue"
         if not is_admin(msg) and (
             total_mmob > await self.payout_balance_mmob.get(list_, 0)
@@ -338,7 +337,6 @@ class ClanGat(PayBotPro):
                     amount, (len(filtered_send_list) - len(valid_utxos))
                 )
                 await self.send_message(msg.uuid, building_msg)
-                utxos = await self.mobster.get_utxos()
                 valid_utxos = [
                     utxo
                     for utxo, upmob in (await self.mobster.get_utxos()).items()
@@ -387,18 +385,10 @@ class ClanGat(PayBotPro):
         fund <listname>
         fund <eventname>
         """
-        obj, _, _ = (msg.arg1 or "").lower(), (msg.arg2 or ""), msg.arg3
+        obj = (msg.arg1 or "").lower()
         user = msg.uuid
         await self.pending_orders.remove(msg.uuid)
-        user_owns_list_obj = (
-            obj in await self.list_owners.keys()
-            and user in await self.list_owners.get(obj, [])
-        )
-        user_owns_event_obj = (
-            obj in await self.event_owners.keys()
-            and user in await self.event_owners.get(obj, [])
-        )
-        if user_owns_event_obj or user_owns_list_obj:
+        if await self.check_user_owns(user, obj):
             await self.pending_funds.set(user, obj)
             self.no_repay += [user]
             return "Okay, waiting for your funds."
@@ -411,18 +401,12 @@ class ClanGat(PayBotPro):
         """
         obj, param, value = (msg.arg1 or ""), (msg.arg2 or ""), msg.arg3
         user = msg.uuid
-        user_owns_list_obj = (
-            obj.lower() in await self.list_owners.keys()
-            and user in await self.list_owners.get(obj, [])
-        )
-        user_owns_event_obj = (
-            obj.lower() in await self.event_owners.keys()
-            and user in await self.event_owners.get(obj, [])
-        )
         list_ = []
         sent = []
         success = False
-        if (user_owns_list_obj or user_owns_event_obj) and param:
+        user_owns = await self.check_user_owns(user, obj)
+        if user_owns and param:
+            # if the user forgot the quotes, the param will be a single word
             if param.isalnum():
                 param = (
                     msg.full_text.lstrip("/")
@@ -449,7 +433,7 @@ class ClanGat(PayBotPro):
                 await self.send_message(target_user.strip("\u2068\u2069"), param)
                 sent.append(target_user)
                 await asyncio.sleep(3)
-        elif user_owns_event_obj or user_owns_list_obj:
+        elif user_owns:
             return "Try again - and add a message!"
         if not success:
             return "That didn't work! Try 'blast <list code> 'mymessage'. You can only send to lists you own!"
@@ -483,10 +467,7 @@ class ClanGat(PayBotPro):
     @hide
     async def do_remove(self, msg: Message) -> Response:
         """Removes a given event by code, if the msg.uuid is the owner."""
-        if not (
-            msg.uuid in await self.event_owners.get(msg.arg1, "")
-            or msg.uuid in await self.list_owners.get(msg.arg1, "")
-        ):
+        if not await self.check_user_owns(msg.uuid, msg.arg1):
             return f"Sorry, it doesn't look like you own {msg.arg1}."
         parameters = []
         for state_ in self.state.keys():
@@ -522,17 +503,9 @@ class ClanGat(PayBotPro):
             msg.arg1 = await self.ask_freeform_question(
                 msg.uuid, "What event or list would you like to setup?"
             )
-        obj, param, value = (
-            (msg.arg1 or "").lower(),
-            (msg.arg2 or "").lower(),
-            msg.arg3 or "",
-        )
-        value = value.strip("\u2068\u2069")
+        obj = (msg.arg1 or "").lower()
         user = msg.uuid
-        user_owns_event_obj = obj and user in await self.event_owners.get(obj, [])
-        user_owns_list_obj = obj and user in await self.list_owners.get(obj, [])
-        event_or_list = "list" if user_owns_list_obj else None
-        event_or_list = ("event" if user_owns_event_obj else None) or event_or_list
+        event_or_list = await self.check_user_owns(msg.uuid, obj)
         if not event_or_list:
             return "Please try again with a list or event that you own!"
         if await self.ask_yesno_question(
@@ -545,7 +518,7 @@ class ClanGat(PayBotPro):
                 user, f"What limit would you like to set?"
             )
             await self.send_message(user, await self.do_add(msg))
-        if user_owns_event_obj and await self.ask_yesno_question(
+        if event_or_list == "event" and await self.ask_yesno_question(
             user,
             f"Would you like to change the price from {await self.event_prices.get(obj, 0)}MOB?",
         ):
@@ -594,18 +567,11 @@ class ClanGat(PayBotPro):
         )
         value = value.strip("\u2068\u2069")
         user = msg.uuid
-        user_owns_event_param = (
-            param in await self.event_owners.keys()
-            and user in await self.event_owners.get(param, [])
-        )
-        user_owns_list_param = (
-            param in await self.list_owners.keys()
-            and user in await self.list_owners.get(param, [])
-        )
-        objs = "event list owner price prompt limit".split()
+        user_owns = await self.check_user_owns(msg.uuid, param)
         success = False
-        if (obj == "egg" or obj == "easteregg") and (
-            not await self.easter_eggs.get(param, None)
+        if (
+            obj in "egg easteregg"
+            and not await self.easter_eggs.get(param, None)
             or await self.get_displayname(msg.uuid)
             in await self.easter_eggs.get(param, "")
             or msg.uuid in await self.easter_eggs.get(param, "")
@@ -686,20 +652,23 @@ class ClanGat(PayBotPro):
                 msg.uuid, "What unlock code would you like to use for this list?"
             )
             return await self.do_add(msg)
-        if (user_owns_event_param or user_owns_list_param) and not value:
+        if user_owns and not value:
             return await self.do_setup(msg)
 
         # if the user owns the event and we have a value passed
-        if user_owns_event_param and value:
+        if user_owns and value:
             if obj == "owner":
                 new_owner_uuid = await self.displayname_cache.get(value, value)
                 await self.send_message(
                     new_owner_uuid,
                     f"You've been added as an owner of {value} by {await self.displayname_cache.get(msg.uuid)}",
                 )
-                await self.event_owners.extend(param, value)
+                if user_owns == "event":
+                    await self.event_owners.extend(param, value)
+                if user_owns == "list":
+                    await self.list_owners.extend(param, value)
                 success = True
-            elif obj == "price":
+            elif obj == "price" and user_owns == "event":
                 # check if string == floatable
                 if (
                     value.replace(".", "1", 1).isnumeric()  # 1.01
@@ -715,30 +684,6 @@ class ClanGat(PayBotPro):
                         "I didn't understand that, what price would you like to set? (as a number)",
                     )
                     return await self.do_add(msg)
-            elif obj == "prompt":
-                # todo add validation
-                await self.event_prompts.set(param, value)
-                success = True
-            elif obj == "limit":
-                # check if int
-                if value.isnumeric():
-                    await self.event_limits.set(param, int(value))
-                    success = True
-                else:
-                    msg.arg3 = await self.ask_freeform_question(
-                        msg.uuid,
-                        "I didn't understand that, what limit would you like to set? (as a number)",
-                    )
-                    return await self.do_add(msg)
-        if user_owns_list_param and value:
-            if obj == "owner":
-                new_owner_uuid = await self.displayname_cache.get(value, value)
-                await self.send_message(
-                    new_owner_uuid,
-                    f"You've been added as an owner of {value} by {await self.displayname_cache.get(msg.uuid)}",
-                )
-                await self.list_owners.extend(param, value)
-                success = True
             elif obj == "prompt":
                 # todo add validation
                 await self.event_prompts.set(param, value)
