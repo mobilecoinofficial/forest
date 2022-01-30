@@ -383,17 +383,38 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         )
         return {"init_image": key}
 
+    async def upload_all_attachments(self, msg: Message) -> dict[str, list[str]]:
+        if not msg.attachments:
+            return {}
+        keys: list[str] = []
+        for attachment in msg.attachments:
+            if (attachment.get("filename") or "").endswith(".txt"):
+                raise UserError("your prompt is way too long")
+            key = (
+                "input/"
+                + attachment["id"]
+                + "-"
+                + (attachment.get("filename") or ".jpg")
+            )
+            await redis.set(
+                key, open(Path("./attachments") / attachment["id"], "rb").read()
+            )
+            keys.append(key)
+        return {"image_prompts": keys}
+
     async def enqueue_prompt(
         self,
         msg: Message,
         params: dict,
-        attachments: bool = False,
+        attachments: str = "",
     ) -> str:
         if not msg.text.strip():
             return "A prompt is required"
         logging.info(msg.full_text)
-        if attachments:
+        if attachments == "init":
             params.update(await self.upload_attachment(msg))
+        elif attachments == "target":
+            params.update(await self.upload_all_attachments(msg))
         if not msg.group:
             params["nopost"] = True
         prompt = InsertedPrompt(
@@ -433,11 +454,19 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         Generates an image based on your prompt.
         Request is handled in the free queue, every free request is addressed and generated sequentially.
         """
-        return await self.enqueue_prompt(msg, {}, attachments=True)
+        return await self.enqueue_prompt(msg, {}, attachments="init")
+
+    async def do_imagine_target(self, msg: Message) -> str:
+        """
+        /imagine [prompt]
+        Generates an image based on your prompt.
+        Request is handled in the free queue, every free request is addressed and generated sequentially.
+        """
+        return await self.enqueue_prompt(msg, {}, attachments="target")
 
     async def do_nopost(self, msg: Message) -> str:
         "Like /imagine, but doesn't post on Twitter"
-        return await self.enqueue_prompt(msg, {"nopost": True}, attachments=True)
+        return await self.enqueue_prompt(msg, {"nopost": True}, attachments="init")
 
     @hide
     async def do_priority(self, msg: Message) -> str:
@@ -452,7 +481,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
             "vqgan_config": "wikiart_16384.yaml",
             "vqgan_checkpoint": "wikiart_16384.ckpt",
         }
-        return await self.enqueue_prompt(msg, params, attachments=True)
+        return await self.enqueue_prompt(msg, params, attachments="init")
 
     @hide
     async def do_priority_paint(self, msg: Message) -> str:
@@ -507,7 +536,6 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
             stop=["\n", " Human:", " AI:"],
         )
         return response["choices"][0]["text"].strip()
-
 
     @hide
     async def do_ask(self, msg: Message) -> str:
@@ -581,8 +609,9 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
     async def do_test(self, msg: Message) -> str:
         if msg.tokens and len(msg.tokens) == 1:
             msg.text = "a perfectly normal test image"
-        return await self.enqueue_prompt(msg, {"size": [50, 50], "max_iterations": 5}, attachments=True)
-
+        return await self.enqueue_prompt(
+            msg, {"size": [50, 50], "max_iterations": 5}, attachments="init"
+        )
 
     @hide
     async def do_poke(self, _: Message) -> str:
