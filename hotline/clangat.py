@@ -232,6 +232,8 @@ class ClanGat(PayBotPro):
                         f"Removed you from list {list_}, to rejoin send 'subscribe {list_}'",
                     )
                     removed += 1
+        if msg.arg1 and not removed:
+            "Sorry, you're not on the announcement list for {msg.arg1}"  # thanks y?!
         if not removed:
             return "You're not on any lists!"
         return None
@@ -271,6 +273,8 @@ class ClanGat(PayBotPro):
                     await self.payout_balance_mmob.decrement(list_, balance)
                     return f"Payed you you {balance}"
                 return None
+        if user_owns_list and not balance:
+            return "Sorry, list {list_} has 0mmob balance!"  # thanks y?!
         return "Sorry, can't help you."
 
     @hide
@@ -483,8 +487,14 @@ class ClanGat(PayBotPro):
             if "egg" not in state_ and msg.arg1 in (await self.state[state_].keys()):
                 parameters += [state_]
         lists = []
+
+        # show human-friendly version before prompting removal
+        await self.send_message(
+            msg.uuid, "This event currently has the following state:"
+        )
+        await self.send_message(msg.uuid, await self.do_check(msg))
         if await self.ask_yesno_question(
-            msg.uuid, f"Are you sure you want to remove {msg.arg1} from {parameters}?"
+            msg.uuid, f"Are you sure you want to remove {msg.arg1}?"
         ):
             for state_ in self.state.keys():
                 if "egg" not in state_ and msg.arg1 in (
@@ -685,8 +695,13 @@ class ClanGat(PayBotPro):
                 success = True
             elif obj == "price":
                 # check if string == floatable
-                if value.replace(".", "1", 1).isnumeric():
-                    await self.event_prices.set(param, float(value))
+                if (
+                    value.replace(".", "1", 1).isnumeric()  # 1.01
+                    or value.replace(",", "1", 1).isnumeric()  # 1,01
+                ):
+                    await self.event_prices.set(
+                        param, float(value.replace(",", ".", 1))
+                    )  # eu standard decimal as 1,00 h/t y?!
                     success = True
                 else:
                     msg.arg3 = await self.ask_freeform_question(
@@ -711,10 +726,12 @@ class ClanGat(PayBotPro):
                     return await self.do_add(msg)
         if user_owns_list_param and value:
             if obj == "owner":
+                new_owner_uuid = await self.displayname_cache.get(value, value)
+                await self.send_message(
+                    new_owner_uuid,
+                    f"You've been added as an owner of {value} by {await self.displayname_cache.get(msg.uuid)}",
+                )
                 await self.list_owners.extend(param, value)
-                success = True
-            elif obj == "invitees":
-                await self.event_lists.extend(param, value)
                 success = True
             elif obj == "prompt":
                 # todo add validation
