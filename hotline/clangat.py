@@ -330,12 +330,12 @@ class ClanGat(PayBotPro):
                 for utxo, upmob in (await self.mobster.get_utxos()).items()
                 if upmob > (1_000_000_000 * amount)
             ]
-            if len(valid_utxos) < len(to_send):
+            if len(valid_utxos) < len(filtered_send_list):
                 await self.send_message(
                     msg.uuid, "Insufficient number of utxos!\nBuilding more..."
                 )
                 building_msg = await self.mobster.split_txos_slow(
-                    amount, (len(to_send) - len(valid_utxos))
+                    amount, (len(filtered_send_list) - len(valid_utxos))
                 )
                 await self.send_message(msg.uuid, building_msg)
                 utxos = await self.mobster.get_utxos()
@@ -409,25 +409,31 @@ class ClanGat(PayBotPro):
         """blast  <listname> "message"
         blast <eventname> "message"
         """
-        obj, param, value = (msg.arg1 or "").lower(), (msg.arg2 or ""), msg.arg3
+        obj, param, value = (msg.arg1 or ""), (msg.arg2 or ""), msg.arg3
         user = msg.uuid
         user_owns_list_obj = (
-            obj in await self.list_owners.keys()
+            obj.lower() in await self.list_owners.keys()
             and user in await self.list_owners.get(obj, [])
         )
         user_owns_event_obj = (
-            obj in await self.event_owners.keys()
+            obj.lower() in await self.event_owners.keys()
             and user in await self.event_owners.get(obj, [])
         )
         list_ = []
         sent = []
         success = False
         if (user_owns_list_obj or user_owns_event_obj) and param:
+            if param.isalnum():
+                param = (
+                    msg.full_text.lstrip("/")
+                    .replace(f"blast {msg.arg1} ", "", 1)
+                    .replace(f"Blast {msg.arg1} ", "", 1)
+                )  # thanks mikey :)
             success = True
             target_users = list(
                 set(
-                    await self.event_lists.get(obj, [])
-                    + await self.event_attendees.get(obj, [])
+                    await self.event_lists.get(obj.lower(), [])
+                    + await self.event_attendees.get(obj.lower(), [])
                 )
             )
             # send preview
@@ -435,7 +441,7 @@ class ClanGat(PayBotPro):
             # ask for confirmation
             if not await self.ask_yesno_question(
                 msg.uuid,
-                f"Are you sure you want to blast this to {len(target_users)}? (yes/no)",
+                f"Would you like to blast the above message (as written) to {len(target_users)}? (yes/no)",
             ):
                 return "ok, let's not."
             # do the blast
