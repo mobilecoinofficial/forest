@@ -223,7 +223,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
             # and timestamp > 1000*(time.time() - 3600)
         ]
         average_reaction_count = max(
-            sum(reaction_counts) / len(reaction_counts) if reaction_counts else 0, 1
+            sum(reaction_counts) / len(reaction_counts) if reaction_counts else 0, 5
         )
         logging.info(
             "average reaction count: %s, current: %s",
@@ -394,6 +394,8 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         logging.info(msg.full_text)
         if attachments:
             params.update(await self.upload_attachment(msg))
+        if not msg.group:
+            params["nopost"] = True
         prompt = InsertedPrompt(
             prompt=msg.text,
             author=msg.source,
@@ -506,6 +508,39 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         )
         return response["choices"][0]["text"].strip()
 
+
+    @hide
+    async def do_ask(self, msg: Message) -> str:
+        prompt = (
+            "The following is a conversation with an AI assistant. "
+            "The assistant is helpful, creative, clever, funny, very friendly, an artist and anarchist\n\n"
+            "Human: Hello, who are you?\nAI: My name is Imogen, I'm an AI that makes dream-like images. What's up?\n"
+            f"Human: {msg.text}\nAI: "
+        )
+        response = openai.Completion.create(  # type: ignore
+            engine="text-davinci-001",
+            prompt=prompt,
+            temperature=0.99,
+            max_tokens=140,
+            top_p=1,
+            frequency_penalty=0.0,
+            presence_penalty=0.6,
+        )
+        return response["choices"][0]["text"].strip()
+
+    @hide
+    async def do_instruct(self, msg: Message) -> str:
+        response = openai.Completion.create(  # type: ignore
+            engine="text-davinci-001",
+            prompt=msg.text,
+            temperature=0.99,
+            max_tokens=140,
+            top_p=1,
+            frequency_penalty=0.0,
+            presence_penalty=0.6,
+        )
+        return response["choices"][0]["text"].strip()
+
     @hide
     async def do_gpt(self, msg: Message) -> str:
         response = openai.Completion.create(  # type: ignore
@@ -514,7 +549,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
             temperature=0.9,
             max_tokens=120,
             top_p=1,
-            frequency_penalty=0.01,
+            frequency_penalty=0.02,
             presence_penalty=0.6,
             stop=["\n", " Human:", " AI:"],
         )
