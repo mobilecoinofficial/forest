@@ -129,6 +129,7 @@ class MobFriend(QuestionBot):
         if image_path:
             default_params.update(
                 dict(
+                    colorized=True,
                     version=1,
                     level="H",
                     contrast=1.0,
@@ -257,11 +258,15 @@ class MobFriend(QuestionBot):
         memo = status.get("result", {}).get("gift_code_memo") or "None"
         if "Claimed" in claimed:
             return "This gift code has already been redeemed!"
-        return [
-            f"Gift code can be redeemed for {(mob_amt).quantize(Decimal('1.0000'))}MOB. ({pmob} picoMOB)\nMemo: {memo}"
-            + "\nTo redeem, send:",
-            f"redeem {msg.arg1}",
-        ]
+        await self.send_message(
+            msg.uuid,
+            f"Gift code can be redeemed for {(mob_amt).quantize(Decimal('1.0000'))}MOB. ({pmob} picoMOB)\nMemo: {memo}",
+        )
+        if await self.ask_yesno_question(
+            msg.uuid, "Would you like to redeem this gift now? (yes/no)"
+        ):
+            return await self.do_redeem(msg)
+        return f'Okay, send "redeem {msg.arg1}" to redeem at any time!'
 
     async def do_check(self, msg: Message) -> Response:
         """

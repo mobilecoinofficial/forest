@@ -41,6 +41,7 @@ class Message:
     quoted_text: str
     mentions: list[dict[str, str]]
     source: str
+    uuid: str
     payment: dict
     arg0: str
     arg1: Optional[str]
@@ -123,7 +124,7 @@ class AuxinMessage(Message):
         if "Both" in address:
             self.source, self.uuid = address["Both"]
         elif "Uuid" in address:
-            self.uuid = address.get("Uuid")
+            self.uuid = address.get("Uuid", "")
             if self.text:
                 logging.error("text message has no number: %s", outer_blob)
         elif "Phone" in address:
