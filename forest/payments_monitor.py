@@ -83,6 +83,7 @@ class LedgerManager(PGInterface):
         super().__init__(queries, database, loop)
 
 
+# pylint: disable=too-many-public-methods
 class Mobster:
     """Class to keep track of a aiohttp session and cached rate"""
 
@@ -242,6 +243,7 @@ class Mobster:
             address = main_address
         return mc_util.b58_wrapper_to_b64_public_address(address)
 
+    # pylint: disable=too-many-arguments
     async def build_transaction(
         self,
         account_id: str = "",
@@ -302,7 +304,7 @@ class Mobster:
 
     async def submit_transaction(self,tx_proposal: dict, account_id: str="",
             comment: str="") -> dict:
-        
+
         params: dict[str,Any] = {}
         params["tx_proposal"] = tx_proposal
         if account_id:
@@ -311,7 +313,7 @@ class Mobster:
             params["comment"] = comment
 
         tx_proposal = {"method":"submit_transaction", "params":params}
-        return await self.req(tx_proposal) 
+        return await self.req(tx_proposal)
 
     async def get_transactions(self, account_id: str) -> dict[str, dict[str, str]]:
         return (
@@ -389,17 +391,15 @@ class Mobster:
         """
 
         data = await self.get_wallet_status()
-
-        try:
-            start_block = int(
-                (
-                    data.get("result", {})
-                    .get("wallet_status", {})
-                    .get("network_block_index", 0)
-                )
+        if not data:
+            return 0
+        start_block = int(
+            (
+                data.get("result", {})
+                .get("wallet_status", {})
+                .get("network_block_index", 0)
             )
-        except:
-            start_block = 0
+        )
         return start_block
 
     async def get_all_txos_for_account(self, account_id: str = "") -> dict:
@@ -428,6 +428,7 @@ class Mobster:
             "get_transaction_log", transaction_log_id=transaction_log_id
         )
 
+    # pylint: disable=too-many-arguments
     async def filter_txos(
         self,
         account_id: str = "",
@@ -480,9 +481,8 @@ class Mobster:
         if not isinstance(tx_data, dict) or not "result" in tx_data:
             return False
 
-        time = 0
-        while time < timeout:
-            txo_data = await self.get_transaction_log(tx_log_id)
+        count = 0
+        while count < timeout:
             tx_log = tx_data.get("result", {}).get("transaction_log", {})
             logging.info(tx_log)
             status = tx_log.get("status")
@@ -492,8 +492,8 @@ class Mobster:
                 logging.warning("tx failed, log: %s", tx_log)
                 return False
             await asyncio.sleep(1)
-            time += 1
-        if time >= timeout:
+            count += 1
+        if count >= timeout:
             logging.warning("Failed to confirm transaction in %s tries", timeout)
         return False
 
@@ -547,8 +547,12 @@ class Mobster:
                     input_txo_ids=[txo[0] for txo in chosen_utxos],
                     submit=True,
                     comment="utxo_cleanup",
-                ) 
-            tx_log_id = prop.get("result", {}).get("transaction_log", {}).get("transaction_log_id", "")
+                )
+            tx_log_id = (
+                prop.get("result", {})
+                .get("transaction_log", {})
+                .get("transaction_log_id", "")
+            )
             if not await self.confirm_transaction(tx_log_id):
                 retries += 1
             if tail_amt - FEE > max_single_txo:
