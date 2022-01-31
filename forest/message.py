@@ -41,6 +41,7 @@ class Message:
     quoted_text: str
     mentions: list[dict[str, str]]
     source: str
+    uuid: str
     payment: dict
     arg0: str
     arg1: Optional[str]
