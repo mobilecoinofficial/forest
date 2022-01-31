@@ -253,6 +253,22 @@ class aPersistDict:
             value_to_extend.append(value)
             return await self._set(key, value_to_extend)
 
+    async def increment(self, key: str, value: int) -> None:
+        """Since one cannot simply add to a coroutine, this function exists.
+        If the key exists and the value is None, or an empty array, the provided value is added to a(the) list at that value."""
+        value_to_extend = 0
+        async with self.rwlock:
+            value_to_extend = self.dict_.get(key, 0)
+            return await self._set(key, value_to_extend + value)
+
+    async def decrement(self, key: str, value: int) -> None:
+        """Since one cannot simply add to a coroutine, this function exists.
+        If the key exists and the value is None, or an empty array, the provided value is added to a(the) list at that value."""
+        value_to_extend = 0
+        async with self.rwlock:
+            value_to_extend = self.dict_.get(key, 0)
+            return await self._set(key, value_to_extend - value)
+
     async def remove_from(self, key: str, not_value: str) -> None:
         """Removes a value specified from the list, if present."""
         async with self.rwlock:
@@ -272,7 +288,7 @@ class aPersistDict:
         This function exists so *OTHER FUNCTIONS* holding the lock can set values."""
         if key is not None and value is not None:
             self.dict_.update({key: value})
-        elif key and value is not None and key in self.dict_:
+        elif key and value is None and key in self.dict_:
             self.dict_.pop(key)
         key = f"Persist_{self.tag}_{NAMESPACE}"
         value = json.dumps(self.dict_)
