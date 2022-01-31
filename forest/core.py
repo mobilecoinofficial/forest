@@ -1,9 +1,8 @@
 #!/usr/bin/python3.9
 # Copyright (c) 2021 MobileCoin Inc.
 # Copyright (c) 2021 The Forest Team
-
 """
-The core chatbot framework: Message, Signal, Bot, and app
+The core chatbot framework: Message, Signal, Bot, PayBot, and app
 """
 import ast
 import asyncio
@@ -63,16 +62,12 @@ def rpc(
     }
 
 
-def fmt_ms(ts: int) -> str:
-    return datetime.datetime.utcfromtimestamp(ts / 1000).isoformat()
-
-
 class Signal:
     """
     Represents a auxin-cli session.
-    Lifecycle: Downloads the datastore, runs and restarts auxin-cli,
-    tries to gracefully kill auxin-cli and upload before exiting.
-    I/O: reads auxin-cli's output into auxincli_output_queue,
+    Lifecycle: Downloads the datastore, runs and restarts signal client,
+    tries to gracefully kill signal and upload before exiting.
+    I/O: reads auxin-cli's output into inbox,
     has methods for sending commands to auxin-cli, and
     actually writes those json blobs to auxin-cli's stdin.
     """
@@ -88,8 +83,8 @@ class Signal:
         self.bot_number = bot_number
         self.datastore = datastore.SignalDatastore(bot_number)
         self.proc: Optional[subprocess.Process] = None
-        self.auxincli_output_queue: Queue[Message] = Queue()
-        self.auxincli_input_queue: Queue[dict] = Queue()
+        self.inbox: Queue[Message] = Queue()
+        self.outbox: Queue[dict] = Queue()
         self.exiting = False
         self.start_time = time.time()
 
@@ -141,7 +136,7 @@ class Signal:
             runtime = proc_exit_time - proc_launch_time
             if runtime < RESTART_TIME:
                 logging.info("sleeping briefly")
-                await asyncio.sleep(RESTART_TIME ** restart_count)
+                await asyncio.sleep(RESTART_TIME**restart_count)
             logging.warning("auxin-cli exited: %s", returncode)
             if returncode == 0:
                 logging.info("auxin-cli apparently exited cleanly, not restarting")
@@ -208,7 +203,7 @@ class Signal:
             if isinstance(blob["params"], list):
                 for msg in blob["params"]:
                     if not blob.get("content", {}).get("receipt_message", {}):
-                        await self.auxincli_output_queue.put(MessageParser(msg))
+                        await self.inbox.put(MessageParser(msg))
             message_blob = blob["params"]
         if "result" in blob:
             if isinstance(blob["result"], list):
@@ -216,7 +211,7 @@ class Signal:
                 logging.info("results list code path")
                 for msg in blob["result"]:
                     if not blob.get("content", {}).get("receipt_message", {}):
-                        await self.auxincli_output_queue.put(MessageParser(msg))
+                        await self.inbox.put(MessageParser(msg))
             elif isinstance(blob["result"], dict):
                 message_blob = blob
             else:
@@ -224,7 +219,7 @@ class Signal:
         if "error" in blob:
             message_blob = blob
         if message_blob:
-            return await self.auxincli_output_queue.put(MessageParser(message_blob))
+            return await self.inbox.put(MessageParser(message_blob))
 
     async def handle_auxincli_raw_line(self, line: str) -> None:
         if '{"jsonrpc":"2.0","result":[],"id":"receive"}' not in line:
@@ -259,7 +254,7 @@ class Signal:
         """Provides an asynchronous iterator over messages on the queue.
         See Bot for how messages and consumed and dispatched"""
         while True:
-            message = await self.auxincli_output_queue.get()
+            message = await self.inbox.get()
             yield message
 
     # In the next section, we see how the input queue is populated and consumed
@@ -276,7 +271,7 @@ class Signal:
             req["id"] = future_key
             self.pending_requests[future_key] = asyncio.Future()
             self.pending_messages_sent[future_key] = req
-            await self.auxincli_input_queue.put(req)
+            await self.outbox.put(req)
         # when the result is received, the future will be set
         response = await self.pending_requests[future_key]
         self.pending_requests.pop(future_key)
@@ -295,7 +290,7 @@ class Signal:
             "family-name": "" if env == "prod" else env,  # maybe not?
             "avatar": "avatar.png",
         }
-        await self.auxincli_input_queue.put(profile)
+        await self.outbox.put(profile)
 
     async def set_profile_auxin(
         self,
@@ -313,7 +308,7 @@ class Signal:
         if profile_path:
             params["avatarFile"] = profile_path
         future_key = f"setProfile-{get_uid()}"
-        await self.auxincli_input_queue.put(rpc("setProfile", params, future_key))
+        await self.outbox.put(rpc("setProfile", params, future_key))
         return future_key
 
     # this should maybe yield a future (eep) and/or use auxin_req
@@ -401,7 +396,7 @@ class Signal:
         }
         self.pending_messages_sent[future_key] = json_command
         self.pending_requests[future_key] = asyncio.Future()
-        await self.auxincli_input_queue.put(json_command)
+        await self.outbox.put(json_command)
         return future_key
 
     async def admin(self, msg: Response) -> None:
@@ -427,7 +422,7 @@ class Signal:
         }
         if target_msg.group:
             react["group"] = target_msg.group
-        await self.auxincli_input_queue.put(
+        await self.outbox.put(
             rpc(
                 "sendReaction",
                 param_dict=react,
@@ -440,7 +435,7 @@ class Signal:
     async def auxincli_input_iter(self) -> AsyncIterator[dict]:
         """Provides an asynchronous iterator over pending auxin-cli commands"""
         while True:
-            command = await self.auxincli_input_queue.get()
+            command = await self.outbox.get()
             yield command
 
     backoff = False
@@ -566,7 +561,7 @@ class Bot(Signal):
                     future_key = f"retry-send-{get_uid()}"
                     self.pending_messages_sent[future_key] = sent_json_message
                     self.pending_requests[future_key] = asyncio.Future()
-                    await self.auxincli_input_queue.put(sent_json_message)
+                    await self.outbox.put(sent_json_message)
                 continue
             self.pending_response_tasks = [
                 task for task in self.pending_response_tasks if not task.done()
@@ -1131,6 +1126,10 @@ async def admin_handler(request: web.Request) -> web.Response:
         msg = arg or data
     await bot.admin(msg)
     return web.Response(text="OK")
+
+
+def fmt_ms(ts: int) -> str:
+    return datetime.datetime.utcfromtimestamp(ts / 1000).isoformat()
 
 
 async def metrics(request: web.Request) -> web.Response:
