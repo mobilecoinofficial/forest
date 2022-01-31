@@ -723,7 +723,7 @@ class Bot(Signal):
         return await self.default(message)
 
     def documented_commands(self) -> str:
-        # check for only commands that have docstrings 
+        # check for only commands that have docstrings
         commands = ", ".join(
             name.removeprefix("do_")
             for name in dir(self)

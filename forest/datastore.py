@@ -325,7 +325,13 @@ def format_field(field: Any) -> str:
 @subcommand()
 async def list_accounts(_args: argparse.Namespace) -> None:
     "list available accounts in table format"
-    cols = ["id", "last_update_ms", "last_claim_ms", "active_node_name", "last_node_name"]
+    cols = [
+        "id",
+        "last_update_ms",
+        "last_claim_ms",
+        "active_node_name",
+        "last_node_name",
+    ]
     interface = get_account_interface()
     # sorry
     if "notes" in [
