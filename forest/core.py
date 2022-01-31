@@ -95,7 +95,6 @@ class Signal:
         """
         # things that don't work: loop.add_signal_handler(async_shutdown) - TypeError
         # signal.signal(sync_signal_handler) - can't interact with loop
-        logging.info("start process")
         loop = asyncio.get_running_loop()
         loop.add_signal_handler(signal.SIGINT, self.sync_signal_handler)
         logging.debug("added signal handler, downloading...")
@@ -532,7 +531,6 @@ class Bot(Signal):
             if not hasattr(getattr(self, f"do_{name}"), "hide")
         ]
         super().__init__(bot_number)
-        logging.info("in bot")
         self.restart_task = asyncio.create_task(
             self.start_process()
         )  # maybe cancel on sigint?
