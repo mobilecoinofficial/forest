@@ -162,7 +162,7 @@ If your having trouble registering with this method, there's [a more thorough wa
 
 ## Running Hellobot ##
 
-If you've made it this far, the hard part is over, pat yourself in the back. Once you have a Signal data store, you can provision as many bots as you want with it (as long as only one runs at a time).
+If you've made it this far, the hard part is over, pat yourself on the back. Once you have a Signal data store, you can provision as many bots as you want with it (as long as only one runs at a time).
 
 Hellobot is the simplest possible bot, it is a bot that replies to the message "/hello" with "hello, world". You can see the code for it in [sample_bots/hellobot](sample_bots/hellobot.py).
 
