@@ -5,9 +5,23 @@ breaks our typing if we expect Message.attachments to be list[str].
 Using `or` like this is a bit of a hack, but it's what we've got.
 """
 import shlex
+import unicodedata
+import json
 from typing import Optional
 
 from forest.utils import logging
+
+
+def unicode_character_name(i: int) -> str:
+    try:
+        return unicodedata.name(chr(i))
+    except ValueError:
+        return ""
+
+
+unicode_quotes = [
+    chr(i) for i in range(0, 0x10FFF) if "QUOTATION MARK" in unicode_character_name(i)
+]
 
 
 class Message:
@@ -25,8 +39,10 @@ class Message:
     attachments: list[dict[str, str]]
     group: Optional[str]
     quoted_text: str
+    mentions: list[dict[str, str]]
     source: str
     payment: dict
+    arg0: str
     arg1: Optional[str]
     arg2: Optional[str]
     arg3: Optional[str]
@@ -34,21 +50,26 @@ class Message:
     def __init__(self, blob: dict) -> None:
         self.blob = blob
         # parsing
-        self.command: Optional[str] = None
         self.tokens: Optional[list[str]] = None
         if not self.text:
             return
-        if self.text.startswith("/"):
+        try:
             try:
-                command, *self.tokens = shlex.split(self.text)
-            except ValueError:
-                command, *self.tokens = self.text.split(" ")
-            self.command = command[1:].lower()  # remove /
-            if self.tokens:
-                self.arg1, self.arg2, self.arg3, *_ = self.tokens + [""] * 3
-            self.text = " ".join(self.tokens)
-        elif "help" in self.text.lower() and "Documented" not in self.text:
-            self.command = "help"
+                arg0, maybe_json = self.text.split(" ", 1)
+                assert json.loads(self.text)
+                self.tokens = maybe_json.split(" ")
+            except (json.JSONDecodeError, AssertionError):
+                # replace quote
+                clean_quote_text = self.text
+                for quote in unicode_quotes:
+                    clean_quote_text.replace(quote, "'")
+                arg0, *self.tokens = shlex.split(clean_quote_text)
+        except ValueError:
+            arg0, *self.tokens = self.text.split(" ")
+        self.arg0 = arg0.removeprefix("/").lower()
+        if self.tokens:
+            self.arg1, self.arg2, self.arg3, *_ = self.tokens + [""] * 3
+        self.text = " ".join(self.tokens)
 
     def to_dict(self) -> dict:
         """
@@ -92,6 +113,8 @@ class AuxinMessage(Message):
         msg = (content.get("source") or {}).get("dataMessage") or {}
         self.text = self.full_text = msg.get("body") or ""
         self.attachments: list[dict[str, str]] = msg.get("attachments", [])
+        # "bodyRanges":[{"associatedValue":{"mentionUuid":"fc4457f0-c683-44fe-b887-fe3907d7762e"},"length":1,"start":0}] ... no groups anyway
+        self.mentions = []
         self.group = msg.get("group") or msg.get("groupV2") or ""
         maybe_quote = msg.get("quote")
         self.address = blob.get("Address", {})
@@ -142,6 +165,8 @@ class StdioMessage(Message):
         msg = envelope.get("dataMessage", {})
         # "attachments":[{"contentType":"image/png","filename":"image.png","id":"1484072582431702699","size":2496}]}
         self.attachments: list[dict[str, str]] = msg.get("attachments")
+        # "mentions":[{"name":"+447927948360","number":"+447927948360","uuid":"fc4457f0-c683-44fe-b887-fe3907d7762e","start":0,"length":1}
+        self.mentions = msg.get("mentions") or []
         self.full_text = self.text = msg.get("message", "")
         self.group: Optional[str] = msg.get("groupInfo", {}).get(
             "groupId"

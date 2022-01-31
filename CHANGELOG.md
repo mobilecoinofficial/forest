@@ -1,3 +1,20 @@
+## 1.0.6
+
+- Use ULIDs for JSON RPC ids (#92)
+- Switch to Levenshtein distance, improve matching logic, and accept mentions as commands (#94)
+- Add pdict and pdictng offering PersistDict and aPersistDict, easy state management abstractions (#XX)
+
+## 1.0.5
+
+- Track sending rate limit and pause before hitting it (#82)
+- When sending a message fails with 413 (rate limit), retry sending that message
+- When sending a payment, monitor full-service for the payment to be complete before sending a message about it
+- Add admin debugging commands: /eval for running snippets of python and /fsr for full-service requests  (#88)
+
+## 1.0.4
+
+- Jaccard distance for correcting typo. Use first word as command.
+
 ## 1.0.3
 
 - do_update sets profile picture from attachment (#56)

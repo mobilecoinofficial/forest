@@ -162,7 +162,7 @@ If your having trouble registering with this method, there's [a more thorough wa
 
 ## Running Hellobot ##
 
-If you've made it this far, the hard part is over, pat yourself in the back. Once you have a Signal data store, you can provision as many bots as you want with it (as long as only one runs at a time).
+If you've made it this far, the hard part is over, pat yourself on the back. Once you have a Signal data store, you can provision as many bots as you want with it (as long as only one runs at a time).
 
 Hellobot is the simplest possible bot, it is a bot that replies to the message "/hello" with "hello, world". You can see the code for it in [sample_bots/hellobot](sample_bots/hellobot.py).
 
@@ -249,6 +249,7 @@ These are the environment variables and flags that the bots read to work. Not al
 - `ROOT_DIR`: specify the directory where the data file is stored, as well as where the signal-cli executable is.
 - `SIGNAL_CLI_PATH`: specify where the signal-cli executable is if it is not in ROOT_DIR.
 - `LOGLEVEL`: what log level to use for console logs (DEBUG, INFO, WARNING, ERROR).
+- `TYPO_THRESHOLD`: maximum normalized Levenshtein edit distance for typo correction. 0 is only exact matches, 1 is any match. Default: 0.3
 
 ## Binary flags
 - `NO_DOWNLOAD`: don't download a signal-cli datastore, instead use what's in the current working directory.
@@ -256,6 +257,7 @@ These are the environment variables and flags that the bots read to work. Not al
 - `MONITOR_WALLET`: monitor transactions from full-service. Relevant only if you're giving users a payment address to send mobilecoin to instead of using signal pay.  Experimental, do not use.
 - `LOGFILES`: create a debug.log.
 - `ADMIN_METRICS`: send python and roundtrip timedeltas for each command to ADMIN.
+- `ENABLE_MAGIC`: use string distence and expansions 
 
 ## Contributing
 
