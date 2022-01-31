@@ -708,9 +708,8 @@ class Bot(Signal):
             parsed_fn.body[0].body = parsed_stmts.body
             code = compile(parsed_fn, filename="<ast>", mode="exec")
             exec(code, env or globals())  # pylint: disable=exec-used
-            return await eval(
-                f"{fn_name}()", env or globals()
-            )  # pylint: disable=eval-used
+            # pylint: disable=eval-used
+            return await eval(f"{fn_name}()", env or globals())
 
         if msg.full_text and len(msg.tokens) > 1:
             source_blob = msg.full_text.replace(msg.arg0, "", 1).lstrip("/ ")
@@ -1025,16 +1024,15 @@ class QuestionBot(PayBot):
         super().__init__(bot_number)
 
     async def handle_message(self, message: Message) -> Response:
-        if message.full_text and (
-            message.uuid in self.pending_answers
-            or message.source in self.pending_answers
-        ):
-            probably_future = self.pending_answers.get(
-                message.uuid
-            ) or self.pending_answers.get(message.source)
+        if message.full_text:
+            probably_future = None
+            if message.uuid in self.pending_answers:
+                probably_future = self.pending_answers[message.uuid]
+            if message.source in self.pending_answers:
+                probably_future = self.pending_answers[message.uuid]
             if probably_future:
                 probably_future.set_result(message)
-            return
+                return None
         return await super().handle_message(message)
 
     @hide
@@ -1045,9 +1043,11 @@ class QuestionBot(PayBot):
             and msg.source not in self.pending_confirmations
         ):
             return "Did I ask you a question?"
-        question = self.pending_confirmations.get(
-            msg.uuid
-        ) or self.pending_confirmations.get(msg.source)
+        question = None
+        if msg.uuid and msg.uuid in self.pending_confirmations:
+            question = self.pending_confirmations[msg.uuid]
+        if msg.source and msg.source in self.pending_confirmations:
+            question = self.pending_confirmations[msg.source]
         if question:
             question.set_result(True)
         return None
@@ -1060,25 +1060,13 @@ class QuestionBot(PayBot):
             and msg.source not in self.pending_confirmations
         ):
             return "Did I ask you a question?"
-        question = self.pending_confirmations.get(
-            msg.uuid
-        ) or self.pending_confirmations.get(msg.source)
+        question = None
+        if msg.uuid and msg.uuid in self.pending_confirmations:
+            question = self.pending_confirmations[msg.uuid]
+        if msg.source and msg.source in self.pending_confirmations:
+            question = self.pending_confirmations[msg.source]
         if question:
             question.set_result(False)
-        return None
-
-    @hide
-    async def do_askdemo(self, msg: Message) -> Response:
-        """Asks a yes/no question."""
-        if await self.ask_yesno_question(msg.uuid, "Are you feeling lucky, punk?"):
-            return "well, that's good!"
-        return "sending 🍀"
-
-    @hide
-    async def do_askfreedemo(self, msg: Message) -> Response:
-        answer = await self.ask_freeform_question(msg.uuid)
-        if answer:
-            return f"I love {answer} too!"
         return None
 
     async def ask_freeform_question(
