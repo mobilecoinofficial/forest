@@ -519,8 +519,10 @@ class Signal:
 
 Datapoint = tuple[int, str, float]  # timestamp in ms, command/info, latency in seconds
 
+
 class UserError(Exception):
     pass
+
 
 def is_admin(msg: Message) -> Optional[bool]:
     return (
@@ -792,9 +794,9 @@ class Bot(Signal):
             # with the AST parsed from the message
             parsed_fn.body[0].body = parsed_stmts.body
             code = compile(parsed_fn, filename="<ast>", mode="exec")
-            exec(code, env or globals())  # pylint: disable=exec-used
+            exec(code, globals(), locals())  # pylint: disable=exec-used
             # pylint: disable=eval-used
-            return await eval(f"{fn_name}()", env or globals())
+            return await eval(f"{fn_name}()")
 
         if msg.full_text and len(msg.tokens) > 1:
             source_blob = msg.full_text.replace(msg.arg0, "", 1).lstrip("/ ")
@@ -1027,9 +1029,8 @@ class PayBot(Bot):
                 comment=params.get("comment", ""),
                 account_id=account_id,
             )
-
         elif not prop or not tx_id:
-            tx_result = None
+            tx_result = {}
         else:
             # if you omit account_id, tx doesn't get logged. Good for privacy,
             # but transactions can't be confirmed by the sending party (you)!
@@ -1096,6 +1097,7 @@ class PayBot(Bot):
             return resp
 
         return await resp_fut
+
 
 class QuestionBot(PayBot):
     def __init__(self, bot_number: Optional[str] = None) -> None:
