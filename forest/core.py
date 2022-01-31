@@ -695,7 +695,7 @@ class Bot(Signal):
     async def do_eval(self, msg: Message) -> Response:
         """Evaluates a few lines of Python. Preface with "return" to reply with result."""
 
-        async def async_exec(stmts: str, env: Optional[dict]) -> Any:
+        async def async_exec(stmts: str, env: Optional[dict] = None) -> Any:
             parsed_stmts = ast.parse(stmts)
             fn_name = "_async_exec_f"
             my_fn = f"async def {fn_name}(): pass"
@@ -708,13 +708,12 @@ class Bot(Signal):
             parsed_fn.body[0].body = parsed_stmts.body
             code = compile(parsed_fn, filename="<ast>", mode="exec")
             exec(code, env or globals())  # pylint: disable=exec-used
-            return await eval(
-                f"{fn_name}()", env or globals()
-            )  # pylint: disable=eval-used
+            # pylint: disable=eval-used
+            return await eval(f"{fn_name}()", env or globals())
 
         if msg.full_text and len(msg.tokens) > 1:
             source_blob = msg.full_text.replace(msg.arg0, "", 1).lstrip("/ ")
-            return str(await async_exec(source_blob, locals()))
+            return str(await async_exec(source_blob))
         return None
 
     async def do_ping(self, message: Message) -> str:
@@ -1045,11 +1044,9 @@ class QuestionBot(PayBot):
             and msg.source not in self.pending_confirmations
         ):
             return "Did I ask you a question?"
-        maybe_question = self.pending_confirmations.get(
+        question = self.pending_confirmations.get(
             msg.uuid
-        )
-        if not maybe_question:
-            maybe_question = self.pending_confirmations.get(msg.source)
+        ) or self.pending_confirmations.get(msg.source)
         if question:
             question.set_result(True)
         return None
