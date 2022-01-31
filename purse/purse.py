@@ -10,7 +10,6 @@ from forest.core import Message, PayBot, UserError, app
 from mc_util import mob2pmob
 
 
-
 class ImogenAuxin(PayBot):
     async def send_payment(
         self,
@@ -26,7 +25,7 @@ class ImogenAuxin(PayBot):
             )
         except UserError:
             logging.info("payment failed")
-#            await self.send_message(recipient, "\N{Zero Width Joiner}")
+            #            await self.send_message(recipient, "\N{Zero Width Joiner}")
             return None
             # launch conversion script...
 
