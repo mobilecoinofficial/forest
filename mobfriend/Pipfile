@@ -9,15 +9,20 @@ asyncpg = "*"
 base58 = "*"
 phonenumbers = "*"
 termcolor = "*"
-prometheus_async = "*"
-prometheus_client = "*"
+prometheus-async = "*"
+prometheus-client = "*"
 protobuf = "*"
+ulid2 = "*"
+Pillow = "*"
+pycryptodome = "*"
 
 [requires]
 python_version = "3.9"
 
 [pipenv]
 allow_prereleases = true
+
+[dev-packages]
 
 [packages.aiohttp]
 extras = [ "speedups",]
@@ -27,4 +32,5 @@ version = "==3.8.1"
 git = "https://github.com/zplab/zbar-py"
 
 [packages.amzqr]
-git = "https://github.com/x-hw/amazing-qr"
+git = "https://github.com/itdaniher/amazing-qr"
+ref = "63cbdfd"
