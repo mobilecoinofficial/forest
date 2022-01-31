@@ -43,7 +43,7 @@ from forest.message import AuxinMessage, Message, StdioMessage
 JSON = dict[str, Any]
 Response = Union[str, list, dict[str, str], None]
 
-roundtrip_histogram = Histogram("roundtrip_h", "Roundtrip message response time")  # type: ignore
+roundtrip_histogram = Histogram("roundtrip_h", "Roundtrip message response time")
 roundtrip_summary = Summary("roundtrip_s", "Roundtrip message response time")
 
 MessageParser = AuxinMessage if utils.AUXIN else StdioMessage
@@ -126,7 +126,7 @@ class Signal:
                 self.proc.pid,
             )
             assert self.proc.stdout and self.proc.stdin
-            asyncio.create_task(self.handle_auxincli_raw_output(self.proc.stdout))
+            asyncio.create_task(self.read_signal_stdout(self.proc.stdout))
             # prevent the previous auxin-cli's write task from stealing commands from the input queue
             if write_task:
                 write_task.cancel()
@@ -187,14 +187,42 @@ class Signal:
         # call C fn _exit() without calling cleanup handlers, flushing stdio buffers, etc.
         os._exit(1)
 
-    async def handle_auxincli_raw_output(self, stream: StreamReader) -> None:
-        """Read auxin-cli output but delegate handling it"""
+    async def read_signal_stdout(self, stream: StreamReader) -> None:
+        """Read auxin-cli/signal-cli output but delegate handling it"""
         while True:
             line = (await stream.readline()).decode().strip()
             if not line:
                 break
-            await self.handle_auxincli_raw_line(line)
-        logging.info("stopped reading auxin-cli stdout")
+            await self.decode_signal_line(line)
+        logging.info("stopped reading signal stdout")
+
+    async def decode_signal_line(self, line: str) -> None:
+        if '{"jsonrpc":"2.0","result":[],"id":"receive"}' not in line:
+            pass  # logging.debug("signal: %s", line)
+        try:
+            blob = json.loads(line)
+        except json.JSONDecodeError:
+            logging.info("signal: %s", line)
+            return
+        if "error" in blob:
+            logging.info("signal: %s", line)
+            error = json.dumps(blob["error"])
+            logging.error(
+                json.dumps(blob).replace(error, termcolor.colored(error, "red"))
+            )
+            if "traceback" in blob:
+                exception, *tb = blob["traceback"].split("\n")
+                logging.error(termcolor.colored(exception, "red"))
+                # maybe also send this to admin as a signal message
+                for _line in tb:
+                    logging.error(_line)
+        # {"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"+16176088864","sourceNumber":"+16176088864","sourceUuid":"412e180d-c500-4c60-b370-14f6693d8ea7","sourceName":"sylv","sourceDevice":3,"timestamp":1637290344242,"dataMessage":{"timestamp":1637290344242,"message":"/ping","expiresInSeconds":0,"viewOnce":false}},"account":"+447927948360"}}
+        try:
+            await self.enqueue_blob_messages(blob)
+        except KeyError:
+            logging.info("signal parse error: %s", line)
+            traceback.print_exception(*sys.exc_info())
+        return
 
     async def enqueue_blob_messages(self, blob: JSON) -> None:
         message_blob: Optional[JSON] = None
@@ -220,34 +248,6 @@ class Signal:
             message_blob = blob
         if message_blob:
             return await self.inbox.put(MessageParser(message_blob))
-
-    async def handle_auxincli_raw_line(self, line: str) -> None:
-        if '{"jsonrpc":"2.0","result":[],"id":"receive"}' not in line:
-            pass  # logging.debug("auxin: %s", line)
-        try:
-            blob = json.loads(line)
-        except json.JSONDecodeError:
-            logging.info("auxin: %s", line)
-            return
-        if "error" in blob:
-            logging.info("auxin: %s", line)
-            error = json.dumps(blob["error"])
-            logging.error(
-                json.dumps(blob).replace(error, termcolor.colored(error, "red"))
-            )
-            if "traceback" in blob:
-                exception, *tb = blob["traceback"].split("\n")
-                logging.error(termcolor.colored(exception, "red"))
-                # maybe also send this to admin as a signal message
-                for _line in tb:
-                    logging.error(_line)
-        # {"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"+16176088864","sourceNumber":"+16176088864","sourceUuid":"412e180d-c500-4c60-b370-14f6693d8ea7","sourceName":"sylv","sourceDevice":3,"timestamp":1637290344242,"dataMessage":{"timestamp":1637290344242,"message":"/ping","expiresInSeconds":0,"viewOnce":false}},"account":"+447927948360"}}
-        try:
-            await self.enqueue_blob_messages(blob)
-        except KeyError:
-            logging.info("auxin parse error: %s", line)
-            traceback.print_exception(*sys.exc_info())
-        return
 
     # i'm tempted to refactor these into handle_messages
     async def auxincli_output_iter(self) -> AsyncIterator[Message]:
@@ -590,8 +590,8 @@ class Bot(Signal):
             self.auxin_roundtrip_latency.append(
                 (message.timestamp, note, roundtrip_delta)
             )
-            roundtrip_summary.observe(roundtrip_delta)  # type: ignore
-            roundtrip_histogram.observe(roundtrip_delta)  # type: ignore
+            roundtrip_summary.observe(roundtrip_delta)
+            roundtrip_histogram.observe(roundtrip_delta)
             logging.info("noted roundtrip time: %s", roundtrip_delta)
             if utils.get_secret("ADMIN_METRICS"):
                 await self.admin(
@@ -941,9 +941,8 @@ class PayBot(Bot):
                 comment=params.get("comment", ""),
                 account_id=account_id,
             )
-
         elif not prop or not tx_id:
-            tx_result = None
+            tx_result = {}
         else:
             # if you omit account_id, tx doesn't get logged. Good for privacy,
             # but transactions can't be confirmed by the sending party (you)!
