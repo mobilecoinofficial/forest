@@ -65,8 +65,6 @@ You will receive a DM informing you of the receipt of your payment and your new 
 
 <img width=250px src="examples/payment-received.jpg">
 
-You can now use the `/priority` command to requests images on the priority queue. `/priority` works just like `/imagine` and `/priority-paint` works just like `/paint`.
-
 <img width=250px src="examples/priority2.png">
 
 You can check your current balance with `/balance`.
@@ -134,7 +132,7 @@ Displays Imogen's status
 
 ### Starting Image: ###
 
-Imogen can generate your image based on a starting image. Attach an image and use one of the generative commands (`/imagine`, `/paint`, `/priority`, `/priority-paint`) and Imogen will generate an image based on your prompt and the starting image.
+Imogen can generate your image based on a starting image. Attach an image and use one of the generative commands (`/imagine`, `/paint`) and Imogen will generate an image based on your prompt and the starting image.
 
 <img width=250px src="examples/starting1.png">  <img width=250px src="examples/starting2.png">
 
