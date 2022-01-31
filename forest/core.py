@@ -1045,9 +1045,11 @@ class QuestionBot(PayBot):
             and msg.source not in self.pending_confirmations
         ):
             return "Did I ask you a question?"
-        question = self.pending_confirmations.get(
+        maybe_question = self.pending_confirmations.get(
             msg.uuid
-        ) or self.pending_confirmations.get(msg.source)
+        )
+        if not maybe_question:
+            maybe_question = self.pending_confirmations.get(msg.source)
         if question:
             question.set_result(True)
         return None
@@ -1065,20 +1067,6 @@ class QuestionBot(PayBot):
         ) or self.pending_confirmations.get(msg.source)
         if question:
             question.set_result(False)
-        return None
-
-    @hide
-    async def do_askdemo(self, msg: Message) -> Response:
-        """Asks a yes/no question."""
-        if await self.ask_yesno_question(msg.uuid, "Are you feeling lucky, punk?"):
-            return "well, that's good!"
-        return "sending 🍀"
-
-    @hide
-    async def do_askfreedemo(self, msg: Message) -> Response:
-        answer = await self.ask_freeform_question(msg.uuid)
-        if answer:
-            return f"I love {answer} too!"
         return None
 
     async def ask_freeform_question(
