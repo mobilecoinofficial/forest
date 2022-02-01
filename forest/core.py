@@ -90,7 +90,7 @@ class Signal:
 
     async def start_process(self) -> None:
         """
-        Add SIGINT handlers. Download datastore. Maybe set profile.
+        Add SIGINT handlers. Download datastore. 
         (Re)start auxin-cli and launch reading and writing with it.
         """
         # things that don't work: loop.add_signal_handler(async_shutdown) - TypeError
@@ -131,7 +131,7 @@ class Signal:
             )
             assert self.proc.stdout and self.proc.stdin
             asyncio.create_task(self.read_signal_stdout(self.proc.stdout))
-            # prevent the previous auxin-cli's write task from stealing commands from the input queue
+            # prevent the previous auxin-cli's write task from stealing commands from the outbox queue
             if write_task:
                 write_task.cancel()
             write_task = asyncio.create_task(self.write_commands(self.proc.stdin))
@@ -163,7 +163,9 @@ class Signal:
             sys.exit(1)
 
     async def async_shutdown(self, *_: Any, wait: bool = False) -> None:
-        """Upload our datastore, close postgres connections pools, kill auxin-cli, exit"""
+        """
+        Upload our datastore, close postgres connections pools, kill auxin-cli, kill autosave, exit
+        """
         logging.info("starting async_shutdown")
         # if we're downloading, then we upload too
         if utils.UPLOAD:
@@ -201,6 +203,7 @@ class Signal:
         logging.info("stopped reading signal stdout")
 
     async def decode_signal_line(self, line: str) -> None:
+        "decode json and log errors"
         if '{"jsonrpc":"2.0","result":[],"id":"receive"}' not in line:
             pass  # logging.debug("signal: %s", line)
         try:
@@ -229,6 +232,7 @@ class Signal:
         return
 
     async def enqueue_blob_messages(self, blob: JSON) -> None:
+        "turn rpc blobs into the appropriate number of Messages and put them in the inbox"
         message_blob: Optional[JSON] = None
         logging.info(blob)
         if "params" in blob:
@@ -253,12 +257,17 @@ class Signal:
         if message_blob:
             return await self.inbox.put(MessageParser(message_blob))
 
-    # In the next section, we see how the input queue is populated and consumed
+    # In the next section, we see how the outbox queue is populated and consumed
 
     pending_requests: dict[str, asyncio.Future[Message]] = {}
     pending_messages_sent: dict[str, dict] = {}
 
     async def wait_resp(self, req: Optional[dict] = None, rpc_id: str = "") -> Message:
+        """
+        if a req is given, put in the outbox with along with a future for its result.
+        if an rpc_id or req was given, wait for that future and return the result from
+        auxin-cli/signal-cli
+        """
         if req:
             rpc_id = req["method"] + "-" + get_uid()
             logging.info("expecting response id: %s", rpc_id)
@@ -281,6 +290,7 @@ class Signal:
         payment_address: Optional[str] = "",
         profile_path: Optional[str] = None,
     ) -> str:
+        "set given and family name, payment address (must be b64 format), and profile picture"
         params: JSON = {"name": {"givenName": given_name}}
         if given_name and family_name:
             params["name"]["familyName"] = family_name
@@ -381,6 +391,7 @@ class Signal:
         return rpc_id
 
     async def admin(self, msg: Response) -> None:
+        "send a message to admin"
         await self.send_message(utils.get_secret("ADMIN"), msg)
 
     async def respond(self, target_msg: Message, msg: Response) -> str:
@@ -424,7 +435,7 @@ class Signal:
         return self.messages_until_rate_limit > 1
 
     async def write_commands(self, pipe: StreamWriter) -> None:
-        """Encode and write pending auxin-cli commands"""
+        """Encode and write pending auxin-cli/signal-cli commands"""
         while True:
             command = await self.outbox.get()
             if self.backoff:
@@ -510,8 +521,11 @@ class Bot(Signal):
         self.handle_messages_task = asyncio.create_task(self.handle_messages())
 
     async def handle_messages(self) -> None:
-        """Read messages from the queue and pass each message to handle_message
-        If that returns a non-empty string, send it as a response"""
+        """
+        Read messages from the queue. If it matches a pending request to auxin-cli/signal-cli,
+        set the result for that request. If said result is being rate limited, retry sending it
+        after pausing. Otherwise, concurrently respond to each message.
+        """
         while True:
             message = await self.inbox.get()
             if message.id and message.id in self.pending_requests:
@@ -536,10 +550,15 @@ class Bot(Signal):
                 continue
             self.pending_response_tasks = [
                 task for task in self.pending_response_tasks if not task.done()
-            ] + [asyncio.create_task(self.time_response(message))]
+            ] + [asyncio.create_task(self.respond_and_collect_metrics(message))]
 
     # maybe this is merged with dispatch_message?
-    async def time_response(self, message: Message) -> None:
+    async def respond_and_collect_metrics(self, message: Message) -> None:
+        """
+        Pass each message to handle_message. Notify an admin if an error happens.
+        If that returns a non-empty string, send it as a reply,
+        then record how long this took.
+        """
         rpc_id = None
         start_time = time.time()
         try:
@@ -548,7 +567,6 @@ class Bot(Signal):
                 rpc_id = await self.respond(message, response)
         except:  # pylint: disable=bare-except
             exception_traceback = "".join(traceback.format_exception(*sys.exc_info()))
-            # should this actually be parallel?
             self.pending_response_tasks.append(
                 asyncio.create_task(self.admin(f"{message}\n{exception_traceback}"))
             )
@@ -623,6 +641,7 @@ class Bot(Signal):
         return f'Documented commands: {commands}\n\nFor more info about a command, try "help" [command]'
 
     async def default(self, message: Message) -> Response:
+        "Default response. Override in your class to change this behavior"
         resp = "That didn't look like a valid command!\n" + self.documented_commands()
         # if it messages an echoserver, don't get in a loop (or groups)
         if message.text and not (message.group or message.text == resp):
@@ -773,6 +792,7 @@ class PayBot(Bot):
         return "This bot doesn't have a response for payments."
 
     async def get_address(self, recipient: str) -> Optional[str]:
+        "get a receipient's mobilecoin address"
         result = await self.auxin_req("getPayAddress", peer_name=recipient)
         b64_address = (
             result.blob.get("Address", {}).get("mobileCoinAddress", {}).get("address")
