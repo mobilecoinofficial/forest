@@ -78,17 +78,6 @@ class Imogen(Bot):
         self.worker_instance_id = await get_output(instance_id)
         await super().start_process()
 
-    async def set_profile(self) -> None:
-        profile = {
-            "command": "updateProfile",
-            "given-name": "imogen",
-            "about": "imagine there's an imoge generated",
-            "about-emoji": "\N{Artist Palette}",
-            "family-name": "",
-        }
-        await self.auxincli_input_queue.put(profile)
-        logging.info(profile)
-
     async def do_get_cost(self, _: Message) -> str:
         today = datetime.date.today()
         tomorrow = today + datetime.timedelta(1)

@@ -25,7 +25,7 @@ from asyncio.subprocess import PIPE
 from decimal import Decimal
 from functools import wraps
 from textwrap import dedent
-from typing import Any, AsyncIterator, Callable, Optional, Type, Union
+from typing import Any, Callable, Optional, Type, Union
 
 import aiohttp
 import termcolor
@@ -793,12 +793,12 @@ class PayBot(Bot):
         return address or "Sorry, couldn't get your MobileCoin address"
 
     @requires_admin
-    async def do_set_profile(self, msg: Message) -> Response:
+    async def do_set_profile(self, message: Message) -> Response:
         """Renames bot (requires admin) - accepts first name, last name, and address."""
         user_image = None
-        if msg.attachments and len(msg.attachments):
+        if message.attachments and len(message.attachments):
             await asyncio.sleep(2)
-            attachment_info = msg.attachments[0]
+            attachment_info = message.attachments[0]
             attachment_path = attachment_info.get("fileName")
             timestamp = attachment_info.get("uploadTimestamp")
             if attachment_path is None:
@@ -807,11 +807,11 @@ class PayBot(Bot):
                     user_image = attachment_paths.pop()
             else:
                 user_image = f"/tmp/{attachment_path}"
-        if user_image or (msg.tokens and len(msg.tokens) > 0):
+        if user_image or (message.tokens and len(message.tokens) > 0):
             await self.set_profile_auxin(
-                given_name=msg.arg1,
-                family_name=msg.arg2,
-                payment_address=msg.arg3,
+                given_name=message.arg1,
+                family_name=message.arg2,
+                payment_address=message.arg3,
                 profile_path=user_image,
             )
             return "OK"
