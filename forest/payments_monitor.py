@@ -302,17 +302,18 @@ class Mobster:
         tx_proposal = {"method": method, "params": params}
         return await self.req(tx_proposal)
 
-    async def submit_transaction(self,tx_proposal: dict, account_id: str="",
-            comment: str="") -> dict:
+    async def submit_transaction(
+        self, tx_proposal: dict, account_id: str = "", comment: str = ""
+    ) -> dict:
 
-        params: dict[str,Any] = {}
+        params: dict[str, Any] = {}
         params["tx_proposal"] = tx_proposal
         if account_id:
             params["account_id"] = account_id
         if comment:
             params["comment"] = comment
 
-        tx_proposal = {"method":"submit_transaction", "params":params}
+        tx_proposal = {"method": "submit_transaction", "params": params}
         return await self.req(tx_proposal)
 
     async def get_transactions(self, account_id: str) -> dict[str, dict[str, str]]:

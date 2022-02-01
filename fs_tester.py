@@ -73,6 +73,7 @@ class FullServiceTester:
         """
         Send a transaction and store its success/failure
         """
+
         def log_result(_id: str, result: Optional[dict]) -> None:
             if isinstance(result, dict) and "error" in result:
                 result = result.get("error")
