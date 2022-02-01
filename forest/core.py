@@ -393,10 +393,8 @@ class Signal:
         destination = target_msg.source or target_msg.uuid
         return await self.send_message(destination, msg)
 
-    # FIXME: disable for auxin
     async def send_reaction(self, target_msg: Message, emoji: str) -> None:
         """Send a reaction. Protip: you can use e.g. \N{GRINNING FACE} in python"""
-        # rip rpc syntax and invalid python variable names
         react = {
             "target-author": target_msg.source,
             "target-timestamp": target_msg.timestamp,
