@@ -400,8 +400,6 @@ class MobFriend(QuestionBot):
         )
         amount_pmob = check_status.get("result", {}).get("gift_code_value")
         claimed = check_status.get("result", {}).get("gift_code_status", "")
-        if not await self.ask_yesno_question(msg.source):
-            return "Okay, not doing that!"
         status = await self.mobster.req_(
             "claim_gift_code",
             gift_code_b58=msg.arg1,
