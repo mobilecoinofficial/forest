@@ -90,7 +90,7 @@ class Signal:
 
     async def start_process(self) -> None:
         """
-        Add SIGINT handlers. Download datastore. 
+        Add SIGINT handlers. Download datastore.
         (Re)start signal client and launch reading and writing with it.
         """
         # things that don't work: loop.add_signal_handler(async_shutdown) - TypeError
