@@ -796,15 +796,15 @@ class PayBot(Bot):
             amount_pmob,
             message.payment.get("note"),
         )
-        await self.respond(
-            message,
-            f"Thank you for sending {float(amount_mob)} MOB ({amount_usd_cents/100} USD)",
-        )
+        
         await self.respond(message, await self.payment_response(message, amount_pmob))
 
     async def payment_response(self, msg: Message, amount_pmob: int) -> Response:
-        del msg, amount_pmob  # shush linters
-        return "This bot doesn't have a response for payments."
+        """ Triggers on successful payment"""
+        amount_mob = float(mc_util.pmob2mob(amount_pmob))
+        amount_usd_cents = round(amount_mob * await self.mobster.get_rate() * 100)
+        
+        return f"Thank you for sending {float(amount_mob)} MOB ({amount_usd_cents/100} USD)",
 
     async def get_address(self, recipient: str) -> Optional[str]:
         result = await self.auxin_req("getPayAddress", peer_name=recipient)
