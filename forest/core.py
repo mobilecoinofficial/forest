@@ -20,13 +20,14 @@ import traceback
 import urllib
 import uuid
 import glob
+import functools
 
 from asyncio import Queue, StreamReader, StreamWriter
 from asyncio.subprocess import PIPE
 from decimal import Decimal
 from functools import wraps
 from textwrap import dedent
-from typing import Any, AsyncIterator, Callable, Optional, Type, Union
+from typing import Any, AsyncIterator, Callable, Optional, Type, Union, Awaitable
 
 import aiohttp
 import termcolor
@@ -40,10 +41,10 @@ from ulid2 import generate_ulid_as_base32 as get_uid
 import mc_util
 from forest import autosave, datastore, payments_monitor, pghelp, utils, string_dist
 from forest.message import AuxinMessage, Message, StdioMessage
-from forest.health_service import create_handled_task
 
 JSON = dict[str, Any]
 Response = Union[str, list, dict[str, str], None]
+AsyncFunc = Callable[..., Awaitable]
 
 roundtrip_histogram = Histogram("roundtrip_h", "Roundtrip message response time")  # type: ignore
 roundtrip_summary = Summary("roundtrip_s", "Roundtrip message response time")
@@ -192,6 +193,46 @@ class Signal:
         logging.info("called sys.exit but still running, trying os._exit")
         # call C fn _exit() without calling cleanup handlers, flushing stdio buffers, etc.
         os._exit(1)
+
+    def handle_task(
+        self,
+        task: asyncio.Task,
+        *,
+        _func: Optional[AsyncFunc] = None,
+        f_args: Optional[dict] = None,
+        **params: str,
+    ) -> None:
+        """
+        Done callback which logs task done result and/or restarts a task on error
+
+        args:
+            task (asyncio.task): Finished task
+            _func (AsyncFunc): Async function to restart
+            f_args (dict): Args to pass to function on restart
+        """
+        name = task.get_name()
+        if _func:
+            name = _func.__name__
+        try:
+            result = task.result()
+            logging.info("final result of %s was %s", name, result)
+        except asyncio.CancelledError:
+            logging.info("task %s was cancelled", name)
+        except Exception:  # pylint: disable=broad-except
+            logging.exception("%s errored", name)
+            if callable(_func) and asyncio.iscoroutinefunction(_func):
+                if isinstance(f_args, dict):
+                    task = asyncio.create_task(_func(**f_args))
+                else:
+                    task = asyncio.create_task(_func())
+                task.add_done_callback(
+                    functools.partial(
+                        self.handle_task, _func=_func, f_args=f_args, **params
+                    )
+                )
+                if hasattr(self, params.get("attr", "")):
+                    setattr(self, params["attr"], task)
+                logging.info("%s restarting", name)
 
     async def handle_auxincli_raw_output(self, stream: StreamReader) -> None:
         """Read auxin-cli output but delegate handling it"""
@@ -538,28 +579,27 @@ class Bot(Signal):
         self.restart_task = asyncio.create_task(
             self.start_process()
         )  # maybe cancel on sigint?
-        self.queue_task = create_handled_task(
-            self.handle_messages(),
-            message="handle_messages failed, restarting",
-            error_handler=self.restart_handle_messages,
+        self.queue_task = asyncio.create_task(self.handle_messages())
+        self.queue_task.add_done_callback(
+            functools.partial(
+                self.handle_task, _func=self.handle_messages, attr="queue_task"
+            )
+        )
+        self.restart_task.add_done_callback(
+            functools.partial(
+                self.handle_task, _func=self.start_process, attr="restart_task"
+            )
         )
         if utils.get_secret("MONITOR_WALLET"):
             # currently spams and re-credits the same invoice each reboot
             asyncio.create_task(self.mobster.monitor_wallet())
 
-    async def restart_handle_messages(self) -> None:
-        logging.info("Info attempting to restart handle_messages")
-        self.queue = create_handled_task(
-            self.handle_messages(),
-            message="handle_messages failed, restarting",
-            error_handler=self.restart_handle_messages,
-        )
-        logging.info("Handle message task restarted")
-
     async def handle_messages(self) -> None:
         """Read messages from the queue and pass each message to handle_message
         If that returns a non-empty string, send it as a response"""
         async for message in self.auxincli_output_iter():
+            if message.arg0 == "panic":
+                raise ValueError
             if message.id and message.id in self.pending_requests:
                 logging.debug("setting result for future %s: %s", message.id, message)
                 self.pending_requests[message.id].set_result(message)
