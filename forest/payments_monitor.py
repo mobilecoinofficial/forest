@@ -190,8 +190,27 @@ class Mobster:
     # cache?
     async def get_address(self) -> str:
         res = await self.req({"method": "get_all_accounts"})
-        acc_id = res["result"]["account_ids"][0]
+
+        if not utils.get_secret("FS_ACCOUNT_NAME"):
+            acc_id = res["result"]["account_ids"][0]
+        else:
+            acc_id = await self.get_account_id_by_name(utils.get_secret("FS_ACCOUNT_NAME"))
         return res["result"]["account_map"][acc_id]["main_address"]
+
+    async def get_account_id_by_name(self, account_name:str) -> str:
+        """ returns the account id matching account_name in Full Service Wallet"""
+
+        ## get all account IDs for the Wallet / fullservice instance
+        account_ids = (await self.req({"method": "get_all_accounts"}))["result"]["account_ids"]
+        
+        ## get the account map for the accounts in the wallet
+        account_map = [(await self.req({"method": "get_all_accounts"}))["result"]["account_map"][x] for x in account_ids]
+        
+        ## get the account_id that matches the name
+        account_id = [x["account_id"] for x in account_map if x["name"] == account_name]
+
+        return account_id[0]
+
 
     async def get_receipt_amount_pmob(self, receipt_str: str) -> Optional[int]:
         full_service_receipt = mc_util.b64_receipt_to_full_service_receipt(receipt_str)
