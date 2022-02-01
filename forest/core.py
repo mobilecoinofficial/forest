@@ -100,8 +100,6 @@ class Signal:
         logging.debug("added signal handler, downloading...")
         if utils.DOWNLOAD:
             await self.datastore.download()
-        if utils.get_secret("PROFILE"):
-            await self.set_profile()
         write_task: Optional[asyncio.Task] = None
         RESTART_TIME = 2  # move somewhere else maybe
         restart_count = 0
@@ -260,9 +258,7 @@ class Signal:
     pending_requests: dict[str, asyncio.Future[Message]] = {}
     pending_messages_sent: dict[str, dict] = {}
 
-    async def wait_resp(
-        self, req: Optional[dict] = None, rpc_id: str = ""
-    ) -> Message:
+    async def wait_resp(self, req: Optional[dict] = None, rpc_id: str = "") -> Message:
         if req:
             rpc_id = req["method"] + "-" + get_uid()
             logging.info("expecting response id: %s", rpc_id)
@@ -278,18 +274,6 @@ class Signal:
     async def auxin_req(self, method: str, **params: Any) -> Message:
         return await self.wait_resp(req=rpc(method, **params))
 
-    async def set_profile(self) -> None:
-        """Set signal profile. Note that this will overwrite any mobilecoin address"""
-        env = utils.get_secret("ENV")
-        # maybe use rpc format
-        profile = {
-            "command": "updateProfile",
-            "given-name": "localbot" if utils.LOCAL else "forestbot",
-            "family-name": "" if env == "prod" else env,  # maybe not?
-            "avatar": "avatar.png",
-        }
-        await self.outbox.put(profile)
-
     async def set_profile_auxin(
         self,
         given_name: Optional[str] = "",
@@ -297,8 +281,7 @@ class Signal:
         payment_address: Optional[str] = "",
         profile_path: Optional[str] = None,
     ) -> str:
-        params: JSON = {}
-        params["name"] = {"givenName": given_name}
+        params: JSON = {"name": {"givenName": given_name}}
         if given_name and family_name:
             params["name"]["familyName"] = family_name
         if payment_address:
@@ -420,21 +403,21 @@ class Signal:
         }
         if target_msg.group:
             react["group"] = target_msg.group
-        await self.outbox.put(
-            rpc(
-                "sendReaction",
-                param_dict=react,
-                emoji=emoji,
-                recipient=target_msg.source,
-            )
+        cmd = rpc(
+            "sendReaction",
+            param_dict=react,
+            emoji=emoji,
+            recipient=target_msg.source,
         )
+        await self.outbox.put(cmd)
 
     backoff = False
     messages_until_rate_limit = 50.0
     last_update = time.time()
 
     def update_and_check_rate_limit(self) -> bool:
-        """Returns whether we think signal server will rate limit us for sending a message right now"""
+        """Returns whether we think signal server will rate limit us for sending a
+        message right now"""
         elapsed, self.last_update = (time.time() - self.last_update, time.time())
         rate = 1  # theoretically 1 at least message per second is allowed
         self.messages_until_rate_limit = min(
@@ -810,7 +793,7 @@ class PayBot(Bot):
         return address or "Sorry, couldn't get your MobileCoin address"
 
     @requires_admin
-    async def do_update(self, msg: Message) -> Response:
+    async def do_set_profile(self, msg: Message) -> Response:
         """Renames bot (requires admin) - accepts first name, last name, and address."""
         user_image = None
         if msg.attachments and len(msg.attachments):
@@ -1013,7 +996,7 @@ class QuestionBot(PayBot):
             if message.uuid in self.pending_answers:
                 probably_future = self.pending_answers[message.uuid]
             if message.source in self.pending_answers:
-                probably_future = self.pending_answers[message.uuid]
+                probably_future = self.pending_answers[message.source]
             if probably_future:
                 probably_future.set_result(message)
                 return None
