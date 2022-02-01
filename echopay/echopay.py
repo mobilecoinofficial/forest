@@ -1,60 +1,78 @@
 #!/usr/bin/python3.9
+from audioop import add
+from inspect import modulesbyfile
 import logging
+from unicodedata import decimal
+from urllib import response
 
 from aiohttp import web
-from prometheus_async import aio
-from prometheus_async.aio import time
-from prometheus_client import Summary
+from forest.core import Message, PayBot, Response, app, requires_admin, run_bot
+from forest.utils import get_secret
+from decimal import Decimal
+import mc_util
+from typing import Union
+from forest.payments_monitor import Mobster
 
-from forest.core import Message, PayBot, Response, app
-
-britbot = "+447888866969"
 fee = int(1e12 * 0.0004)
 
-REQUEST_TIME = Summary("request_processing_seconds", "Time spent processing request")
+# REQUEST_TIME = Summary("request_processing_seconds", "Time spent processing request")
 
 
-class AuthorizedPayer(PayBot):
-    no_repay: list[str] = []
+class Echopay(PayBot):
+    
+    
+    #mobster is a class that helps make api calls to the full service API. We use it for account management
+    mobster = Mobster() 
+    
+    async def start_process(self) -> None:
+        await self.set_payment_address()
 
-    async def handle_message(self, message: Message) -> Response:
-        if "hook me up" in message.text.lower():
-            return await self.do_pay(message)
-        return await super().handle_message(message)
+        return await super().start_process()
 
-    async def do_no_repay(self, msg: Message) -> Response:
-        if msg.source in self.no_repay:
-            self.no_repay.remove(msg.source)
-            return "will repay you"
-        self.no_repay.append(msg.source)
-        return "won't repay you"
+    def to_mob (self,pmob: int) -> Decimal:
+        """ converts amount from pmob to mob """
+        return mc_util.pmob2mob(pmob).quantize(Decimal('1.0000'))
 
-    @time(REQUEST_TIME)  # type: ignore
-    async def do_pay(self, msg: Message) -> Response:
-        payment_notif_sent = await self.send_payment(msg.source, int(1e9))
-        if payment_notif_sent:
-            logging.info(payment_notif_sent)
-            delta = (payment_notif_sent.timestamp - msg.timestamp) / 1000
-            await self.admin(f"payment delta: {delta}")
-            self.auxin_roundtrip_latency.append((msg.timestamp, "payment", delta))
-        return None
+    def to_pmob (self,mob: Union[int,float,Decimal] ) -> int:
+        """ converts amount from mob to pmob """
+        return mc_util.mob2pmob(mob)
 
-    @time(REQUEST_TIME)  # type: ignore
+    async def set_payment_address(self) -> None:
+        fs_address= await self.mobster.get_address()
+        signal_address= mc_util.b58_wrapper_to_b64_public_address(fs_address)
+        await self.set_profile_auxin(
+            given_name="PaymeBot",
+            payment_address=signal_address,
+            profile_path='avatar.png'
+        )       
+        
+
+    async def do_pay_me(self, message:Message) -> Response:
+        """Sends payment to requestee for a certain amount"""
+        payment_amount = 0.001 ##payment amount in MOB
+        amount_pmob = self.to_pmob(payment_amount)
+        await self.send_payment(message.source,amount_pmob)
+        return f"sent you a payment for {str(payment_amount)} MOB"
+
+
+    @requires_admin
+    async def do_pay_user(self, message:Message) -> Response:
+        payment_amount = 0.001
+        amount_pmob = self.to_pmob(payment_amount)
+        
+        await self.send_payment()
+        return "will pay user"
+        
+
+
     async def payment_response(self, msg: Message, amount_pmob: int) -> Response:
-        payment_notif = await self.send_payment(msg.source, amount_pmob - fee)
-        if not payment_notif:
-            return None
-        delta = (payment_notif.timestamp - msg.timestamp) / 1000
-        self.auxin_roundtrip_latency.append((msg.timestamp, "repayment", delta))
-        await self.admin(f"repayment delta: {delta}")
-        return None
+        """ Triggers on Succesful payment"""
+
+        amount_mob=self.to_mob(amount_pmob)
+
+        return f"Thank you for your payment of {str(amount_mob)} MOB"
+
 
 
 if __name__ == "__main__":
-    app.add_routes([web.get("/metrics", aio.web.server_stats)])
-
-    @app.on_startup.append
-    async def start_wrapper(out_app: web.Application) -> None:
-        out_app["bot"] = AuthorizedPayer()
-
-    web.run_app(app, port=8080, host="0.0.0.0", access_log=None)
+    run_bot(Echopay)
