@@ -143,7 +143,7 @@ class Signal:
             runtime = proc_exit_time - proc_launch_time
             if runtime < RESTART_TIME:
                 logging.info("sleeping briefly")
-                await asyncio.sleep(RESTART_TIME ** restart_count)
+                await asyncio.sleep(RESTART_TIME**restart_count)
             logging.warning("auxin-cli exited: %s", returncode)
             if returncode == 0:
                 logging.info("auxin-cli apparently exited cleanly, not restarting")
@@ -992,7 +992,9 @@ class PayBot(Bot):
         address = await self.get_address(recipient)
         account_id = await self.mobster.get_account()
         if not address:
-            raise UserError("sorry, couldn't get your MobileCoin address")
+            raise UserError(
+                "Sorry, couldn't get your MobileCoin address. Please make sure you have payments enabled, and have messaged me from your phone!"
+            )
         # TODO: add explicit utxo handling
         raw_prop = await self.mob_request(
             "build_transaction",

@@ -1,3 +1,10 @@
+create or replace function map_len (dict jsonb) returns integer as $$
+    declare key_count integer; begin                                                                       
+    select count (*) from jsonb_object_keys(dict) into key_count; return key_count; 
+    end;
+$$ language plpgsql;
+
+
 CREATE OR REPLACE FUNCTION get_balance(queried_account text) RETURNS NUMERIC AS $$
     SELECT COALESCE ( SUM (amount_usd_cents) / 100, 0.0)  
     FROM imogen_ledger WHERE account=queried_account;

@@ -215,7 +215,6 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
             return None
         message_blob = self.sent_messages[msg.reaction.ts]
         current_reaction_count = len(message_blob["reactions"])
-
         reaction_counts = [
             len(some_message_blob["reactions"])
             for timestamp, some_message_blob in self.sent_messages.items()
@@ -223,7 +222,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
             # and timestamp > 1000*(time.time() - 3600)
         ]
         average_reaction_count = max(
-            sum(reaction_counts) / len(reaction_counts) if reaction_counts else 0, 5
+            sum(reaction_counts) / len(reaction_counts) if reaction_counts else 0, 1
         )
         logging.info(
             "average reaction count: %s, current: %s",
@@ -257,7 +256,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         await self.admin(f"trying to pay {prompt_author}")
         await self.client_session.post(
             utils.get_secret("PURSE_URL") + "/pay",
-            data={
+            params={
                 "destination": prompt_author,
                 "amount": 0.01,
                 "message": f"sent you a tip for your prompt getting {current_reaction_count} reactions",
