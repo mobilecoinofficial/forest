@@ -64,12 +64,12 @@ def rpc(
 
 class Signal:
     """
-    Represents a auxin-cli session.
+    Represents a signal-cli/auxin-cli session.
     Lifecycle: Downloads the datastore, runs and restarts signal client,
     tries to gracefully kill signal and upload before exiting.
-    I/O: reads auxin-cli's output into inbox,
-    has methods for sending commands to auxin-cli, and
-    actually writes those json blobs to auxin-cli's stdin.
+    I/O: reads signal client's output into inbox,
+    has methods for sending commands to the signal client, and
+    actually writes those json blobs to signal client's stdin.
     """
 
     def __init__(self, bot_number: Optional[str] = None) -> None:
@@ -91,7 +91,7 @@ class Signal:
     async def start_process(self) -> None:
         """
         Add SIGINT handlers. Download datastore. 
-        (Re)start auxin-cli and launch reading and writing with it.
+        (Re)start signal client and launch reading and writing with it.
         """
         # things that don't work: loop.add_signal_handler(async_shutdown) - TypeError
         # signal.signal(sync_signal_handler) - can't interact with loop
@@ -125,13 +125,14 @@ class Signal:
                 *command, stdin=PIPE, stdout=PIPE
             )
             logging.info(
-                "started auxin-cli @ %s with PID %s",
+                "started %s @ %s with PID %s",
+                utils.SIGNAL,
                 self.bot_number,
                 self.proc.pid,
             )
             assert self.proc.stdout and self.proc.stdin
             asyncio.create_task(self.read_signal_stdout(self.proc.stdout))
-            # prevent the previous auxin-cli's write task from stealing commands from the outbox queue
+            # prevent the previous signal client's write task from stealing commands from the outbox queue
             if write_task:
                 write_task.cancel()
             write_task = asyncio.create_task(self.write_commands(self.proc.stdin))
@@ -141,10 +142,7 @@ class Signal:
             if runtime < RESTART_TIME:
                 logging.info("sleeping briefly")
                 await asyncio.sleep(RESTART_TIME**restart_count)
-            logging.warning("auxin-cli exited: %s", returncode)
-            if returncode == 0:
-                logging.info("auxin-cli apparently exited cleanly, not restarting")
-                break
+            logging.warning(f"{utils.AUXIN} exited: %s", returncode)
 
     sigints = 0
 
@@ -164,7 +162,7 @@ class Signal:
 
     async def async_shutdown(self, *_: Any, wait: bool = False) -> None:
         """
-        Upload our datastore, close postgres connections pools, kill auxin-cli, kill autosave, exit
+        Upload our datastore, close postgres connections pools, kill signal, kill autosave, exit
         """
         logging.info("starting async_shutdown")
         # if we're downloading, then we upload too
@@ -178,7 +176,7 @@ class Signal:
                     await self.proc.wait()
                     await self.datastore.upload()
             except ProcessLookupError:
-                logging.info("no auxin-cli process")
+                logging.info(f"no {utils.SIGNAL} process")
         if utils.UPLOAD:
             await self.datastore.mark_freed()
         await pghelp.close_pools()
@@ -280,7 +278,7 @@ class Signal:
         self.pending_requests.pop(rpc_id)
         return response
 
-    async def auxin_req(self, method: str, **params: Any) -> Message:
+    async def signal_req(self, method: str, **params: Any) -> Message:
         return await self.wait_resp(req=rpc(method, **params))
 
     async def set_profile_auxin(
@@ -302,7 +300,7 @@ class Signal:
         await self.outbox.put(rpc("setProfile", params, rpc_id))
         return rpc_id
 
-    # this should maybe yield a future (eep) and/or use auxin_req
+    # this should maybe yield a future (eep) and/or use signal_req
     async def send_message(  # pylint: disable=too-many-arguments
         self,
         recipient: Optional[str],
@@ -793,7 +791,7 @@ class PayBot(Bot):
 
     async def get_address(self, recipient: str) -> Optional[str]:
         "get a receipient's mobilecoin address"
-        result = await self.auxin_req("getPayAddress", peer_name=recipient)
+        result = await self.signal_req("getPayAddress", peer_name=recipient)
         b64_address = (
             result.blob.get("Address", {}).get("mobileCoinAddress", {}).get("address")
         )
@@ -856,7 +854,7 @@ class PayBot(Bot):
         # SignalServiceMessageContent protobuf represented as JSON (spicy)
         # destination is outside the content so it doesn't matter,
         # but it does contain the bot's profileKey
-        resp = await self.auxin_req(
+        resp = await self.signal_req(
             "send", simulate=True, message="", destination="+15555555555"
         )
         content_skeletor = json.loads(resp.blob["simulate_output"])
