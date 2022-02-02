@@ -1,59 +1,71 @@
 #!/usr/bin/python3.9
-import urllib
 import logging
-from typing import Any, Optional
+import urllib
 
 from aiohttp import web
 
-from forest import pghelp, pdict
-from forest.core import Message, PayBot, UserError, app
+from forest import pdictng
+from forest.core import Message, QuestionBot, UserError, app
 from mc_util import mob2pmob
+
+activate = """To activate payments:
+
+1. Open Signal, tap on the icon in the top left for Settings.
+2. If you don’t see *Payments*, update Signal app: https://signal.org/install. If you still don't see it, reboot your phone. It can take a few hours.
+3. Tap *Payments* and *Activate Payments*
+
+For more information on Signal Payments visit:
+
+https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
 
 
 class ImogenAuxin(QuestionBot):
     def __init__(self) -> None:
-        self.pending = aPersistDict("pending")
-        self.payments = aPersistDict("payments")
+        self.payments = pdictng.aPersistDict("payments")
         super().__init__()
 
     async def pay(self, recipient: str, amount_pmob: int, message: str) -> None:
-
-        if await self.get_address(recipient):
-            payment = await self.send_payment(recipient, amount_pmob, receipt_message)
-            await self.payments.extend(
-                "payments",
-                [receipt, amount_pmob, receipt_message, payment.transaction_log_id],
+        while 1:
+            if await self.get_address(recipient):
+                try:
+                    payment = await self.send_payment(recipient, amount_pmob, message)
+                    if (
+                        payment
+                        and payment.status == "tx_status_succeeded"
+                        and hasattr(payment, "transaction_log_id")
+                    ):
+                        await self.payments.extend(
+                            recipient,
+                            [
+                                recipient,
+                                amount_pmob,
+                                message,
+                                payment.transaction_log_id,
+                            ],
+                        )
+                        break
+                except UserError:
+                    pass
+            payments = await self.ask_yesno_question(
+                recipient,
+                (
+                    "I'm trying to send you a tip for your popular prompt with Imogen, but couldn't get your MobileCoin address.\n\n"
+                    "Do you have payments enabled?"
+                ),
             )
-        payments = await self.ask_yesno_question(
-            recipient, "Do you have payments enabled?"
-        )
-        if await self.get_address(recipient):
-            return await self.send_payment(recipient, amount_pmob, receipt_message)
-            await self.payments.get("payments") += ...
-        if not payments:
-            await self.send_message("Go to settings and activate payments.")
-        else:
-            await self.send_message(
-                "Try deactivating and activating payments, and messaging me from your primary device"
-            )
-
-    async def send_payment(
-        self,
-        recipient: str,
-        amount_pmob: int,
-        receipt_message: str = "Transaction sent!",
-        confirm_tx_timeout: int = 0,
-        **params: Any,
-    ) -> Optional[Message]:
-        try:
-            return await super().send_payment(
-                recipient, amount_pmob, receipt_message, confirm_tx_timeout, **params
-            )
-        except UserError:
-            logging.info("payment failed")
-            #            await self.send_message(recipient, "\N{Zero Width Joiner}")
-            return None
-            # launch conversion script...
+            if payments:
+                if not await self.get_address(recipient):
+                    # await self.send_message(recipient,"Hmm, I still can't get your address, could you message me from your phone?")
+                    # answer_future = self.pending_answers[recipient] = asyncio.Future()
+                    # answer = await answer_future
+                    # self.pending_answers.pop(recipient)
+                    # if int(answer.device_id) != 1: pass
+                    await self.ask_freeform_question(
+                        recipient,
+                        "Hmm, I still can't get your address, could you message me from your phone? If this issue persists, try deactivating and reactivating payments.",
+                    )
+            else:
+                await self.send_message(recipient, activate)
 
     async def default(self, message: Message) -> None:
         return None
@@ -68,7 +80,7 @@ async def pay_handler(request: web.Request) -> web.Response:
     amount = urllib.parse.unquote(request.query.get("amount", "0"))
     msg = urllib.parse.unquote(request.query.get("message", ""))
     if amount and destination:
-        await bot.send_payment(destination, mob2pmob(float(amount)), msg)
+        await bot.pay(destination, mob2pmob(float(amount)), msg)
         return web.Response(status=200)
     return web.Response(status=400)
 

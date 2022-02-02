@@ -126,6 +126,7 @@ class AuxinMessage(Message):
         self.address = blob.get("Address", {})
         self.quoted_text = "" if not maybe_quote else maybe_quote.get("text")
         address = blob.get("remote_address", {}).get("address", {})
+        self.device_id = blob.get("remote_address", {}).get("device_id", "")
         if "Both" in address:
             self.source, self.uuid = address["Both"]
         elif "Uuid" in address:
@@ -180,8 +181,9 @@ class StdioMessage(Message):
         result = blob.get("result", {})
         self.envelope = envelope = blob.get("envelope", {})
         # {"envelope":{"source":"+16176088864","sourceNumber":"+16176088864","sourceUuid":"412e180d-c500-4c60-b370-14f6693d8ea7","sourceName":"sylv","sourceDevice":3,"timestamp":1637290589910,"dataMessage":{"timestamp":1637290589910,"message":"/ping","expiresInSeconds":0,"viewOnce":false}},"account":"+447927948360"}
-        self.source: str = envelope.get("source")
-        self.name: str = envelope.get("sourceName") or self.source
+        self.source: str = envelope.get("source") or envelope.get("sourceUuid")
+        self.name: str = envelope.get("sourceName") 
+        self.device_id = envelope.get("sourceDevice")
         self.timestamp = envelope.get("timestamp") or result.get("timestamp")
 
         # msg data
