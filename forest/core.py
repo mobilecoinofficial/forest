@@ -110,7 +110,7 @@ class Signal:
         if utils.get_secret("PROFILE"):
             await self.set_profile()
         write_task: Optional[asyncio.Task] = None
-        RESTART_TIME = 2  # move somewhere else maybe
+        max_backoff = 15  # move somewhere else maybe
         restart_count = 0
         while self.sigints == 0 and not self.exiting:
             path = (
@@ -128,7 +128,7 @@ class Signal:
                 *command, stdin=PIPE, stdout=PIPE
             )
             logging.info(
-                "started auxin-cli @ %s with PID %s",
+                "started signal @ %s with PID %s",
                 self.bot_number,
                 self.proc.pid,
             )
@@ -139,15 +139,21 @@ class Signal:
                 write_task.cancel()
             write_task = asyncio.create_task(self.write_commands(self.proc.stdin))
             returncode = await self.proc.wait()
-            proc_exit_time = time.time()
-            runtime = proc_exit_time - proc_launch_time
-            if runtime < RESTART_TIME:
-                logging.info("sleeping briefly")
-                await asyncio.sleep(RESTART_TIME**restart_count)
-            logging.warning("auxin-cli exited: %s", returncode)
+            logging.warning("signal exited with return code: %s", returncode)
             if returncode == 0:
-                logging.info("auxin-cli apparently exited cleanly, not restarting")
                 break
+            runtime = time.time() - proc_launch_time
+            if runtime > max_backoff * 4:
+                restart_count = 0
+            restart_count += 1
+            backoff = 0.5 * (2**restart_count - 1)
+            if backoff > max_backoff:
+                logging.info(
+                    "%s exiting after %s retries", self.bot_number, restart_count
+                )
+                break
+            logging.info("%s will restart in %s second(s)", self.bot_number, backoff)
+            await asyncio.sleep(backoff)
 
     sigints = 0
 
@@ -220,6 +226,8 @@ class Signal:
             logging.info("task %s was cancelled", name)
         except Exception:  # pylint: disable=broad-except
             logging.exception("%s errored", name)
+            if self.sigints > 1:
+                return
             if callable(_func) and asyncio.iscoroutinefunction(_func):
                 if isinstance(f_args, dict):
                     task = asyncio.create_task(_func(**f_args))
