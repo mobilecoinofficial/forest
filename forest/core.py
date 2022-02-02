@@ -795,6 +795,13 @@ class Bot(Signal):
         return "/pong"
 
     @hide
+    async def do_commit_msg(self, _: Message) -> str:
+        try:
+            return f"Commit message: {open('COMMIT_EDITMSG').read()}"
+        except FileNotFoundError:
+            return "No commit message available"
+
+    @hide
     async def do_uptime(self, _: Message) -> str:
         """Returns a message containing the bot uptime."""
         tot_mins, sec = divmod(int(time.time() - self.start_time), 60)
