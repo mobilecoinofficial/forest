@@ -266,3 +266,5 @@ We accept Issues and Pull Requests. These are our style guides:
 Code style: Ensure that `mypy *py` and `pylint *py` do not return errors before you push.
 
 Use [black](https://github.com/psf/black) to format your python code. Prefer verbose, easier to read names over conciser ones.
+
+Install black pre-commit hook with `ln -s .githooks/* .git/hooks/`. Requires black to be installed.
