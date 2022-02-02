@@ -229,40 +229,42 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
             average_reaction_count,
             current_reaction_count,
         )
-        if message_blob.get("paid"):
-            logging.info("already notified about current reaction")
-            return None
-        if current_reaction_count < average_reaction_count:
-            logging.info("average prompt count")
-            return None
         prompt_author = message_blob.get("quote-author")
-        if not prompt_author or prompt_author == self.bot_number:
-            logging.info("message doesn't appear to be quoting anything")
+        if current_reaction_count == 6:
+        # if message_blob.get("paid"):
+        #     logging.info("already notified about current reaction")
+        #     return None
+        # if current_reaction_count < average_reaction_count:
+        #     logging.info("average prompt count")
+        #     return None
+            if not prompt_author or prompt_author == self.bot_number:
+                logging.info("message doesn't appear to be quoting anything")
+                return None
+            logging.debug("seding reaction notif")
+            logging.info("setting paid=True")
+            message_blob["paid"] = True
+            message = f"\N{Object Replacement Character}, your prompt got {current_reaction_count} reactions. Congrats!"
+            quote = {
+                "quote-timestamp": msg.reaction.ts,
+                "quote-author": self.bot_number,
+                "quote-message": message_blob["message"],
+                "mention": f"0:1:{prompt_author}",
+            }
+            if msg.group:
+                await self.send_message(None, message, group=msg.group, **quote)
+            else:
+                await self.send_message(msg.source, message, **quote)
+        if current_reaction_count in (2, 6):
+            await self.admin(f"trying to pay {prompt_author}")
+            await self.client_session.post(
+                utils.get_secret("PURSE_URL") + "/pay",
+                params={
+                    "destination": prompt_author,
+                    "amount": 0.01,
+                    "message": f"sent you a tip for your prompt getting {current_reaction_count} reactions",
+                },
+            )
             return None
-        logging.debug("seding reaction notif")
-        logging.info("setting paid=True")
-        message_blob["paid"] = True
-        message = f"\N{Object Replacement Character}, your prompt got {current_reaction_count} reactions. Congrats!"
-        quote = {
-            "quote-timestamp": msg.reaction.ts,
-            "quote-author": self.bot_number,
-            "quote-message": message_blob["message"],
-            "mention": f"0:1:{prompt_author}",
-        }
-        if msg.group:
-            await self.send_message(None, message, group=msg.group, **quote)
-        else:
-            await self.send_message(msg.source, message, **quote)
-        await self.admin(f"trying to pay {prompt_author}")
-        await self.client_session.post(
-            utils.get_secret("PURSE_URL") + "/pay",
-            params={
-                "destination": prompt_author,
-                "amount": 0.01,
-                "message": f"sent you a tip for your prompt getting {current_reaction_count} reactions",
-            },
-        )
-        return None
 
     def match_command(self, msg: Message) -> str:
         if msg.full_text and msg.full_text.lower().startswith("computer"):
