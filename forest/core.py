@@ -260,7 +260,9 @@ class Signal:
     pending_requests: dict[str, asyncio.Future[Message]] = {}
     pending_messages_sent: dict[str, dict] = {}
 
-    async def wait_for_response(self, req: Optional[dict] = None, rpc_id: str = "") -> Message:
+    async def wait_for_response(
+        self, req: Optional[dict] = None, rpc_id: str = ""
+    ) -> Message:
         """
         if a req is given, put in the outbox with along with a future for its result.
         if an rpc_id or req was given, wait for that future and return the result from
@@ -290,7 +292,7 @@ class Signal:
         profile_path: Optional[str] = None,
     ) -> str:
         """set given and family name, payment address (must be b64 format),
-         and profile picture"""
+        and profile picture"""
         params: JSON = {"name": {"givenName": given_name}}
         if given_name and family_name:
             params["name"]["familyName"] = family_name
