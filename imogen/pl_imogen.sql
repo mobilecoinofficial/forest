@@ -34,7 +34,7 @@ RETURNS enqueue_result AS $$
             SELECT count(*) FROM prompt_queue 
                 WHERE (status='pending' OR status='assigned') AND paid=true 
                 INTO result.queue_length;
-        ELSEIF (SELECT count (id) <= 5 FROM prompt_queue WHERE author=_author AND status='pending' AND paid=false) THEN
+        ELSEIF (SELECT count (id) <= 5 FROM prompt_queue WHERE author=_author AND (status='pending' OR status='assigned') AND paid=false) THEN
             INSERT INTO prompt_queue (prompt, paid, author, signal_ts, group_id, params, url)
                 VALUES (prompt, false, _author, signal_ts, group_id, params, url);
             SELECT true, false, false INTO result.success, result.paid, result.balance_remaining;
