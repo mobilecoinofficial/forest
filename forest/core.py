@@ -508,14 +508,13 @@ Datapoint = tuple[int, str, float]  # timestamp in ms, command/info, latency in 
 class UserError(Exception):
     pass
 
-
-def is_admin(msg: Message) -> Optional[bool]:
+def is_admin(msg: Message) -> bool:
     return (
-        (msg.source == utils.get_secret("ADMIN"))
-        or (msg.uuid == utils.get_secret("ADMIN"))
-        or (msg.group == utils.get_secret("ADMIN_GROUP"))
-        or (msg.source in utils.get_secret("ADMINS").split(","))
-        or (msg.uuid and msg.uuid in utils.get_secret("ADMINS"))
+        msg.source == utils.get_secret("ADMIN")
+        or msg.uuid == utils.get_secret("ADMIN")
+        or msg.group == utils.get_secret("ADMIN_GROUP")
+        or msg.source in utils.get_secret("ADMINS").split(",")
+        or msg.uuid in utils.get_secret("ADMINS")
     )
 
 
@@ -767,7 +766,7 @@ class Bot(Signal):
     async def do_eval(self, msg: Message) -> Response:
         """Evaluates a few lines of Python. Preface with "return" to reply with result."""
 
-        async def async_exec(stmts: str) -> Any:
+        async def async_exec(stmts: str, env: Optional[dict] = None) -> Any:
             parsed_stmts = ast.parse(stmts)
             fn_name = "_async_exec_f"
             my_fn = f"async def {fn_name}(): pass"
@@ -1100,15 +1099,16 @@ class QuestionBot(PayBot):
         super().__init__(bot_number)
 
     async def handle_message(self, message: Message) -> Response:
-        if message.full_text:
-            probably_future = None
-            if message.uuid in self.pending_answers:
-                probably_future = self.pending_answers[message.uuid]
-            if message.source in self.pending_answers:
-                probably_future = self.pending_answers[message.uuid]
+        if message.full_text and (
+            message.uuid in self.pending_answers
+            or message.source in self.pending_answers
+        ):
+            probably_future = self.pending_answers.get(
+                message.uuid
+            ) or self.pending_answers.get(message.source)
             if probably_future:
                 probably_future.set_result(message)
-                return None
+            return
         return await super().handle_message(message)
 
     @hide
@@ -1119,11 +1119,9 @@ class QuestionBot(PayBot):
             and msg.source not in self.pending_confirmations
         ):
             return "Did I ask you a question?"
-        question = None
-        if msg.uuid and msg.uuid in self.pending_confirmations:
-            question = self.pending_confirmations[msg.uuid]
-        if msg.source and msg.source in self.pending_confirmations:
-            question = self.pending_confirmations[msg.source]
+        question = self.pending_confirmations.get(
+            msg.uuid
+        ) or self.pending_confirmations.get(msg.source)
         if question:
             question.set_result(True)
         return None
@@ -1136,11 +1134,9 @@ class QuestionBot(PayBot):
             and msg.source not in self.pending_confirmations
         ):
             return "Did I ask you a question?"
-        question = None
-        if msg.uuid and msg.uuid in self.pending_confirmations:
-            question = self.pending_confirmations[msg.uuid]
-        if msg.source and msg.source in self.pending_confirmations:
-            question = self.pending_confirmations[msg.source]
+        question = self.pending_confirmations.get(
+            msg.uuid
+        ) or self.pending_confirmations.get(msg.source)
         if question:
             question.set_result(False)
         return None
