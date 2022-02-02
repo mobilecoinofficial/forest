@@ -260,7 +260,7 @@ class Signal:
     pending_requests: dict[str, asyncio.Future[Message]] = {}
     pending_messages_sent: dict[str, dict] = {}
 
-    async def wait_resp(self, req: Optional[dict] = None, rpc_id: str = "") -> Message:
+    async def wait_for_response(self, req: Optional[dict] = None, rpc_id: str = "") -> Message:
         """
         if a req is given, put in the outbox with along with a future for its result.
         if an rpc_id or req was given, wait for that future and return the result from
@@ -278,8 +278,9 @@ class Signal:
         self.pending_requests.pop(rpc_id)
         return response
 
-    async def signal_req(self, method: str, **params: Any) -> Message:
-        return await self.wait_resp(req=rpc(method, **params))
+    async def signal_rpc_request(self, method: str, **params: Any) -> Message:
+        """Sends a jsonRpc command to signal-cli or auxin-cli"""
+        return await self.wait_for_response(req=rpc(method, **params))
 
     async def set_profile_auxin(
         self,
@@ -288,7 +289,8 @@ class Signal:
         payment_address: Optional[str] = "",
         profile_path: Optional[str] = None,
     ) -> str:
-        "set given and family name, payment address (must be b64 format), and profile picture"
+        """set given and family name, payment address (must be b64 format),
+         and profile picture"""
         params: JSON = {"name": {"givenName": given_name}}
         if given_name and family_name:
             params["name"]["familyName"] = family_name
@@ -300,7 +302,7 @@ class Signal:
         await self.outbox.put(rpc("setProfile", params, rpc_id))
         return rpc_id
 
-    # this should maybe yield a future (eep) and/or use signal_req
+    # this should maybe yield a future (eep) and/or use signal_rpc_request
     async def send_message(  # pylint: disable=too-many-arguments
         self,
         recipient: Optional[str],
@@ -572,7 +574,7 @@ class Bot(Signal):
         note = message.arg0 or ""
         if rpc_id:
             logging.debug("awaiting future %s", rpc_id)
-            result = await self.wait_resp(rpc_id=rpc_id)
+            result = await self.wait_for_response(rpc_id=rpc_id)
             roundtrip_delta = (result.timestamp - message.timestamp) / 1000
             self.signal_roundtrip_latency.append(
                 (message.timestamp, note, roundtrip_delta)
@@ -791,7 +793,7 @@ class PayBot(Bot):
 
     async def get_address(self, recipient: str) -> Optional[str]:
         "get a receipient's mobilecoin address"
-        result = await self.signal_req("getPayAddress", peer_name=recipient)
+        result = await self.signal_rpc_request("getPayAddress", peer_name=recipient)
         b64_address = (
             result.blob.get("Address", {}).get("mobileCoinAddress", {}).get("address")
         )
@@ -854,7 +856,7 @@ class PayBot(Bot):
         # SignalServiceMessageContent protobuf represented as JSON (spicy)
         # destination is outside the content so it doesn't matter,
         # but it does contain the bot's profileKey
-        resp = await self.signal_req(
+        resp = await self.signal_rpc_request(
             "send", simulate=True, message="", destination="+15555555555"
         )
         content_skeletor = json.loads(resp.blob["simulate_output"])
@@ -956,7 +958,7 @@ class PayBot(Bot):
         # pass our beautifully composed spicy JSON content to auxin.
         # message body is ignored in this case.
         payment_notif = await self.send_message(recipient, "", content=content)
-        resp_fut = asyncio.create_task(self.wait_resp(rpc_id=payment_notif))
+        resp_fut = asyncio.create_task(self.wait_for_response(rpc_id=payment_notif))
 
         if confirm_tx_timeout:
             logging.debug("Attempting to confirm tx status for %s", recipient)
