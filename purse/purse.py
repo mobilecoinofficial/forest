@@ -10,25 +10,32 @@ from forest.core import Message, PayBot, UserError, app
 from mc_util import mob2pmob
 
 
-class ImogenAuxin(QuestionBot):   
+class ImogenAuxin(QuestionBot):
     def __init__(self) -> None:
         self.pending = aPersistDict("pending")
-        self.payments  = aPersistDict("payments")
+        self.payments = aPersistDict("payments")
         super().__init__()
 
     async def pay(self, recipient: str, amount_pmob: int, message: str) -> None:
+
         if await self.get_address(recipient):
-            return await self.send_payment(recipient, amount_pmob, receipt_message)
-            await self.payments.get("payments") += ...
-        payments = await self.ask_yesno_question(recipient, "Do you have payments enabled?")
+            payment = await self.send_payment(recipient, amount_pmob, receipt_message)
+            await self.payments.extend(
+                "payments",
+                [receipt, amount_pmob, receipt_message, payment.transaction_log_id],
+            )
+        payments = await self.ask_yesno_question(
+            recipient, "Do you have payments enabled?"
+        )
         if await self.get_address(recipient):
             return await self.send_payment(recipient, amount_pmob, receipt_message)
             await self.payments.get("payments") += ...
         if not payments:
             await self.send_message("Go to settings and activate payments.")
         else:
-            await self.send_message("Try deactivating and activating payments, and messaging me from your primary device")
-
+            await self.send_message(
+                "Try deactivating and activating payments, and messaging me from your primary device"
+            )
 
     async def send_payment(
         self,
