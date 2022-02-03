@@ -82,7 +82,7 @@ QueueExpressions = pghelp.PGExpressions(
     length="SELECT count(id) AS len FROM {self.table} WHERE status='pending' OR status='assigned';",
     paid_length="SELECT count(id) AS len FROM {self.table} WHERE status='pending' OR status='assigned' AND paid=true;",
     list_queue="SELECT prompt FROM {self.table} WHERE status='pending' OR status='assigned' ORDER BY signal_ts ASC",
-    react="UPDATE {self.table} SET reaction_map = reaction_map || $2::jsonb WHERE sent_ts=$1;",
+    react="UPDATE {self.table} SET reaction_map = reaction_map || $2::jsonb WHERE sent_ts=$1 RETURNING reaction_map, prompt, author;",
     last_active_group="SELECT group_id FROM prompt_queue WHERE author=$1 AND group_id<>'' ORDER BY id DESC LIMIT 1",
     costs="""select
     (select 0.860*sum(elapsed_gpu)/3600.0 from prompt_queue where inserted_ts > (select min(inserted_ts) from prompt_queue where paid=true and author<>'+16176088864') and inserted_ts is not null and author<>'+16176088864') as cost,
@@ -207,47 +207,20 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
             msg.reaction.ts,
             json.dumps({msg.source: msg.reaction.emoji}),
         )
-        await self.queue.react(
+        prompt = await self.queue.react(
             msg.reaction.ts, json.dumps({msg.source: msg.reaction.emoji})
         )
-        if not msg.reaction.ts in self.sent_messages:
-            logging.info("oh no")
-            return None
-        message_blob = self.sent_messages[msg.reaction.ts]
-        current_reaction_count = len(message_blob["reactions"])
-        reaction_counts = [
-            len(some_message_blob["reactions"])
-            for timestamp, some_message_blob in self.sent_messages.items()
-            if len(some_message_blob["reactions"])
-            # and timestamp > 1000*(time.time() - 3600)
-        ]
-        average_reaction_count = max(
-            sum(reaction_counts) / len(reaction_counts) if reaction_counts else 0, 1
-        )
-        logging.info(
-            "average reaction count: %s, current: %s",
-            average_reaction_count,
-            current_reaction_count,
-        )
-        prompt_author = message_blob.get("quote-author")
+        current_reaction_count = len(json.loads(prompt.get("reaction_map", "{}")))
+        prompt_author = prompt.get("author")
         if current_reaction_count == 6:
-        # if message_blob.get("paid"):
-        #     logging.info("already notified about current reaction")
-        #     return None
-        # if current_reaction_count < average_reaction_count:
-        #     logging.info("average prompt count")
-        #     return None
             if not prompt_author or prompt_author == self.bot_number:
-                logging.info("message doesn't appear to be quoting anything")
+                logging.info("reaction isn't to a prompt")
                 return None
-            logging.debug("seding reaction notif")
-            logging.info("setting paid=True")
-            message_blob["paid"] = True
             message = f"\N{Object Replacement Character}, your prompt got {current_reaction_count} reactions. Congrats!"
             quote = {
                 "quote-timestamp": msg.reaction.ts,
                 "quote-author": self.bot_number,
-                "quote-message": message_blob["message"],
+                "quote-message": prompt.get("prompt"),
                 "mention": f"0:1:{prompt_author}",
             }
             if msg.group:
