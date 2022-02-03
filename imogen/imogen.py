@@ -207,6 +207,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
             msg.reaction.ts,
             json.dumps({msg.source: msg.reaction.emoji}),
         )
+        # reaction_map, author, prompt, 
         prompt = await self.queue.react(
             msg.reaction.ts, json.dumps({msg.source: msg.reaction.emoji})
         )
