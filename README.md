@@ -237,7 +237,7 @@ Then, you can upload your datastore with:
 
 These are the environment variables and flags that the bots read to work. Not all of them are necessary for every bot. As you saw hellobot only used a subset of these.
 
-- `ENV`: if running locally, which {ENV}_secrets file to use. This is also optionally used as profile family name
+- `ENV`: if running locally, which {ENV}_secrets file to use. 
 - `BOT_NUMBER`: the number for the bot's signal account
 - `ADMIN`: admin's phone number, primarily as a fallback recipient for invalid webhooks; may also be used to send error messages and metrics.
 - `DATABASE_URL`: URL for the Postgres database to store the signal keys in as well as other information.
@@ -266,3 +266,5 @@ We accept Issues and Pull Requests. These are our style guides:
 Code style: Ensure that `mypy *py` and `pylint *py` do not return errors before you push.
 
 Use [black](https://github.com/psf/black) to format your python code. Prefer verbose, easier to read names over conciser ones.
+
+Install black pre-commit hook with `ln -s .githooks/* .git/hooks/`. Requires black to be installed.

@@ -14,7 +14,7 @@ class EvilBot(Bot):
         if stop:
             typing_cmd["stop"] = stop
 
-        await self.auxincli_input_queue.put(typing_cmd)
+        await self.outbox.put(typing_cmd)
 
     async def handle_message(self, message: Message) -> Response:
         if message.typing == "STARTED":
