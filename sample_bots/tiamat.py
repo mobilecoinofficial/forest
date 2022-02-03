@@ -645,7 +645,7 @@ class Tiamat(PayBot):
                 }
             },
         }
-        await self.auxincli_input_queue.put(profile)
+        await self.outbox.put(profile)
         logging.info(profile)
 
     async def handle_message(self, message: Message) -> Union[Response, None]:
