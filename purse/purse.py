@@ -1,7 +1,7 @@
 #!/usr/bin/python3.9
 import logging
 import urllib
-
+import asyncio
 from aiohttp import web
 
 from forest import pdictng
@@ -80,7 +80,7 @@ async def pay_handler(request: web.Request) -> web.Response:
     amount = urllib.parse.unquote(request.query.get("amount", "0"))
     msg = urllib.parse.unquote(request.query.get("message", ""))
     if amount and destination:
-        await bot.pay(destination, mob2pmob(float(amount)), msg)
+        asyncio.create_task(bot.pay(destination, mob2pmob(float(amount)), msg))
         return web.Response(status=200)
     return web.Response(status=400)
 
