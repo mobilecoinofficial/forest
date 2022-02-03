@@ -254,7 +254,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
                 await self.send_message(None, message, group=msg.group, **quote)
             else:
                 await self.send_message(msg.source, message, **quote)
-        if current_reaction_count in (1, 6):
+        if current_reaction_count in (2, 6):
             await self.admin(f"trying to pay {prompt_author}")
             await self.client_session.post(
                 utils.get_secret("PURSE_URL") + "/pay",
