@@ -780,11 +780,12 @@ class Bot(Signal):
             code = compile(parsed_fn, filename="<ast>", mode="exec")
             exec(code, globals(), locals())  # pylint: disable=exec-used
             # pylint: disable=eval-used
-            return await eval(f"{fn_name}()")
-
+            return await eval(f"{fn_name}()", env or locals())
         if msg.full_text and len(msg.tokens) > 1:
             source_blob = msg.full_text.replace(msg.arg0, "", 1).lstrip("/ ")
-            return str(await async_exec(source_blob))
+            env = globals()
+            env.update(locals())
+            return str(await async_exec(source_blob, env))
         return None
 
     async def do_ping(self, message: Message) -> str:
