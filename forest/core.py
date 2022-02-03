@@ -85,7 +85,7 @@ class Signal:
             except IndexError:
                 bot_number = utils.get_secret("BOT_NUMBER")
         logging.debug("bot number: %s", bot_number)
-        self.bot_number = bot_number.split("_", 1)[0]
+        self.bot_number = bot_number
         self.datastore = datastore.SignalDatastore(bot_number)
         self.proc: Optional[subprocess.Process] = None
         self.auxincli_output_queue: Queue[Message] = Queue()
@@ -132,7 +132,7 @@ class Signal:
                 self.bot_number,
                 self.proc.pid,
             )
-            assert self.proc.stdout and self.proc.stdin  # and self.proc.stderr
+            assert self.proc.stdout and self.proc.stdin
             asyncio.create_task(self.handle_auxincli_raw_output(self.proc.stdout))
             # prevent the previous auxin-cli's write task from stealing commands from the input queue
             if write_task:
@@ -237,7 +237,6 @@ class Signal:
             logging.info("auxin: %s", line)
             return
         if "error" in blob:
-
             logging.info("auxin: %s", line)
             error = json.dumps(blob["error"])
             logging.error(
@@ -778,9 +777,9 @@ class Bot(Signal):
             # with the AST parsed from the message
             parsed_fn.body[0].body = parsed_stmts.body
             code = compile(parsed_fn, filename="<ast>", mode="exec")
-            exec(code, globals(), locals())  # pylint: disable=exec-used
+            exec(code, env or globals())  # pylint: disable=exec-used
             # pylint: disable=eval-used
-            return await eval(f"{fn_name}()")
+            return await eval(f"{fn_name}()", env or globals())
 
         if msg.full_text and len(msg.tokens) > 1:
             source_blob = msg.full_text.replace(msg.arg0, "", 1).lstrip("/ ")
