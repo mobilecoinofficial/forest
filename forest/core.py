@@ -783,7 +783,7 @@ class Bot(Signal):
 
         if msg.full_text and len(msg.tokens) > 1:
             source_blob = msg.full_text.replace(msg.arg0, "", 1).lstrip("/ ")
-            return str(await async_exec(source_blob))
+            return str(await async_exec(source_blob, globals() | locals()))
         return None
 
     async def do_ping(self, message: Message) -> str:
