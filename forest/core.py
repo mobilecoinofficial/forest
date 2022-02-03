@@ -19,13 +19,14 @@ import traceback
 import urllib
 import uuid
 import glob
+import functools
 
 from asyncio import Queue, StreamReader, StreamWriter
 from asyncio.subprocess import PIPE
 from decimal import Decimal
 from functools import wraps
 from textwrap import dedent
-from typing import Any, Callable, Optional, Type, Union
+from typing import Any, Callable, Optional, Type, Union, Awaitable
 
 import aiohttp
 import termcolor
@@ -42,6 +43,7 @@ from forest.message import AuxinMessage, Message, StdioMessage
 
 JSON = dict[str, Any]
 Response = Union[str, list, dict[str, str], None]
+AsyncFunc = Callable[..., Awaitable]
 
 roundtrip_histogram = Histogram("roundtrip_h", "Roundtrip message response time")  # type: ignore
 roundtrip_summary = Summary("roundtrip_s", "Roundtrip message response time")
@@ -101,8 +103,8 @@ class Signal:
         if utils.DOWNLOAD:
             await self.datastore.download()
         write_task: Optional[asyncio.Task] = None
-        RESTART_TIME = 2  # move somewhere else maybe
         restart_count = 0
+        max_backoff = 15
         while self.sigints == 0 and not self.exiting:
             path = (
                 utils.get_secret("SIGNAL_CLI_PATH")
@@ -139,10 +141,18 @@ class Signal:
             returncode = await self.proc.wait()
             proc_exit_time = time.time()
             runtime = proc_exit_time - proc_launch_time
-            if runtime < RESTART_TIME:
-                logging.info("sleeping briefly")
-                await asyncio.sleep(RESTART_TIME**restart_count)
-            logging.warning(f"{utils.AUXIN} exited: %s", returncode)
+            if runtime > max_backoff * 4:
+                restart_count = 0
+            restart_count += 1
+            backoff = 0.5 * (2**restart_count - 1)
+            logging.warning("Signal exited with returncode %s", returncode)
+            if backoff > max_backoff:
+                logging.info(
+                    "%s exiting after %s retries", self.bot_number, restart_count
+                )
+                break
+            logging.info("%s will restart in %s second(s)", self.bot_number, backoff)
+            await asyncio.sleep(backoff)
 
     sigints = 0
 
@@ -190,6 +200,47 @@ class Signal:
         logging.info("called sys.exit but still running, trying os._exit")
         # call C fn _exit() without calling cleanup handlers, flushing stdio buffers, etc.
         os._exit(1)
+
+    def handle_task(
+        self,
+        task: asyncio.Task,
+        *,
+        _func: Optional[AsyncFunc] = None,
+        f_args: Optional[dict] = None,
+        **params: str,
+    ) -> None:
+        """
+        Done callback which logs task done result and/or restarts a task on error
+        args:
+            task (asyncio.task): Finished task
+            _func (AsyncFunc): Async function to restart
+            f_args (dict): Args to pass to function on restart
+        """
+        name = task.get_name()
+        if _func:
+            name = _func.__name__
+        try:
+            result = task.result()
+            logging.info("final result of %s was %s", name, result)
+        except asyncio.CancelledError:
+            logging.info("task %s was cancelled", name)
+        except Exception:  # pylint: disable=broad-except
+            logging.exception("%s errored", name)
+            if self.sigints > 1:
+                return
+            if callable(_func) and asyncio.iscoroutinefunction(_func):
+                if isinstance(f_args, dict):
+                    task = asyncio.create_task(_func(**f_args))
+                else:
+                    task = asyncio.create_task(_func())
+                task.add_done_callback(
+                    functools.partial(
+                        self.handle_task, _func=_func, f_args=f_args, **params
+                    )
+                )
+                if hasattr(self, params.get("attr", "")):
+                    setattr(self, params["attr"], task)
+                logging.info("%s restarting", name)
 
     async def read_signal_stdout(self, stream: StreamReader) -> None:
         """Read auxin-cli/signal-cli output but delegate handling it"""
@@ -521,6 +572,14 @@ class Bot(Signal):
             self.start_process()
         )  # maybe cancel on sigint?
         self.handle_messages_task = asyncio.create_task(self.handle_messages())
+        self.handle_messages_task.add_done_callback(
+            functools.partial(
+                self.handle_task,
+                _func=self.handle_messages,
+                attr="handle_messages_task",
+            )
+        )
+        self.restart_task.add_done_callback(functools.partial(self.handle_task))
 
     async def handle_messages(self) -> None:
         """
