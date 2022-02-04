@@ -5,6 +5,7 @@
 import asyncio
 import codecs
 import json
+import string
 from decimal import Decimal
 from typing import Any, Optional
 
@@ -33,6 +34,16 @@ REQUEST_TIME = Summary("request_processing_seconds", "Time spent processing requ
 
 krng = open("/dev/urandom", "rb")
 
+purchase_helptext = """If you have payments activated, open the conversation on your Signal mobile app, click on the plus (+) sign and choose payment.\n\nIf you don't have Payments activated follow these instructions to activate it.
+
+1. Update Signal app: https://signal.org/install/
+2. Open Signal, tap on the icon in the top left for Settings. If you don’t see *Payments*, reboot your phone. It can take a few hours.
+3. Tap *Payments* and *Activate Payments*
+
+For more information on Signal Payments visit:
+
+https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
+
 
 def r1dx(x: int = 20) -> int:
     """returns a random, fair integer from 1 to X as if rolling a dice with the specified number of sides"""
@@ -48,7 +59,7 @@ def r1dx(x: int = 20) -> int:
 
 class PayBotPro(QuestionBot):
     def __init__(self):
-        self.last_seen: dict[str, str] = {}
+        self.last_seen: dict[str, float] = {}
         super().__init__()
 
     async def handle_message(self, message: Message) -> Response:
@@ -126,6 +137,7 @@ class ClanGat(PayBotPro):
         super().__init__()
 
     async def get_displayname(self, uuid):
+        """Retrieves a display name from a UUID, stores in the cache, handles error conditions."""
         uuid = uuid.strip("\u2068\u2069")
         maybe_displayname = await self.displayname_cache.get(uuid)
         if maybe_displayname:
@@ -155,6 +167,8 @@ class ClanGat(PayBotPro):
 
     @requires_admin
     async def do_dump(self, msg: Message) -> Response:
+        """dump | dump <event>
+        returns a JSON serialization of an event (or all events)"""
         obj = (msg.arg1 or "").lower()
         dump = {}
         for eventcode in list(await self.event_owners.keys()) + list(
@@ -168,6 +182,7 @@ class ClanGat(PayBotPro):
         return json.dumps(dump if not obj else dump.get(obj), indent=2)
 
     async def check_user_owns(self, user_uuid: str, list_name: str) -> Optional[str]:
+        """returns 'event' if the user owns the specified event, or 'list' if the user owns the list."""
         if user_uuid in await self.event_owners.get(list_name.lower(), []):
             return "event"
         if user_uuid in await self.list_owners.get(list_name.lower(), []):
@@ -175,10 +190,9 @@ class ClanGat(PayBotPro):
         return None
 
     async def do_check(self, msg: Message) -> Response:
+        """check | check <list_or_event>
+        returns all lists the user's on, or optionally info about a specified list."""
         obj = (msg.arg1 or "").lower()
-        param = msg.arg2
-        value = msg.arg3
-        user = msg.uuid
         if msg.arg1 and await self.check_user_owns(msg.uuid, msg.arg1):
             return "\n\n".join(
                 [
@@ -213,6 +227,8 @@ class ClanGat(PayBotPro):
         return f"You're on the list for {lists_}.\n\nYou own these paid events: {owns_event}\n\nYou own these free lists: {owns_list}\n\nFor more information reply: check <code>."
 
     async def do_stop(self, msg: Message) -> Response:
+        """stop | stop <list>
+        Removes user from all lists (optionally, specified list)."""
         removed = 0
         if msg.arg1 and msg.uuid in await self.event_lists.get(
             (msg.arg1 or "").lower(), []
@@ -229,7 +245,7 @@ class ClanGat(PayBotPro):
                     )
                     removed += 1
         if msg.arg1 and not removed:
-            "Sorry, you're not on the announcement list for {msg.arg1}"  # thanks y?!
+            return "Sorry, you're not on the announcement list for {msg.arg1}"  # thanks y?!
         if not removed:
             return "You're not on any lists!"
         return None
@@ -277,17 +293,26 @@ class ClanGat(PayBotPro):
 
     @hide
     async def do_pay(self, msg: Message) -> Response:
+        """Allows an event/list owner to distribute available funds across those on a list."""
         user = msg.uuid
         if not msg.arg2 or not msg.arg2.isnumeric():
             msg.arg2 = await self.ask_freeform_question(
                 msg.uuid,
                 "How many mMOB should each recipient recieve (1000mMOB = 1MOB)?",
             )
+        amount_mmob = 0
         list_, amount, message = (
             (msg.arg1 or "").lower(),
-            int((msg.arg2 or "0").lower()),
+            (msg.arg2 or "0"),
             msg.arg3 or msg.arg1,
         )
+        if not amount.isnumeric() or not amount:
+            msg.arg2 = await self.ask_freeform_question(
+                user, "Please provide an amount of milliMOB as a number:"
+            )
+            return await self.do_pay(msg)
+        else:
+            amount_mmob = int(amount)
         if not list_:
             msg.arg1 = await self.ask_freeform_question(
                 user, "Who would you like to send the mMOB to?"
@@ -319,9 +344,9 @@ class ClanGat(PayBotPro):
             for user in to_send
             if user not in await self.successful_pays.get(save_key, [])
         ]
-        total_mmob = len(filtered_send_list) * amount
+        total_mmob = len(filtered_send_list) * amount_mmob
         if len(to_send) > 0 and len(filtered_send_list) == 0:
-            return "already sent to this combination, change the message to continue"
+            return "Warning: already sent to this combination! Change the memo, amount, or list and retry."
         if not is_admin(msg) and (
             total_mmob > await self.payout_balance_mmob.get(list_, 0)
         ):
@@ -336,7 +361,7 @@ class ClanGat(PayBotPro):
             valid_utxos = [
                 utxo
                 for utxo, upmob in (await self.mobster.get_utxos()).items()
-                if upmob > (1_000_000_000 * amount)
+                if upmob > (1_000_000_000 * amount_mmob)
             ]
             if len(valid_utxos) < len(filtered_send_list):
                 await self.send_message(
@@ -349,14 +374,14 @@ class ClanGat(PayBotPro):
                 valid_utxos = [
                     utxo
                     for utxo, upmob in (await self.mobster.get_utxos()).items()
-                    if upmob > (1_000_000_000 * amount)
+                    if upmob > (1_000_000_000 * amount_mmob)
                 ]
             failed = []
             for target in filtered_send_list:
                 result = await self.send_payment(
                     recipient=target,
-                    amount_pmob=amount * 1_000_000_000,
-                    receipt_message=message,
+                    amount_pmob=amount_mmob * 1_000_000_000,
+                    receipt_message=message or "",
                     input_txo_ids=[valid_utxos.pop(0)],
                 )
                 # if we didn't get a result indicating success
@@ -375,18 +400,33 @@ class ClanGat(PayBotPro):
             return "completed sends"
         return "failed"
 
-    @hide
+    @requires_admin
     async def do_send(self, msg: Message) -> Response:
+        """Send <recipient> <message>
+        Sends a message as MOBot."""
         obj = msg.arg1
         param = msg.arg2
+        if not is_admin(msg):
+            await self.send_message(
+                utils.get_secret("ADMIN"), f"Someone just used send:\n {msg}"
+            )
         if obj and param:
             if obj in await self.displayname_lookup_cache.keys():
                 obj = await self.displayname_lookup_cache.get(obj)
             try:
                 result = await self.send_message(obj, param)
                 return result
-            except Exception as e:
-                return str(e)
+            except Exception as err:
+                return str(err)
+        if not obj:
+            msg.arg1 = await self.ask_freeform_question(
+                msg.uuid, "Who would you like to message?"
+            )
+        if not param:
+            msg.arg2 = await self.ask_freeform_question(
+                msg.uuid, "What would you like to say?"
+            )
+        return await self.do_send(msg)
 
     @hide
     async def do_fund(self, msg: Message) -> Response:
@@ -410,15 +450,15 @@ class ClanGat(PayBotPro):
         """
         obj, param, value = (msg.arg1 or ""), (msg.arg2 or ""), msg.arg3
         user = msg.uuid
-        list_ = []
         sent = []
         success = False
         user_owns = await self.check_user_owns(user, obj)
         if user_owns and param:
             # if the user forgot the quotes, the param will be a single word
-            if param.isalnum():
+            if param.rstrip(string.punctuation).isalnum():
                 param = (
-                    msg.full_text.lstrip("/")
+                    (msg.full_text or "")
+                    .lstrip("/")
                     .replace(f"blast {msg.arg1} ", "", 1)
                     .replace(f"Blast {msg.arg1} ", "", 1)
                 )  # thanks mikey :)
@@ -476,7 +516,7 @@ class ClanGat(PayBotPro):
     @hide
     async def do_remove(self, msg: Message) -> Response:
         """Removes a given event by code, if the msg.uuid is the owner."""
-        if not await self.check_user_owns(msg.uuid, msg.arg1):
+        if not await self.check_user_owns(msg.uuid, msg.arg1 or ""):
             return f"Sorry, it doesn't look like you own {msg.arg1}."
         parameters = []
         for state_ in self.state.keys():
@@ -603,12 +643,11 @@ class ClanGat(PayBotPro):
                     f"{value} - updated by {await self.get_displayname(msg.uuid)}",
                 )
                 return f"Updated {param} to read {value}"
-            else:
-                await self.easter_eggs.set(
-                    param.lower(),
-                    f"{value} - added by {await self.get_displayname(msg.uuid)}",
-                )
-                return f'Added an egg! "{param}" now returns\n > {value} - added by {await self.get_displayname(msg.uuid)}'
+            await self.easter_eggs.set(
+                param.lower(),
+                f"{value} - added by {await self.get_displayname(msg.uuid)}",
+            )
+            return f'Added an egg! "{param}" now returns\n > {value} - added by {await self.get_displayname(msg.uuid)}'
         elif obj == "egg" and param in await self.easter_eggs.keys():
             return f"Sorry, egg already has value {await self.easter_eggs.get(param)}. Please message support to change it."
         if (
@@ -714,33 +753,18 @@ class ClanGat(PayBotPro):
             return f"Successfully added '{value}' to event {param}'s {obj}!"
         return f"Failed to add {value} to event {param}'s {obj}!"
 
-    @hide
-    async def do_purchase(self, _: Message) -> Response:
-        helptext = """If you have payments activated, open the conversation on your Signal mobile app, click on the plus (+) sign and choose payment.\n\nIf you don't have Payments activated follow these instructions to activate it.
-
-1. Update Signal app: https://signal.org/install/
-2. Open Signal, tap on the icon in the top left for Settings. If you don’t see *Payments*, reboot your phone. It can take a few hours.
-3. Tap *Payments* and *Activate Payments*
-
-For more information on Signal Payments visit:
-
-https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
-        return helptext
-
-    @hide
-    async def do_buy(self, message: Message) -> Response:
-        return await self.do_purchase(message)
-
     async def default(self, msg: Message) -> Response:
         code = msg.arg0
-        if code == "+":
-            return await self.do_purchase(msg)
-        elif code == "?":
+        if code == "?":
             return await self.do_help(msg)
-        elif code == "y":
+        if code == "y":
             return await self.do_yes(msg)
-        elif code == "n":
+        if code == "n":
             return await self.do_no(msg)
+        if code.rstrip(string.punctuation) == "yes":  # yes!
+            return await self.do_yes(msg)
+        if code in "+ buy purchase":  # was a function, now helptext
+            return purchase_helptext
         # if the event has an owner and a price and there's attendee space and the user hasn't already bought tickets
         if (
             code
@@ -759,7 +783,7 @@ https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
                 f"You may now make one purchase of up to 2 tickets at {await self.event_prices[code]} MOB ea.\nIf you have payments activated, open the conversation on your Signal mobile app, click on the plus (+) sign and choose payment.",
             ]
         # if there's a list but no attendees
-        elif (
+        if (
             code  # if there's a code and...
             and code in await self.event_lists.keys()  # if there's a list and...
             and not await self.event_prices.get(code, 0)  # and it's free
@@ -784,7 +808,7 @@ https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
                     return f"Okay, but you're missing out! \n\nIf you change your mind, unlock the list again by sending '{code}'"
             else:
                 return f"Sorry, {code} is full!"
-        elif (
+        if (
             code
             and code in await self.event_owners.keys()
             and code  # event has owner
@@ -833,6 +857,7 @@ https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
                     )
                     await asyncio.sleep(0.1)
             return "Sorry, I can't help you with that! I'll see if I can find someone who can..."
+        return None
 
     @time_(REQUEST_TIME)  # type: ignore
     async def payment_response(self, msg: Message, amount_pmob: int) -> Response:
@@ -869,10 +894,14 @@ https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
             ):
                 return None
             payment_notif = await self.send_payment(msg.uuid, amount_pmob - FEE)
-            if payment_notif.status == "tx_status_failed":
+            if (
+                not payment_notif
+                or payment_notif
+                and payment_notif.status == "tx_status_failed"
+            ):
                 return f"Failed to repay your {amount_mob} transaction; please contact the administrator with a screenshot for your MOB."
             delta = (payment_notif.timestamp - msg.timestamp) / 1000
-            self.auxin_roundtrip_latency.append((msg.timestamp, "repayment", delta))
+            self.signal_roundtrip_latency.append((msg.timestamp, "repayment", delta))
             return "We have refunded your accidental payment, minus fees!"
         self.no_repay.remove(msg.uuid)
         return None
