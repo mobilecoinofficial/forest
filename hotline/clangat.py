@@ -279,17 +279,28 @@ class ClanGat(PayBotPro):
     async def do_pay(self, msg: Message) -> Response:
         user = msg.uuid
         if not msg.arg2 or not msg.arg2.isnumeric():
-            return "Please provide an amount (in mmob) to pay!"
+            msg.arg2 = await self.ask_freeform_question(
+                msg.uuid,
+                "How many mMOB should each recipient recieve (1000mMOB = 1MOB)?",
+            )
         list_, amount, message = (
             (msg.arg1 or "").lower(),
             int((msg.arg2 or "0").lower()),
             msg.arg3 or msg.arg1,
         )
+        if not list_:
+            msg.arg1 = await self.ask_freeform_question(
+                user, "Who would you like to send the mMOB to?"
+            )
+            return await self.do_pay(msg)
         to_send = []
-        maybe_number = utils.signal_format(list_)
-        if maybe_number and not list_ in await self.event_lists.keys():
-            to_send = [maybe_number]
-            await self.send_message(msg.uuid, f"okay, using {maybe_number}")
+        if not self.displayname_lookup_cache.get(list_):
+            maybe_number = utils.signal_format(list_)
+            if maybe_number and list_ not in await self.event_lists.keys():
+                to_send = [maybe_number]
+                await self.send_message(msg.uuid, f"okay, using {maybe_number}")
+        else:
+            to_send += [await self.displayname_lookup_cache.get(list_)]
         user_owns = await self.check_user_owns(user, list_)
         if not is_admin(msg) and not user_owns:
             return "Sorry, you are not authorized."
@@ -662,9 +673,11 @@ class ClanGat(PayBotPro):
                     f"You've been added as an owner of {value} by {await self.displayname_cache.get(msg.uuid)}",
                 )
                 if user_owns == "event":
-                    await self.event_owners.extend(param, value)
+                    if value not in await self.event_owners.get(param, []):
+                        await self.event_owners.extend(param, value)
                 if user_owns == "list":
-                    await self.list_owners.extend(param, value)
+                    if value not in await self.list_owners.get(param, []):
+                        await self.list_owners.extend(param, value)
                 success = True
             elif obj == "price" and user_owns == "event":
                 # check if string == floatable
