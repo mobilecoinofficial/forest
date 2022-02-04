@@ -162,7 +162,7 @@ async def print_sms(raw_number: str, port: int = 8080) -> None:
         try:
             while 1:
                 print(await receiver.msgs.get())
-            await asyncio.sleep(10 ** 9)
+            await asyncio.sleep(10**9)
         except KeyboardInterrupt:
             return
     return
