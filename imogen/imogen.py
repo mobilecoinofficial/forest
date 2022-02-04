@@ -188,16 +188,12 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         await self.admin("\N{deciduous tree}\N{robot face}\N{hiking boot}")
         await super().start_process()
 
-    async def set_profile(self) -> None:
-        profile = {
-            "command": "updateProfile",
-            "given-name": "imogen",
-            "about": "imagine there's an imoge generated",
-            "about-emoji": "\N{Artist Palette}",
-            "family-name": "",
-        }
-        await self.auxincli_input_queue.put(profile)
-        logging.info(profile)
+        # profile = {
+        #     "given-name": "imogen",
+        #     "about": "imagine there's an imoge generated",
+        #     "about-emoji": "\N{Artist Palette}",
+        #     "family-name": "",
+        # }
 
     async def handle_reaction(self, msg: Message) -> Response:
         await super().handle_reaction(msg)
