@@ -300,6 +300,8 @@ class ClanGat(PayBotPro):
                 msg.uuid,
                 "How many mMOB should each recipient recieve (1000mMOB = 1MOB)?",
             )
+            if msg.arg2 == "0":
+                return "OK, cancelling."
         amount_mmob = 0
         list_, amount, message = (
             (msg.arg1 or "").lower(),
@@ -310,7 +312,7 @@ class ClanGat(PayBotPro):
             msg.arg2 = await self.ask_freeform_question(
                 user, "Please provide an amount of milliMOB as a number:"
             )
-            if amount == "0":
+            if msg.arg2 == "0":
                 return "OK, cancelling."
             return await self.do_pay(msg)
         else:
