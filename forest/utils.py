@@ -73,14 +73,19 @@ def load_secrets(env: Optional[str] = None, overwrite: bool = False) -> None:
         pass
 
 
+secret_cache = {}
+
 # TODO: split this into get_flag and get_secret; move all of the flags into fly.toml;
 # maybe keep all the tomls and dockerfiles in a separate dir with a deploy script passing --config and --dockerfile explicitly
 def get_secret(key: str, env: Optional[str] = None) -> str:
+    if key in secret_cache:
+        return secret_cache.get("key")
     try:
         secret = os.environ[key]
     except KeyError:
         load_secrets(env)
         secret = os.environ.get(key) or ""  # fixme
+        secret_cache[key] = secret
     if secret.lower() in ("0", "false", "no"):
         return ""
     return secret
@@ -88,6 +93,7 @@ def get_secret(key: str, env: Optional[str] = None) -> str:
 
 SIGNAL = (get_secret("SIGNAL") or "auxin").removesuffix("-cli") + "-cli"
 AUXIN = SIGNAL.lower() == "auxin-cli"
+
 HOSTNAME = open("/etc/hostname").read().strip()  #  FLY_ALLOC_ID
 APP_NAME = os.getenv("FLY_APP_NAME")
 URL = os.getenv("URL_OVERRIDE", f"https://{APP_NAME}.fly.dev")
