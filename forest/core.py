@@ -507,6 +507,7 @@ Datapoint = tuple[int, str, float]  # timestamp in ms, command/info, latency in 
 class UserError(Exception):
     pass
 
+
 def is_admin(msg: Message) -> bool:
     return (
         msg.source == utils.get_secret("ADMIN")
@@ -780,12 +781,15 @@ class Bot(Signal):
             exec(code, env or globals())  # pylint: disable=exec-used
             # pylint: disable=eval-used
             return await eval(f"{fn_name}()", env or globals())
+
         if msg.full_text and len(msg.tokens) > 1:
             source_blob = msg.full_text.replace(msg.arg0, "", 1).lstrip("/ ")
             try:
                 return str(await async_exec(source_blob, globals() | locals()))
             except:  # pylint: disable=bare-except
-                exception_traceback = "".join(traceback.format_exception(*sys.exc_info()))
+                exception_traceback = "".join(
+                    traceback.format_exception(*sys.exc_info())
+                )
                 return exception_traceback
         return None
 

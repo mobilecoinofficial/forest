@@ -182,7 +182,7 @@ class StdioMessage(Message):
         self.envelope = envelope = blob.get("envelope", {})
         # {"envelope":{"source":"+***REMOVED***","sourceNumber":"+***REMOVED***","sourceUuid":"412e180d-c500-4c60-b370-14f6693d8ea7","sourceName":"sylv","sourceDevice":3,"timestamp":1637290589910,"dataMessage":{"timestamp":1637290589910,"message":"/ping","expiresInSeconds":0,"viewOnce":false}},"account":"+447927948360"}
         self.source: str = envelope.get("source") or envelope.get("sourceUuid")
-        self.name: str = envelope.get("sourceName") 
+        self.name: str = envelope.get("sourceName")
         self.device_id = envelope.get("sourceDevice")
         self.timestamp = envelope.get("timestamp") or result.get("timestamp")
 
