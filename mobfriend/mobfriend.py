@@ -120,7 +120,10 @@ class MobFriend(QuestionBot):
     ) -> str:
         if not image_path:
             image_path = self.user_images.get(user_id, "template.png")
-        save_name = f"{user_id}_{base58.b58encode(text[:16]).decode()}.png"
+        if ".gif" in image_path:
+            save_name = f"{user_id}_{base58.b58encode(text[:16]).decode()}.gif"
+        else:
+            save_name = f"{user_id}_{base58.b58encode(text[:16]).decode()}.png"
         default_params: dict[str, Any] = dict(save_name=save_name, save_dir="/tmp")
         if image_path:
             default_params.update(

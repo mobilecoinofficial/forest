@@ -15,6 +15,7 @@ protobuf = "*"
 ulid2 = "*"
 Pillow = "*"
 pycryptodome = "*"
+black = "*"
 
 [requires]
 python_version = "3.9"
