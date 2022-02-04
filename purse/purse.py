@@ -25,22 +25,24 @@ class ImogenAuxin(QuestionBot):
         super().__init__()
 
     async def pay(self, recipient: str, amount_pmob: int, message: str) -> None:
-        while 1:
+        for i in range(3):
             if await self.get_address(recipient):
                 try:
-                    payment = await self.send_payment(recipient, amount_pmob, message)
-                    if (
-                        payment
-                        and payment.status == "tx_status_succeeded"
-                        and hasattr(payment, "transaction_log_id")
-                    ):
+                    payment = await self.send_payment(
+                        recipient,
+                        amount_pmob,
+                        message,
+                        confirm_tx_timeout=5,
+                        comment=f"prompt payment to {recipient}",
+                    )
+                    if payment and payment.status == "tx_status_succeeded":
                         await self.payments.extend(
                             recipient,
                             [
                                 recipient,
                                 amount_pmob,
                                 message,
-                                payment.transaction_log_id,
+                                getattr(payment, "transaction_log_id", ""),
                             ],
                         )
                         break

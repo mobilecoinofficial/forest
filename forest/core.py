@@ -782,7 +782,11 @@ class Bot(Signal):
             return await eval(f"{fn_name}()", env or globals())
         if msg.full_text and len(msg.tokens) > 1:
             source_blob = msg.full_text.replace(msg.arg0, "", 1).lstrip("/ ")
-            return str(await async_exec(source_blob, globals() | locals()))
+            try:
+                return str(await async_exec(source_blob, globals() | locals()))
+            except:  # pylint: disable=bare-except
+                exception_traceback = "".join(traceback.format_exception(*sys.exc_info()))
+                return exception_traceback
         return None
 
     async def do_ping(self, message: Message) -> str:
