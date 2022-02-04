@@ -389,7 +389,7 @@ class fuse_operations(Structure):
 
 
 def time_of_timespec(ts):
-    return ts.tv_sec + ts.tv_nsec / 10 ** 9
+    return ts.tv_sec + ts.tv_nsec / 10**9
 
 
 def set_st_attrs(st, attrs):
@@ -399,7 +399,7 @@ def set_st_attrs(st, attrs):
             if timespec is None:
                 continue
             timespec.tv_sec = int(val)
-            timespec.tv_nsec = int((val - timespec.tv_sec) * 10 ** 9)
+            timespec.tv_nsec = int((val - timespec.tv_sec) * 10**9)
         elif hasattr(st, key):
             setattr(st, key, val)
 

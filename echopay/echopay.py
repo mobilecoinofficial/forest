@@ -36,7 +36,7 @@ class AuthorizedPayer(PayBot):
             logging.info(payment_notif_sent)
             delta = (payment_notif_sent.timestamp - msg.timestamp) / 1000
             await self.admin(f"payment delta: {delta}")
-            self.auxin_roundtrip_latency.append((msg.timestamp, "payment", delta))
+            self.signal_roundtrip_latency.append((msg.timestamp, "payment", delta))
         return None
 
     @time(REQUEST_TIME)  # type: ignore

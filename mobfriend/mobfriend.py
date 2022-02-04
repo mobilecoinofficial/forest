@@ -120,15 +120,12 @@ class MobFriend(QuestionBot):
     ) -> str:
         if not image_path:
             image_path = self.user_images.get(user_id, "template.png")
-        if image_path and "." in image_path:
-            extension = image_path.split(".")[-1]
-        else:
-            extension = "png"
-        save_name = f"{user_id}_{base58.b58encode(text[:16]).decode()}.{extension}"
+        save_name = f"{user_id}_{base58.b58encode(text[:16]).decode()}.png"
         default_params: dict[str, Any] = dict(save_name=save_name, save_dir="/tmp")
         if image_path:
             default_params.update(
                 dict(
+                    colorized=True,
                     version=1,
                     level="H",
                     contrast=1.0,
@@ -217,7 +214,7 @@ class MobFriend(QuestionBot):
             logging.info(payment_notif_sent)
             delta = (payment_notif_sent.timestamp - msg.timestamp) / 1000
             await self.admin(f"payment delta: {delta}")
-            self.auxin_roundtrip_latency.append((msg.timestamp, "payment", delta))
+            self.signal_roundtrip_latency.append((msg.timestamp, "payment", delta))
         return None
 
     @time(REQUEST_TIME)  # type: ignore
@@ -235,7 +232,7 @@ class MobFriend(QuestionBot):
             if not payment_notif:
                 return None
             delta = (payment_notif.timestamp - msg.timestamp) / 1000
-            self.auxin_roundtrip_latency.append((msg.timestamp, "repayment", delta))
+            self.signal_roundtrip_latency.append((msg.timestamp, "repayment", delta))
             return None
         if msg.source in self.no_repay:
             self.no_repay.remove(msg.source)
@@ -257,11 +254,15 @@ class MobFriend(QuestionBot):
         memo = status.get("result", {}).get("gift_code_memo") or "None"
         if "Claimed" in claimed:
             return "This gift code has already been redeemed!"
-        return [
-            f"Gift code can be redeemed for {(mob_amt).quantize(Decimal('1.0000'))}MOB. ({pmob} picoMOB)\nMemo: {memo}"
-            + "\nTo redeem, send:",
-            f"redeem {msg.arg1}",
-        ]
+        await self.send_message(
+            msg.uuid,
+            f"Gift code can be redeemed for {(mob_amt).quantize(Decimal('1.0000'))}MOB. ({pmob} picoMOB)\nMemo: {memo}",
+        )
+        if await self.ask_yesno_question(
+            msg.uuid, "Would you like to redeem this gift now? (yes/no)"
+        ):
+            return await self.do_redeem(msg)
+        return f'Okay, send "redeem {msg.arg1}" to redeem at any time!'
 
     async def do_check(self, msg: Message) -> Response:
         """
@@ -395,8 +396,6 @@ class MobFriend(QuestionBot):
         )
         amount_pmob = check_status.get("result", {}).get("gift_code_value")
         claimed = check_status.get("result", {}).get("gift_code_status", "")
-        if not await self.ask_yesno_question(msg.source):
-            return "Okay, not doing that!"
         status = await self.mobster.req_(
             "claim_gift_code",
             gift_code_b58=msg.arg1,
@@ -409,7 +408,7 @@ class MobFriend(QuestionBot):
                 msg.source, amount_pmob - FEE, "Gift code has been redeemed!"
             )
             amount_mob = pmob2mob(amount_pmob - FEE).quantize(Decimal("1.0000"))
-            return f"Claimed a gift code containing {amount_mob}MOB.\nTransaction ID: {status.get('result', {}).get('txo_id')}"
+            return f"Claimed a gift code containing {amount_mob}MOB.\nSupport ID: {status.get('result', {}).get('txo_id')}"
         return f"Sorry, that doesn't look like a valid code.\nDEBUG: {status.get('result')}"
 
     async def do_make(self, msg: Message) -> Response:
