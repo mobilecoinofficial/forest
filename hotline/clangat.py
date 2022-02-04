@@ -58,7 +58,7 @@ def r1dx(x: int = 20) -> int:
 
 
 class PayBotPro(QuestionBot):
-    def __init__(self):
+    def __init__(self) -> None:
         self.last_seen: dict[str, float] = {}
         super().__init__()
 
@@ -108,7 +108,7 @@ class PayBotPro(QuestionBot):
 
 
 class ClanGat(PayBotPro):
-    def __init__(self):
+    def __init__(self) -> None:
         self.no_repay: list[str] = []
         self.address_cache = aPersistDict("address_cache")
         self.profile_cache = aPersistDict("profile_cache")
@@ -136,7 +136,7 @@ class ClanGat(PayBotPro):
         }
         super().__init__()
 
-    async def get_displayname(self, uuid):
+    async def get_displayname(self, uuid: str) -> str:
         """Retrieves a display name from a UUID, stores in the cache, handles error conditions."""
         uuid = uuid.strip("\u2068\u2069")
         maybe_displayname = await self.displayname_cache.get(uuid)
@@ -146,7 +146,7 @@ class ClanGat(PayBotPro):
         if not maybe_user_profile:
             try:
                 maybe_user_profile = (
-                    await self.auxin_req(
+                    await self.signal_rpc_request(
                         "getprofile", peer_name=uuid.strip("\u2068\u2069")
                     )
                 ).blob
@@ -755,13 +755,15 @@ class ClanGat(PayBotPro):
 
     async def default(self, msg: Message) -> Response:
         code = msg.arg0
+        if not code:
+            return
         if code == "?":
             return await self.do_help(msg)
         if code == "y":
             return await self.do_yes(msg)
         if code == "n":
             return await self.do_no(msg)
-        if code.rstrip(string.punctuation) == "yes":  # yes!
+        if code and code.rstrip(string.punctuation) == "yes":  # yes!
             return await self.do_yes(msg)
         if code in "+ buy purchase":  # was a function, now helptext
             return purchase_helptext
