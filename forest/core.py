@@ -1,9 +1,8 @@
 #!/usr/bin/python3.9
 # Copyright (c) 2021 MobileCoin Inc.
 # Copyright (c) 2021 The Forest Team
-
 """
-The core chatbot framework: Message, Signal, Bot, and app
+The core chatbot framework: Message, Signal, Bot, PayBot, and app
 """
 import ast
 import asyncio
@@ -20,13 +19,14 @@ import traceback
 import urllib
 import uuid
 import glob
+import functools
 
 from asyncio import Queue, StreamReader, StreamWriter
 from asyncio.subprocess import PIPE
 from decimal import Decimal
 from functools import wraps
 from textwrap import dedent
-from typing import Any, AsyncIterator, Callable, Optional, Type, Union
+from typing import Any, Callable, Optional, Type, Union, Awaitable
 
 import aiohttp
 import termcolor
@@ -43,6 +43,7 @@ from forest.message import AuxinMessage, Message, Reaction, StdioMessage
 
 JSON = dict[str, Any]
 Response = Union[str, list, dict[str, str], None]
+AsyncFunc = Callable[..., Awaitable]
 
 roundtrip_histogram = Histogram("roundtrip_h", "Roundtrip message response time")  # type: ignore
 roundtrip_summary = Summary("roundtrip_s", "Roundtrip message response time")
@@ -63,18 +64,14 @@ def rpc(
     }
 
 
-def fmt_ms(ts: int) -> str:
-    return datetime.datetime.utcfromtimestamp(ts / 1000).isoformat()
-
-
 class Signal:
     """
-    Represents a auxin-cli session.
-    Lifecycle: Downloads the datastore, runs and restarts auxin-cli,
-    tries to gracefully kill auxin-cli and upload before exiting.
-    I/O: reads auxin-cli's output into auxincli_output_queue,
-    has methods for sending commands to auxin-cli, and
-    actually writes those json blobs to auxin-cli's stdin.
+    Represents a signal-cli/auxin-cli session.
+    Lifecycle: Downloads the datastore, runs and restarts signal client,
+    tries to gracefully kill signal and upload before exiting.
+    I/O: reads signal client's output into inbox,
+    has methods for sending commands to the signal client, and
+    actually writes those json blobs to signal client's stdin.
     """
 
     def __init__(self, bot_number: Optional[str] = None) -> None:
@@ -88,16 +85,16 @@ class Signal:
         self.bot_number = bot_number
         self.datastore = datastore.SignalDatastore(bot_number)
         self.proc: Optional[subprocess.Process] = None
-        self.auxincli_output_queue: Queue[Message] = Queue()
-        self.auxincli_input_queue: Queue[dict] = Queue()
+        self.inbox: Queue[Message] = Queue()
+        self.outbox: Queue[dict] = Queue()
         self.exiting = False
         self.start_time = time.time()
         self.sent_messages: dict[int, JSON] = {}
 
     async def start_process(self) -> None:
         """
-        Add SIGINT handlers. Download datastore. Maybe set profile.
-        (Re)start auxin-cli and launch reading and writing with it.
+        Add SIGINT handlers. Download datastore.
+        (Re)start signal client and launch reading and writing with it.
         """
         # things that don't work: loop.add_signal_handler(async_shutdown) - TypeError
         # signal.signal(sync_signal_handler) - can't interact with loop
@@ -106,16 +103,19 @@ class Signal:
         logging.debug("added signal handler, downloading...")
         if utils.DOWNLOAD:
             await self.datastore.download()
-        if utils.get_secret("PROFILE"):
-            await self.set_profile()
         write_task: Optional[asyncio.Task] = None
-        RESTART_TIME = 2  # move somewhere else maybe
         restart_count = 0
+        max_backoff = 15
         while self.sigints == 0 and not self.exiting:
             path = (
                 utils.get_secret("SIGNAL_CLI_PATH")
                 or f"{utils.ROOT_DIR}/{'auxin' if utils.AUXIN else 'signal'}-cli"
             )
+            # this?? can blocks forever if the file doesn't exist??
+            if not os.path.exists(path):
+                raise FileNotFoundError(
+                    f"{path} doesn't exist! Try symlinking {utils.SIGNAL} to the working directory"
+                )
             if utils.AUXIN:
                 path += " --download-path /tmp"
             else:
@@ -124,30 +124,37 @@ class Signal:
             command = f"{path} --config {utils.ROOT_DIR} --user {self.bot_number} jsonRpc".split()
             logging.info(command)
             proc_launch_time = time.time()
+            # this ought to FileNotFoundError but doesn't
             self.proc = await asyncio.create_subprocess_exec(
                 *command, stdin=PIPE, stdout=PIPE
             )
             logging.info(
-                "started auxin-cli @ %s with PID %s",
+                "started %s @ %s with PID %s",
+                utils.SIGNAL,
                 self.bot_number,
                 self.proc.pid,
             )
             assert self.proc.stdout and self.proc.stdin
-            asyncio.create_task(self.handle_auxincli_raw_output(self.proc.stdout))
-            # prevent the previous auxin-cli's write task from stealing commands from the input queue
+            asyncio.create_task(self.read_signal_stdout(self.proc.stdout))
+            # prevent the previous signal client's write task from stealing commands from the outbox queue
             if write_task:
                 write_task.cancel()
             write_task = asyncio.create_task(self.write_commands(self.proc.stdin))
             returncode = await self.proc.wait()
             proc_exit_time = time.time()
             runtime = proc_exit_time - proc_launch_time
-            if runtime < RESTART_TIME:
-                logging.info("sleeping briefly")
-                await asyncio.sleep(RESTART_TIME**restart_count)
-            logging.warning("auxin-cli exited: %s", returncode)
-            if returncode == 0:
-                logging.info("auxin-cli apparently exited cleanly, not restarting")
+            if runtime > max_backoff * 4:
+                restart_count = 0
+            restart_count += 1
+            backoff = 0.5 * (2**restart_count - 1)
+            logging.warning("Signal exited with returncode %s", returncode)
+            if backoff > max_backoff:
+                logging.info(
+                    "%s exiting after %s retries", self.bot_number, restart_count
+                )
                 break
+            logging.info("%s will restart in %s second(s)", self.bot_number, backoff)
+            await asyncio.sleep(backoff)
 
     sigints = 0
 
@@ -166,7 +173,9 @@ class Signal:
             sys.exit(1)
 
     async def async_shutdown(self, *_: Any, wait: bool = False) -> None:
-        """Upload our datastore, close postgres connections pools, kill auxin-cli, exit"""
+        """
+        Upload our datastore, close postgres connections pools, kill signal, kill autosave, exit
+        """
         logging.info("starting async_shutdown")
         # if we're downloading, then we upload too
         if utils.UPLOAD:
@@ -179,7 +188,7 @@ class Signal:
                     await self.proc.wait()
                     await self.datastore.upload()
             except ProcessLookupError:
-                logging.info("no auxin-cli process")
+                logging.info(f"no {utils.SIGNAL} process")
         if utils.UPLOAD:
             await self.datastore.mark_freed()
         await pghelp.close_pools()
@@ -194,50 +203,67 @@ class Signal:
         # call C fn _exit() without calling cleanup handlers, flushing stdio buffers, etc.
         os._exit(1)
 
-    async def handle_auxincli_raw_output(self, stream: StreamReader) -> None:
-        """Read auxin-cli output but delegate handling it"""
+    def handle_task(
+        self,
+        task: asyncio.Task,
+        *,
+        _func: Optional[AsyncFunc] = None,
+        f_args: Optional[dict] = None,
+        **params: str,
+    ) -> None:
+        """
+        Done callback which logs task done result and/or restarts a task on error
+        args:
+            task (asyncio.task): Finished task
+            _func (AsyncFunc): Async function to restart
+            f_args (dict): Args to pass to function on restart
+        """
+        name = task.get_name()
+        if _func:
+            name = _func.__name__
+        try:
+            result = task.result()
+            logging.info("final result of %s was %s", name, result)
+        except asyncio.CancelledError:
+            logging.info("task %s was cancelled", name)
+        except Exception:  # pylint: disable=broad-except
+            logging.exception("%s errored", name)
+            if self.sigints > 1:
+                return
+            if callable(_func) and asyncio.iscoroutinefunction(_func):
+                if isinstance(f_args, dict):
+                    task = asyncio.create_task(_func(**f_args))
+                else:
+                    task = asyncio.create_task(_func())
+                task.add_done_callback(
+                    functools.partial(
+                        self.handle_task, _func=_func, f_args=f_args, **params
+                    )
+                )
+                if hasattr(self, params.get("attr", "")):
+                    setattr(self, params["attr"], task)
+                logging.info("%s restarting", name)
+
+    async def read_signal_stdout(self, stream: StreamReader) -> None:
+        """Read auxin-cli/signal-cli output but delegate handling it"""
         while True:
             line = (await stream.readline()).decode().strip()
             if not line:
                 break
-            await self.handle_auxincli_raw_line(line)
-        logging.info("stopped reading auxin-cli stdout")
+            await self.decode_signal_line(line)
+        logging.info("stopped reading signal stdout")
 
-    async def enqueue_blob_messages(self, blob: JSON) -> None:
-        message_blob: Optional[JSON] = None
-        logging.info(blob)
-        if "params" in blob:
-            if isinstance(blob["params"], list):
-                for msg in blob["params"]:
-                    if not blob.get("content", {}).get("receipt_message", {}):
-                        await self.auxincli_output_queue.put(MessageParser(msg))
-            message_blob = blob["params"]
-        if "result" in blob:
-            if isinstance(blob["result"], list):
-                # idt this happens anymore, remove?
-                logging.info("results list code path")
-                for msg in blob["result"]:
-                    if not blob.get("content", {}).get("receipt_message", {}):
-                        await self.auxincli_output_queue.put(MessageParser(msg))
-            elif isinstance(blob["result"], dict):
-                message_blob = blob
-            else:
-                logging.warning(blob["result"])
-        if "error" in blob:
-            message_blob = blob
-        if message_blob:
-            return await self.auxincli_output_queue.put(MessageParser(message_blob))
-
-    async def handle_auxincli_raw_line(self, line: str) -> None:
+    async def decode_signal_line(self, line: str) -> None:
+        "decode json and log errors"
         if '{"jsonrpc":"2.0","result":[],"id":"receive"}' not in line:
-            pass  # logging.debug("auxin: %s", line)
+            pass  # logging.debug("signal: %s", line)
         try:
             blob = json.loads(line)
         except json.JSONDecodeError:
-            logging.info("auxin: %s", line)
+            logging.info("signal: %s", line)
             return
         if "error" in blob:
-            logging.info("auxin: %s", line)
+            logging.info("signal: %s", line)
             error = json.dumps(blob["error"])
             logging.error(
                 json.dumps(blob).replace(error, termcolor.colored(error, "red"))
@@ -256,52 +282,64 @@ class Signal:
         try:
             await self.enqueue_blob_messages(blob)
         except KeyError:
-            logging.info("auxin parse error: %s", line)
+            logging.info("signal parse error: %s", line)
             traceback.print_exception(*sys.exc_info())
         return
 
-    # i'm tempted to refactor these into handle_messages
-    async def auxincli_output_iter(self) -> AsyncIterator[Message]:
-        """Provides an asynchronous iterator over messages on the queue.
-        See Bot for how messages and consumed and dispatched"""
-        while True:
-            message = await self.auxincli_output_queue.get()
-            yield message
+    async def enqueue_blob_messages(self, blob: JSON) -> None:
+        "turn rpc blobs into the appropriate number of Messages and put them in the inbox"
+        message_blob: Optional[JSON] = None
+        logging.info(blob)
+        if "params" in blob:
+            if isinstance(blob["params"], list):
+                for msg in blob["params"]:
+                    if not blob.get("content", {}).get("receipt_message", {}):
+                        await self.inbox.put(MessageParser(msg))
+            message_blob = blob["params"]
+        if "result" in blob:
+            if isinstance(blob["result"], list):
+                # idt this happens anymore, remove?
+                logging.info("results list code path")
+                for msg in blob["result"]:
+                    if not blob.get("content", {}).get("receipt_message", {}):
+                        await self.inbox.put(MessageParser(msg))
+            elif isinstance(blob["result"], dict):
+                message_blob = blob
+            else:
+                logging.warning(blob["result"])
+        if "error" in blob:
+            message_blob = blob
+        if message_blob:
+            return await self.inbox.put(MessageParser(message_blob))
 
-    # In the next section, we see how the input queue is populated and consumed
+    # In the next section, we see how the outbox queue is populated and consumed
 
     pending_requests: dict[str, asyncio.Future[Message]] = {}
     pending_messages_sent: dict[str, dict] = {}
 
-    async def wait_resp(
-        self, req: Optional[dict] = None, future_key: str = ""
+    async def wait_for_response(
+        self, req: Optional[dict] = None, rpc_id: str = ""
     ) -> Message:
+        """
+        if a req is given, put in the outbox with along with a future for its result.
+        if an rpc_id or req was given, wait for that future and return the result from
+        auxin-cli/signal-cli
+        """
         if req:
-            future_key = req["method"] + "-" + get_uid()
-            logging.info("expecting response id: %s", future_key)
-            req["id"] = future_key
-            self.pending_requests[future_key] = asyncio.Future()
-            self.pending_messages_sent[future_key] = req
-            await self.auxincli_input_queue.put(req)
+            rpc_id = req["method"] + "-" + get_uid()
+            logging.info("expecting response id: %s", rpc_id)
+            req["id"] = rpc_id
+            self.pending_requests[rpc_id] = asyncio.Future()
+            self.pending_messages_sent[rpc_id] = req
+            await self.outbox.put(req)
         # when the result is received, the future will be set
-        response = await self.pending_requests[future_key]
-        self.pending_requests.pop(future_key)
+        response = await self.pending_requests[rpc_id]
+        self.pending_requests.pop(rpc_id)
         return response
 
-    async def auxin_req(self, method: str, **params: Any) -> Message:
-        return await self.wait_resp(req=rpc(method, **params))
-
-    async def set_profile(self) -> None:
-        """Set signal profile. Note that this will overwrite any mobilecoin address"""
-        env = utils.get_secret("ENV")
-        # maybe use rpc format
-        profile = {
-            "command": "updateProfile",
-            "given-name": "localbot" if utils.LOCAL else "forestbot",
-            "family-name": "" if env == "prod" else env,  # maybe not?
-            "avatar": "avatar.png",
-        }
-        await self.auxincli_input_queue.put(profile)
+    async def signal_rpc_request(self, method: str, **params: Any) -> Message:
+        """Sends a jsonRpc command to signal-cli or auxin-cli"""
+        return await self.wait_for_response(req=rpc(method, **params))
 
     async def set_profile_auxin(
         self,
@@ -310,17 +348,18 @@ class Signal:
         payment_address: Optional[str] = "",
         profile_path: Optional[str] = None,
     ) -> str:
-        params: JSON = {}
-        params["name"] = {"givenName": given_name}
+        """set given and family name, payment address (must be b64 format),
+        and profile picture"""
+        params: JSON = {"name": {"givenName": given_name}}
         if given_name and family_name:
             params["name"]["familyName"] = family_name
         if payment_address:
             params["mobilecoinAddress"] = payment_address
         if profile_path:
             params["avatarFile"] = profile_path
-        future_key = f"setProfile-{get_uid()}"
-        await self.auxincli_input_queue.put(rpc("setProfile", params, future_key))
-        return future_key
+        rpc_id = f"setProfile-{get_uid()}"
+        await self.outbox.put(rpc("setProfile", params, rpc_id))
+        return rpc_id
 
     async def save_sent_message(self, rpc_id: str, params: dict[str, str]) -> None:
         result = await self.pending_requests[rpc_id]
@@ -328,7 +367,7 @@ class Signal:
         self.sent_messages[result.timestamp] = params
         self.sent_messages[result.timestamp]["reactions"] = {}
 
-    # this should maybe yield a future (eep) and/or use auxin_req
+    # this should maybe yield a future (eep) and/or use signal_rpc_request
     async def send_message(  # pylint: disable=too-many-arguments
         self,
         recipient: Optional[str],
@@ -407,24 +446,23 @@ class Signal:
                     return ""
             params["destination" if utils.AUXIN else "recipient"] = str(recipient)
         # maybe use rpc() instead
-        future_key = f"send-{get_uid()}"
+        rpc_id = f"send-{get_uid()}"
         json_command: JSON = {
             "jsonrpc": "2.0",
-            "id": future_key,
+            "id": rpc_id,
             "method": "send",
             "params": params,
         }
-        self.pending_messages_sent[future_key] = json_command
-        self.pending_requests[future_key] = asyncio.Future()
-        await self.auxincli_input_queue.put(json_command)
-        asyncio.create_task(self.save_sent_message(future_key, params))
-        return future_key
+        self.pending_messages_sent[rpc_id] = json_command
+        self.pending_requests[rpc_id] = asyncio.Future()
+        await self.outbox.put(json_command)
+        asyncio.create_task(self.save_sent_message(rpc_id, params))
+        return rpc_id
 
     async def admin(self, msg: Response, **kwargs: Any) -> None:
-        if utils.get_secret("ADMIN_GROUP") and not utils.AUXIN:
-            await self.send_message(
-                None, msg, group=utils.get_secret("ADMIN_GROUP"), **kwargs
-            )
+        "send a message to admin"
+        if (group := utils.get_secret("ADMIN_GROUP")) and not utils.AUXIN:
+            await self.send_message(None, msg, group=group, **kwargs)
         else:
             await self.send_message(utils.get_secret("ADMIN"), msg, **kwargs)
 
@@ -438,38 +476,29 @@ class Signal:
         destination = target_msg.source or target_msg.uuid
         return await self.send_message(destination, msg)
 
-    # FIXME: disable for auxin
     async def send_reaction(self, target_msg: Message, emoji: str) -> None:
         """Send a reaction. Protip: you can use e.g. \N{GRINNING FACE} in python"""
-        # rip rpc syntax and invalid python variable names
         react = {
             "target-author": target_msg.source,
             "target-timestamp": target_msg.timestamp,
         }
         if target_msg.group:
             react["group"] = target_msg.group
-        await self.auxincli_input_queue.put(
-            rpc(
-                "sendReaction",
-                param_dict=react,
-                emoji=emoji,
-                recipient=target_msg.source,
-            )
+        cmd = rpc(
+            "sendReaction",
+            param_dict=react,
+            emoji=emoji,
+            recipient=target_msg.source,
         )
-
-    # maybe merge with write_commands?
-    async def auxincli_input_iter(self) -> AsyncIterator[dict]:
-        """Provides an asynchronous iterator over pending auxin-cli commands"""
-        while True:
-            command = await self.auxincli_input_queue.get()
-            yield command
+        await self.outbox.put(cmd)
 
     backoff = False
-
     messages_until_rate_limit = 50.0
     last_update = time.time()
 
     def update_and_check_rate_limit(self) -> bool:
+        """Returns whether we think signal server will rate limit us for sending a
+        message right now"""
         elapsed, self.last_update = (time.time() - self.last_update, time.time())
         rate = 1  # theoretically 1 at least message per second is allowed
         self.messages_until_rate_limit = min(
@@ -478,8 +507,9 @@ class Signal:
         return self.messages_until_rate_limit > 1
 
     async def write_commands(self, pipe: StreamWriter) -> None:
-        """Encode and write pending auxin-cli commands"""
-        async for msg in self.auxincli_input_iter():
+        """Encode and write pending auxin-cli/signal-cli commands"""
+        while True:
+            command = await self.outbox.get()
             if self.backoff:
                 logging.info("pausing message writes before retrying")
                 await asyncio.sleep(4)
@@ -491,17 +521,14 @@ class Signal:
                 )
                 await asyncio.sleep(1)
             self.messages_until_rate_limit -= 1
-            if not msg.get("method"):
-                logging.error("msg without method: %s", msg)
-            if msg.get("method") != "receive":
-                logging.info("input to signal: %s", json.dumps(msg))
+            if not command.get("method"):
+                logging.error("command without method: %s", command)
+            if command.get("method") != "receive":
+                logging.info("input to signal: %s", json.dumps(command))
             if pipe.is_closing():
-                logging.error("auxin-cli stdin pipe is closed")
-            pipe.write(json.dumps(msg).encode() + b"\n")
+                logging.error("signal stdin pipe is closed")
+            pipe.write(json.dumps(command).encode() + b"\n")
             await pipe.drain()
-
-
-Datapoint = tuple[int, str, float]  # timestamp in ms, command/info, latency in seconds
 
 
 class UserError(Exception):
@@ -551,6 +578,9 @@ def group_help_text(text: str) -> Callable:
     return decorate
 
 
+Datapoint = tuple[int, str, float]  # timestamp in ms, command/info, latency in seconds
+
+
 class Bot(Signal):
     """Handles messages and command dispatch, as well as basic commands.
     Must be instantiated within a running async loop.
@@ -562,7 +592,7 @@ class Bot(Signal):
         self.client_session = aiohttp.ClientSession()
         self.mobster = payments_monitor.Mobster()
         self.pongs: dict[str, str] = {}
-        self.auxin_roundtrip_latency: list[Datapoint] = []
+        self.signal_roundtrip_latency: list[Datapoint] = []
         self.pending_response_tasks: list[asyncio.Task] = []
         self.commands = [
             name.removeprefix("do_") for name in dir(self) if name.startswith("do_")
@@ -576,12 +606,24 @@ class Bot(Signal):
         self.restart_task = asyncio.create_task(
             self.start_process()
         )  # maybe cancel on sigint?
-        self.queue_task = asyncio.create_task(self.handle_messages())
+        self.handle_messages_task = asyncio.create_task(self.handle_messages())
+        self.handle_messages_task.add_done_callback(
+            functools.partial(
+                self.handle_task,
+                _func=self.handle_messages,
+                attr="handle_messages_task",
+            )
+        )
+        self.restart_task.add_done_callback(functools.partial(self.handle_task))
 
     async def handle_messages(self) -> None:
-        """Read messages from the queue and pass each message to handle_message
-        If that returns a non-empty string, send it as a response"""
-        async for message in self.auxincli_output_iter():
+        """
+        Read messages from the queue. If it matches a pending request to auxin-cli/signal-cli,
+        set the result for that request. If said result is being rate limited, retry sending it
+        after pausing. Otherwise, concurrently respond to each message.
+        """
+        while True:
+            message = await self.inbox.get()
             if message.id and message.id in self.pending_requests:
                 logging.debug("setting result for future %s: %s", message.id, message)
                 self.pending_requests[message.id].set_result(message)
@@ -597,38 +639,42 @@ class Bot(Signal):
                     logging.warning(warn, sent_json_message)
                     self.backoff = True
                     await asyncio.sleep(4)
-                    future_key = f"retry-send-{get_uid()}"
-                    self.pending_messages_sent[future_key] = sent_json_message
-                    self.pending_requests[future_key] = asyncio.Future()
-                    await self.auxincli_input_queue.put(sent_json_message)
+                    rpc_id = f"retry-send-{get_uid()}"
+                    self.pending_messages_sent[rpc_id] = sent_json_message
+                    self.pending_requests[rpc_id] = asyncio.Future()
+                    await self.outbox.put(sent_json_message)
                 continue
             self.pending_response_tasks = [
                 task for task in self.pending_response_tasks if not task.done()
-            ] + [asyncio.create_task(self.time_response(message))]
+            ] + [asyncio.create_task(self.respond_and_collect_metrics(message))]
 
     # maybe this is merged with dispatch_message?
-    async def time_response(self, message: Message) -> None:
-        future_key = None
+    async def respond_and_collect_metrics(self, message: Message) -> None:
+        """
+        Pass each message to handle_message. Notify an admin if an error happens.
+        If that returns a non-empty string, send it as a reply,
+        then record how long this took.
+        """
+        rpc_id = None
         start_time = time.time()
         try:
             response = await self.handle_message(message)
             if response is not None:
-                future_key = await self.respond(message, response)
+                rpc_id = await self.respond(message, response)
         except UserError as e:
-            future_key = await self.respond(message, str(e))
+            rpc_id = await self.respond(message, str(e))
         except:  # pylint: disable=bare-except
             exception_traceback = "".join(traceback.format_exception(*sys.exc_info()))
-            # should this actually be parallel?
             self.pending_response_tasks.append(
                 asyncio.create_task(self.admin(f"{message}\n{exception_traceback}"))
             )
         python_delta = round(time.time() - start_time, 3)
         note = message.arg0 or ""
-        if future_key:
-            logging.debug("awaiting future %s", future_key)
-            result = await self.wait_resp(future_key=future_key)
+        if rpc_id:
+            logging.debug("awaiting future %s", rpc_id)
+            result = await self.wait_for_response(rpc_id=rpc_id)
             roundtrip_delta = (result.timestamp - message.timestamp) / 1000
-            self.auxin_roundtrip_latency.append(
+            self.signal_roundtrip_latency.append(
                 (message.timestamp, note, roundtrip_delta)
             )
             roundtrip_summary.observe(roundtrip_delta)  # type: ignore
@@ -720,6 +766,7 @@ class Bot(Signal):
         return f'Documented commands: {commands}\n\nFor more info about a command, try "help" [command]'
 
     async def default(self, message: Message) -> Response:
+        "Default response. Override in your class to change this behavior"
         resp = "That didn't look like a valid command!\n" + self.documented_commands()
         # if it messages an echoserver, don't get in a loop (or groups)
         if message.text and not (
@@ -882,7 +929,7 @@ class PayBot(Bot):
         )
         await self.respond(
             message,
-            f"Thank you for sending {float(amount_mob)} MOB ({amount_usd_cents/100} USD)",
+            f"Thank you for sending {float(amount_mob)} MOB ({amount_usd_cents / 100} USD)",
         )
         await self.respond(message, await self.payment_response(message, amount_pmob))
 
@@ -891,7 +938,8 @@ class PayBot(Bot):
         return "This bot doesn't have a response for payments."
 
     async def get_address(self, recipient: str) -> Optional[str]:
-        result = await self.auxin_req("getPayAddress", peer_name=recipient)
+        "get a receipient's mobilecoin address"
+        result = await self.signal_rpc_request("getPayAddress", peer_name=recipient)
         b64_address = (
             result.blob.get("Address", {}).get("mobileCoinAddress", {}).get("address")
         )
@@ -909,12 +957,12 @@ class PayBot(Bot):
         return address or "Sorry, couldn't get your MobileCoin address"
 
     @requires_admin
-    async def do_update(self, msg: Message) -> Response:
+    async def do_set_profile(self, message: Message) -> Response:
         """Renames bot (requires admin) - accepts first name, last name, and address."""
         user_image = None
-        if msg.attachments and len(msg.attachments):
+        if message.attachments and len(message.attachments):
             await asyncio.sleep(2)
-            attachment_info = msg.attachments[0]
+            attachment_info = message.attachments[0]
             attachment_path = attachment_info.get("fileName")
             timestamp = attachment_info.get("uploadTimestamp")
             if attachment_path is None:
@@ -923,11 +971,11 @@ class PayBot(Bot):
                     user_image = attachment_paths.pop()
             else:
                 user_image = f"/tmp/{attachment_path}"
-        if user_image or (msg.tokens and len(msg.tokens) > 0):
+        if user_image or (message.tokens and len(message.tokens) > 0):
             await self.set_profile_auxin(
-                given_name=msg.arg1,
-                family_name=msg.arg2,
-                payment_address=msg.arg3,
+                given_name=message.arg1,
+                family_name=message.arg2,
+                payment_address=message.arg3,
                 profile_path=user_image,
             )
             return "OK"
@@ -954,7 +1002,7 @@ class PayBot(Bot):
         # SignalServiceMessageContent protobuf represented as JSON (spicy)
         # destination is outside the content so it doesn't matter,
         # but it does contain the bot's profileKey
-        resp = await self.auxin_req(
+        resp = await self.signal_rpc_request(
             "send", simulate=True, message="", destination="+15555555555"
         )
         content_skeletor = json.loads(resp.blob["simulate_output"])
@@ -983,7 +1031,7 @@ class PayBot(Bot):
         return [
             "Built Gift Code",
             b58,
-            f"redeemable for {str(mc_util.pmob2mob(amount_pmob-fee_pmob)).rstrip('0')} MOB",
+            f"redeemable for {str(mc_util.pmob2mob(amount_pmob - fee_pmob)).rstrip('0')} MOB",
         ]
 
     # FIXME: clarify signature and return details/docs
@@ -1054,7 +1102,7 @@ class PayBot(Bot):
         # pass our beautifully composed spicy JSON content to auxin.
         # message body is ignored in this case.
         payment_notif = await self.send_message(recipient, "", content=content)
-        resp_fut = asyncio.create_task(self.wait_resp(future_key=payment_notif))
+        resp_fut = asyncio.create_task(self.wait_for_response(rpc_id=payment_notif))
 
         if confirm_tx_timeout:
             logging.debug("Attempting to confirm tx status for %s", recipient)
@@ -1193,7 +1241,7 @@ async def send_message_handler(request: web.Request) -> web.Response:
     rpc_id = await bot.send_message(
         account, msg_data, endsession=request.query.get("endsession")
     )
-    resp = await bot.wait_resp(future_key=rpc_id)
+    resp = await bot.wait_resp(rpc_id=rpc_id)
     return web.json_response({"status": "sent", "sent_ts": resp.timestamp})
 
 
@@ -1211,6 +1259,10 @@ async def admin_handler(request: web.Request) -> web.Response:
     return web.Response(text="OK")
 
 
+def fmt_ms(ts: int) -> str:
+    return datetime.datetime.utcfromtimestamp(ts / 1000).isoformat()
+
+
 async def metrics(request: web.Request) -> web.Response:
     bot = request.app["bot"]
     return web.Response(
@@ -1218,7 +1270,7 @@ async def metrics(request: web.Request) -> web.Response:
         text="start_time, command, delta\n"
         + "\n".join(
             f"{fmt_ms(t)}, {cmd}, {delta}"
-            for t, cmd, delta in bot.auxin_roundtrip_latency
+            for t, cmd, delta in bot.signal_roundtrip_latency
         ),
     )
 
