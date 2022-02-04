@@ -120,11 +120,7 @@ class MobFriend(QuestionBot):
     ) -> str:
         if not image_path:
             image_path = self.user_images.get(user_id, "template.png")
-        if image_path and "." in image_path:
-            extension = image_path.split(".")[-1]
-        else:
-            extension = "png"
-        save_name = f"{user_id}_{base58.b58encode(text[:16]).decode()}.{extension}"
+        save_name = f"{user_id}_{base58.b58encode(text[:16]).decode()}.png"
         default_params: dict[str, Any] = dict(save_name=save_name, save_dir="/tmp")
         if image_path:
             default_params.update(
@@ -412,7 +408,7 @@ class MobFriend(QuestionBot):
                 msg.source, amount_pmob - FEE, "Gift code has been redeemed!"
             )
             amount_mob = pmob2mob(amount_pmob - FEE).quantize(Decimal("1.0000"))
-            return f"Claimed a gift code containing {amount_mob}MOB.\nTransaction ID: {status.get('result', {}).get('txo_id')}"
+            return f"Claimed a gift code containing {amount_mob}MOB.\nSupport ID: {status.get('result', {}).get('txo_id')}"
         return f"Sorry, that doesn't look like a valid code.\nDEBUG: {status.get('result')}"
 
     async def do_make(self, msg: Message) -> Response:
