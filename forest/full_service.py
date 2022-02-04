@@ -1,4 +1,4 @@
-#pylint: disable=too-many-arguments disable=too-many-public-methods
+# pylint: disable=too-many-arguments disable=too-many-public-methods
 import json
 import logging
 import ssl
@@ -22,6 +22,7 @@ else:
     ssl_context.verify_mode = ssl.CERT_REQUIRED
     ssl_context.load_cert_chain(certfile="client.full.pem")
 
+
 class FullService:
     """
     Asynchronous python wrapper around the MobileCoin Full Service API
@@ -35,7 +36,7 @@ class FullService:
         logging.info("full-service url: %s", url)
 
     async def req_(self, method: str, **params: Any) -> dict:
-        _params = {k:v for k,v in params.items() if v}
+        _params = {k: v for k, v in params.items() if v}
         result = await self.req({"method": method, "params": _params})
         if "error" in result:
             logging.error(result)
@@ -70,19 +71,22 @@ class FullService:
                 self.account_id = account_ids[index]
         return self.account_id
 
-    async def assign_address_for_account(self,
+    async def assign_address_for_account(
+        self,
         account_id: str = "",
         metadata: Optional[str] = None,
     ) -> dict:
 
-        return await self.req_(method="assign_address_for_account",
+        return await self.req_(
+            method="assign_address_for_account",
             account_id=account_id,
             metadata=metadata,
         )
 
-    async def build_and_submit_transaction(self,
+    async def build_and_submit_transaction(
+        self,
         account_id: str = "",
-        addresses_and_values: Optional[list[tuple[str,str]]] = None,
+        addresses_and_values: Optional[list[tuple[str, str]]] = None,
         recipient_public_address: Optional[str] = None,
         value_pmob: Optional[str] = None,
         input_txo_ids: Optional[list[str]] = None,
@@ -92,7 +96,8 @@ class FullService:
         comment: Optional[str] = None,
     ) -> dict:
 
-        return await self.req_(method="build_and_submit_transaction",
+        return await self.req_(
+            method="build_and_submit_transaction",
             account_id=account_id,
             addresses_and_values=addresses_and_values,
             recipient_public_address=recipient_public_address,
@@ -104,7 +109,8 @@ class FullService:
             comment=comment,
         )
 
-    async def build_gift_code(self,
+    async def build_gift_code(
+        self,
         account_id: str = "",
         value_pmob: str = "",
         memo: Optional[str] = None,
@@ -114,7 +120,8 @@ class FullService:
         max_spendable_value: Optional[str] = None,
     ) -> dict:
 
-        return await self.req_(method="build_gift_code",
+        return await self.req_(
+            method="build_gift_code",
             account_id=account_id,
             value_pmob=value_pmob,
             memo=memo,
@@ -124,7 +131,8 @@ class FullService:
             max_spendable_value=max_spendable_value,
         )
 
-    async def build_split_txo_transaction(self,
+    async def build_split_txo_transaction(
+        self,
         output_values: list[str],
         txo_id: str = "",
         destination_subaddress_index: Optional[str] = None,
@@ -132,7 +140,8 @@ class FullService:
         tombstone_block: Optional[str] = None,
     ) -> dict:
 
-        return await self.req_(method="build_split_txo_transaction",
+        return await self.req_(
+            method="build_split_txo_transaction",
             txo_id=txo_id,
             output_values=output_values,
             destination_subaddress_index=destination_subaddress_index,
@@ -140,9 +149,10 @@ class FullService:
             tombstone_block=tombstone_block,
         )
 
-    async def build_transaction(self,
+    async def build_transaction(
+        self,
         account_id: str = "",
-        addresses_and_values: Optional[list[tuple[str,str]]] = None,
+        addresses_and_values: Optional[list[tuple[str, str]]] = None,
         recipient_public_address: Optional[str] = None,
         value_pmob: Optional[str] = None,
         input_txo_ids: Optional[list[str]] = None,
@@ -152,7 +162,8 @@ class FullService:
         log_tx_proposal: Optional[bool] = None,
     ) -> dict:
 
-        return await self.req_(method="build_transaction",
+        return await self.req_(
+            method="build_transaction",
             account_id=account_id,
             addresses_and_values=addresses_and_values,
             recipient_public_address=recipient_public_address,
@@ -164,272 +175,329 @@ class FullService:
             log_tx_proposal=log_tx_proposal,
         )
 
-    async def check_b58_type(self,
+    async def check_b58_type(
+        self,
         b58_code: str = "",
     ) -> dict:
 
-        return await self.req_(method="check_b58_type",
+        return await self.req_(
+            method="check_b58_type",
             b58_code=b58_code,
         )
 
-    async def check_gift_code_status(self,
+    async def check_gift_code_status(
+        self,
         gift_code_b58: str = "",
     ) -> dict:
 
-        return await self.req_(method="check_gift_code_status",
+        return await self.req_(
+            method="check_gift_code_status",
             gift_code_b58=gift_code_b58,
         )
 
-    async def check_receiver_receipt_status(self,
+    async def check_receiver_receipt_status(
+        self,
         receiver_receipt: dict,
         address: str = "",
     ) -> dict:
 
-        return await self.req_(method="check_receiver_receipt_status",
+        return await self.req_(
+            method="check_receiver_receipt_status",
             address=address,
             receiver_receipt=receiver_receipt,
         )
 
-    async def claim_gift_code(self,
+    async def claim_gift_code(
+        self,
         gift_code_b58: str = "",
         account_id: str = "",
         address: Optional[str] = None,
     ) -> dict:
 
-        return await self.req_(method="claim_gift_code",
+        return await self.req_(
+            method="claim_gift_code",
             gift_code_b58=gift_code_b58,
             account_id=account_id,
             address=address,
         )
 
-    async def create_account(self,
+    async def create_account(
+        self,
         name: Optional[str] = None,
     ) -> dict:
 
-        return await self.req_(method="create_account",
+        return await self.req_(
+            method="create_account",
             name=name,
         )
 
-    async def create_payment_request(self,
+    async def create_payment_request(
+        self,
         account_id: str = "",
         subaddress_index: Optional[int] = None,
         amount_pmob: int = 0,
         memo: Optional[str] = None,
     ) -> dict:
 
-        return await self.req_(method="create_payment_request",
+        return await self.req_(
+            method="create_payment_request",
             account_id=account_id,
             subaddress_index=subaddress_index,
             amount_pmob=amount_pmob,
             memo=memo,
         )
 
-    async def create_receiver_receipts(self,
+    async def create_receiver_receipts(
+        self,
         tx_proposal: dict,
     ) -> dict:
 
-        return await self.req_(method="create_receiver_receipts",
+        return await self.req_(
+            method="create_receiver_receipts",
             tx_proposal=tx_proposal,
         )
 
-    async def export_account_secrets(self,
-       account_id: str = "",
-    ) -> dict:
-
-        return await self.req_(method="export_account_secrets",
-        account_id=account_id,
-        )
-
-    async def get_account(self,
+    async def export_account_secrets(
+        self,
         account_id: str = "",
     ) -> dict:
 
-        return await self.req_(method="get_account",
+        return await self.req_(
+            method="export_account_secrets",
             account_id=account_id,
         )
 
-    async def get_account_status(self,
+    async def get_account(
+        self,
         account_id: str = "",
     ) -> dict:
 
-        return await self.req_(method="get_account_status",
+        return await self.req_(
+            method="get_account",
             account_id=account_id,
         )
 
-    async def get_address_for_account(self,
+    async def get_account_status(
+        self,
+        account_id: str = "",
+    ) -> dict:
+
+        return await self.req_(
+            method="get_account_status",
+            account_id=account_id,
+        )
+
+    async def get_address_for_account(
+        self,
         account_id: str = "",
         index: int = 0,
     ) -> dict:
 
-        return await self.req_(method="get_address_for_account",
+        return await self.req_(
+            method="get_address_for_account",
             account_id=account_id,
             index=index,
         )
 
-    async def get_addresses_for_account(self,
+    async def get_addresses_for_account(
+        self,
         account_id: str = "",
         offset: str = "",
         limit: str = "",
     ) -> dict:
 
-        return await self.req_(method="get_addresses_for_account",
+        return await self.req_(
+            method="get_addresses_for_account",
             account_id=account_id,
             offset=offset,
             limit=limit,
         )
 
     async def get_all_accounts(self) -> dict:
-        return await self.req({"method":"get_all_accounts"})
+        return await self.req({"method": "get_all_accounts"})
 
-    async def get_all_addresses_for_account(self,
+    async def get_all_addresses_for_account(
+        self,
         account_id: str = "",
     ) -> dict:
 
-        return await self.req_(method="get_all_addresses_for_account",
+        return await self.req_(
+            method="get_all_addresses_for_account",
             account_id=account_id,
         )
 
     async def get_all_gift_codes(self) -> dict:
-        return await self.req({"method":"get_all_gift_codes"})
+        return await self.req({"method": "get_all_gift_codes"})
 
-    async def get_all_transaction_logs_for_account(self,
+    async def get_all_transaction_logs_for_account(
+        self,
         account_id: str = "",
     ) -> dict:
 
-        return await self.req_(method="get_all_transaction_logs_for_account",
+        return await self.req_(
+            method="get_all_transaction_logs_for_account",
             account_id=account_id,
         )
 
-    async def get_all_transaction_logs_for_block(self,
+    async def get_all_transaction_logs_for_block(
+        self,
         block_index: str = "",
     ) -> dict:
 
-        return await self.req_(method="get_all_transaction_logs_for_block",
+        return await self.req_(
+            method="get_all_transaction_logs_for_block",
             block_index=block_index,
         )
 
     async def get_all_transaction_logs_ordered_by_block(self) -> dict:
-        return await self.req({"method":"get_all_transaction_logs_ordered_by_block"})
-    
-    async def get_all_txos_for_account(self,
+        return await self.req({"method": "get_all_transaction_logs_ordered_by_block"})
+
+    async def get_all_txos_for_account(
+        self,
         account_id: str = "",
     ) -> dict:
 
-        return await self.req_(method="get_all_txos_for_account",
+        return await self.req_(
+            method="get_all_txos_for_account",
             account_id=account_id,
         )
 
-    async def get_all_txos_for_address(self,
+    async def get_all_txos_for_address(
+        self,
         address: str = "",
     ) -> dict:
 
-        return await self.req_(method="get_all_txos_for_address",
+        return await self.req_(
+            method="get_all_txos_for_address",
             address=address,
         )
 
-    async def get_balance_for_account(self,
+    async def get_balance_for_account(
+        self,
         account_id: str = "",
     ) -> dict:
 
-        return await self.req_(method="get_balance_for_account",
+        return await self.req_(
+            method="get_balance_for_account",
             account_id=account_id,
         )
 
-    async def get_balance_for_address(self,
+    async def get_balance_for_address(
+        self,
         address: str = "",
     ) -> dict:
 
-        return await self.req_(method="get_balance_for_address",
+        return await self.req_(
+            method="get_balance_for_address",
             address=address,
         )
 
-    async def get_block(self,
+    async def get_block(
+        self,
         block_index: str = "",
     ) -> dict:
 
-        return await self.req_(method="get_block",
+        return await self.req_(
+            method="get_block",
             block_index=block_index,
         )
 
-    async def get_confirmations(self,
+    async def get_confirmations(
+        self,
         transaction_log_id: str = "",
     ) -> dict:
 
-        return await self.req_(method="get_confirmations",
+        return await self.req_(
+            method="get_confirmations",
             transaction_log_id=transaction_log_id,
         )
 
-    async def get_gift_code(self,
+    async def get_gift_code(
+        self,
         gift_code_b58: str = "",
     ) -> dict:
 
-        return await self.req_(method="get_gift_code",
+        return await self.req_(
+            method="get_gift_code",
             gift_code_b58=gift_code_b58,
         )
 
-    async def get_mc_protocol_transaction(self,
+    async def get_mc_protocol_transaction(
+        self,
         transaction_log_id: str = "",
     ) -> dict:
 
-        return await self.req_(method="get_mc_protocol_transaction",
+        return await self.req_(
+            method="get_mc_protocol_transaction",
             transaction_log_id=transaction_log_id,
         )
 
-    async def get_mc_protocol_txo(self,
+    async def get_mc_protocol_txo(
+        self,
         txo_id: str = "",
     ) -> dict:
 
-        return await self.req_(method="get_mc_protocol_txo",
+        return await self.req_(
+            method="get_mc_protocol_txo",
             txo_id=txo_id,
         )
 
     async def get_network_status(self) -> dict:
-        return await self.req({"method":"get_network_status"})
+        return await self.req({"method": "get_network_status"})
 
-    async def get_transaction_log(self,
+    async def get_transaction_log(
+        self,
         transaction_log_id: str = "",
     ) -> dict:
 
-        return await self.req_(method="get_transaction_log",
+        return await self.req_(
+            method="get_transaction_log",
             transaction_log_id=transaction_log_id,
         )
 
-    async def get_transaction_logs_for_account(self,
+    async def get_transaction_logs_for_account(
+        self,
         account_id: str = "",
         offset: str = "",
         limit: str = "",
     ) -> dict:
 
-        return await self.req_(method="get_transaction_logs_for_account",
+        return await self.req_(
+            method="get_transaction_logs_for_account",
             account_id=account_id,
             offset=offset,
             limit=limit,
         )
 
-    async def get_txo(self,
+    async def get_txo(
+        self,
         txo_id: str = "",
     ) -> dict:
 
-        return await self.req_(method="get_txo",
+        return await self.req_(
+            method="get_txo",
             txo_id=txo_id,
         )
 
-    async def get_txos_for_account(self,
+    async def get_txos_for_account(
+        self,
         account_id: str = "",
         offset: str = "",
         limit: str = "",
     ) -> dict:
 
-        return await self.req_(method="get_txos_for_account",
+        return await self.req_(
+            method="get_txos_for_account",
             account_id=account_id,
             offset=offset,
             limit=limit,
         )
 
     async def get_wallet_status(self) -> dict:
-        return await self.req({"method":"get_wallet_status"})
+        return await self.req({"method": "get_wallet_status"})
 
-    async def import_account(self,
+    async def import_account(
+        self,
         mnemonic: str = "",
         key_derivation_version: str = "",
         name: Optional[str] = None,
@@ -440,7 +508,8 @@ class FullService:
         fog_authority_spki: Optional[str] = None,
     ) -> dict:
 
-        return await self.req_(method="import_account",
+        return await self.req_(
+            method="import_account",
             mnemonic=mnemonic,
             key_derivation_version=key_derivation_version,
             name=name,
@@ -451,7 +520,8 @@ class FullService:
             fog_authority_spki=fog_authority_spki,
         )
 
-    async def import_account_from_legacy_root_entropy(self,
+    async def import_account_from_legacy_root_entropy(
+        self,
         entropy: str = "",
         name: Optional[str] = None,
         first_block_index: Optional[str] = None,
@@ -461,7 +531,8 @@ class FullService:
         fog_authority_spki: Optional[str] = None,
     ) -> dict:
 
-        return await self.req_(method="import_account_from_legacy_root_entropy",
+        return await self.req_(
+            method="import_account_from_legacy_root_entropy",
             entropy=entropy,
             name=name,
             first_block_index=first_block_index,
@@ -471,72 +542,86 @@ class FullService:
             fog_authority_spki=fog_authority_spki,
         )
 
-    async def remove_account(self,
+    async def remove_account(
+        self,
         account_id: str = "",
     ) -> dict:
 
-        return await self.req_(method="remove_account",
+        return await self.req_(
+            method="remove_account",
             account_id=account_id,
         )
 
-    async def remove_gift_code(self,
+    async def remove_gift_code(
+        self,
         gift_code_b58: str = "",
     ) -> dict:
 
-        return await self.req_(method="remove_gift_code",
+        return await self.req_(
+            method="remove_gift_code",
             gift_code_b58=gift_code_b58,
         )
 
-    async def submit_gift_code(self,
+    async def submit_gift_code(
+        self,
         tx_proposal: dict,
         from_account_id: str = "",
         gift_code_b58: str = "",
     ) -> dict:
 
-        return await self.req_(method="submit_gift_code",
+        return await self.req_(
+            method="submit_gift_code",
             from_account_id=from_account_id,
             gift_code_b58=gift_code_b58,
             tx_proposal=tx_proposal,
         )
 
-    async def submit_transaction(self,
+    async def submit_transaction(
+        self,
         tx_proposal: dict,
         comment: Optional[str] = None,
         account_id: Optional[str] = None,
     ) -> dict:
 
-        return await self.req_(method="submit_transaction",
+        return await self.req_(
+            method="submit_transaction",
             tx_proposal=tx_proposal,
             comment=comment,
             account_id=account_id,
         )
 
-    async def update_account_name(self,
+    async def update_account_name(
+        self,
         account_id: str = "",
         name: str = "",
     ) -> dict:
 
-        return await self.req_(method="update_account_name",
+        return await self.req_(
+            method="update_account_name",
             account_id=account_id,
             name=name,
         )
 
-    async def validate_confirmation(self,
+    async def validate_confirmation(
+        self,
         account_id: str = "",
         txo_id: str = "",
         confirmation: str = "",
     ) -> dict:
 
-        return await self.req_(method="validate_confirmation",
+        return await self.req_(
+            method="validate_confirmation",
             account_id=account_id,
             txo_id=txo_id,
             confirmation=confirmation,
         )
 
-    async def verify_address(self,
+    async def verify_address(
+        self,
         address: str = "",
     ) -> dict:
 
-        return await self.req_(method="verify_address",
+        return await self.req_(
+            method="verify_address",
             address=address,
         )
