@@ -15,7 +15,6 @@ protobuf = "*"
 ulid2 = "*"
 Pillow = "*"
 pycryptodome = "*"
-black = "*"
 
 [requires]
 python_version = "3.9"
@@ -24,6 +23,7 @@ python_version = "3.9"
 allow_prereleases = true
 
 [dev-packages]
+black = "*"
 
 [packages.aiohttp]
 extras = [ "speedups",]
