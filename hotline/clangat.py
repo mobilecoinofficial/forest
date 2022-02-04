@@ -99,25 +99,23 @@ class PayBotPro(QuestionBot):
 class ClanGat(PayBotPro):
     def __init__(self):
         self.no_repay: list[str] = []
-        self.address_cache: dict[str, str] = aPersistDict("address_cache")
-        self.profile_cache: dict[str, Any] = aPersistDict("profile_cache")
-        self.displayname_cache: dict[str, str] = aPersistDict("displayname_cache")
-        self.displayname_lookup_cache: dict[str, str] = aPersistDict(
-            "displayname_lookup_cache"
-        )
-        self.pending_orders: dict[str, str] = aPersistDict("pending_orders")
-        self.pending_funds: dict[str, str] = aPersistDict("pending_funds")
-        self.event_limits: dict[str, int] = aPersistDict("event_limits")
-        self.event_prompts: dict[str, str] = aPersistDict("event_prompts")
-        self.event_prices: dict[str, float] = aPersistDict("event_prices")
-        self.event_images: dict[str, str] = aPersistDict("event_images")
-        self.event_owners: dict[str, list[str]] = aPersistDict("event_owners")
-        self.event_attendees: dict[str, list[str]] = aPersistDict("event_attendees")
-        self.event_lists: dict[str, list[str]] = aPersistDict("event_lists")
-        self.list_owners: dict[str, list[str]] = aPersistDict("list_owners")
-        self.easter_eggs: dict[str, str] = aPersistDict("easter_eggs")
-        self.successful_pays: dict[str, list[str]] = aPersistDict("successful_pays")
-        self.payout_balance_mmob: dict[str, int] = aPersistDict("payout_balance_mmob")
+        self.address_cache = aPersistDict("address_cache")
+        self.profile_cache = aPersistDict("profile_cache")
+        self.displayname_cache = aPersistDict("displayname_cache")
+        self.displayname_lookup_cache = aPersistDict("displayname_lookup_cache")
+        self.pending_orders = aPersistDict("pending_orders")
+        self.pending_funds = aPersistDict("pending_funds")
+        self.event_limits = aPersistDict("event_limits")
+        self.event_prompts = aPersistDict("event_prompts")
+        self.event_prices = aPersistDict("event_prices")
+        self.event_images = aPersistDict("event_images")
+        self.event_owners = aPersistDict("event_owners")
+        self.event_attendees = aPersistDict("event_attendees")
+        self.event_lists = aPersistDict("event_lists")
+        self.list_owners = aPersistDict("list_owners")
+        self.easter_eggs = aPersistDict("easter_eggs")
+        self.successful_pays = aPersistDict("successful_pays")
+        self.payout_balance_mmob = aPersistDict("payout_balance_mmob")
         self.pay_lock: asyncio.Lock = asyncio.Lock()
         # okay, this now maps the tag (restore key) of each of the above to the instance of the PersistDict class
         self.state = {
@@ -280,7 +278,7 @@ class ClanGat(PayBotPro):
     @hide
     async def do_pay(self, msg: Message) -> Response:
         user = msg.uuid
-        if not msg.arg2.isnumeric():
+        if not msg.arg2 or not msg.arg2.isnumeric():
             return "Please provide an amount (in mmob) to pay!"
         list_, amount, message = (
             (msg.arg1 or "").lower(),
