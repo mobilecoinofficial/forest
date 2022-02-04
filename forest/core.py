@@ -784,6 +784,9 @@ class Bot(Signal):
     @hide
     async def do_pong(self, message: Message) -> str:
         """Stashes the message in context so it's accessible externally."""
+        if message.arg1 and message.arg2:
+            self.pongs[message.arg1] = message.arg2
+            return f"OK, stashing {len(message.arg2)} at {message.arg1}"
         if message.text:
             self.pongs[message.text] = message.text
             return f"OK, stashing {message.text}"
@@ -1160,7 +1163,7 @@ async def send_message_handler(request: web.Request) -> web.Response:
     rpc_id = await bot.send_message(
         account, msg_data, endsession=request.query.get("endsession")
     )
-    resp = await bot.wait_resp(rpc_id=rpc_id)
+    resp = await bot.wait_for_response(rpc_id=rpc_id)
     return web.json_response({"status": "sent", "sent_ts": resp.timestamp})
 
 
