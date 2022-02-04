@@ -8,6 +8,10 @@ BOT_NUMBER="+12232222922"
 RUST_LOG="WARN"
 RUST_BACKTRACE="full"
 
+[mounts]
+  destination = "/app/data"
+  source = "persistence"
+
 [experimental]
   allowed_public_ports = []
   auto_rollback = false
