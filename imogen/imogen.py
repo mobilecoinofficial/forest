@@ -231,7 +231,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
                 params={
                     "destination": prompt_author,
                     "amount": 0.01,
-                    "message": f"sent you a tip for your prompt getting {current_reaction_count} reactions",
+                    "message": f'sent you a tip for your prompt "{prompt.get("prompt")}" getting {current_reaction_count} reactions',
                 },
             )
             return None
@@ -291,7 +291,9 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         "returns your Imogen balance in USD for priority requests and tips"
         balance = await self.get_user_balance(msg.source)
         prompts = int(balance / (self.image_rate_cents / 100))
-        balance_msg = f"Your current Imogen balance is{prompts} priority prompt credits)"
+        balance_msg = (
+            f"Your current Imogen balance is{prompts} priority prompt credits)"
+        )
         if balance == 0:
             balance_msg += "\n\n To buy more credits, send Imogen some MobileCoin. Try /signalpay to learn more activating payments"
         # if msg.group:
