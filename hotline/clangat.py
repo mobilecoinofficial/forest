@@ -310,6 +310,8 @@ class ClanGat(PayBotPro):
             msg.arg2 = await self.ask_freeform_question(
                 user, "Please provide an amount of milliMOB as a number:"
             )
+            if amount == "0":
+                return "OK, cancelling."
             return await self.do_pay(msg)
         else:
             amount_mmob = int(amount)
