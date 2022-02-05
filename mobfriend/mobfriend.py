@@ -25,6 +25,7 @@ import mc_util
 from forest.core import Message, QuestionBot, Response, app, hide, utils, requires_admin
 from forest.pdictng import aPersistDict
 from mc_util import mob2pmob, pmob2mob
+from typing import Optional
 
 FEE = int(1e12 * 0.0004)
 REQUEST_TIME = Summary("request_processing_seconds", "Time spent processing request")
@@ -116,11 +117,11 @@ class MobFriend(QuestionBot):
         return "Saved!"
 
     async def _actually_build_wait_and_send_qr(
-        self, text: str, user_id: str, image_path: Any = None
+        self, text: str, user_id: str, image_path: Optional[str] = None
     ) -> str:
         if not image_path:
             image_path = self.user_images.get(user_id, "template.png")
-        if ".gif" in image_path:
+        if image_path and ".gif" in image_path:
             save_name = f"{user_id}_{base58.b58encode(text[:16]).decode()}.gif"
         else:
             save_name = f"{user_id}_{base58.b58encode(text[:16]).decode()}.png"
