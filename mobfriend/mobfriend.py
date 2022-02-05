@@ -6,7 +6,7 @@ import json
 import glob
 import logging
 from decimal import Decimal
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from textwrap import dedent
 
 
@@ -25,7 +25,6 @@ import mc_util
 from forest.core import Message, QuestionBot, Response, app, hide, utils, requires_admin
 from forest.pdictng import aPersistDict
 from mc_util import mob2pmob, pmob2mob
-from typing import Optional
 
 FEE = int(1e12 * 0.0004)
 REQUEST_TIME = Summary("request_processing_seconds", "Time spent processing request")
