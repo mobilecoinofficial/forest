@@ -89,6 +89,7 @@ class MobFriend(QuestionBot):
                 )
                 # if it's plausibly b58, check it
                 if all(char in base58.alphabet.decode() for char in payload):
+                    message.attachments = []
                     return await self.do_check(message)
                 return None
             if not message.arg0:
@@ -136,13 +137,24 @@ class MobFriend(QuestionBot):
                     picture=image_path,
                 )
             )
-        await self.send_message(user_id, "Building your QR code! Please be patient!")
+        await self.send_message(
+            user_id,
+            "Please be patient! Building your QR code!\n\nUsing this value:",
+        )
+        await self.send_message(user_id, text)
         p = aioprocessing.AioProcess(
             target=amzqr.run, args=(text,), kwargs=default_params
         )
         p.start()  # pylint: disable=no-member
-        await p.coro_join()  # pylint: disable=no-member
-        await self.send_message(user_id, text, attachments=[f"/tmp/{save_name}"])
+        try:
+            # pylint: disable=no-member
+            await asyncio.wait_for(p.coro_join(), timeout=30)
+            await self.send_message(user_id, "Happy gifting!", attachments=[f"/tmp/{save_name}"])
+        except asyncio.TimeoutError:
+            await self.send_message(
+                user_id,
+                "Sorry, no luck!\n\nTry sending a simpler template (or saying 'clear') and saying 'makeqr <value>'",
+            )
         return save_name
 
     async def do_signalme(self, _: Message) -> Response:
@@ -271,6 +283,9 @@ class MobFriend(QuestionBot):
         """
         /check [base58 code]
         Helps identify a b58 code. If it's a gift code, it will return the balance."""
+        # default, if the attachment is a QR
+        if len(msg.attachments) > 0:
+            return None
         if not msg.arg1:
             msg.arg1 = await self.ask_freeform_question(
                 msg.source,
@@ -279,6 +294,9 @@ class MobFriend(QuestionBot):
             if msg.arg1.lower() in "stop,exit,quit,no,none":
                 return "Okay, nevermind about that"
             return await self.do_check(msg)
+        extra_chars = [char for char in msg.arg1 if char not in base58.alphabet.decode()]
+        if len(extra_chars) > 0:
+            return f"This doesn't look like something I know about! It has the characters '{''.join(extra_chars)}' in it!"
         status = await self.mobster.req_("check_b58_type", b58_code=msg.arg1)
         if status and status.get("result", {}).get("b58_type") == "PaymentRequest":
             status["result"]["data"]["type"] = "PaymentRequest"
@@ -394,6 +412,8 @@ class MobFriend(QuestionBot):
         Claims a gift code! Redeems a provided code to the bot's wallet and sends the redeemed balance."""
         if not msg.arg1:
             return "/redeem [base58 gift code]"
+        if not await self.get_address(msg.uuid):
+            return "I couldn't get your MobileCoin Address!\n\nPlease make sure you have activated your wallet and messaged me from your phone before continuing!"
         check_status = await self.mobster.req_(
             "check_gift_code_status", gift_code_b58=msg.arg1
         )
