@@ -149,7 +149,9 @@ class MobFriend(QuestionBot):
         try:
             # pylint: disable=no-member
             await asyncio.wait_for(p.coro_join(), timeout=30)
-            await self.send_message(user_id, "Happy gifting!", attachments=[f"/tmp/{save_name}"])
+            await self.send_message(
+                user_id, "Happy gifting!", attachments=[f"/tmp/{save_name}"]
+            )
         except asyncio.TimeoutError:
             await self.send_message(
                 user_id,
@@ -279,6 +281,7 @@ class MobFriend(QuestionBot):
             return await self.do_redeem(msg)
         return f'Okay, send "redeem {msg.arg1}" to redeem at any time!'
 
+    # pylint: disable=too-many-branches,too-many-return-statements
     async def do_check(self, msg: Message) -> Response:
         """
         /check [base58 code]
@@ -294,7 +297,9 @@ class MobFriend(QuestionBot):
             if msg.arg1.lower() in "stop,exit,quit,no,none":
                 return "Okay, nevermind about that"
             return await self.do_check(msg)
-        extra_chars = [char for char in msg.arg1 if char not in base58.alphabet.decode()]
+        extra_chars = [
+            char for char in msg.arg1 if char not in base58.alphabet.decode()
+        ]
         if len(extra_chars) > 0:
             return f"This doesn't look like something I know about! It has the characters '{''.join(extra_chars)}' in it!"
         status = await self.mobster.req_("check_b58_type", b58_code=msg.arg1)
