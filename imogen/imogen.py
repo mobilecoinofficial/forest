@@ -354,7 +354,9 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
             raise UserError("your prompt is way too long")
         key = "input/" + attachment["id"] + "-" + (attachment.get("filename") or ".jpg")
         await redis.set(
-            key, open(Path("./attachments") / attachment["id"], "rb").read()
+            key,
+            open(Path("./attachments") / attachment["id"], "rb").read(),
+            ex=7200,  # expires after 2h
         )
         return {"init_image": key}
 
@@ -372,7 +374,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
                 + (attachment.get("filename") or ".jpg")
             )
             await redis.set(
-                key, open(Path("./attachments") / attachment["id"], "rb").read()
+                key, open(Path("./attachments") / attachment["id"], "rb").read(), ex=7200
             )
             keys.append(key)
         return {"image_prompts": keys}
