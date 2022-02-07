@@ -13,9 +13,7 @@ import mc_util
 from typing import Union
 from forest.payments_monitor import Mobster
 
-fee = int(1e12 * 0.0004)
 
-# REQUEST_TIME = Summary("request_processing_seconds", "Time spent processing request")
 
 
 class Echopay(PayBot):
@@ -23,6 +21,8 @@ class Echopay(PayBot):
     
     #mobster is a class that helps make api calls to the full service API. We use it for account management
     mobster = Mobster() 
+
+    fee = int(1e12 * 0.0004) #Mobilecoin transaction fee
     
     async def start_process(self) -> None:
         await self.set_payment_address()
@@ -59,6 +59,8 @@ class Echopay(PayBot):
     async def do_pay_user(self, message:Message) -> Response:
         payment_amount = 0.001
         amount_pmob = self.to_pmob(payment_amount)
+
+        # if message.arg1
         
         await self.send_payment()
         return "will pay user"
