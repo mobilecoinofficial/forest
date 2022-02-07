@@ -2,8 +2,10 @@
 import logging
 import urllib
 import asyncio
+import time
 from aiohttp import web
 
+from forest import pghelp
 from forest import pdictng
 from forest.core import Message, QuestionBot, UserError, app
 from mc_util import mob2pmob
@@ -18,9 +20,28 @@ For more information on Signal Payments visit:
 
 https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
 
+PurseLedgerExpressions= pghelp.PGExpressions(
+    table="purse_ledger",
+    create_table="""CREATE TABLE {self.table} (
+        id SERIAL PRIMARY KEY,
+        user TEXT,
+        amount BIGINT,
+        ts TIMESTAMP DEFAULT now(),
+        memo TEXT,
+        prompt_id INT,
+        tx_id INT);
+    );""",
+    add_tx="INSERT INTO {self.table} (user, amount, memo, prompt_id) VALUES ($1, $2, $3, $4);",
+    stats="SELECT sum(amount)/1e12, count(id) FROM prompt_queue WHERE extract(second from now() - sent_ts) < $1",
+)
+
 
 class ImogenAuxin(QuestionBot):
     def __init__(self) -> None:
+        self.queue = pghelp.PGInterface(
+            query_strings=QueueExpressions,
+            database=utils.get_secret("DATABASE_URL"),
+        )
         self.payments = pdictng.aPersistDict("payments")
         super().__init__()
 
@@ -39,6 +60,7 @@ class ImogenAuxin(QuestionBot):
                         await self.payments.extend(
                             recipient,
                             [
+                                time.time(),
                                 recipient,
                                 amount_pmob,
                                 message,
