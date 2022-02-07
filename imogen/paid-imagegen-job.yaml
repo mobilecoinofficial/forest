@@ -12,7 +12,7 @@ spec:
       restartPolicy: Never
       containers:
       - name: imogegen
-        image: technillogue/imagegen:1.1.2
+        image: technillogue/imagegen:1.2
         resources:
           limits:
             cpu: 3
@@ -36,7 +36,7 @@ spec:
                 key: SUPABASE_API_KEY
           - name: EXIT # exit when fetching prompt fails on queue empty
             value: "true"
-          - name: SCALE_IN # exit after finishing a prompt if queue low
+          - name: EXIT_ON_LOAD # exit after finishing a prompt if queue low
             value: "true"
       affinity:
         nodeAffinity:
