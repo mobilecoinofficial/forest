@@ -502,25 +502,21 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         params.update(await self.upload_attachment(msg))
         if not msg.group:
             params["nopost"] = True
-        raw_result = (
-            await self.queue.execute(
-                """
+        raw_result = await self.queue.execute(
+            """
             INSERT INTO prompt_queue (prompt, paid, author, signal_ts, group_id, params, url, selector)
             VALUES ($1, true, $2, $3, $4, $5, $6, $7)
             RETURNING id AS prompt_id,
             (select count(id) from prompt_queue where
             (status='pending' or status='assigned') and selector='a6000') as queue_length;
-                """,
-                [
-                    msg.text,
-                    msg.source,
-                    msg.timestamp,
-                    msg.group or "",
-                    {},
-                    utils.URL,
-                    "a6000",
-                ],
-            )
+            """,
+            msg.text,
+            msg.source,
+            msg.timestamp,
+            msg.group or "",
+            "{}",
+            utils.URL,
+            "a6000",
         )
         if not raw_result:
             return "Sorry, couldn't enqueue your prompt"

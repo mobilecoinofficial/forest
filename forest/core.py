@@ -737,9 +737,7 @@ class Bot(Signal):
                 return expansions[0]
         return ""
 
-    async def handle_message(  # pylint: disable=too-many-return-statements
-        self, message: Message
-    ) -> Response:
+    async def handle_message(self, message: Message) -> Response:
         """Method dispatch to do_x commands and goodies.
         Overwrite this to add your own non-command logic,
         but call super().handle_message(message) at the end"""
