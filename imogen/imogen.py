@@ -12,7 +12,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from textwrap import dedent
-from typing import Callable
+from typing import Any, Callable
 
 import aioredis
 import openai
@@ -25,10 +25,10 @@ from forest.core import (
     Response,
     UserError,
     app,
+    group_help_text,
     hide,
     requires_admin,
     run_bot,
-    group_help_text,
 )
 
 
@@ -75,7 +75,9 @@ QueueExpressions = pghelp.PGExpressions(
         hostname TEXT DEFAULT null,
         url TEXT DEFAULT 'https://imogen-renaissance.fly.dev/',
         sent_ts BIGINT DEFAULT null,
-        errors INTEGER DEFAULT 0);""",
+        errors INTEGER DEFAULT 0
+        , selector TEXT
+        );""",
     enqueue_any="SELECT enqueue_prompt(prompt:=$1, _author:=$2, signal_ts:=$3, group_id:=$4, params:=$5, url:=$6)",
     enqueue_free="SELECT enqueue_free_prompt(prompt:=$1, _author:=$2, signal_ts:=$3, group_id:=$4, params:=$5, url:=$6)",
     enqueue_paid="SELECT enqueue_paid_prompt(prompt:=$1, author:=$2, signal_ts:=$3, group_id:=$4, params:=$5, url:=$6)",
@@ -89,6 +91,10 @@ QueueExpressions = pghelp.PGExpressions(
     (select sum(amount_usd_cents/100.0) from imogen_ledger where amount_usd_cents>0 and account<>'+16176088864') as revenue;
     """,
 )
+# selectors: paid, free, a6000, esrgan, diffusion, +ffmpeg video streaming
+#
+# maybe trigger after insert on prompt_queue, check rules and update state machine with get_output(kubectl) as necessary
+# secondary table of request_type -> condition for scaling with kubectl request -> logic to scale -> function to record status (denied, worker created, normal)
 
 openai.api_key = utils.get_secret("OPENAI_API_KEY")
 
@@ -320,10 +326,12 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         total = int(await self.get_user_balance(msg.source) / rate)
         return f"Thank you for supporting Imogen! You now have an additional {prompts} priority prompts. Total: {total}. Your prompts will automatically get dedicated workers and bypass the free queue."
 
-    async def ensure_free_worker(self) -> bool:
+    async def ensure_unique_worker(
+        self, yaml_path: str = "free-imagegen-job.yaml"
+    ) -> bool:
         # maybe check for the case of one running/completed pod and zero assigned workers
-        # could actually try creating a new one each time and use the name conflict lol
-        out = await get_output("kubectl create -f free-imagegen-job.yaml")
+        # try creating a new one each time and use the name conflict lol
+        out = await get_output(f"kubectl create -f {yaml_path}")
         if "AlreadyExists" in out:
             return False
         await self.admin("\N{rocket}\N{squared free}: " + out)
@@ -332,8 +340,10 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
     async def ensure_paid_worker(self, enqueue_result: dict) -> bool:
         queue_length = enqueue_result["queue_length"]
         workers_in_db = enqueue_result["workers"]
+        # how many assigned prompts?
         if workers_in_db and queue_length / workers_in_db < 5:
             return False
+        # this checks for jobs that have been created, but the process has not started yet
         workers = int(await get_output(jobcount))
         if workers == 0 or queue_length / workers > 5 and workers < 6:
             spec = open("paid-imagegen-job.yaml").read()
@@ -374,7 +384,9 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
                 + (attachment.get("filename") or ".jpg")
             )
             await redis.set(
-                key, open(Path("./attachments") / attachment["id"], "rb").read(), ex=7200
+                key,
+                open(Path("./attachments") / attachment["id"], "rb").read(),
+                ex=7200,
             )
             keys.append(key)
         return {"image_prompts": keys}
@@ -417,7 +429,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         else:
             if not result.get("success"):
                 return dedent(messages["rate_limit"]).strip()
-            worker_created = await self.ensure_free_worker()
+            worker_created = await self.ensure_unique_worker("free-imagegen-job.yaml")
             priority = ""
         if worker_created:
             deets = " (started a new worker)"
@@ -467,6 +479,50 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         Like /paint but places your request on the priority queue. Priority items get dedicated workers when available and bypass the free queue.
         """
         return await self.do_paint(msg)
+
+    async def do_highres(self, msg: Message) -> str:
+        "Generate a 2626x1616 image. Costs 0.25 MOB"
+        balance = await self.get_user_balance(msg.source)
+        if not msg.text.strip():
+            return "A prompt is required"
+        if balance < 1.0:  # hosting cost is about 16/60 * 1.96 = 0.52
+            return "Highres costs 0.25 MOB. Please send a payment to use this command."
+        worker_created = await self.ensure_unique_worker("a6000.yaml")
+        logging.info(msg.full_text)
+        params: dict[str, Any] = {"size": [2626, 1616]}
+        params.update(await self.upload_attachment(msg))
+        if not msg.group:
+            params["nopost"] = True
+        result = (
+            await self.queue.execute(
+                """
+            INSERT INTO prompt_queue (prompt, paid, author, signal_ts, group_id, params, url, selector)
+            VALUES ($1, true, $2, $3, $4, $5, $6, $7)
+            RETURNING id AS prompt_id,
+            (select count(id) from prompt_queue where
+            (status='pending' or status='assigned') and selector='a6000') as queue_length;
+                """,
+                [
+                    msg.text,
+                    msg.source,
+                    msg.timestamp,
+                    msg.group or "",
+                    {},
+                    utils.URL,
+                    "a6000",
+                ],
+            )
+        )[0]
+        # note that this isn't atomic and it's possible to use this command twice and end up with a negative balance
+        await self.mobster.ledger_manager.put_usd_tx(
+            msg.sources, -100, result.get("prompt_id", "")
+        )
+        logging.info(result)
+        if worker_created:
+            deets = " (started a new worker)"
+        else:
+            deets = ""
+        return f"you are #{result['queue_length']} in the highres line{deets}"
 
     def make_prefix(prefix: str) -> Callable:  # type: ignore  # pylint: disable=no-self-argument
         async def wrapped(self: "Imogen", msg: Message) -> Response:
