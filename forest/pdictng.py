@@ -100,9 +100,7 @@ class fasterpKVStoreClient:
     async def get(self, key: str) -> str:
         """Get and return value of an object with the specified key and namespace"""
         key = get_safe_key(f"{self.namespace}_{key}")
-        async with self.conn.get(
-            f"{self.url}/GET/{key}", headers=self.headers
-        ) as resp:
+        async with self.conn.get(f"{self.url}/GET/{key}", headers=self.headers) as resp:
             res = await resp.json()
             if "result" in res:
                 return get_cleartext_value(res["result"])
