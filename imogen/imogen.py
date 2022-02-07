@@ -11,6 +11,7 @@ import random
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from mimetypes import guess_extension
 from textwrap import dedent
 from typing import Any, Callable
 
@@ -75,9 +76,8 @@ QueueExpressions = pghelp.PGExpressions(
         hostname TEXT DEFAULT null,
         url TEXT DEFAULT 'https://imogen-renaissance.fly.dev/',
         sent_ts BIGINT DEFAULT null,
-        errors INTEGER DEFAULT 0
-        , selector TEXT
-        );""",
+        errors INTEGER DEFAULT 0,
+        selector TEXT);""",
     enqueue_any="SELECT enqueue_prompt(prompt:=$1, _author:=$2, signal_ts:=$3, group_id:=$4, params:=$5, url:=$6)",
     enqueue_free="SELECT enqueue_free_prompt(prompt:=$1, _author:=$2, signal_ts:=$3, group_id:=$4, params:=$5, url:=$6)",
     enqueue_paid="SELECT enqueue_paid_prompt(prompt:=$1, author:=$2, signal_ts:=$3, group_id:=$4, params:=$5, url:=$6)",
@@ -362,7 +362,14 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         attachment = msg.attachments[0]
         if (attachment.get("filename") or "").endswith(".txt"):
             raise UserError("your prompt is way too long")
-        key = "input/" + attachment["id"] + "-" + (attachment.get("filename") or ".jpg")
+        if "image" not in attachment.get("contentType", ""):
+            raise UserError("attachment must be an image")
+        fname = (
+            attachment.get("filename")
+            or guess_extension(attachment.get("contentType", ""))
+            or ".jpg"
+        )
+        key = "input/" + attachment["id"] + "-" + fname
         await redis.set(
             key,
             open(Path("./attachments") / attachment["id"], "rb").read(),
@@ -377,12 +384,14 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         for attachment in msg.attachments:
             if (attachment.get("filename") or "").endswith(".txt"):
                 raise UserError("your prompt is way too long")
-            key = (
-                "input/"
-                + attachment["id"]
-                + "-"
-                + (attachment.get("filename") or ".jpg")
+            if "image" not in attachment.get("contentType", ""):
+                raise UserError("attachment must be an image")
+            fname = (
+                attachment.get("filename")
+                or guess_extension(attachment.get("contentType", ""))
+                or ".jpg"
             )
+            key = "input/" + attachment["id"] + "-" + fname
             await redis.set(
                 key,
                 open(Path("./attachments") / attachment["id"], "rb").read(),
@@ -493,7 +502,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         params.update(await self.upload_attachment(msg))
         if not msg.group:
             params["nopost"] = True
-        result = (
+        raw_result = (
             await self.queue.execute(
                 """
             INSERT INTO prompt_queue (prompt, paid, author, signal_ts, group_id, params, url, selector)
@@ -512,7 +521,10 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
                     "a6000",
                 ],
             )
-        )[0]
+        )
+        if not raw_result:
+            return "Sorry, couldn't enqueue your prompt"
+        result = raw_result[0]
         # note that this isn't atomic and it's possible to use this command twice and end up with a negative balance
         await self.mobster.ledger_manager.put_usd_tx(
             msg.sources, -100, result.get("prompt_id", "")
