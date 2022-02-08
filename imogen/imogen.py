@@ -508,9 +508,9 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         raw_result = await self.queue.execute(
             """
             INSERT INTO prompt_queue (prompt, paid, author, signal_ts, group_id, params, url, selector)
-            VALUES ($1, true, $2, $3, $4, $5, $6, $7)
+            VALUES ($1, true, $2, $3, $4, $5, $6, 'a6000')
             RETURNING id AS prompt_id,
-            (select count(id) from prompt_queue where
+            (select count(*) from prompt_queue where
             (status='pending' or status='assigned') and selector='a6000') as queue_length;
             """,
             msg.text,
@@ -519,7 +519,6 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
             msg.group or "",
             json.dumps(params),
             utils.URL,
-            "a6000",
         )
         if not raw_result:
             return "Sorry, couldn't enqueue your prompt"
