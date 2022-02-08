@@ -210,9 +210,9 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
             json.dumps({msg.source: msg.reaction.emoji}),
         )
         # reaction_map, author, prompt,
-        prompt = await self.queue.react(
+        prompt = (await self.queue.react(
             msg.reaction.ts, json.dumps({msg.source: msg.reaction.emoji})
-        )
+        ))[0]
         current_reaction_count = len(json.loads(prompt.get("reaction_map", "{}")))
         prompt_author = prompt.get("author")
         if current_reaction_count == 6:
