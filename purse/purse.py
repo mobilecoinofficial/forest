@@ -1,12 +1,11 @@
 #!/usr/bin/python3.9
+import asyncio
 import logging
 import urllib
-import asyncio
-import time
+
 from aiohttp import web
 
-from forest import pghelp
-from forest import pdictng
+from forest import pghelp, utils
 from forest.core import Message, QuestionBot, UserError, app
 from mc_util import mob2pmob
 
@@ -20,9 +19,9 @@ For more information on Signal Payments visit:
 
 https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
 
-PurseLedgerExpressions= pghelp.PGExpressions(
+PurseExpressions = pghelp.PGExpressions(
     table="purse_ledger",
-    create_table="""CREATE TABLE {self.table} (
+    create_table="""CREATE TABLE purse_ledger (
         id SERIAL PRIMARY KEY,
         user TEXT,
         amount BIGINT,
@@ -38,11 +37,10 @@ PurseLedgerExpressions= pghelp.PGExpressions(
 
 class ImogenAuxin(QuestionBot):
     def __init__(self) -> None:
-        self.queue = pghelp.PGInterface(
-            query_strings=QueueExpressions,
+        self.ledger = pghelp.PGInterface(
+            query_strings=PurseExpressions,
             database=utils.get_secret("DATABASE_URL"),
         )
-        self.payments = pdictng.aPersistDict("payments")
         super().__init__()
 
     async def pay(self, recipient: str, amount_pmob: int, message: str) -> None:
@@ -57,15 +55,11 @@ class ImogenAuxin(QuestionBot):
                         comment=f"prompt payment to {recipient}",
                     )
                     if payment and payment.status == "tx_status_succeeded":
-                        await self.payments.extend(
+                        await self.ledger.add_tx(
                             recipient,
-                            [
-                                time.time(),
-                                recipient,
-                                amount_pmob,
-                                message,
-                                getattr(payment, "transaction_log_id", ""),
-                            ],
+                            amount_pmob,
+                            message,
+                            getattr(payment, "transaction_log_id", ""),
                         )
                         break
                 except UserError:
@@ -100,12 +94,15 @@ async def pay_handler(request: web.Request) -> web.Response:
     bot = request.app.get("bot")
     if not bot:
         return web.Response(status=504, text="Sorry, no live workers.")
-    destination = urllib.parse.unquote(request.query.get("destination", ""))
-    amount = urllib.parse.unquote(request.query.get("amount", "0"))
-    msg = urllib.parse.unquote(request.query.get("message", ""))
-    if amount and destination:
+    data = await request.post()
+    destination = data.get("destination")
+    msg = data.get("message", "")
+    try:
+        amount = mob2pmob(float(data.get("amount", 0)))  # type: ignore
         asyncio.create_task(bot.pay(destination, mob2pmob(float(amount)), msg))
         return web.Response(status=200)
+    except ValueError:
+        pass
     return web.Response(status=400)
 
 
