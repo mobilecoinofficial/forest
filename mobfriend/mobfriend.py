@@ -53,14 +53,6 @@ class MobFriend(QuestionBot):
                     )
                     if len(attachment_paths) > 0:
                         attachment_path = attachment_paths.pop()
-                        if ".jpeg" in attachment_path:
-                            os.rename(
-                                attachment_path,
-                                attachment_path.replace(".jpeg", ".jpg", 1),
-                            )
-                            attachment_path = attachment_path.replace(
-                                ".jpeg", ".jpg", 1
-                            )
                         download_path = self.user_images[
                             message.source
                         ] = f"{attachment_path}"
@@ -125,6 +117,13 @@ class MobFriend(QuestionBot):
             save_name = f"{user_id}_{base58.b58encode(text[:16]).decode()}.gif"
         else:
             save_name = f"{user_id}_{base58.b58encode(text[:16]).decode()}.png"
+        if ".jpeg" in image_path:
+            os.rename(
+                image_path,
+                image_path.replace(".jpeg", ".jpg", 1),
+            )
+            image_path = image_path.replace(".jpeg", ".jpg", 1)
+            self.user_images[user_id] = image_path
         default_params: dict[str, Any] = dict(save_name=save_name, save_dir="/tmp")
         if image_path:
             default_params.update(
@@ -150,7 +149,9 @@ class MobFriend(QuestionBot):
             # pylint: disable=no-member
             await asyncio.wait_for(p.coro_join(), timeout=30)
             await self.send_message(
-                user_id, "Happy gifting!", attachments=[f"/tmp/{save_name}"]
+                user_id,
+                "You can share this QR with others!",
+                attachments=[f"/tmp/{save_name}"],
             )
         except asyncio.TimeoutError:
             await self.send_message(
