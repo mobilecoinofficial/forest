@@ -117,7 +117,7 @@ class MobFriend(QuestionBot):
             save_name = f"{user_id}_{base58.b58encode(text[:16]).decode()}.gif"
         else:
             save_name = f"{user_id}_{base58.b58encode(text[:16]).decode()}.png"
-        if ".jpeg" in image_path:
+        if image_path and ".jpeg" in image_path:
             os.rename(
                 image_path,
                 image_path.replace(".jpeg", ".jpg", 1),
@@ -471,7 +471,7 @@ class MobFriend(QuestionBot):
                 msg.source, "For how many MOB should this request be made?"
             )
             msg.arg3 = await self.ask_freeform_question(
-                msg.source, "What memo would you like to use? ('None' for empty"
+                msg.source, "What memo would you like to use? ('None' for empty)"
             )
             if msg.arg3.lower() == "none":
                 msg.arg3 = ""
