@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  generateName: imagegen-job-paid-
+  name: a6000-paid
   namespace: tenant-mobilecoin-imogen
   labels:
       tier: paid
@@ -34,9 +34,9 @@ spec:
               secretKeyRef:
                 name: dev-secrets
                 key: SUPABASE_API_KEY
+          - name: SELECTOR
+            value: "a6000"
           - name: EXIT # exit when fetching prompt fails on queue empty
-            value: "true"
-          - name: EXIT_ON_LOAD # exit after finishing a prompt if queue low
             value: "true"
       affinity:
         nodeAffinity:
@@ -46,13 +46,4 @@ spec:
               - key: gpu.nvidia.com/class
                 operator: In
                 values:
-                  - Tesla_V100_PCIE
-                  - Tesla_V100_NVLINK
-          preferredDuringSchedulingIgnoredDuringExecution:
-            - weight: 20
-              preference:
-                matchExpressions:
-                  - key: gpu.nvidia.com/class
-                    operator: In
-                    values:
-                      - Tesla_V100_PCIE
+                  - RTX_A6000

@@ -234,7 +234,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
             await self.admin(f"trying to pay {prompt_author}")
             await self.client_session.post(
                 utils.get_secret("PURSE_URL") + "/pay",
-                params={
+                data={
                     "destination": prompt_author,
                     "amount": 0.01,
                     "message": f'sent you a tip for your prompt "{prompt.get("prompt")}" getting {current_reaction_count} reactions',
@@ -514,7 +514,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
             msg.source,
             msg.timestamp,
             msg.group or "",
-            "{}",
+            json.dumps(params),
             utils.URL,
             "a6000",
         )
@@ -523,7 +523,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         result = raw_result[0]
         # note that this isn't atomic and it's possible to use this command twice and end up with a negative balance
         await self.mobster.ledger_manager.put_usd_tx(
-            msg.sources, -100, result.get("prompt_id", "")
+            msg.sources, -100, str(result.get("prompt_id", ""))
         )
         logging.info(result)
         if worker_created:
