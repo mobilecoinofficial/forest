@@ -315,21 +315,13 @@ class ClanGat(PayBotPro):
             if msg.arg2 == "0":
                 return "OK, cancelling."
             return await self.do_pay(msg)
-        else:
-            amount_mmob = int(amount)
+        amount_mmob = int(amount)
         if not list_:
             msg.arg1 = await self.ask_freeform_question(
                 user, "Who would you like to send the mMOB to?"
             )
             return await self.do_pay(msg)
         to_send = []
-        if not self.displayname_lookup_cache.get(list_):
-            maybe_number = utils.signal_format(list_)
-            if maybe_number and list_ not in await self.event_lists.keys():
-                to_send = [maybe_number]
-                await self.send_message(msg.uuid, f"okay, using {maybe_number}")
-        else:
-            to_send += [await self.displayname_lookup_cache.get(list_)]
         user_owns = await self.check_user_owns(user, list_)
         if not is_admin(msg) and not user_owns:
             return "Sorry, you are not authorized."
@@ -372,7 +364,7 @@ class ClanGat(PayBotPro):
                     msg.uuid, "Insufficient number of utxos!\nBuilding more..."
                 )
                 building_msg = await self.mobster.split_txos_slow(
-                    amount, (len(filtered_send_list) - len(valid_utxos))
+                    amount_mmob, (len(filtered_send_list) - len(valid_utxos))
                 )
                 await self.send_message(msg.uuid, building_msg)
                 valid_utxos = [
@@ -394,8 +386,8 @@ class ClanGat(PayBotPro):
                     failed += [target]
                 else:
                     # persist user as successfully paid
-                    await self.payout_balance_mmob.decrement(list_, amount)
                     await self.successful_pays.extend(save_key, target)
+                    await self.payout_balance_mmob.decrement(list_, amount_mmob)
                 await asyncio.sleep(1)
             await self.send_message(
                 msg.uuid,
