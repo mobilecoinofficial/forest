@@ -23,14 +23,14 @@ PurseExpressions = pghelp.PGExpressions(
     table="purse_ledger",
     create_table="""CREATE TABLE purse_ledger (
         id SERIAL PRIMARY KEY,
-        user TEXT,
+        account TEXT,
         amount BIGINT,
         ts TIMESTAMP DEFAULT now(),
         memo TEXT,
         prompt_id INT,
         tx_id INT);
     );""",
-    add_tx="INSERT INTO {self.table} (user, amount, memo, prompt_id) VALUES ($1, $2, $3, $4);",
+    add_tx="INSERT INTO {self.table} (account, amount, memo, prompt_id) VALUES ($1, $2, $3, $4);",
     stats="SELECT sum(amount)/1e12, count(id) FROM prompt_queue WHERE extract(second from now() - sent_ts) < $1",
 )
 
