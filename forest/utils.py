@@ -73,13 +73,13 @@ def load_secrets(env: Optional[str] = None, overwrite: bool = False) -> None:
         pass
 
 
-secret_cache = {}
+secret_cache: dict[str, str] = {}
 
 # TODO: split this into get_flag and get_secret; move all of the flags into fly.toml;
 # maybe keep all the tomls and dockerfiles in a separate dir with a deploy script passing --config and --dockerfile explicitly
 def get_secret(key: str, env: Optional[str] = None) -> str:
     if key in secret_cache:
-        return secret_cache.get("key")
+        return secret_cache[key]
     try:
         secret = os.environ[key]
     except KeyError:

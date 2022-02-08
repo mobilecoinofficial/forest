@@ -113,7 +113,7 @@ class Mobster:
         async with mob_req as resp:
             return await resp.json()
 
-    async def get_all_txos_for_account(self):
+    async def get_all_txos_for_account(self) -> dict[str, dict]:
         txos = (
             (
                 (
@@ -143,7 +143,9 @@ class Mobster:
             return sorted_
         return {}
 
-    async def split_txos_slow(self, output_millimob=100, target_quantity=200) -> str:
+    async def split_txos_slow(
+        self, output_millimob: int = 100, target_quantity: int = 200
+    ) -> str:
         output_millimob = int(output_millimob)
         utxos = list(reversed(await self.get_utxos()))
         built = 0
@@ -383,7 +385,7 @@ class Mobster:
 
 
 class StatefulMobster(Mobster):
-    def __init__(self):
+    def __init__(self) -> None:
         self.ledger_manager = LedgerManager()
         self.invoice_manager = InvoiceManager()
         super().__init__()

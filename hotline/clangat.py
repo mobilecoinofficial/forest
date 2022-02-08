@@ -235,7 +235,7 @@ class ClanGat(PayBotPro):
         ):
             await self.event_lists.remove_from((msg.arg1 or "").lower(), msg.uuid)
             return f"Okay, removed you from {msg.arg1}"
-        elif not msg.arg1:
+        if not msg.arg1:
             for list_ in await self.event_lists.keys():
                 if msg.uuid in await self.event_lists.get(list_, []):
                     await self.event_lists.remove_from(list_, msg.uuid)
@@ -488,19 +488,17 @@ class ClanGat(PayBotPro):
     @hide
     async def do_subscribe(self, msg: Message) -> Response:
         obj = (msg.arg1 or "").lower()
-        if obj in await self.event_lists.keys():
-            if msg.uuid in await self.event_lists[obj]:
-                return f"You're already on the {obj} list!"
-            else:
-                await self.event_lists.extend(obj, msg.uuid)
-                return f"Added you to the {obj} list!"
-        else:
+        if obj not in await self.event_lists.keys():
             return f"Sorry, I couldn't find a list called {obj} - to create your own, try 'add list {obj}'."
+        if msg.uuid in await self.event_lists[obj]:
+            return f"You're already on the {obj} list!"
+        await self.event_lists.extend(obj, msg.uuid)
+        return f"Added you to the {obj} list!"
 
     async def do_help(self, msg: Message) -> Response:
         if msg.arg1 and msg.arg1.lower() == "add":
             return self.do_add.__doc__
-        elif msg.arg1 and msg.arg1.lower() == "setup":
+        if msg.arg1 and msg.arg1.lower() == "setup":
             return self.do_setup.__doc__
         return "\n\n".join(
             [
@@ -560,7 +558,7 @@ class ClanGat(PayBotPro):
             msg.arg1 = "limit"
             msg.arg2 = obj
             msg.arg3 = await self.ask_freeform_question(
-                user, f"What limit would you like to set?"
+                user, "What limit would you like to set?"
             )
             await self.send_message(user, await self.do_add(msg))
         if event_or_list == "event" and await self.ask_yesno_question(
@@ -644,7 +642,7 @@ class ClanGat(PayBotPro):
                 f"{value} - added by {await self.get_displayname(msg.uuid)}",
             )
             return f'Added an egg! "{param}" now returns\n > {value} - added by {await self.get_displayname(msg.uuid)}'
-        elif obj == "egg" and param in await self.easter_eggs.keys():
+        if obj == "egg" and param in await self.easter_eggs.keys():
             return f"Sorry, egg already has value {await self.easter_eggs.get(param)}. Please message support to change it."
         if (
             obj == "event"
@@ -665,8 +663,7 @@ class ClanGat(PayBotPro):
             ):
                 msg.arg1 = param
                 return await self.do_setup(msg)
-            else:
-                return f'You now own paid event "{param}", and a free list by the same name - use "setup {param}" to configure your event at your convenience!'
+            return f'You now own paid event "{param}", and a free list by the same name - use "setup {param}" to configure your event at your convenience!'
         if (
             obj == "list"
             and param
@@ -684,14 +681,13 @@ class ClanGat(PayBotPro):
                 msg.arg2 = ""
                 msg.arg3 = ""
                 return await self.do_setup(msg)
-            else:
-                return f'You now own a free announcement list named {param} - use "setup {param}" to configure your event at your convenience!'
-        elif obj == "event" and not param:
+            return f'You now own a free announcement list named {param} - use "setup {param}" to configure your event at your convenience!'
+        if obj == "event" and not param:
             msg.arg2 = await self.ask_freeform_question(
                 msg.uuid, "What unlock code would you like to use for this event?"
             )
             return await self.do_add(msg)
-        elif obj == "list" and not param:
+        if obj == "list" and not param:
             msg.arg2 = await self.ask_freeform_question(
                 msg.uuid, "What unlock code would you like to use for this list?"
             )
@@ -788,24 +784,20 @@ class ClanGat(PayBotPro):
         ):
             if msg.uuid in await self.event_lists[code]:
                 return f"You're already on the {code} list!"
-            elif not await self.event_limits.get(code) or (
+            if not await self.event_limits.get(code) or (
                 len(await self.event_lists.get(code, []))
                 < await self.event_limits.get(code, 1000)
             ):
-                if await self.ask_yesno_question(
-                    msg.uuid,
-                    f"You've unlocked the {code} list! Would you like to subscribe to this announcement list?",
-                ):
-                    if await self.event_prompts.get(code):
-                        await self.send_message(
-                            msg.uuid, await self.event_prompts.get(code)
-                        )
-                    await self.event_lists.extend(code, msg.uuid)
-                    return f"Added you to the {code} list!"
-                else:
-                    return f"Okay, but you're missing out! \n\nIf you change your mind, unlock the list again by sending '{code}'"
-            else:
                 return f"Sorry, {code} is full!"
+            if not await self.ask_yesno_question(
+                msg.uuid,
+                f"You've unlocked the {code} list! Would you like to subscribe to this announcement list?",
+            ):
+                return f"Okay, but you're missing out! \n\nIf you change your mind, unlock the list again by sending '{code}'"
+            if await self.event_prompts.get(code):
+                await self.send_message(msg.uuid, await self.event_prompts.get(code))
+            await self.event_lists.extend(code, msg.uuid)
+            return f"Added you to the {code} list!"
         if (
             code
             and code in await self.event_owners.keys()
@@ -815,47 +807,46 @@ class ClanGat(PayBotPro):
             and msg.uuid in await self.event_attendees[code]  # user on the list
         ):
             return f"You're already on the '{code}' list."
+        if not code:
+            return None
         # handle default case
-        elif code:
-            lists = []
-            all_owners = []
-            for list_ in await self.event_lists.keys():
-                # if user is on a list
-                if msg.uuid in await self.event_lists.get(list_, []):
-                    owners = await self.event_owners.get(list_, [])
-                    owners += await self.list_owners.get(list_, [])
-                    all_owners += owners
-                    lists += [list_]
-                # if user bought tickets
-                if (
-                    list_ in await self.event_attendees.keys()
-                    and msg.uuid in await self.event_attendees[list_]
-                ):
-                    owners = await self.event_owners.get(list_, [])
-                    all_owners += owners
-                    lists += [list_]
-                # if user has started buying tickets
-                maybe_pending = await self.pending_orders.get(msg.uuid)
-                if maybe_pending and maybe_pending in await self.event_owners.keys():
-                    all_owners += await self.event_owners.get(maybe_pending, [])
-                    lists += [f"pending: {maybe_pending}"]
-
-            user_given = await self.get_displayname(msg.uuid)
-            if msg.full_text in [key.lower() for key in await self.easter_eggs.keys()]:
-                return await self.easter_eggs.get(msg.full_text)
-            if code in await self.easter_eggs.keys():
-                return await self.easter_eggs.get(code)
-            # being really lazy about owners / all_owners here
-            for owner in list(set(all_owners)):
-                # don't flood j
-                if "7777" not in owner:
-                    await self.send_message(
-                        owner,
-                        f"{user_given} ( {msg.source} ) says: {code} {msg.text}\nThey are on the following lists: {list(set(lists))}",
-                    )
-                    await asyncio.sleep(0.1)
-            return "Sorry, I can't help you with that! I'll see if I can find someone who can..."
-        return None
+        lists = []
+        all_owners = []
+        for list_ in await self.event_lists.keys():
+            # if user is on a list
+            if msg.uuid in await self.event_lists.get(list_, []):
+                owners = await self.event_owners.get(list_, [])
+                owners += await self.list_owners.get(list_, [])
+                all_owners += owners
+                lists += [list_]
+            # if user bought tickets
+            if (
+                list_ in await self.event_attendees.keys()
+                and msg.uuid in await self.event_attendees[list_]
+            ):
+                owners = await self.event_owners.get(list_, [])
+                all_owners += owners
+                lists += [list_]
+            # if user has started buying tickets
+            maybe_pending = await self.pending_orders.get(msg.uuid)
+            if maybe_pending and maybe_pending in await self.event_owners.keys():
+                all_owners += await self.event_owners.get(maybe_pending, [])
+                lists += [f"pending: {maybe_pending}"]
+        user_given = await self.get_displayname(msg.uuid)
+        if msg.full_text in [key.lower() for key in await self.easter_eggs.keys()]:
+            return await self.easter_eggs.get(msg.full_text)
+        if code in await self.easter_eggs.keys():
+            return await self.easter_eggs.get(code)
+        # being really lazy about owners / all_owners here
+        for owner in list(set(all_owners)):
+            # don't flood j
+            if "7777" not in owner:
+                await self.send_message(
+                    owner,
+                    f"{user_given} ( {msg.source} ) says: {code} {msg.text}\nThey are on the following lists: {list(set(lists))}",
+                )
+                await asyncio.sleep(0.1)
+        return "Sorry, I can't help you with that! I'll see if I can find someone who can..."
 
     @time_(REQUEST_TIME)  # type: ignore
     async def payment_response(self, msg: Message, amount_pmob: int) -> Response:

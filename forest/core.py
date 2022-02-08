@@ -511,10 +511,6 @@ class Signal:
             pipe.write(json.dumps(command).encode() + b"\n")
             await pipe.drain()
 
-
-Datapoint = tuple[int, str, float]  # timestamp in ms, command/info, latency in seconds
-
-
 def is_admin(msg: Message) -> bool:
     return (
         msg.source == utils.get_secret("ADMIN")
