@@ -493,6 +493,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         """
         return await self.do_paint(msg)
 
+    @hide
     async def do_highres(self, msg: Message) -> str:
         "Generate a 2626x1616 image. Costs 0.25 MOB"
         balance = await self.get_user_balance(msg.source)
