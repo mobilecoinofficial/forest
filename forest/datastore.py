@@ -236,13 +236,13 @@ def setup_tmpdir() -> None:
     if not utils.MEMFS:
         (Path(utils.ROOT_DIR) / "data").mkdir(exist_ok=True, parents=True)
     # assume we're running in the repo
-    sigcli = utils.get_secret("SIGNAL_CLI_PATH") or f"{utils.SIGNAL}-cli"
+    sigcli = utils.get_secret("SIGNAL_CLI_PATH") or f"{utils.SIGNAL}"
     sigcli_path = Path(sigcli).absolute()
     try:
         logging.info("symlinking %s to %s", sigcli_path, utils.ROOT_DIR)
-        os.symlink(sigcli_path, utils.ROOT_DIR + "/auxin-cli")
+        os.symlink(sigcli_path, f"{utils.ROOT_DIR}/{utils.SIGNAL}")
     except FileExistsError:
-        logging.info("auxin-cli's already there")
+        logging.info("%s's already there", utils.SIGNAL)
     try:
         os.symlink(Path("avatar.png").absolute(), utils.ROOT_DIR + "/avatar.png")
     except FileExistsError:
