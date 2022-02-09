@@ -45,7 +45,7 @@ class AuthorizedPayer(PayBot):
         if not payment_notif:
             return None
         delta = (payment_notif.timestamp - msg.timestamp) / 1000
-        self.auxin_roundtrip_latency.append((msg.timestamp, "repayment", delta))
+        self.signal_roundtrip_latency.append((msg.timestamp, "repayment", delta))
         await self.admin(f"repayment delta: {delta}")
         return None
 
