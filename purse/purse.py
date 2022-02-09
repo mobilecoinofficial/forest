@@ -2,7 +2,7 @@
 import asyncio
 import logging
 import urllib
-
+from typing import Optional
 from aiohttp import web
 
 from forest import pghelp, utils
@@ -27,10 +27,10 @@ PurseExpressions = pghelp.PGExpressions(
         amount BIGINT,
         ts TIMESTAMP DEFAULT now(),
         memo TEXT,
-        prompt_id INT,
+        prompt_id BIGINT,
         tx_id TEXT);
     );""",
-    add_tx="INSERT INTO {self.table} (account, amount, memo, tx_id) VALUES ($1, $2, $3, $4);",
+    add_tx="INSERT INTO {self.table} (account, amount, memo, tx_id, prompt_id) VALUES ($1, $2, $3, $4, $5);",
     stats="SELECT sum(amount)/1e12, count(id) FROM prompt_queue WHERE extract(second from now() - sent_ts) < $1",
 )
 
@@ -43,7 +43,7 @@ class ImogenAuxin(QuestionBot):
         )
         super().__init__()
 
-    async def pay(self, recipient: str, amount_pmob: int, message: str) -> None:
+    async def pay(self, recipient: str, amount_pmob: int, message: str, prompt_id: Optional[str]) -> None:
         for i in range(3):
             if await self.get_address(recipient):
                 try:
@@ -60,6 +60,7 @@ class ImogenAuxin(QuestionBot):
                             amount_pmob,
                             message,
                             getattr(payment, "transaction_log_id", ""),
+                            prompt_id
                         )
                         break
                 except UserError:
@@ -104,10 +105,16 @@ async def pay_handler(request: web.Request) -> web.Response:
     destination = data.get("destination") or urllib.parse.unquote(
         request.query.get("destination", "")
     )
+    string_prompt_id = data.get("prompt_id") or request.query.get("prompt_id")
+    try: 
+        prompt_id: Optional[int] = int(string_prompt_id) #type: ignore
+    except (ValueError, TypeError):
+        prompt_id = None
     try:
         amount = mob2pmob(float(string_amount))  # type: ignore
-        asyncio.create_task(bot.pay(destination, amount, msg))
+        asyncio.create_task(bot.pay(destination, amount, msg, prompt_id))
         return web.Response(status=200)
+    # fixme: restructure to not catch ValueError in pay
     except ValueError:
         pass
     return web.Response(status=400)
