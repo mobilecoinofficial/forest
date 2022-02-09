@@ -174,7 +174,7 @@ auto_messages = [
     Imogen shares tips with collaborators! If you like an Imoge, react t️o it. When an Imoge gets multiple reactions, the person who prompted the Imoge will be awarded a tip.
     """,
     """
-    Want to skip the line? Imogen offers a priority queue for a cost of 10 tokens per image.
+    Want to skip the line? Imogen offers a priority queue for a cost of 1 token per image.
 
     DM funds to Imogen as a Signal payment to become a premium user. You can tip Imogen with /tip [amnt].
 
