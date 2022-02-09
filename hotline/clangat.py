@@ -846,7 +846,7 @@ class ClanGat(PayBotPro):
                     f"{user_given} ( {msg.source} ) says: {code} {msg.text}\nThey are on the following lists: {list(set(lists))}",
                 )
                 await asyncio.sleep(0.1)
-        return "Sorry, I can't help you with that! I'll see if I can find someone who can..."
+        return await self.do_help(msg)
 
     @time_(REQUEST_TIME)  # type: ignore
     async def payment_response(self, msg: Message, amount_pmob: int) -> Response:
