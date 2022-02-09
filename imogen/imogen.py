@@ -125,12 +125,12 @@ messages = dict(
     no_credit="""
     You have no credit to submit priority requests.
 
-    Priority requests cost $0.10 each, bypass the free queue, and get dedicated workers when available.
+    Priority requests cost 10 tokens per request, bypass the free queue, and get dedicated workers when available.
 
     Please sent Imogen a payment. You can learn more about sending payments with the /signalpay command.
     """,
     last_paid="""
-    You balance has reached $0. Please re-up your support of Imogen by sending a payment. This will continue your premium membership and priority queuing!
+    You balance has reached 0 tokens. Please re-up your support of Imogen by sending a payment. This will continue your premium membership and priority queuing!
     """,
     rate_limit="""
     You currently have the maximum number of free requests in the queue (6), to request another image please wait for one of your requests to be generated, or add credit to your Imogen balance.
@@ -149,7 +149,7 @@ messages = dict(
 
     If you write “Tip” in the notes section for the payment, the payment automatically gets allocated as a tip and doesn’t increase your Imogen balance.
 
-    If you get "This person has not activated payments", try messaging me with /ping. 
+    If you get "This person has not activated payments", try messaging me with /ping.
 
     If you don't have Payments activated follow these instructions to activate it.
 
@@ -174,7 +174,7 @@ auto_messages = [
     Imogen shares tips with collaborators! If you like an Imoge, react t️o it. When an Imoge gets multiple reactions, the person who prompted the Imoge will be awarded a tip.
     """,
     """
-    Want to skip the line? Imogen offers a priority queue for a cost of $0.10 per image.
+    Want to skip the line? Imogen offers a priority queue for a cost of 10 tokens per image.
 
     DM funds to Imogen as a Signal payment to become a premium user. You can tip Imogen with /tip [amnt].
 
@@ -681,7 +681,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
     )
     async def do_tip(self, msg: Message) -> str:
         """
-        If you already have Imogen balance, you can use `/tip [amount]` to send that amount in USD as a tip to Imogen.
+        If you already have Imogen balance, you can use `/tip [amount]` to send that amount in tokens a tip to Imogen.
 
         You can also type `/tip all` To check your imogen balance, type /balance.
 
@@ -699,7 +699,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
             except ValueError:
                 return f"Couldn't parse {msg.arg1} as an amount"
         await self.mobster.ledger_manager.put_usd_tx(msg.source, -amount * 100, "tip")
-        return f"Thank you for tipping ${amount:.2f}"
+        return f"Thank you for tipping."
 
     async def do_signalpay(self, msg: Message) -> Response:
         "Learn about sending payments on Signal"
