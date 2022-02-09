@@ -99,7 +99,7 @@ async def pay_handler(request: web.Request) -> web.Response:
     msg = data.get("message", "")
     try:
         amount = mob2pmob(float(data.get("amount", 0)))  # type: ignore
-        asyncio.create_task(bot.pay(destination, mob2pmob(float(amount)), msg))
+        asyncio.create_task(bot.pay(destination, amount, msg))
         return web.Response(status=200)
     except ValueError:
         pass

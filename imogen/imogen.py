@@ -301,7 +301,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         balance = await self.get_user_balance(msg.source)
         prompts = int(balance / (self.image_rate_cents / 100))
         balance_msg = (
-            f"Your current Imogen balance is{prompts} priority prompt credits)"
+            f"Your current Imogen balance is {prompts} priority prompt credits"
         )
         if balance == 0:
             balance_msg += "\n\n To buy more credits, send Imogen some MobileCoin. Try /signalpay to learn more activating payments"
@@ -501,7 +501,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
             return "Highres costs 0.25 MOB. Please send a payment to use this command."
         worker_created = await self.ensure_unique_worker("a6000.yaml")
         logging.info(msg.full_text)
-        params: dict[str, Any] = {"size": [2626, 1616]}
+        params: dict[str, Any] = {"size": [2620, 1610]}
         params.update(await self.upload_attachment(msg))
         if not msg.group:
             params["nopost"] = True
@@ -688,13 +688,16 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         """
         if msg.arg1 is None:
             return dedent(self.do_tip.__doc__).strip()
+        balance = await self.get_user_balance(msg.source)
         if msg.arg1 and msg.arg1.lower() in ("all", "everything"):
-            amount = await self.get_user_balance(msg.source)
+            amount = balance 
         else:
             try:
                 amount = float((msg.arg1 or "").strip("$"))
                 if amount < 0.01:
                     return "/tip requires amounts in USD"
+                if amount > balance:
+                    return "That's more than your balance"
             except ValueError:
                 return f"Couldn't parse {msg.arg1} as an amount"
         await self.mobster.ledger_manager.put_usd_tx(msg.source, -amount * 100, "tip")
