@@ -163,8 +163,22 @@ messages = dict(
 
     To top up your Mobilecoin balance, follow these instructions: https://mobilecoin.com/news/how-to-buy-mob-in-the-us
     """,
-)
+    rules="""1. please don't be mean to Imogen
+2. no prompts that would get Imogen's twitter account banned
+3. don't be mean to others
+4. this service is provided at our expense and we reserve the right to remove anyone for any or no reason
+5. don't message people out of the blue""",
+    intro="""ask Imogen to make some art for you with /imagine [prompt describing an image]
 
+you can attach initial images to prompts.
+use /imagine prompt1 // prompt2 to create a video fading between the two prompts.
+
+crossposted to twitter.com/dreambs3
+
+rules:
+{rules}""",
+)
+# If you have the Signal Payments feature activated, you can send a few cents directly to the bot by clicking on her avatar, then the "+" button, and sending a payment.  0.1 MOB will buy you a few priority queue slots.  Not necessary to do, of course.
 auto_messages = [
     """
     If you like Imogen's art, you can show your support by donating within Signal Payments.
@@ -259,9 +273,6 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
             # re-parse the tokenization without the prefix
             msg.parse_text(msg.text[-kept_length:])
         return super().match_command(msg)
-
-    async def do_beep(self, _: Message) -> str:
-        return "beep"
 
     async def do_status(self, _: Message) -> str:
         "shows queue size"
@@ -554,6 +565,19 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
     do_synthwave = make_prefix("synthwave")
     del make_prefix  # shouldn't be used after class definition is over
 
+    def single_response(response: str) -> Callable:  # type: ignore # pylint: disable=no-self-argument
+        async def wrapped(self: "Imogen", msg: Message) -> Response:
+            del self, msg # shush pylint
+            return response
+
+        wrapped.__doc__ = f"says {response}"
+        return wrapped
+
+    do_rules = single_response(messages["rules"])
+    do_intro = single_response(messages["intro"])
+    do_beep = single_response("beep")
+    do_poke = hide(single_response("poke"))
+
     # async def do_quick(self, msg: Message) -> str:
     #     """Generate a 512x512 image off from the last time this command was used"""
     #     return await self.enqueue_prompt(msg, {"feedforward": True}, False)
@@ -659,10 +683,6 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         return await self.enqueue_prompt(
             msg, {"size": [50, 50], "max_iterations": 5}, attachments="init"
         )
-
-    @hide
-    async def do_poke(self, _: Message) -> str:
-        return "poke"
 
     @requires_admin
     async def do_exception(self, msg: Message) -> None:
