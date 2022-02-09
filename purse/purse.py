@@ -28,9 +28,9 @@ PurseExpressions = pghelp.PGExpressions(
         ts TIMESTAMP DEFAULT now(),
         memo TEXT,
         prompt_id INT,
-        tx_id INT);
+        tx_id TEXT);
     );""",
-    add_tx="INSERT INTO {self.table} (account, amount, memo, prompt_id) VALUES ($1, $2, $3, $4);",
+    add_tx="INSERT INTO {self.table} (account, amount, memo, tx_id) VALUES ($1, $2, $3, $4);",
     stats="SELECT sum(amount)/1e12, count(id) FROM prompt_queue WHERE extract(second from now() - sent_ts) < $1",
 )
 
