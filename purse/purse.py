@@ -95,10 +95,17 @@ async def pay_handler(request: web.Request) -> web.Response:
     if not bot:
         return web.Response(status=504, text="Sorry, no live workers.")
     data = await request.post()
-    destination = data.get("destination")
-    msg = data.get("message", "")
+    string_amount = data.get("amount") or urllib.parse.unquote(
+        request.query.get("amount", "0")
+    )
+    msg = data.get("message", "") or urllib.parse.unquote(
+        request.query.get("message", "")
+    )
+    destination = data.get("destination") or urllib.parse.unquote(
+        request.query.get("destination", "")
+    )
     try:
-        amount = mob2pmob(float(data.get("amount", 0)))  # type: ignore
+        amount = mob2pmob(float(string_amount))  # type: ignore
         asyncio.create_task(bot.pay(destination, amount, msg))
         return web.Response(status=200)
     except ValueError:
