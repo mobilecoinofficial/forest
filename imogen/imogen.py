@@ -675,7 +675,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         """
         To send imogen a tip, first send imogen a payment, and then you can use /tip [amnt] to tip Imogen from your balance.
 
-        To send Imogen payments, please DM her and use the command /signalpay for instructions
+        To send Imogen payments, please DM her on Signal and use the command /signalpay for instructions
         """
     )
     async def do_tip(self, msg: Message) -> str:
