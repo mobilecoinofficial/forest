@@ -54,18 +54,31 @@ class FullService:
                 async with mob_req as resp:
                     return await resp.json()
 
-    async def get_account_id(self, index: int = 0) -> str:
+    async def get_account_id(self, name: str = "", index: int = 0) -> str:
         """
         Get account id from list of accounts
 
         args:
+          name (str): Name of the account
           index (int): Index of account in account list
 
         Returns:
           str: unique identifier for account
         """
-        if not self.account_id:
+
+        if (name or index) or not self.account_id:
             accounts = await self.req({"method": "get_all_accounts"})
+            if name:
+                _id = [
+                    acct["account_id"]
+                    for acct in accounts.get("result", {})
+                    .get("account_map", {})
+                    .values()
+                    if acct["name"] == name
+                ]
+                if _id:
+                    return _id[0]
+                return ""
             account_ids = accounts.get("result", {}).get("account_ids", [])
             if len(account_ids) >= index + 1:
                 self.account_id = account_ids[index]

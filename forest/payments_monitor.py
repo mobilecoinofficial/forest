@@ -283,7 +283,9 @@ class Mobster(FullService):
         tx_proposal = {"method": method, "params": params}
         return await self.req(tx_proposal)
 
-    async def get_transactions(self, account_id: str) -> dict[str, dict[str, str]]:
+    async def get_transactions(self, account_id: str = "") -> dict[str, dict[str, str]]:
+        if not account_id:
+            account_id = await self.get_account_id()
         return (
             await self.req(
                 {
@@ -349,7 +351,7 @@ class Mobster(FullService):
           locked_txos (dict): txo ids to filter from result
 
         Returns:
-          (list[tuple[str,int]]): ordered list of matching txos
+          list[tuple[str,int]]: ordered list of matching txos
         """
         if not account_id:
             account_id = await self.get_account_id()
@@ -365,6 +367,48 @@ class Mobster(FullService):
             and (max_val > int(v.get("value_pmob")) > min_val)
             and not locked_txos.get(k)
         }
+
+    async def get_unspent_txos(
+        self, account_id: str = "", locked_txos: Optional[dict] = None
+    ) -> dict:
+        """
+        Get a map of all txos and associated data
+
+        args:
+          account_id: id of target account
+          locked_txos (dict): txo ids to filter from result
+
+        Returns:
+          dict: dictionary of unspent txos and metadata
+        """
+
+        if not account_id:
+            account_id = await self.get_account_id()
+
+        return await self.get_filtered_txos(
+            account_id, "txo_status_unspent", locked_txos=locked_txos
+        )
+
+    async def get_unspent_txo_list(
+        self, account_id: str = "", locked_txos: Optional[dict] = None
+    ) -> list:
+        """
+        Get a map of all txos and associated data
+
+        args:
+          account_id: id of target account
+          locked_txos (dict): txo ids to filter from result
+
+        Returns:
+          list[tuple[str, int]]: list of (txo_id, amount) tuples of unspent txos sorted by amount
+        """
+
+        if not account_id:
+            account_id = await self.get_account_id()
+
+        return await self.get_filtered_txo_list(
+            account_id, "txo_status_unspent", locked_txos=locked_txos
+        )
 
     async def confirm_transaction(self, tx_log_id: str, timeout: int = 10) -> bool:
         """
