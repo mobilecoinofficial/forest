@@ -581,7 +581,9 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         return response["choices"][0]["text"].strip()
 
     @hide
-    async def do_ask(self, msg: Message) -> str:
+    async def do_ask(self, msg: Message) -> Response:
+        if msg.text and msg.text[0] not in "/\N{Object Replacement Character}":
+            return None
         prompt = (
             "The following is a conversation with an AI assistant. "
             "The assistant is helpful, creative, clever, funny, very friendly, an artist and anarchist\n\n"
@@ -690,7 +692,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
             return dedent(self.do_tip.__doc__).strip()
         balance = await self.get_user_balance(msg.source)
         if msg.arg1 and msg.arg1.lower() in ("all", "everything"):
-            amount = balance 
+            amount = balance
         else:
             try:
                 amount = float((msg.arg1 or "").strip("$"))
