@@ -168,7 +168,7 @@ messages = dict(
 3. don't be mean to others
 4. this service is provided at our expense and we reserve the right to remove anyone for any or no reason
 5. don't message people out of the blue""",
-    intro="""ask Imogen to make some art for you with /imagine [prompt describing an image]
+    intro=f"""ask Imogen to make some art for you with /imagine [prompt describing an image]
 
 you can attach initial images to prompts.
 use /imagine prompt1 // prompt2 to create a video fading between the two prompts.
@@ -176,7 +176,11 @@ use /imagine prompt1 // prompt2 to create a video fading between the two prompts
 crossposted to twitter.com/dreambs3
 
 rules:
-{rules}""",
+1. please don't be mean to Imogen
+2. no prompts that would get Imogen's twitter account banned
+3. don't be mean to others
+4. this service is provided at our expense and we reserve the right to remove anyone for any or no reason
+5. don't message people out of the blue""",
 )
 # If you have the Signal Payments feature activated, you can send a few cents directly to the bot by clicking on her avatar, then the "+" button, and sending a payment.  0.1 MOB will buy you a few priority queue slots.  Not necessary to do, of course.
 auto_messages = [
