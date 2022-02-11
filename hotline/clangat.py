@@ -245,7 +245,7 @@ class ClanGat(PayBotPro):
                     )
                     removed += 1
         if msg.arg1 and not removed:
-            return "Sorry, you're not on the announcement list for {msg.arg1}"  # thanks y?!
+            return f"Sorry, you're not on the announcement list for {msg.arg1}"  # thanks y?!
         if not removed:
             return "You're not on any lists!"
         return None
@@ -373,22 +373,37 @@ class ClanGat(PayBotPro):
                     if upmob > (1_000_000_000 * amount_mmob)
                 ]
             failed = []
-            for target in filtered_send_list:
+
+            async def do_pay_logging_success(
+                target, amount_mmob, message="", input_txo_ids=[]
+            ):
                 result = await self.send_payment(
                     recipient=target,
                     amount_pmob=amount_mmob * 1_000_000_000,
                     receipt_message=message or "",
-                    input_txo_ids=[valid_utxos.pop(0)],
+                    input_txo_ids=input_txo_ids,
                 )
                 # if we didn't get a result indicating success
                 if not result or (result and result.status == "tx_status_failed"):
                     # stash as failed
-                    failed += [target]
+                    return None
                 else:
                     # persist user as successfully paid
                     await self.successful_pays.extend(save_key, target)
                     await self.payout_balance_mmob.decrement(list_, amount_mmob)
-                await asyncio.sleep(1)
+                    await self.send_message(target, "I've sent you a payment!")
+                await asyncio.sleep(0.01)
+                return result
+
+            results = await asyncio.gather(
+                *[
+                    do_pay_logging_success(
+                        target, amount_mmob, message, input_txo_ids=[valid_utxos.pop(0)]
+                    )
+                    for target in filtered_send_list
+                ]
+            )
+            failed = [filtered_send_list[i] for (i, x) in enumerate(results) if not x]
             await self.send_message(
                 msg.uuid,
                 f"failed on\n{[await self.get_displayname(uuid) for uuid in failed]}",
@@ -477,7 +492,7 @@ class ClanGat(PayBotPro):
             for target_user in target_users:
                 await self.send_message(target_user.strip("\u2068\u2069"), param)
                 sent.append(target_user)
-                await asyncio.sleep(3)
+                await asyncio.sleep(0.01)
         elif user_owns:
             return "Try again - and add a message!"
         if not success:
@@ -698,17 +713,23 @@ class ClanGat(PayBotPro):
         # if the user owns the event and we have a value passed
         if user_owns and value:
             if obj == "owner":
-                new_owner_uuid = await self.displayname_cache.get(value, value)
-                await self.send_message(
-                    new_owner_uuid,
-                    f"You've been added as an owner of {value} by {await self.displayname_cache.get(msg.uuid)}",
-                )
+                if value in await self.displayname_lookup_cache.keys():
+                    new_owner_uuid = await self.displayname_lookup_cache.get(
+                        value, value
+                    )
+                elif value in await self.displayname_cache.keys():
+                    new_owner_uuid = value
                 if user_owns == "event":
                     if value not in await self.event_owners.get(param, []):
                         await self.event_owners.extend(param, value)
                 if user_owns == "list":
                     if value not in await self.list_owners.get(param, []):
                         await self.list_owners.extend(param, value)
+                if user_owns:
+                    await self.send_message(
+                        new_owner_uuid,
+                        f"You've been added as an owner of the {param} {user_owns} by {await self.displayname_cache.get(msg.uuid)}!",
+                    )
                 success = True
             elif obj == "price" and user_owns == "event":
                 # check if string == floatable
@@ -784,9 +805,12 @@ class ClanGat(PayBotPro):
         ):
             if msg.uuid in await self.event_lists[code]:
                 return f"You're already on the {code} list!"
-            if not await self.event_limits.get(code) or (
-                len(await self.event_lists.get(code, []))
-                < await self.event_limits.get(code, 1000)
+            if not (
+                await self.event_limits.get(code)
+                or (
+                    len(await self.event_lists.get(code, []))
+                    < await self.event_limits.get(code, 1000)
+                )
             ):
                 return f"Sorry, {code} is full!"
             if not await self.ask_yesno_question(
@@ -806,7 +830,7 @@ class ClanGat(PayBotPro):
             and code in await self.event_lists.keys()  # if there's a list and...
             and msg.uuid in await self.event_attendees[code]  # user on the list
         ):
-            return f"You're already on the '{code}' list."
+            return f"You're already on the attendee list for the '{code}' event."
         if not code:
             return None
         # handle default case
