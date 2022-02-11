@@ -248,6 +248,17 @@ class aPersistDict(Generic[K, V]):
         await self.set(key, None)
         return None
 
+    # async def extend(self, key: K, value: V) -> str:
+    #     """Since one cannot simply add to a coroutine, this function exists.
+    #     If the key exists and the value is None, or an empty array, the provided value is added to a(the) list at that value."""
+    #     value_to_extend: Union[None, V, list[V]] = []
+    #     async with self.rwlock:
+    #         value_to_extend = self.dict_.get(key, [])
+    #         if isinstance(value_to_extend, list):
+    #             value_to_extend.append(value)
+    #             return await self._set(key, value_to_extend)
+    #         raise TypeError(f"value {value_to_extend} for key {key} is not a list")
+    #
     # async def increment(self, key: K, value: V) -> str:
     #     """Since one cannot simply add to a coroutine, this function exists.
     #     If the key exists and the value is None, or an empty array, the provided value is added to a(the) list at that value."""
@@ -255,7 +266,7 @@ class aPersistDict(Generic[K, V]):
     #     async with self.rwlock:
     #         value_to_extend = self.dict_.get(key, 0)
     #         return await self._set(key, value_to_extend + value)
-
+    #
     # async def decrement(self, key: K, value: V) -> str:
     #     """Since one cannot simply add to a coroutine, this function exists.
     #     If the key exists and the value is None, or an empty array, the provided value is added to a(the) list at that value."""
@@ -263,6 +274,15 @@ class aPersistDict(Generic[K, V]):
     #     async with self.rwlock:
     #         value_to_extend = self.dict_.get(key, 0)
     #         return await self._set(key, value_to_extend - value)
+    #         
+    # async def remove_from(self, key: K, not_value: V) -> str:
+    #     """Removes a value specified from the list, if present.
+    #     Returns metadata"""
+    #     async with self.rwlock:
+    #         values_without_specified = [
+    #             el for el in self.dict_.get(key, []) if not_value != el
+    #         ]
+    #         return await self._set(key, values_without_specified)
 
     async def pop(self, key: K, default: Optional[V] = None) -> Optional[V]:
         """Returns and removes a value if it exists"""
@@ -286,22 +306,5 @@ class aPersistDict(Generic[K, V]):
         async with self.rwlock:
             return await self._set(key, value)
 
-    # async def extend(self, key: K, value: V) -> str:
-    #     """Since one cannot simply add to a coroutine, this function exists.
-    #     If the key exists and the value is None, or an empty array, the provided value is added to a(the) list at that value."""
-    #     value_to_extend: Union[None, V, list[V]] = []
-    #     async with self.rwlock:
-    #         value_to_extend = self.dict_.get(key, [])
-    #         if isinstance(value_to_extend, list):
-    #             value_to_extend.append(value)
-    #             return await self._set(key, value_to_extend)
-    #         raise TypeError(f"value {value_to_extend} for key {key} is not a list")
 
-    # async def remove_from(self, key: K, not_value: V) -> str:
-    #     """Removes a value specified from the list, if present.
-    #     Returns metadata"""
-    #     async with self.rwlock:
-    #         values_without_specified = [
-    #             el for el in self.dict_.get(key, []) if not_value != el
-    #         ]
-    #         return await self._set(key, values_without_specified)
+
