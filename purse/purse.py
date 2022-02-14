@@ -43,7 +43,9 @@ class ImogenAuxin(QuestionBot):
         )
         super().__init__()
 
-    async def pay(self, recipient: str, amount_pmob: int, message: str, prompt_id: Optional[str]) -> None:
+    async def pay(
+        self, recipient: str, amount_pmob: int, message: str, prompt_id: Optional[str]
+    ) -> None:
         for i in range(3):
             if await self.get_address(recipient):
                 try:
@@ -60,7 +62,7 @@ class ImogenAuxin(QuestionBot):
                             amount_pmob,
                             message,
                             getattr(payment, "transaction_log_id", ""),
-                            prompt_id
+                            prompt_id,
                         )
                         break
                 except UserError:
@@ -106,8 +108,8 @@ async def pay_handler(request: web.Request) -> web.Response:
         request.query.get("destination", "")
     )
     string_prompt_id = data.get("prompt_id") or request.query.get("prompt_id")
-    try: 
-        prompt_id: Optional[int] = int(string_prompt_id) #type: ignore
+    try:
+        prompt_id: Optional[int] = int(string_prompt_id)  # type: ignore
     except (ValueError, TypeError):
         prompt_id = None
     try:

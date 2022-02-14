@@ -168,7 +168,7 @@ messages = dict(
 3. don't be mean to others
 4. this service is provided at our expense and we reserve the right to remove anyone for any or no reason
 5. don't message people out of the blue""",
-    intro=f"""ask Imogen to make some art for you with /imagine [prompt describing an image]
+    intro="""ask Imogen to make some art for you with /imagine [prompt describing an image]
 
 you can attach initial images to prompts.
 use /imagine prompt1 // prompt2 to create a video fading between the two prompts.
@@ -571,7 +571,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
 
     def single_response(response: str) -> Callable:  # type: ignore # pylint: disable=no-self-argument
         async def wrapped(self: "Imogen", msg: Message) -> Response:
-            del self, msg # shush pylint
+            del self, msg  # shush pylint
             return response
 
         wrapped.__doc__ = f"says {response}"
