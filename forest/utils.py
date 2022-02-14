@@ -86,8 +86,6 @@ def get_secret(key: str, env: Optional[str] = None) -> str:
     return secret
 
 
-SIGNAL = (get_secret("SIGNAL") or "auxin").removesuffix("-cli") + "-cli"
-AUXIN = SIGNAL.lower() == "auxin-cli"
 HOSTNAME = open("/etc/hostname").read().strip()  #  FLY_ALLOC_ID
 APP_NAME = os.getenv("FLY_APP_NAME")
 URL = os.getenv("URL_OVERRIDE", f"https://{APP_NAME}.fly.dev")
@@ -95,6 +93,11 @@ LOCAL = os.getenv("FLY_APP_NAME") is None
 ROOT_DIR = (
     "." if get_secret("NO_DOWNLOAD") else "/tmp/local-signal" if LOCAL else "/app"
 )
+SIGNAL = (get_secret("SIGNAL") or "auxin").removesuffix("-cli") + "-cli"
+AUXIN = SIGNAL.lower() == "auxin-cli"
+# todo: shutil.which(SIGNAL) if not found
+CLIENT_PATH = get_secret("SIGNAL_CLIENT_PATH") or f"{ROOT_DIR}/{SIGNAL}"
+
 UPLOAD = DOWNLOAD = not get_secret("NO_DOWNLOAD")
 MEMFS = not get_secret("NO_MEMFS")
 

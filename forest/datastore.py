@@ -219,7 +219,7 @@ class SignalDatastore:
 
 def setup_tmpdir() -> None:
     if not utils.LOCAL:
-        logging.warning("not setting up tmpdir, running on fly")
+        logging.warning("not setting up tmpdir, FLY_APP_NAME is set")
         return
     if utils.ROOT_DIR == ".":
         logging.warning("not setting up tmpdir, using current directory")
@@ -231,14 +231,19 @@ def setup_tmpdir() -> None:
             logging.warning("couldn't remove rootdir: %s", e)
     if not utils.MEMFS:
         (Path(utils.ROOT_DIR) / "data").mkdir(exist_ok=True, parents=True)
-    # assume we're running in the repo
-    sigcli = utils.get_secret("SIGNAL_CLI_PATH") or "auxin-cli"
-    sigcli_path = Path(sigcli).absolute()
+    # assume we're running in the repo and our signal client is in the current directory
+    client = utils.get_secret("SIGNAL_CLI_PATH") or utils.SIGNAL
+    client_path = Path(sigcli).absolute()
+    if not client_path.exists():
+        raise FileNotFoundError(
+            f"{client_path} doesn't exist, try symlinking {utils.SIGNAL} to the current directory"
+            " or specifying SIGNAL_CLI_PATH"
+        )
     try:
-        logging.info("symlinking %s to %s", sigcli_path, utils.ROOT_DIR)
-        os.symlink(sigcli_path, utils.ROOT_DIR + "/auxin-cli")
+        logging.info("symlinking %s to %s", client_path, utils.CLIENT_PATH)
+        os.symlink(client_path, utils.CLIENT_PATH)
     except FileExistsError:
-        logging.info("auxin-cli's already there")
+        logging.info("%s's already there", utils.SIGNAL)
     try:
         os.symlink(Path("avatar.png").absolute(), utils.ROOT_DIR + "/avatar.png")
     except FileExistsError:
