@@ -10,7 +10,6 @@ import random
 import ssl
 import time
 from typing import Optional, Union, Any
-from copy import deepcopy
 
 import aiohttp
 import asyncpg
@@ -67,7 +66,7 @@ InvoicePGEExpressions = PGExpressions(
     get_invoice_by_amount="SELECT invoice_id, account FROM {self.table} WHERE unique_pmob=$1",
 )
 
-FEE = 4000000000
+FEE_PMOB = 4000000000
 
 
 class InvoiceManager(PGInterface):
@@ -159,7 +158,7 @@ class Mobster(FullService):
           address is not found for the account id
         """
         if not account_id:
-            account_id = await self.get_account_id()
+            account_id = await self.get_account()
         res = await self.get_all_accounts()
         return (
             res.get("result", {})
@@ -198,7 +197,7 @@ class Mobster(FullService):
             await self.req(
                 {
                     "method": "get_balance_for_account",
-                    "params": {"account_id": await self.get_account_id()},
+                    "params": {"account_id": await self.get_account()},
                 }
             )
         )["result"]["balance"]["unspent_pmob"]
@@ -258,7 +257,7 @@ class Mobster(FullService):
           in wallet db
         """
         if not account_id:
-            account_id = await self.get_account_id()
+            account_id = await self.get_account()
         params: dict[str, Any] = {"account_id": account_id}
         method = "build_transaction"
 
@@ -277,15 +276,13 @@ class Mobster(FullService):
             params["comment"] = comment
         if not submit and log:
             params["log_tx_proposal"] = log
-        if comment:
-            params["comment"] = comment
 
         tx_proposal = {"method": method, "params": params}
         return await self.req(tx_proposal)
 
     async def get_transactions(self, account_id: str = "") -> dict[str, dict[str, str]]:
         if not account_id:
-            account_id = await self.get_account_id()
+            account_id = await self.get_account()
         return (
             await self.req(
                 {
@@ -306,31 +303,13 @@ class Mobster(FullService):
         data = await self.get_wallet_status()
         if not data:
             return 0
-        start_block = int(
+        return int(
             (
                 data.get("result", {})
                 .get("wallet_status", {})
                 .get("network_block_height", 0)
             )
         )
-        return start_block
-
-    async def get_filtered_txo_list(
-        self,
-        account_id: str = "",
-        txo_status: str = "txo_status_unspent",
-        max_val: Union[int, float] = float("inf"),
-        min_val: int = 0,
-        locked_txos: Optional[dict] = None,
-    ) -> list[tuple[str, int]]:
-        """
-        Get sorted list of (txo_id, amount) pairs fitting specific filters
-        """
-        txos = await self.get_filtered_txos(
-            account_id, txo_status, max_val, min_val, locked_txos
-        )
-        txo_list = [(k, int(v.get("value_pmob"))) for k, v in txos.items()]
-        return sorted(txo_list, key=lambda txo_value: txo_value[1], reverse=True)
 
     async def get_filtered_txos(
         self,
@@ -354,7 +333,7 @@ class Mobster(FullService):
           list[tuple[str,int]]: ordered list of matching txos
         """
         if not account_id:
-            account_id = await self.get_account_id()
+            account_id = await self.get_account()
         if not locked_txos:
             locked_txos = {}
 
@@ -368,7 +347,32 @@ class Mobster(FullService):
             and not locked_txos.get(k)
         }
 
-    async def get_unspent_txos(
+    async def get_unspent_txo_list(
+        self,
+        account_id: str = "",
+        max_val: Union[int, float] = float("inf"),
+        min_val: int = 0,
+        locked_txos: Optional[dict] = None,
+    ) -> list[tuple[str, int]]:
+        """
+        Get sorted list of (txo_id, amount) pairs fitting specific filters
+
+        args:
+          account_id (str): id of target account
+          min_val (int): minimum value in pmob of utxo to find
+          max_val (int): maximum value in pmob of utxo to find
+          locked_txos (dict): txo_ids to exclude from result
+
+        Returns:
+          list[tuple[str,int]]: list of utxos in the form: (utxo_id, amount)
+        """
+        txos = await self.get_filtered_txos(
+            account_id, "txo_status_unspent", max_val, min_val, locked_txos
+        )
+        txo_list = [(k, int(v.get("value_pmob"))) for k, v in txos.items()]
+        return sorted(txo_list, key=lambda txo_value: txo_value[1], reverse=True)
+
+    async def get_unspent_txo_data(
         self, account_id: str = "", locked_txos: Optional[dict] = None
     ) -> dict:
         """
@@ -383,30 +387,9 @@ class Mobster(FullService):
         """
 
         if not account_id:
-            account_id = await self.get_account_id()
+            account_id = await self.get_account()
 
         return await self.get_filtered_txos(
-            account_id, "txo_status_unspent", locked_txos=locked_txos
-        )
-
-    async def get_unspent_txo_list(
-        self, account_id: str = "", locked_txos: Optional[dict] = None
-    ) -> list:
-        """
-        Get a map of all txos and associated data
-
-        args:
-          account_id: id of target account
-          locked_txos (dict): txo ids to filter from result
-
-        Returns:
-          list[tuple[str, int]]: list of (txo_id, amount) tuples of unspent txos sorted by amount
-        """
-
-        if not account_id:
-            account_id = await self.get_account_id()
-
-        return await self.get_filtered_txo_list(
             account_id, "txo_status_unspent", locked_txos=locked_txos
         )
 
@@ -441,206 +424,9 @@ class Mobster(FullService):
             logging.warning("Failed to confirm transaction in %s tries", timeout)
         return False
 
-    async def cleanup_utxos(
-        self,
-        max_single_txo: int,
-        account_id: str = "",
-        locked_txos: Optional[dict[str, Any]] = None,
-        largest_first: bool = False,
-    ) -> list[tuple[str, int]]:
-        """
-        Consolidate wallet txos into a single txo of specified size
-
-        args:
-          acount_id (str): Mobilecoin wallet account_id
-          max_single_txo (int): Size (in pmob) of transaction to consolidate to
-          locked_txos (dict[str, Any]): dict of txo_ids to exclude from cleanup
-        """
-
-        logging.info("cleaning up transactions to ceiling of: %s", max_single_txo)
-        if not account_id:
-            account_id = await self.get_account_id()
-        address = await self.get_address()
-        retries = 0
-        while retries < 2:
-            utxos = await self.get_filtered_txo_list(
-                account_id, locked_txos=locked_txos
-            )
-            if sum([txo[1] for txo in utxos]) - FEE <= max_single_txo:
-                logging.warning("free utxos less than requested, aborting")
-                return utxos
-
-            txo_slice = utxos[16:]
-            if largest_first:
-                txo_slice = utxos[:16]
-
-            tail_amt = sum([txo[1] for txo in txo_slice])
-            chosen_utxos = txo_slice
-            if tail_amt - FEE > max_single_txo:
-                tail_amt, chosen_utxos = 0, []
-                for utxo in reversed(txo_slice):
-                    tail_amt += utxo[1]
-                    if tail_amt - FEE > max_single_txo:
-                        break
-                    chosen_utxos.append(utxo)
-
-            logging.debug("selected utxos for cleanup %s", txo_slice)
-            if len(chosen_utxos) > 1:
-                prop = await self.create_transaction(
-                    account_id,
-                    tail_amt - FEE,
-                    address,
-                    input_txo_ids=[txo[0] for txo in chosen_utxos],
-                    submit=True,
-                    comment="utxo_cleanup",
-                )
-            tx_log_id = (
-                prop.get("result", {})
-                .get("transaction_log", {})
-                .get("transaction_log_id", "")
-            )
-            if not await self.confirm_transaction(tx_log_id):
-                retries += 1
-            if tail_amt - FEE > max_single_txo:
-                return await self.get_filtered_txo_list(account_id)
-        logging.warning("Txo condensation failed too many times, aborting")
-        return await self.get_filtered_txo_list(account_id)
-
-    async def preallocate_txos(
-        self,
-        account_id: str,
-        txo_list: list[int],
-        locked_txos: Optional[dict[str, Any]] = None,
-        address: str = "",
-    ) -> dict[str, int]:
-        # pylint: disable = too-many-branches disable=too-many-locals
-        # pylint: disable = too-many-statements disable=too-many-nested-blocks
-        """
-        Pre-allocate utxos in exact amount for a list of amounts. Used when a
-        large amount of transactions need to be sent.
-
-        args:
-          account_id (str): account_id of the account to allocate the txos within
-          txo_list (list[int]): list of transaction amounts in pmob to allocate
-          locked_txos (dict[str, Any]): dict of txo_ids that should not be
-          used as inputs for txo_pre_allocation. key of this dict should be the
-          txo_id
-          address (str): address to send txo outputs to (default: main address of
-          account)
-
-        """
-        _locked_txos = {}
-        if isinstance(locked_txos, dict):
-            _locked_txos = deepcopy(locked_txos)
-        if not address:
-            address = await self.get_address(account_id=account_id)
-
-        unspent_utxos = await self.get_filtered_txo_list(
-            account_id, locked_txos=_locked_txos
-        )
-        txo_list = sorted(txo_list, reverse=True)
-        split_txos = [txo_list[i : i + 15] for i in range(0, len(txo_list), 15)]
-        free = sum([txo[1] for txo in unspent_utxos])
-        requested = sum(txo_list) + FEE * (len(txo_list) + len(split_txos) + 1)
-        free_largest = [txo[1] for txo in unspent_utxos[: len(txo_list)]]
-
-        logging.info("attempting pre_allocation of utxos: %s", txo_list)
-        if free < requested:
-            logging.warning("requested/free: %s/%s can't allocate", requested, free)
-            return {}
-        if sum(free_largest) < requested:
-            logging.info(
-                "Largest %s txos totaled %s, requested %s\n\nlargest txos: %s",
-                len(free_largest),
-                sum(free_largest),
-                requested,
-                free_largest,
-            )
-            await self.cleanup_utxos(
-                requested, account_id, locked_txos=_locked_txos, largest_first=True
-            )
-            unspent_utxos = await self.get_filtered_txo_list(
-                account_id, locked_txos=_locked_txos
-            )
-        output_txos = []
-
-        for sublist in split_txos:
-            utxo_inputs = []
-            txo_total = sum(sublist) + FEE * len(sublist)
-            logging.info("Allocating %s txos totaling %s Pmob", len(sublist), txo_total)
-            retries = 0
-            while retries <= 2:
-                for utxo in unspent_utxos:
-                    utxo_inputs.append(utxo)
-                    logging.debug("utxo_inputs are %s", utxo_inputs)
-                    if sum([utxo[1] for utxo in utxo_inputs]) >= txo_total:
-                        try:
-                            tx_prop = await self.create_transaction(
-                                account_id,
-                                addresses_and_values=[
-                                    (address, amt + FEE) for amt in sublist
-                                ],
-                                input_txo_ids=[utxo[0] for utxo in utxo_inputs],
-                                submit=True,
-                                comment="txo_allocation",
-                            )
-                        except Exception as e:  # pylint: disable=broad-except
-                            logging.warning(
-                                "aiohttp connection error %s on retry %s, retrying",
-                                e,
-                                retries,
-                            )
-                            retries += 1
-                            break
-                        tx_log = tx_prop.get("result", {}).get("transaction_log", {})
-                        if "error" in tx_prop or not isinstance(
-                            tx_log.get("output_txos"), list
-                        ):
-                            if "error" in tx_prop:
-                                logging.warning(
-                                    "full service api error on retry %s - error: %s",
-                                    retries,
-                                    tx_prop,
-                                )
-                            else:
-                                logging.warning(
-                                    "no output txos detected on retry %s, retrying",
-                                    retries,
-                                )
-                            retries += 1
-                            break
-                        confirmation = await self.confirm_transaction(
-                            tx_log.get("transacton_log_id", "")
-                        )
-                        logging.info("transaction successful: %s", confirmation)
-                        if not confirmation:
-                            logging.warning(
-                                "allocation confirmation failed on retry %s, retrying",
-                                retries,
-                            )
-                            retries += 1
-                            break
-                        output_txos.extend(
-                            [
-                                (utxo.get("txo_id_hex"), int(utxo.get("value_pmob")))
-                                for utxo in tx_prop.get("result", {})
-                                .get("transaction_log", {})
-                                .get("output_txos")
-                            ]
-                        )
-                        _locked_txos.update(dict(output_txos))
-                        logging.debug("new locked txos are: %s", _locked_txos)
-                        retries = 1000
-                        break
-                unspent_utxos = await self.get_filtered_txo_list(
-                    account_id, locked_txos=_locked_txos
-                )
-                logging.debug("new unspent_txos are %s", unspent_utxos)
-        return {utxo[0]: utxo[1] for utxo in output_txos}
-
     async def monitor_wallet(self) -> None:
         last_transactions: dict[str, dict[str, str]] = {}
-        account_id = await self.get_account_id()
+        account_id = await self.get_account()
         while True:
             latest_transactions = await self.get_transactions(account_id)
             for transaction in latest_transactions:

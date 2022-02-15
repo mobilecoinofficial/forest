@@ -54,7 +54,7 @@ class FullService:
                 async with mob_req as resp:
                     return await resp.json()
 
-    async def get_account_id(self, name: str = "", index: int = 0) -> str:
+    async def get_account(self, name: str = "", index: int = 0) -> str:
         """
         Get account id from list of accounts
 
@@ -63,7 +63,7 @@ class FullService:
           index (int): Index of account in account list
 
         Returns:
-          str: unique identifier for account
+          str: unique identifier for account or empty string if not found
         """
 
         if (name or index) or not self.account_id:
@@ -78,10 +78,15 @@ class FullService:
                 ]
                 if _id:
                     return _id[0]
+                logging.warning("no accounts named %s found", name)
                 return ""
             account_ids = accounts.get("result", {}).get("account_ids", [])
             if len(account_ids) >= index + 1:
                 self.account_id = account_ids[index]
+                return self.account_id
+            if index:
+                logging.warning("no account found at index %s", index)
+            logging.warning("no accounts registered, please import or create one")
         return self.account_id
 
     async def assign_address_for_account(
@@ -280,7 +285,7 @@ class FullService:
             account_id=account_id,
         )
 
-    async def get_account(
+    async def _get_account(
         self,
         account_id: str = "",
     ) -> dict:
