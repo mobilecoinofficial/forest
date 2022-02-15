@@ -808,7 +808,7 @@ class PayBot(Bot):
             f"Thank you for sending {float(amount_mob)} MOB ({amount_usd_cents/100} USD)",
         )
 
-    async def get_address(self, recipient: str) -> Optional[str]:
+    async def get_signalpay_address(self, recipient: str) -> Optional[str]:
         result = await self.auxin_req("getPayAddress", peer_name=recipient)
         b64_address = (
             result.blob.get("Address", {}).get("mobileCoinAddress", {}).get("address")
@@ -823,7 +823,7 @@ class PayBot(Bot):
         """
         /address
         Returns your MobileCoin address (in standard b58 format.)"""
-        address = await self.get_address(msg.source)
+        address = await self.get_signalpay_address(msg.source)
         return address or "Sorry, couldn't get your MobileCoin address"
 
     @requires_admin
@@ -919,7 +919,7 @@ class PayBot(Bot):
         params are pasted to the full-service build_transaction call.
         some useful params are comment and input_txo_ids
         """
-        address = await self.get_address(recipient)
+        address = await self.get_signalpay_address(recipient)
         account_id = await self.mobster.get_account()
         if not address:
             await self.send_message(
