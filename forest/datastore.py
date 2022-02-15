@@ -233,7 +233,7 @@ def setup_tmpdir() -> None:
         (Path(utils.ROOT_DIR) / "data").mkdir(exist_ok=True, parents=True)
     # assume we're running in the repo and our signal client is in the current directory
     client = utils.get_secret("SIGNAL_CLI_PATH") or utils.SIGNAL
-    client_path = Path(sigcli).absolute()
+    client_path = Path(client).absolute()
     if not client_path.exists():
         raise FileNotFoundError(
             f"{client_path} doesn't exist, try symlinking {utils.SIGNAL} to the current directory"
