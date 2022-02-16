@@ -1,0 +1,5 @@
+data/
+avatars/
+dev_secrets
+forest/__pycache__
+signal-cli

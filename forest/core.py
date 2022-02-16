@@ -560,7 +560,7 @@ class Bot(Signal):
         self.signal_roundtrip_latency: list[Datapoint] = []
         self.pending_response_tasks: list[asyncio.Task] = []
         self.commands = [
-            name.removeprefix("do_") for name in dir(self) if name.startswith("do_")
+            name.removeprefix("do_") for name in dir(self) if name.startswith("do_" )
         ]
         self.visible_commands = [
             name
@@ -661,10 +661,16 @@ class Bot(Signal):
         # happy part direct match
         if hasattr(self, "do_" + msg.arg0):
             return msg.arg0
+        # don't leak admin commands
+        valid_commands = self.commands if is_admin(msg) else self.visible_commands
+        print(valid_commands)
+        command_syns = {command:getattr(self.command, 'syns') for command in valid_commands if hasattr(self.command, "syns")}
+        print(command_syns)
+        for k,v in command_syns.items():
+            if hasattr(self, "do_" + v):
+                return k
         # always match in dms, only match /commands or @bot in groups
         if utils.get_secret("ENABLE_MAGIC") and (not msg.group or self.is_command(msg)):
-            # don't leak admin commands
-            valid_commands = self.commands if is_admin(msg) else self.visible_commands
             # closest match
             score, cmd = string_dist.match(msg.arg0, valid_commands)
             if score < (float(utils.get_secret("TYPO_THRESHOLD") or 0.3)):
