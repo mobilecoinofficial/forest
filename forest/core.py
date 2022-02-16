@@ -54,7 +54,7 @@ fee_pmob = int(1e12 * 0.0004)
 
 try:
     import captcha
-except:
+except ImportError:
     captcha = None
 
 
@@ -1084,7 +1084,9 @@ class QuestionBot(PayBot):
         super().__init__(bot_number)
 
     def is_first_device(self, msg: Message) -> bool:
-        return msg.blob.get("remote_address").get("device_id") == 1
+        if not msg.blob:
+            return False
+        return msg.blob.get("remote_address", {}).get("device_id", 0) == 1
 
     async def handle_message(self, message: Message) -> Response:
         if message.full_text and (
@@ -1163,10 +1165,11 @@ class QuestionBot(PayBot):
     async def ask_floatable_question(
         self,
         recipient: str,
-        question_text: str = "What's the price of gasoline where you live?",
+        question_text: Optional[str] = "What's the price of gasoline where you live?",
         require_first_device: bool = False,
     ) -> Optional[float]:
-        await self.send_message(recipient, question_text)
+        if question_text:
+            await self.send_message(recipient, question_text)
         answer_future = self.pending_answers[recipient] = asyncio.Future()
         if require_first_device:
             self.requires_first_device[recipient] = True
@@ -1180,7 +1183,7 @@ class QuestionBot(PayBot):
             if answer.full_text.lower() in self.terminal_answers:
                 return None
             if question_text and "as a decimal" in question_text:
-                return await self.ask_intable_question(recipient, question_text)
+                return await self.ask_floatable_question(recipient, question_text)
             return await self.ask_floatable_question(
                 recipient, (question_text or "") + " (as a decimal, ie 1.01 or 2,02)"
             )
@@ -1191,10 +1194,13 @@ class QuestionBot(PayBot):
     async def ask_intable_question(
         self,
         recipient: str,
-        question_text: str = "How many years old do you wish you were?",
+        question_text: Optional[str] = "How many years old do you wish you were?",
         require_first_device: bool = False,
     ) -> Optional[int]:
-        await self.send_message(recipient, question_text)
+        if require_first_device:
+            self.requires_first_device[recipient] = True
+        if question_text:
+            await self.send_message(recipient, question_text)
         answer_future = self.pending_answers[recipient] = asyncio.Future()
         answer = await answer_future
         self.pending_answers.pop(recipient)
