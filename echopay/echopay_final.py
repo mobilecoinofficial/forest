@@ -39,10 +39,10 @@ class Echopay(PayBot):
     async def set_payment_address(self) -> None:
         """Updates the Bot Signal Profile to have the correct payments address as specified by FS_ACCOUNT_NAME"""
         fs_address = await self.mobster.get_my_address()
-        
+
         ##Singal addresses require Base64 encoding, but full service uses Base58. This method handles the conversion
         signal_address = mc_util.b58_wrapper_to_b64_public_address(fs_address)
-        
+
         await self.set_profile_auxin(
             given_name="PaymeBot",
             family_name="",
@@ -52,21 +52,20 @@ class Echopay(PayBot):
 
     async def do_payme(self, message: Message) -> Response:
         """Sends payment to requestee for a certain amount"""
-        payment_amount = 0.001  ##payment amount in MOB
-
-        amount_pmob = self.to_pmob(payment_amount)
+        amount_mob = 0.001  ##payment amount in MOB
+        amount_picomob = self.to_picomob(amount_mob)
 
         password = "please"
 
         if message.arg1 == password:
-            await self.send_payment(message.source, amount_pmob)
-            return f"Of course, here's {str(payment_amount)} MOB"
+            await self.send_payment(message.source, amount_picomob)
+            return f"Of course, here's {str(amount_mob)} MOB"
 
         elif message.arg1 == None:
-            return "What's the password?"
+            return "What's the secret word?"
 
         else:
-            return "That's not the right password!!"
+            return "That's not the right secret word!!"
 
     @requires_admin
     async def do_pay_user(self, message: Message) -> Response:
@@ -84,10 +83,10 @@ class Echopay(PayBot):
         )
         return f"Sent Payment to {recipient} for {amount_mob} MOB"
 
-    async def payment_response(self, msg: Message, amount_pmob: int) -> Response:
+    async def payment_response(self, message: Message, amount_picomob: int) -> Response:
         """Triggers on Succesful payment"""
 
-        amount_mob = self.to_mob(amount_pmob)
+        amount_mob = self.to_mob(amount_picomob) ##amounts are received in picoMob, convert to Mob for readability
 
         if amount_mob > 0.002:
             return f"Wow! Thank you for your payment of {str(amount_mob)} MOB"

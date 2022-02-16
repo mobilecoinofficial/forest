@@ -39,10 +39,10 @@ class Echopay(PayBot):
     async def set_payment_address(self) -> None:
         """Updates the Bot Signal Profile to have the correct payments address as specified by FS_ACCOUNT_NAME"""
         fs_address = await self.mobster.get_my_address()
-        
+
         ##Singal addresses require Base64 encoding, but full service uses Base58. This method handles the conversion
         signal_address = mc_util.b58_wrapper_to_b64_public_address(fs_address)
-        
+
         await self.set_profile_auxin(
             given_name="PaymeBot",
             family_name="",
@@ -54,7 +54,7 @@ class Echopay(PayBot):
         """Sends payment to requestee for a certain amount"""
         amount_mob = 0.001  ##payment amount in MOB
         amount_picomob = self.to_picomob(amount_mob)
-        
+
         await self.send_payment(
             message.source, amount_picomob, confirm_tx_timeout=10, receipt_message=""
         )
