@@ -165,6 +165,7 @@ class ClanGat(PayBotPro):
         await self.displayname_lookup_cache.set(user_short, uuid)
         return user_short
 
+
     @requires_admin
     async def do_dump(self, msg: Message) -> Response:
         """dump | dump <event>
@@ -721,10 +722,10 @@ class ClanGat(PayBotPro):
                     new_owner_uuid = value
                 if user_owns == "event":
                     if value not in await self.event_owners.get(param, []):
-                        await self.event_owners.extend(param, value)
+                        await self.event_owners.extend(param, new_owner_uuid)
                 if user_owns == "list":
                     if value not in await self.list_owners.get(param, []):
-                        await self.list_owners.extend(param, value)
+                        await self.list_owners.extend(param, new_owner_uuid)
                 if user_owns:
                     await self.send_message(
                         new_owner_uuid,
