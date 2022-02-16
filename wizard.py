@@ -3,11 +3,13 @@ from contextlib import redirect_stdout
 from email.policy import default
 from fileinput import filename
 from random import choice
+from statistics import mode
 from InquirerPy import inquirer, prompt_async, base, validator, prompt
 from InquirerPy.base.control import Choice
 from InquirerPy.separator import Separator
 import rich
 from rich.console import Console
+from rich.markdown import Markdown
 from time import sleep
 import os
 import subprocess
@@ -36,10 +38,14 @@ MM88MMM ,adPPYba,  8b,dPPYba,  ,adPPYba, ,adPPYba, MM88MMM  	...........%%......
 								@.......................................
 '''
 
+rdme = open("README.md", "r")
+readme = rdme.read()
+rdme.close()
 
 style = "green"
 
 console = Console()
+
 tasks = [f"task {n}" for n in range(1, 11)]
 
 console.print(tree,style=style)
@@ -49,7 +55,8 @@ def main():
     menu = inquirer.select(
         message="Welcome to the forest setup wizard.", 
         choices=[
-            Choice(value=do_newbot, name="Make a new bot.", enabled=True), 
+            Choice(value=do_newbot, name="Make a new bot.", enabled=True),
+            Choice(value=do_docs, name="Read documentation"),
             Choice(value=settings, name="Settings"), 
             Choice(value=do_update, name="Update"),
             Choice(value=do_deps, name="Install Dependencies"),
@@ -67,6 +74,11 @@ def settings():
             Choice(value=do_rust, name="Set up Rust for Auxin", enabled=True),
             Choice(value=do_signalcli, name="Switch to Signal-Cli")],default=None).execute()
     pref()
+
+def do_docs():
+    md = Markdown(readme)
+    console.print(md)
+
 
 
 def do_auxin():
