@@ -55,7 +55,7 @@ Once you have rust set up properly you can build Auxin-cli from source.
     ./target/release/auxin-cli 
     ```
     ```bash
-    auxin-cli 0.1.8
+    auxin-cli 0.1.11
     ```
 - Finally SymLink auxin-cli to your forest directory.
     ```bash
@@ -66,7 +66,7 @@ Once you have rust set up properly you can build Auxin-cli from source.
     ./auxin-cli --version
     ```
     ```
-    auxin-cli 0.1.8
+    auxin-cli 0.1.11
     ```
 
 ### Send a message with Auxin ###
@@ -102,16 +102,37 @@ pipenv run python -m sample_bots.hellobot
 
 ## Mobile Coin Wallet and Full Service ##
 
-Now for the payments enabled part of payment-enabled Signal bot. 
+Now for the payments enabled part of payments-enabled Signal bot. Signal Pay uses a lightweight version of the Mobilecoin wallet called Fog. For running a bot however, we want to use the full service version of the wallet, appropriately named Full Service. The easiest way to create and use a Mobilecoin Wallet is with the Desktop Wallet which can be installed here.
+
+Running the Mobilecoin Desktop Wallet creates an instance of Full Service. Full Service is, at its core, a client that talks to Mobilecoin consensus nodes and allows you to submit transactions and receive transactions. The Desktop Wallet uses Full Service to interact with the Mobilecoin Blockchain. You can use this instance of Full Service to create additional accounts.
+
+Forest bots interact with a Full Service instance through HTTP. When you start the desktop wallet, it opens a socket on `http://127.0.0.1:9090/wallet`. You can put this URL in your dev_secrets file and the bot will be able to communicate with your wallet, meaning it can send and receive MOB and create separate accounts. If you don't want to use your main account for your bot, and in fact we recommend you don't, you can create a separate account in the desktop wallet and use that. That's what we'll be doing in this tutorial. If you want to host your bot on a server or cloud instance, you must enact additional security to ensure only authorised requests are being made to full-service. We'll explain one way to do that at the end.
+
+For the purposes of the tutorial, do the following. Open the Desktop Wallet and create a new account called `paymebot`.
+
+<img width=500px src="images/newaccount.png">
+
+Once you've done that, you can put your Full Service URL and Full Service account name in your dev_secrets file:
+
+``` bash
+NO_MEMFS=1
+ROOT=.
+SIGNAL=auxin
+ADMIN=+15551111111
+BOT_NUMBER=+15551234567
+NO_DOWNLOAD=1
+FULL_SERVICE_URL=http://127.0.0.1:9090/wallet
+FS_ACCOUNT_NAME=paymebot
+
+```
+
+With these, you're ready to run Echopay
+
+## Echopay aka PayMeBot ##
 
 
-## Setting up a New Wallet ##
 
-## Use the Mobster To Interact with Full Service ##
-
-Running the Mobilecoin Wallet creates a Full Service instance. A Full Service Instance is a Client that talks to Mobilecoin consensus nodes and allows you to submit transactions and receive transactions. The Desktop Wallet uses Full Service to interact with the Mobilecoin Blockchain. You can use this instance of Full Service to create additional accounts and wallets. An Account for the purposes of Full Service is a collection of Wallets. 
-
-Your Wallet is a hash on the blockchain that's tracked on the blockchain. One's wallet is represented by a mnemonic phrase that's created along with the wallet. Full Service also allows you to manage imported wallets, you can import a wallet just by knowing it's entropy. Therefore be very careful with your entropy. Your local instance of full service stores information on a local database, with your entropy. Be very guarded with your full service instance. This is why we recommend using an extra security layer such as certificate pinning to authenticate requests to your full service instance.
+Your account is a hash on that's tracked on Mobilecoin's blockchain. One's account is represented by a mnemonic phrase that's created along with the account. Full Service also allows you to manage imported account, you can import a wallet just by knowing it's entropy (the 12 word recovery phrase given at creation). Therefore be very careful with your entropy. Your local instance of full service stores information on a local database, with your entropy. Be very guarded with your Full Service instance. This is why you need additional security measures when running the wallet on a shared device or a server. Anyone who can make HTTP requests to full service has complete control to the accounts stored.
 
 You never lose your wallet if you lose your full service instance, but you would lose your transaction history. Full service only keeps transaction history from the point upon which a wallet is created or imported.
 
