@@ -136,19 +136,45 @@ class ClanGat(PayBotPro):
         }
         super().__init__()
 
+    def get_recipients(self) -> list[dict[str, str]]:
+        """Returns a list of all known recipients."""
+        return [
+            r
+            for r in json.loads(
+                open(f"data/{self.bot_number}.d/recipients-store").read()
+            ).get("recipients")
+        ]
+
+    def get_uuid_by_phone(self, phonenumber) -> Optional[str]:
+        """Queries the recipients-store file for a UUID, provided a phone number."""
+        if phonenumber.startswith("+"):
+            maybe_recipient = [
+                recipient
+                for recipient in self.get_recipients()
+                if phonenumber == recipient.get("number")
+            ]
+            if maybe_recipient:
+                return maybe_recipient[0]["uuid"]
+        return None
+
     async def get_displayname(self, uuid: str) -> str:
         """Retrieves a display name from a UUID, stores in the cache, handles error conditions."""
         uuid = uuid.strip("\u2068\u2069")
+        # displayname provided, not uuid or phone
+        if uuid.count("-") != 4 and not uuid.startswith("+"):
+            uuid = await self.displayname_lookup_cache.get(uuid, uuid)
+        # phone number, not uuid provided
+        if uuid.startswith("+"):
+            uuid = self.get_uuid_by_phone(uuid) or uuid
         maybe_displayname = await self.displayname_cache.get(uuid)
         if maybe_displayname:
             return maybe_displayname
         maybe_user_profile = await self.profile_cache.get(uuid)
-        if not maybe_user_profile:
+        # if no luck, but we have a valid uuid
+        if not maybe_user_profile and uuid.count("-") == 4:
             try:
                 maybe_user_profile = (
-                    await self.signal_rpc_request(
-                        "getprofile", peer_name=uuid.strip("\u2068\u2069")
-                    )
+                    await self.signal_rpc_request("getprofile", peer_name=uuid)
                 ).blob
                 user_given = maybe_user_profile.get("givenName", "givenName")
                 await self.profile_cache.set(uuid, maybe_user_profile)
@@ -157,14 +183,13 @@ class ClanGat(PayBotPro):
                 user_given = "[error]"
         else:
             user_given = maybe_user_profile.get("givenName", "")
-        if "+" not in uuid and "-" in uuid:
+        if uuid and ("+" not in uuid and "-" in uuid):
             user_short = user_given + f"_{uuid.split('-')[1]}"
         else:
             user_short = user_given + uuid
         await self.displayname_cache.set(uuid, user_short)
         await self.displayname_lookup_cache.set(user_short, uuid)
         return user_short
-
 
     @requires_admin
     async def do_dump(self, msg: Message) -> Response:
@@ -352,6 +377,10 @@ class ClanGat(PayBotPro):
             msg.uuid,
             f"about to send {total_mmob}mmob to {len(filtered_send_list)} folks on {list_}",
         )
+        await self.send_message(
+            msg.uuid,
+            f"Using this for the memo:\n\n > {message}",
+        )
         if not await self.ask_yesno_question(msg.uuid):
             return "OK, canceling"
         async with self.pay_lock:
@@ -378,23 +407,26 @@ class ClanGat(PayBotPro):
             async def do_pay_logging_success(
                 target, amount_mmob, message="", input_txo_ids=[]
             ):
-                result = await self.send_payment(
-                    recipient=target,
-                    amount_pmob=amount_mmob * 1_000_000_000,
-                    receipt_message=message or "",
-                    input_txo_ids=input_txo_ids,
-                )
-                # if we didn't get a result indicating success
-                if not result or (result and result.status == "tx_status_failed"):
-                    # stash as failed
+                try:
+                    result = await self.send_payment(
+                        recipient=target,
+                        amount_pmob=amount_mmob * 1_000_000_000,
+                        receipt_message=message or "",
+                        input_txo_ids=input_txo_ids,
+                    )
+                    # if we didn't get a result indicating success
+                    if not result or (result and result.status == "tx_status_failed"):
+                        # stash as failed
+                        return None
+                    else:
+                        # persist user as successfully paid
+                        await self.successful_pays.extend(save_key, target)
+                        await self.payout_balance_mmob.decrement(list_, amount_mmob)
+                        await self.send_message(target, "I've sent you a payment!")
+                    await asyncio.sleep(0.1)
+                    return result
+                except Exception as e:
                     return None
-                else:
-                    # persist user as successfully paid
-                    await self.successful_pays.extend(save_key, target)
-                    await self.payout_balance_mmob.decrement(list_, amount_mmob)
-                    await self.send_message(target, "I've sent you a payment!")
-                await asyncio.sleep(0.01)
-                return result
 
             results = await asyncio.gather(
                 *[
