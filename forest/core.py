@@ -1243,7 +1243,7 @@ class QuestionBot(PayBot):
         else:
             # I really don't like Python's random module, but this could be cross-platform some other way
             offset = int.from_bytes(open("/dev/urandom", "rb").read(1), "little") % 10
-            challenge = "What's the sum of one and {offset}?"
+            challenge = f"What's the sum of one and {offset}?"
             answer = offset + 1
             await self.send_message(msg.uuid, challenge)
         # we already asked the question, either with an attachment, or using the reduced-scope challenge
