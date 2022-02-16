@@ -1080,6 +1080,7 @@ class QuestionBot(PayBot):
         self.requires_first_device: dict[str, bool] = {}
         self.terminal_answers = "stop quit exit break cancel".split()
         self.failed_user_challenges: dict[str, int] = {}
+        self.FIRST_DEVICE_PLEASE = "Please answer from your phone or primary device!"
         super().__init__(bot_number)
 
     def is_first_device(self, msg: Message) -> bool:
@@ -1149,7 +1150,7 @@ class QuestionBot(PayBot):
         self,
         recipient: str,
         question_text: str = "What's your favourite colour?",
-        require_first_device=False,
+        require_first_device: bool = False,
     ) -> str:
         await self.send_message(recipient, question_text)
         answer_future = self.pending_answers[recipient] = asyncio.Future()
@@ -1163,7 +1164,7 @@ class QuestionBot(PayBot):
         self,
         recipient: str,
         question_text: str = "What's the price of gasoline where you live?",
-        require_first_device=False,
+        require_first_device: bool = False,
     ) -> Optional[float]:
         await self.send_message(recipient, question_text)
         answer_future = self.pending_answers[recipient] = asyncio.Future()
@@ -1172,7 +1173,7 @@ class QuestionBot(PayBot):
         answer = await answer_future
         self.pending_answers.pop(recipient)
         answer_text = answer.full_text
-        if not (
+        if answer_text and not (
             answer_text.replace(".", "1", 1).isnumeric()
             or answer_text.replace(",", "1", 1).isnumeric()
         ):
@@ -1183,19 +1184,21 @@ class QuestionBot(PayBot):
             return await self.ask_floatable_question(
                 recipient, (question_text or "") + " (as a decimal, ie 1.01 or 2,02)"
             )
-        return float(answer.full_text.replace(",", ".", 1))
+        if answer_text:
+            return float(answer.full_text.replace(",", ".", 1))
+        return None
 
     async def ask_intable_question(
         self,
         recipient: str,
         question_text: str = "How many years old do you wish you were?",
-        require_first_device=False,
+        require_first_device: bool = False,
     ) -> Optional[int]:
         await self.send_message(recipient, question_text)
         answer_future = self.pending_answers[recipient] = asyncio.Future()
         answer = await answer_future
         self.pending_answers.pop(recipient)
-        if not answer.full_text.isnumeric():
+        if answer.full_text and not answer.full_text.isnumeric():
             if answer.full_text.lower() in self.terminal_answers:
                 return None
             if question_text and "as a whole number" in question_text:
@@ -1203,13 +1206,15 @@ class QuestionBot(PayBot):
             return await self.ask_intable_question(
                 recipient, (question_text or "") + " (as a whole number, ie '1' or '2')"
             )
-        return int(answer.full_text)
+        if answer.full_text:
+            return int(answer.full_text)
+        return None
 
     async def ask_yesno_question(
         self,
         recipient: str,
         question_text: str = "Are you sure? yes/no",
-        require_first_device=False,
+        require_first_device: bool = False,
     ) -> bool:
         self.pending_confirmations[recipient] = asyncio.Future()
         if require_first_device:
