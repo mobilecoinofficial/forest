@@ -511,6 +511,7 @@ class Signal:
             pipe.write(json.dumps(command).encode() + b"\n")
             await pipe.drain()
 
+
 def is_admin(msg: Message) -> bool:
     return (
         msg.source == utils.get_secret("ADMIN")
@@ -901,7 +902,7 @@ class PayBot(Bot):
         """Pass a request through to full-service, but send a message to an admin in case of error"""
         result = await self.mobster.req_(method, **params)
         if "error" in result:
-            await self.admin(f"{params}\n{result}")
+            await self.admin(f"{result}\nReturned by:\n\n{str(params)[:1024]}...")
         return result
 
     async def fs_receipt_to_payment_message_content(
@@ -995,11 +996,20 @@ class PayBot(Bot):
                 account_id=account_id,
             )
         elif not prop or not tx_id:
-            tx_result = {}
+            tx_result = {"error": {"message": "InternalError"}}
         else:
             # if you omit account_id, tx doesn't get logged. Good for privacy,
             # but transactions can't be confirmed by the sending party (you)!
             tx_result = await self.mob_request("submit_transaction", tx_proposal=prop)
+        # {'method': 'submit_transaction', 'error': {'code': -32603, 'message': 'InternalError', 'data': {'server_error': 'Database(Diesel(DatabaseError(__Unknown, "database is locked")))', 'details': 'Error interacting with the database: Diesel Error: database is locked'}}, 'jsonrpc': '2.0', 'id': 1}
+        if not tx_result or (
+            tx_result.get("error")
+            and "InternalError" in tx_result.get("error", {}).get("message", "")
+        ):
+            return None
+            # logging.info("InternalError occurred, retrying in 60s")
+            # await asyncio.sleep(1)
+            # tx_result = await self.mob_request("submit_transaction", tx_proposal=prop)
 
         if not isinstance(tx_result, dict) or not tx_result.get("result"):
             # avoid sending tx receipt if there's a tx submission error
@@ -1038,8 +1048,6 @@ class PayBot(Bot):
                         recipient,
                         tx_status.get("result"),
                     )
-                    if receipt_message:
-                        await self.send_message(recipient, receipt_message)
                     break
                 if status == "tx_status_failed":
                     logging.warning(
@@ -1159,7 +1167,7 @@ async def send_message_handler(request: web.Request) -> web.Response:
     rpc_id = await bot.send_message(
         account, msg_data, endsession=request.query.get("endsession")
     )
-    resp = await bot.wait_resp(rpc_id=rpc_id)
+    resp = await bot.wait_for_response(rpc_id=rpc_id)
     return web.json_response({"status": "sent", "sent_ts": resp.timestamp})
 
 
