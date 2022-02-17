@@ -190,7 +190,7 @@ class Mobster:
 
     async def get_my_address(self) -> str:
         acc_id = await self.get_account()
-        res= await self.req({"method": "get_all_accounts"})
+        res = await self.req({"method": "get_all_accounts"})
         return res["result"]["account_map"][acc_id]["main_address"]
 
     async def get_account(self, account_name: Optional[str] = None) -> str:

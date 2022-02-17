@@ -313,7 +313,7 @@ class MobFriend(QuestionBot):
             * the memo "Pay me a MOB!",
             * a 1MOB value,
             * and the address of the requester's Signal account."""
-        address = await self.get_address(msg.source)
+        address = await self.get_signalpay_address(msg.source)
         if not address:
             return "Unable to retrieve your MobileCoin address!"
         payload = mc_util.printable_pb2.PrintableWrapper()
@@ -437,7 +437,7 @@ class MobFriend(QuestionBot):
                 "Who should this pay, you or someone else?\nYou can reply 'me' or 'else'.",
             )
             if target.lower() == "me":
-                msg.arg1 = await self.get_address(msg.source)
+                msg.arg1 = await self.get_signalpay_address(msg.source)
             else:
                 msg.arg1 = await self.ask_freeform_question(
                     msg.source, "What MobileCoin address should this request pay?"

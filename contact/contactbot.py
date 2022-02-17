@@ -219,7 +219,7 @@ class Forest(PayBot):
         mob_price_exact = await self.mobster.create_invoice(
             self.usd_price, message.source, "/register"
         )
-        address = await self.mobster.get_address()
+        address = await self.mobster.get_my_address()
         return [
             f"The current price for a SMS number is {mob_price_exact}MOB/month. If you would like to continue, please send exactly...",
             f"{mob_price_exact}",
@@ -308,7 +308,7 @@ class Forest(PayBot):
     async def start_process(self) -> None:
         """Make sure full-service has a wallet before starting signal"""
         try:
-            await self.mobster.get_address()
+            await self.mobster.get_my_address()
         except IndexError:
             await self.mobster.import_account()
         if utils.get_secret("MIGRATE"):
