@@ -567,6 +567,20 @@ class Bot(Signal):
             for name in self.commands
             if not hasattr(getattr(self, f"do_{name}"), "hide")
         ]
+ 
+        self.command_syns = {}
+        for short_cmd in self.commands:
+            command = "do_" + short_cmd
+            method = None
+            if hasattr(self, command):
+                method = getattr(self, command)
+            if hasattr(super, command):
+                method = getattr(self, command)
+            if method is not None:
+                if hasattr(method, 'syns'):
+                    syns = getattr(method, 'syns')
+                    self.command_syns[short_cmd] = syns
+
         super().__init__(bot_number)
         self.restart_task = asyncio.create_task(
             self.start_process()
@@ -666,23 +680,10 @@ class Bot(Signal):
         valid_commands = self.commands if is_admin(msg) else self.visible_commands
         print(valid_commands)
 
-        command_syns = {}
-        for short_cmd in valid_commands:
-            command = "do_" + short_cmd
-            method = None
-            if hasattr(self, command):
-                method = getattr(self, command)
-                print(method)
-            if hasattr(super, command):
-                method = getattr(self, command)
-                print(method)
-            if method is not None:
-                if hasattr(method, 'syns'):
-                    syns = getattr(method, 'syns')
-                    command_syns[short_cmd] = syns
-        for k,v in command_syns.items():
-            if msg.arg0 in v:
-                return k
+        for k,v in self.command_syns.items():
+            if k in valid_commands:
+                if msg.arg0 in v:
+                    return k
 
         # always match in dms, only match /commands or @bot in groups
         if utils.get_secret("ENABLE_MAGIC") and (not msg.group or self.is_command(msg)):
