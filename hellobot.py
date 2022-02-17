@@ -10,6 +10,9 @@ class HelloBot(Bot):
         return "Hello, world!"
     do_hello.syns = ['hello', 'hi', 'whatsup' ]
 
+    async def do_goodbye(self, _: Message) -> str:
+        return "Goodbye, cruel world!"
+    do_goodbye.syns = ['bye', 'goodby', 'later' ]
 
 if __name__ == "__main__":
     run_bot(HelloBot)

@@ -661,14 +661,29 @@ class Bot(Signal):
         # happy part direct match
         if hasattr(self, "do_" + msg.arg0):
             return msg.arg0
+
         # don't leak admin commands
         valid_commands = self.commands if is_admin(msg) else self.visible_commands
         print(valid_commands)
-        command_syns = {command:getattr(self.command, 'syns') for command in valid_commands if hasattr(self.command, "syns")}
-        print(command_syns)
+
+        command_syns = {}
+        for short_cmd in valid_commands:
+            command = "do_" + short_cmd
+            method = None
+            if hasattr(self, command):
+                method = getattr(self, command)
+                print(method)
+            if hasattr(super, command):
+                method = getattr(self, command)
+                print(method)
+            if method is not None:
+                if hasattr(method, 'syns'):
+                    syns = getattr(method, 'syns')
+                    command_syns[short_cmd] = syns
         for k,v in command_syns.items():
-            if hasattr(self, "do_" + v):
+            if msg.arg0 in v:
                 return k
+
         # always match in dms, only match /commands or @bot in groups
         if utils.get_secret("ENABLE_MAGIC") and (not msg.group or self.is_command(msg)):
             # closest match
