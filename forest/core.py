@@ -801,12 +801,10 @@ class PayBot(Bot):
 
     async def payment_response(self, msg: Message, amount_pmob: int) -> Response:
         """Triggers on successful payment"""
+        del msg  # shush linter
         amount_mob = float(mc_util.pmob2mob(amount_pmob))
-        amount_usd_cents = round(amount_mob * await self.mobster.get_rate() * 100)
-
-        return (
-            f"Thank you for sending {float(amount_mob)} MOB ({amount_usd_cents/100} USD)",
-        )
+        amount_usd = round(await self.mobster.pmob2usd(amount_pmob), 2)
+        return f"Thank you for sending {float(amount_mob)} MOB ({amount_usd} USD)"
 
     async def get_signalpay_address(self, recipient: str) -> Optional[str]:
         result = await self.auxin_req("getPayAddress", peer_name=recipient)
@@ -942,20 +940,18 @@ class PayBot(Bot):
         # wants it private.
         if confirm_tx_timeout:
             # putting the account_id into the request logs it to full service,
-            tx_result = await self.mob_request(
+            tx_result: Optional[dict] = await self.mob_request(
                 "submit_transaction",
                 tx_proposal=prop,
                 comment=params.get("comment", ""),
                 account_id=account_id,
             )
-
-        elif not prop or not tx_id:
-            tx_result = None
-        else:
+        elif prop and tx_id:
             # if you omit account_id, tx doesn't get logged. Good for privacy,
             # but transactions can't be confirmed by the sending party (you)!
             tx_result = await self.mob_request("submit_transaction", tx_proposal=prop)
-
+        else:
+            tx_result = None
         if not isinstance(tx_result, dict) or not tx_result.get("result"):
             # avoid sending tx receipt if there's a tx submission error
             # and send error message back to tx sender
