@@ -19,6 +19,7 @@ import traceback
 import urllib
 import uuid
 import glob
+import secrets
 import functools
 
 from asyncio import Queue, StreamReader, StreamWriter
@@ -26,7 +27,7 @@ from asyncio.subprocess import PIPE
 from decimal import Decimal
 from functools import wraps
 from textwrap import dedent
-from typing import Any, Callable, Optional, Type, Union, Awaitable
+from typing import Any, Callable, Optional, Type, Union, Awaitable, Tuple
 
 import aiohttp
 import termcolor
@@ -51,6 +52,11 @@ roundtrip_summary = Summary("roundtrip_s", "Roundtrip message response time")
 MessageParser = AuxinMessage if utils.AUXIN else StdioMessage
 logging.info("Using message parser: %s", MessageParser)
 fee_pmob = int(1e12 * 0.0004)
+
+try:
+    import captcha
+except ImportError:
+    captcha = None
 
 
 def rpc(
@@ -1068,20 +1074,48 @@ class PayBot(Bot):
         return await resp_fut
 
 
+def get_source_or_uuid_from_dict(
+    msg: Message, dict_: dict[str, Any]
+) -> Tuple[bool, Any]:
+    """A common pattern is to store intermediate state for individual users as a dictionary.
+    Users can be referred to by some combination of source (a phone number) or uuid (underlying user ID)
+    This abstracts over the possibility space, returning a boolean indicator of whether the sender of a Message
+    is referenced in a dict, and the value pointed at (if any)."""
+    return (
+        (msg.source in dict_ or msg.uuid in dict_),
+        dict_.get(msg.uuid) or dict_.get(msg.source),
+    )
+
+
+def is_first_device(msg: Message) -> bool:
+    if not msg or not msg.blob:
+        return False
+    return msg.blob.get("remote_address", {}).get("device_id", 0) == 1
+
+
 class QuestionBot(PayBot):
     def __init__(self, bot_number: Optional[str] = None) -> None:
         self.pending_confirmations: dict[str, asyncio.Future[bool]] = {}
         self.pending_answers: dict[str, asyncio.Future[Message]] = {}
+        self.requires_first_device: dict[str, bool] = {}
+        self.failed_user_challenges: dict[str, int] = {}
+        self.TERMINAL_ANSWERS = "stop quit exit break cancel abort".split()
+        self.FIRST_DEVICE_PLEASE = "Please answer from your phone or primary device!"
+        self.UNEXPECTED_ANSWER = "Did I ask you a question?"
         super().__init__(bot_number)
 
     async def handle_message(self, message: Message) -> Response:
-        if message.full_text and (
-            message.uuid in self.pending_answers
-            or message.source in self.pending_answers
-        ):
-            probably_future = self.pending_answers.get(
-                message.uuid
-            ) or self.pending_answers.get(message.source)
+        pending_answer, probably_future = get_source_or_uuid_from_dict(
+            message, self.pending_answers
+        )
+        requires_first_device, _ = get_source_or_uuid_from_dict(
+            message, self.requires_first_device
+        )
+        if message.full_text and pending_answer:
+            if requires_first_device and not is_first_device(message):
+                return self.FIRST_DEVICE_PLEASE
+            self.requires_first_device.pop(message.source, None)
+            self.requires_first_device.pop(message.uuid, None)
             if probably_future:
                 probably_future.set_result(message)
             return
@@ -1090,14 +1124,14 @@ class QuestionBot(PayBot):
     @hide
     async def do_yes(self, msg: Message) -> Response:
         """Handles 'yes' in response to a pending_confirmation."""
-        if (
-            msg.uuid not in self.pending_confirmations
-            and msg.source not in self.pending_confirmations
-        ):
-            return "Did I ask you a question?"
-        question = self.pending_confirmations.get(
-            msg.uuid
-        ) or self.pending_confirmations.get(msg.source)
+        _, question = get_source_or_uuid_from_dict(msg, self.pending_confirmations)
+        requires_first_device, _ = get_source_or_uuid_from_dict(
+            msg, self.requires_first_device
+        )
+        if not question:
+            return self.UNEXPECTED_ANSWER
+        if requires_first_device and not is_first_device(msg):
+            return self.FIRST_DEVICE_PLEASE
         if question:
             question.set_result(True)
         return None
@@ -1105,35 +1139,133 @@ class QuestionBot(PayBot):
     @hide
     async def do_no(self, msg: Message) -> Response:
         """Handles 'no' in response to a pending_confirmation."""
-        if (
-            msg.uuid not in self.pending_confirmations
-            and msg.source not in self.pending_confirmations
-        ):
-            return "Did I ask you a question?"
-        question = self.pending_confirmations.get(
-            msg.uuid
-        ) or self.pending_confirmations.get(msg.source)
+        _, question = get_source_or_uuid_from_dict(msg, self.pending_confirmations)
+        requires_first_device, _ = get_source_or_uuid_from_dict(
+            msg, self.requires_first_device
+        )
+        if not question:
+            return self.UNEXPECTED_ANSWER
+        if not requires_first_device and not is_first_device(msg):
+            return self.FIRST_DEVICE_PLEASE
         if question:
             question.set_result(False)
         return None
 
     async def ask_freeform_question(
-        self, recipient: str, question_text: str = "What's your favourite colour?"
+        self,
+        recipient: str,
+        question_text: str = "What's your favourite colour?",
+        require_first_device: bool = False,
     ) -> str:
+        """Asks a question fulfilled by a sentence or short answer."""
         await self.send_message(recipient, question_text)
         answer_future = self.pending_answers[recipient] = asyncio.Future()
+        if require_first_device:
+            self.requires_first_device[recipient] = True
         answer = await answer_future
         self.pending_answers.pop(recipient)
         return answer.full_text or ""
 
+    async def ask_floatable_question(
+        self,
+        recipient: str,
+        question_text: Optional[str] = "What's the price of gasoline where you live?",
+        require_first_device: bool = False,
+    ) -> Optional[float]:
+        """Asks a question answered with a floating point or decimal number.
+        Asks user clarifying questions if an invalid number is provided.
+        Returns None if user says any of the terminal answers."""
+        if question_text:
+            await self.send_message(recipient, question_text)
+        answer_future = self.pending_answers[recipient] = asyncio.Future()
+        if require_first_device:
+            self.requires_first_device[recipient] = True
+        answer = await answer_future
+        self.pending_answers.pop(recipient)
+        answer_text = answer.full_text
+        if answer_text and not (
+            answer_text.replace(".", "1", 1).isnumeric()
+            or answer_text.replace(",", "1", 1).isnumeric()
+        ):
+            if answer.full_text.lower() in self.TERMINAL_ANSWERS:
+                return None
+            if question_text and "as a decimal" in question_text:
+                return await self.ask_floatable_question(recipient, question_text)
+            return await self.ask_floatable_question(
+                recipient, (question_text or "") + " (as a decimal, ie 1.01 or 2,02)"
+            )
+        if answer_text:
+            return float(answer.full_text.replace(",", ".", 1))
+        return None
+
+    async def ask_intable_question(
+        self,
+        recipient: str,
+        question_text: Optional[str] = "How many years old do you wish you were?",
+        require_first_device: bool = False,
+    ) -> Optional[int]:
+        """Asks a question answered with an integer or whole number.
+        Asks user clarifying questions if an invalid number is provided.
+        Returns None if user says any of the terminal answers."""
+        if require_first_device:
+            self.requires_first_device[recipient] = True
+        if question_text:
+            await self.send_message(recipient, question_text)
+        answer_future = self.pending_answers[recipient] = asyncio.Future()
+        answer = await answer_future
+        self.pending_answers.pop(recipient)
+        if answer.full_text and not answer.full_text.isnumeric():
+            if answer.full_text.lower() in self.TERMINAL_ANSWERS:
+                return None
+            if question_text and "as a whole number" in question_text:
+                return await self.ask_intable_question(recipient, question_text)
+            return await self.ask_intable_question(
+                recipient,
+                (question_text or "") + " (as a whole number, ie '1' or '2000')",
+            )
+        if answer.full_text:
+            return int(answer.full_text)
+        return None
+
     async def ask_yesno_question(
-        self, recipient: str, question_text: str = "Are you sure? yes/no"
+        self,
+        recipient: str,
+        question_text: str = "Are you sure? yes/no",
+        require_first_device: bool = False,
     ) -> bool:
         self.pending_confirmations[recipient] = asyncio.Future()
+        if require_first_device:
+            self.requires_first_device[recipient] = True
         await self.send_message(recipient, question_text)
         result = await self.pending_confirmations[recipient]
         self.pending_confirmations.pop(recipient)
         return result
+
+    async def do_challenge(self, msg: Message) -> Response:
+        """Challenges a user to do a simple math problem, optionally provided as an image to increase attacker complexity."""
+        # the captcha module delivers graphical challenges of the same format
+        if captcha is not None:
+            challenge, answer = captcha.get_challenge_and_answer()
+            await self.send_message(
+                msg.uuid,
+                "Please answer this arithmetic problem to prove you're (probably) not a bot!",
+                attachments=[challenge],
+            )
+        else:
+            offset = secrets.randbelow(20)
+            challenge = f"What's the sum of one and {offset}?"
+            answer = offset + 1
+            await self.send_message(msg.uuid, challenge)
+        # we already asked the question, either with an attachment, or using the reduced-scope challenge
+        # so question here is None (waits for answer)
+        maybe_answer = await self.ask_intable_question(msg.uuid, None)
+        if maybe_answer != answer:
+            # handles empty case, but has no logic as to what to do if the user exceeds a threshold
+            self.failed_user_challenges[msg.uuid] = (
+                self.failed_user_challenges.get(msg.uuid, 0) + 1
+            )
+            return await self.do_challenge(msg)
+        return "Thanks for helping protect our community!"
 
 
 async def no_get(request: web.Request) -> web.Response:
