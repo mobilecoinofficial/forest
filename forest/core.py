@@ -560,14 +560,14 @@ class Bot(Signal):
         self.signal_roundtrip_latency: list[Datapoint] = []
         self.pending_response_tasks: list[asyncio.Task] = []
         self.commands = [
-            name.removeprefix("do_") for name in dir(self) if name.startswith("do_" )
+            name.removeprefix("do_") for name in dir(self) if name.startswith("do_")
         ]
         self.visible_commands = [
             name
             for name in self.commands
             if not hasattr(getattr(self, f"do_{name}"), "hide")
         ]
- 
+
         self.command_syns = {}
         for short_cmd in self.commands:
             command = "do_" + short_cmd
@@ -577,8 +577,8 @@ class Bot(Signal):
             if hasattr(super, command):
                 method = getattr(self, command)
             if method is not None:
-                if hasattr(method, 'syns'):
-                    syns = getattr(method, 'syns')
+                if hasattr(method, "syns"):
+                    syns = getattr(method, "syns")
                     self.command_syns[short_cmd] = syns
 
         super().__init__(bot_number)
@@ -680,7 +680,7 @@ class Bot(Signal):
         valid_commands = self.commands if is_admin(msg) else self.visible_commands
         print(valid_commands)
 
-        for k,v in self.command_syns.items():
+        for k, v in self.command_syns.items():
             if k in valid_commands:
                 if msg.arg0 in v:
                     return k
