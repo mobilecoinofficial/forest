@@ -19,6 +19,7 @@ import traceback
 import urllib
 import uuid
 import glob
+import secrets
 import functools
 
 from asyncio import Queue, StreamReader, StreamWriter
@@ -26,7 +27,7 @@ from asyncio.subprocess import PIPE
 from decimal import Decimal
 from functools import wraps
 from textwrap import dedent
-from typing import Any, Callable, Optional, Type, Union, Awaitable
+from typing import Any, Callable, Optional, Type, Union, Awaitable, Tuple
 
 import aiohttp
 import termcolor
@@ -1073,37 +1074,48 @@ class PayBot(Bot):
         return await resp_fut
 
 
+def get_source_or_uuid_from_dict(
+    msg: Message, dict_: dict[str, Any]
+) -> Tuple[bool, Any]:
+    """A common pattern is to store intermediate state for individual users as a dictionary.
+    Users can be referred to by some combination of source (a phone number) or uuid (underlying user ID)
+    This abstracts over the possibility space, returning a boolean indicator of whether the sender of a Message
+    is referenced in a dict, and the value pointed at (if any)."""
+    return (
+        (msg.source in dict_ or msg.uuid in dict_),
+        dict_.get(msg.uuid) or dict_.get(msg.source),
+    )
+
+
+def is_first_device(msg: Message) -> bool:
+    if not msg or not msg.blob:
+        return False
+    return msg.blob.get("remote_address", {}).get("device_id", 0) == 1
+
+
 class QuestionBot(PayBot):
     def __init__(self, bot_number: Optional[str] = None) -> None:
         self.pending_confirmations: dict[str, asyncio.Future[bool]] = {}
         self.pending_answers: dict[str, asyncio.Future[Message]] = {}
         self.requires_first_device: dict[str, bool] = {}
-        self.terminal_answers = "stop quit exit break cancel".split()
         self.failed_user_challenges: dict[str, int] = {}
+        self.TERMINAL_ANSWERS = "stop quit exit break cancel abort".split()
         self.FIRST_DEVICE_PLEASE = "Please answer from your phone or primary device!"
+        self.UNEXPECTED_ANSWER = "Did I ask you a question?"
         super().__init__(bot_number)
 
-    def is_first_device(self, msg: Message) -> bool:
-        if not msg.blob:
-            return False
-        return msg.blob.get("remote_address", {}).get("device_id", 0) == 1
-
     async def handle_message(self, message: Message) -> Response:
-        if message.full_text and (
-            message.uuid in self.pending_answers
-            or message.source in self.pending_answers
-        ):
-            probably_future = self.pending_answers.get(
-                message.uuid
-            ) or self.pending_answers.get(message.source)
-            if (
-                message.uuid in self.requires_first_device
-                or message.source in self.requires_first_device
-            ):
-                if not self.is_first_device(message):
-                    return self.FIRST_DEVICE_PLEASE
-                self.requires_first_device.pop(message.source, None)
-                self.requires_first_device.pop(message.uuid, None)
+        pending_answer, probably_future = get_source_or_uuid_from_dict(
+            message, self.pending_answers
+        )
+        requires_first_device, _ = get_source_or_uuid_from_dict(
+            msg, self.requires_first_device
+        )
+        if message.full_text and pending_answer:
+            if requires_first_device and not is_first_device(message):
+                return self.FIRST_DEVICE_PLEASE
+            self.requires_first_device.pop(message.source, None)
+            self.requires_first_device.pop(message.uuid, None)
             if probably_future:
                 probably_future.set_result(message)
             return
@@ -1112,20 +1124,16 @@ class QuestionBot(PayBot):
     @hide
     async def do_yes(self, msg: Message) -> Response:
         """Handles 'yes' in response to a pending_confirmation."""
-        question = self.pending_confirmations.get(
-            msg.uuid
-        ) or self.pending_confirmations.get(msg.source)
+        pending_answer, question = get_source_or_uuid_from_dict(
+            msg, self.pending_confirmations
+        )
+        requires_first_device, _ = get_source_or_uuid_from_dict(
+            msg, self.requires_first_device
+        )
         if not question:
-            return "Did I ask you a question?"
-        question = self.pending_confirmations.get(
-            msg.uuid
-        ) or self.pending_confirmations.get(msg.source)
-        if (
-            msg.uuid in self.requires_first_device
-            or msg.source in self.requires_first_device
-        ):
-            if not self.is_first_device(msg):
-                return self.FIRST_DEVICE_PLEASE
+            return self.UNEXPECTED_ANSWER
+        if requires_first_device and not is_first_device(msg):
+            return self.FIRST_DEVICE_PLEASE
         if question:
             question.set_result(True)
         return None
@@ -1133,17 +1141,16 @@ class QuestionBot(PayBot):
     @hide
     async def do_no(self, msg: Message) -> Response:
         """Handles 'no' in response to a pending_confirmation."""
-        question = self.pending_confirmations.get(
-            msg.uuid
-        ) or self.pending_confirmations.get(msg.source)
+        pending_answer, question = get_source_or_uuid_from_dict(
+            msg, self.pending_confirmations
+        )
+        requires_first_device, _ = get_source_or_uuid_from_dict(
+            msg, self.requires_first_device
+        )
         if not question:
-            return "Did I ask you a question?"
-        if (
-            msg.uuid in self.requires_first_device
-            or msg.source in self.requires_first_device
-        ):
-            if not self.is_first_device(msg):
-                return self.FIRST_DEVICE_PLEASE
+            return self.UNEXPECTED_ANSWER
+        if not requires_first_device and not is_first_device(msg):
+            return self.FIRST_DEVICE_PLEASE
         if question:
             question.set_result(False)
         return None
@@ -1154,6 +1161,7 @@ class QuestionBot(PayBot):
         question_text: str = "What's your favourite colour?",
         require_first_device: bool = False,
     ) -> str:
+        """Asks a question fulfilled by a sentence or short answer."""
         await self.send_message(recipient, question_text)
         answer_future = self.pending_answers[recipient] = asyncio.Future()
         if require_first_device:
@@ -1168,6 +1176,9 @@ class QuestionBot(PayBot):
         question_text: Optional[str] = "What's the price of gasoline where you live?",
         require_first_device: bool = False,
     ) -> Optional[float]:
+        """Asks a question answered with a floating point or decimal number.
+        Asks user clarifying questions if an invalid number is provided.
+        Returns None if user says any of the terminal answers."""
         if question_text:
             await self.send_message(recipient, question_text)
         answer_future = self.pending_answers[recipient] = asyncio.Future()
@@ -1180,7 +1191,7 @@ class QuestionBot(PayBot):
             answer_text.replace(".", "1", 1).isnumeric()
             or answer_text.replace(",", "1", 1).isnumeric()
         ):
-            if answer.full_text.lower() in self.terminal_answers:
+            if answer.full_text.lower() in self.TERMINAL_ANSWERS:
                 return None
             if question_text and "as a decimal" in question_text:
                 return await self.ask_floatable_question(recipient, question_text)
@@ -1197,6 +1208,9 @@ class QuestionBot(PayBot):
         question_text: Optional[str] = "How many years old do you wish you were?",
         require_first_device: bool = False,
     ) -> Optional[int]:
+        """Asks a question answered with an integer or whole number.
+        Asks user clarifying questions if an invalid number is provided.
+        Returns None if user says any of the terminal answers."""
         if require_first_device:
             self.requires_first_device[recipient] = True
         if question_text:
@@ -1205,12 +1219,13 @@ class QuestionBot(PayBot):
         answer = await answer_future
         self.pending_answers.pop(recipient)
         if answer.full_text and not answer.full_text.isnumeric():
-            if answer.full_text.lower() in self.terminal_answers:
+            if answer.full_text.lower() in self.TERMINAL_ANSWERS:
                 return None
             if question_text and "as a whole number" in question_text:
                 return await self.ask_intable_question(recipient, question_text)
             return await self.ask_intable_question(
-                recipient, (question_text or "") + " (as a whole number, ie '1' or '2')"
+                recipient,
+                (question_text or "") + " (as a whole number, ie '1' or '2000')",
             )
         if answer.full_text:
             return int(answer.full_text)
@@ -1241,8 +1256,7 @@ class QuestionBot(PayBot):
                 attachments=[challenge],
             )
         else:
-            # I really don't like Python's random module, but this could be cross-platform some other way
-            offset = int.from_bytes(open("/dev/urandom", "rb").read(1), "little") % 10
+            offset = secrets.randbelow(20)
             challenge = f"What's the sum of one and {offset}?"
             answer = offset + 1
             await self.send_message(msg.uuid, challenge)
