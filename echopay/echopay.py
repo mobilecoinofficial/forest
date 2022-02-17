@@ -1,21 +1,20 @@
 #!/usr/bin/python3.9
+import asyncio
 from decimal import Decimal
 from typing import Union
 import mc_util
 from forest.core import Message, PayBot, Response, requires_admin, run_bot
 
+FEE_PMOB = int(1e12 * 0.0004)  # Mobilecoin transaction fee in Picomob.
+
 
 class Echopay(PayBot):
     """A simple Payments Enabled Bot"""
 
-    fee = int(1e12 * 0.0004)  # Mobilecoin transaction fee
-
-    async def start_process(self) -> None:
-        """Runs when the bot starts and sets the Profile"""
-
-        await self.set_payment_address()
-
-        return await super().start_process()
+    def __init__(self) -> None:
+        """Creates AND STARTS a bot that routes commands to do_x handlers"""
+        super().__init__()
+        asyncio.create_task(self.set_payment_address())
 
     @staticmethod
     def to_mob(amount_picomob: int) -> Decimal:
@@ -37,6 +36,7 @@ class Echopay(PayBot):
         # This method handles the conversion
         signal_address = mc_util.b58_wrapper_to_b64_public_address(fs_address)
 
+        #This will set the bot's Signal profile, replace avatar.png to give your bot a custom avatar
         await self.set_profile_auxin(
             given_name="PaymeBot",
             family_name="",
@@ -61,8 +61,10 @@ class Echopay(PayBot):
         amount_mob = 0.001
         amount_picomob = self.to_picomob(amount_mob)
 
-        ## message.arg1 is the first word of the message after the pay_user command
-
+        # for convenience, message.arg0 is the first word of the message in this case "pay_user"
+        # and msg.arg1 is the next word after that. message.arg1 should be a phone number
+        # send_payment takes care of validating that it is a proper recipient,
+        # but for type safety we first check that it exists and is a string
         if not isinstance(message.arg1, str):
             response = (
                 "Please specify the User to be paid as a phone number"
@@ -82,7 +84,7 @@ class Echopay(PayBot):
     async def payment_response(self, msg: Message, amount_pmob: int) -> Response:
         """Triggers on Succesful payment, overriden from forest.core"""
 
-        ##amounts are received in picoMob, convert to Mob for readability
+        # amounts are received in picoMob, convert to Mob for readability
         amount_mob = self.to_mob(amount_pmob)
 
         return f"Thank you for your payment of {str(amount_mob)} MOB"
