@@ -1124,9 +1124,7 @@ class QuestionBot(PayBot):
     @hide
     async def do_yes(self, msg: Message) -> Response:
         """Handles 'yes' in response to a pending_confirmation."""
-        _, question = get_source_or_uuid_from_dict(
-            msg, self.pending_confirmations
-        )
+        _, question = get_source_or_uuid_from_dict(msg, self.pending_confirmations)
         requires_first_device, _ = get_source_or_uuid_from_dict(
             msg, self.requires_first_device
         )
@@ -1141,9 +1139,7 @@ class QuestionBot(PayBot):
     @hide
     async def do_no(self, msg: Message) -> Response:
         """Handles 'no' in response to a pending_confirmation."""
-        _, question = get_source_or_uuid_from_dict(
-            msg, self.pending_confirmations
-        )
+        _, question = get_source_or_uuid_from_dict(msg, self.pending_confirmations)
         requires_first_device, _ = get_source_or_uuid_from_dict(
             msg, self.requires_first_device
         )
