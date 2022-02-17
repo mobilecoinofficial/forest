@@ -86,7 +86,9 @@ class Echopay(PayBot):
     async def payment_response(self, message: Message, amount_picomob: int) -> Response:
         """Triggers on Succesful payment"""
 
-        amount_mob = self.to_mob(amount_picomob) ##amounts are received in picoMob, convert to Mob for readability
+        amount_mob = self.to_mob(
+            amount_picomob
+        )  ##amounts are received in picoMob, convert to Mob for readability
 
         if amount_mob > 0.002:
             return f"Wow! Thank you for your payment of {str(amount_mob)} MOB"
