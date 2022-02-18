@@ -95,6 +95,11 @@ class Signal:
         self.outbox: Queue[dict] = Queue()
         self.exiting = False
         self.start_time = time.time()
+        log_tag = get_uid()
+        self.stdout_log = open(f"signal-stdout-{log_tag}.json", 'wb')
+        self.stdin_log = open(f"signal-stdin-{log_tag}.json", 'wb')
+        logging.info("Logging to {self.stdout_log.name} and {self.stdin_log.name}!")
+
 
     async def start_process(self) -> None:
         """
@@ -254,6 +259,9 @@ class Signal:
             line = (await stream.readline()).decode().strip()
             if not line:
                 break
+            if line.startswith("{") and self.stdout_log:
+                self.stdout_log.write(f"{line}\n".encode())
+                self.stdout_log.flush()
             await self.decode_signal_line(line)
         logging.info("stopped reading signal stdout")
 
@@ -515,6 +523,9 @@ class Signal:
             if pipe.is_closing():
                 logging.error("signal stdin pipe is closed")
             pipe.write(json.dumps(command).encode() + b"\n")
+            if self.stdin_log:
+                self.stdin_log.write(json.dumps(command).encode() + b"\n")
+                self.stdin_log.flush()
             await pipe.drain()
 
 
