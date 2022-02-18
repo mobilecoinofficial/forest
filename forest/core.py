@@ -8,6 +8,7 @@ import ast
 import asyncio
 import asyncio.subprocess as subprocess  # https://github.com/PyCQA/pylint/issues/1469
 import base64
+import codecs
 import datetime
 import json
 import logging
@@ -52,11 +53,10 @@ roundtrip_summary = Summary("roundtrip_s", "Roundtrip message response time")
 MessageParser = AuxinMessage if utils.AUXIN else StdioMessage
 logging.info("Using message parser: %s", MessageParser)
 fee_pmob = int(1e12 * 0.0004)
-
 try:
     import captcha
 except ImportError:
-    captcha = None
+    captcha = None  # type:ignore
 
 
 def rpc(
@@ -771,13 +771,10 @@ class Bot(Signal):
         return None
 
     def get_recipients(self) -> list[dict[str, str]]:
-        """Returns a list of all known recipients by parsing underlying datastore. """
-        return [
-            r
-            for r in json.loads(
-                open(f"data/{self.bot_number}.d/recipients-store").read()
-            ).get("recipients")
-        ]
+        """Returns a list of all known recipients by parsing underlying datastore."""
+        return json.loads(
+            open(f"data/{self.bot_number}.d/recipients-store").read()
+        ).get("recipients", [])
 
     def get_uuid_by_phone(self, phonenumber: str) -> Optional[str]:
         """Queries the recipients-store file for a UUID, provided a phone number."""
@@ -791,13 +788,13 @@ class Bot(Signal):
                 return maybe_recipient[0]["uuid"]
         return None
 
-    def get_number_by_uuid(self, uuid:str) -> Optional[str]:
+    def get_number_by_uuid(self, uuid_: str) -> Optional[str]:
         """Queries the recipients-store file for a phone number, provided a uuid."""
-        if uuid.count("-") == 4:
+        if uuid_.count("-") == 4:
             maybe_recipient = [
                 recipient
                 for recipient in self.get_recipients()
-                if phonenumber == recipient.get("uuid")
+                if uuid_ == recipient.get("uuid")
             ]
             if maybe_recipient:
                 return maybe_recipient[0]["number"]
