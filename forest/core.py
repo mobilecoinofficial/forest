@@ -770,22 +770,44 @@ class Bot(Signal):
             return str(await async_exec(source_blob, env))
         return None
 
+    def get_recipients(self) -> list[dict[str, str]]:
+        """Returns a list of all known recipients by parsing underlying datastore. """
+        return [
+            r
+            for r in json.loads(
+                open(f"data/{self.bot_number}.d/recipients-store").read()
+            ).get("recipients")
+        ]
+
+    def get_uuid_by_phone(self, phonenumber: str) -> Optional[str]:
+        """Queries the recipients-store file for a UUID, provided a phone number."""
+        if phonenumber.startswith("+"):
+            maybe_recipient = [
+                recipient
+                for recipient in self.get_recipients()
+                if phonenumber == recipient.get("number")
+            ]
+            if maybe_recipient:
+                return maybe_recipient[0]["uuid"]
+        return None
+
+    def get_number_by_uuid(self, uuid:str) -> Optional[str]:
+        """Queries the recipients-store file for a phone number, provided a uuid."""
+        if uuid.count("-") == 4:
+            maybe_recipient = [
+                recipient
+                for recipient in self.get_recipients()
+                if phonenumber == recipient.get("uuid")
+            ]
+            if maybe_recipient:
+                return maybe_recipient[0]["number"]
+        return None
+
     async def do_ping(self, message: Message) -> str:
         """replies to /ping with /pong"""
         if message.text:
             return f"/pong {message.text}"
         return "/pong"
-
-    @hide
-    async def do_uptime(self, _: Message) -> str:
-        """Returns a message containing the bot uptime."""
-        tot_mins, sec = divmod(int(time.time() - self.start_time), 60)
-        hr, mins = divmod(tot_mins, 60)
-        t = "Uptime: "
-        t += f"{hr}h" if hr else ""
-        t += f"{mins}m" if mins else ""
-        t += f"{sec}s"
-        return t
 
     @hide
     async def do_pong(self, message: Message) -> str:
@@ -798,8 +820,41 @@ class Bot(Signal):
             return f"OK, stashing {message.text}"
         return "OK"
 
+    async def do_signalme(self, _: Message) -> Response:
+        """signalme
+        Returns a link to share the bot with friends!"""
+        return f"https://signal.me/#p/{self.bot_number}"
+
+    @hide
+    async def do_rot13(self, msg: Message) -> Response:
+        """rot13 encodes the message.
+        > rot13 hello world
+        uryyb jbeyq"""
+        return codecs.encode(msg.text, "rot13")
+
+    @hide
+    async def do_uptime(self, _: Message) -> str:
+        """Returns a message containing the bot uptime."""
+        tot_mins, sec = divmod(int(time.time() - self.start_time), 60)
+        hr, mins = divmod(tot_mins, 60)
+        t = "Uptime: "
+        t += f"{hr}h" if hr else ""
+        t += f"{mins}m" if mins else ""
+        t += f"{sec}s"
+        return t
+
 
 class PayBot(Bot):
+    PAYMENTS_HELPTEXT = """Enable Signal Pay:
+
+    1. In Signal, tap “🠔“ & tap on your profile icon in the top left & tap *Settings*
+
+    2. Tap *Payments* & tap *Activate Payments*
+
+    For more information on Signal Payments visit:
+
+    https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
+
     @requires_admin
     async def do_fsr(self, msg: Message) -> Response:
         """

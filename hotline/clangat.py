@@ -32,31 +32,6 @@ FEE = int(1e12 * 0.0004)
 REQUEST_TIME = Summary("request_processing_seconds", "Time spent processing request")
 
 
-krng = open("/dev/urandom", "rb")
-
-purchase_helptext = """If you have payments activated, open the conversation on your Signal mobile app, click on the plus (+) sign and choose payment.\n\nIf you don't have Payments activated follow these instructions to activate it.
-
-1. Update Signal app: https://signal.org/install/
-2. Open Signal, tap on the icon in the top left for Settings. If you don’t see *Payments*, reboot your phone. It can take a few hours.
-3. Tap *Payments* and *Activate Payments*
-
-For more information on Signal Payments visit:
-
-https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
-
-
-def r1dx(x: int = 20) -> int:
-    """returns a random, fair integer from 1 to X as if rolling a dice with the specified number of sides"""
-    max_r = 256
-    assert x <= max_r
-    while True:
-        # get one byte, take as int on [1,256]
-        r = int.from_bytes(krng.read(1), "little") + 1
-        # if byte is less than the max factor of 'x' on the interval max_r, return r%x+1
-        if r < (max_r - (max_r % x) + 1):
-            return (r % x) + 1
-
-
 class PayBotPro(QuestionBot):
     def __init__(self) -> None:
         self.last_seen: dict[str, float] = {}
@@ -66,22 +41,6 @@ class PayBotPro(QuestionBot):
         user_last_seen = self.last_seen.get(message.source, 0)
         self.last_seen[message.source] = message.timestamp / 1000
         return await super().handle_message(message)
-
-    async def do_signalme(self, _: Message) -> Response:
-        """signalme
-        Returns a link to share the bot with friends!"""
-        return f"https://signal.me/#p/{self.bot_number}"
-
-    @requires_admin
-    async def do_balance(self, _: Message) -> Response:
-        """Returns bot balance in MOB."""
-        return f"Bot has balance of {pmob2mob(await self.mobster.get_balance()).quantize(Decimal('1.0000'))} MOB"
-
-    async def do_rot13(self, msg: Message) -> Response:
-        """rot13 encodes the message.
-        > rot13 hello world
-        uryyb jbeyq"""
-        return codecs.encode(msg.text, "rot13")
 
     async def do_roll(self, msg: Message) -> Response:
         """Rolls N dice of M sides: ie) roll 1 d20.
@@ -103,7 +62,7 @@ class PayBotPro(QuestionBot):
             return "Try with a smaller number of sides (<256)."
         return [
             f"Okay, we rolled {num_dice} {dice_sides}-sided dice!"
-            f"{[r1dx(dice_sides)-offset for _ in range(num_dice)]}"
+            f"{[secrets.randbelow(dice_sides-1)-offset+1 for _ in range(num_dice)]}"
         ]
 
 
@@ -135,27 +94,6 @@ class ClanGat(PayBotPro):
             if isinstance(self.__getattribute__(attr), aPersistDict)
         }
         super().__init__()
-
-    def get_recipients(self) -> list[dict[str, str]]:
-        """Returns a list of all known recipients."""
-        return [
-            r
-            for r in json.loads(
-                open(f"data/{self.bot_number}.d/recipients-store").read()
-            ).get("recipients")
-        ]
-
-    def get_uuid_by_phone(self, phonenumber) -> Optional[str]:
-        """Queries the recipients-store file for a UUID, provided a phone number."""
-        if phonenumber.startswith("+"):
-            maybe_recipient = [
-                recipient
-                for recipient in self.get_recipients()
-                if phonenumber == recipient.get("number")
-            ]
-            if maybe_recipient:
-                return maybe_recipient[0]["uuid"]
-        return None
 
     async def get_displayname(self, uuid: str) -> str:
         """Retrieves a display name from a UUID, stores in the cache, handles error conditions."""
@@ -812,7 +750,7 @@ class ClanGat(PayBotPro):
         if code and code.rstrip(string.punctuation) == "yes":  # yes!
             return await self.do_yes(msg)
         if code in "+ buy purchase":  # was a function, now helptext
-            return purchase_helptext
+            return self.PAYMENTS_HELPTEXT
         # if the event has an owner and a price and there's attendee space and the user hasn't already bought tickets
         if (
             code
