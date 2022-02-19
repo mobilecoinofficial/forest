@@ -66,34 +66,40 @@ class PayBotPro(QuestionBot):
         ]
 
 
-class ClanGat(PayBotPro):
+class TalkBack(PayBotPro):
     def __init__(self) -> None:
-        self.no_repay: list[str] = []
-        self.address_cache = aPersistDict("address_cache")
         self.profile_cache = aPersistDict("profile_cache")
         self.displayname_cache = aPersistDict("displayname_cache")
         self.displayname_lookup_cache = aPersistDict("displayname_lookup_cache")
-        self.pending_orders = aPersistDict("pending_orders")
-        self.pending_funds = aPersistDict("pending_funds")
-        self.event_limits = aPersistDict("event_limits")
-        self.event_prompts = aPersistDict("event_prompts")
-        self.event_prices = aPersistDict("event_prices")
-        self.event_images = aPersistDict("event_images")
-        self.event_owners = aPersistDict("event_owners")
-        self.event_attendees = aPersistDict("event_attendees")
-        self.event_lists = aPersistDict("event_lists")
-        self.list_owners = aPersistDict("list_owners")
-        self.easter_eggs = aPersistDict("easter_eggs")
-        self.successful_pays = aPersistDict("successful_pays")
-        self.payout_balance_mmob = aPersistDict("payout_balance_mmob")
-        self.pay_lock: asyncio.Lock = asyncio.Lock()
-        # okay, this now maps the tag (restore key) of each of the above to the instance of the PersistDict class
-        self.state = {
-            self.__getattribute__(attr).tag: self.__getattribute__(attr)
-            for attr in dir(self)
-            if isinstance(self.__getattribute__(attr), aPersistDict)
-        }
         super().__init__()
+
+    @requires_admin
+    async def do_send(self, msg: Message) -> Response:
+        """Send <recipient> <message>
+        Sends a message as MOBot."""
+        obj = msg.arg1
+        param = msg.arg2
+        if not is_admin(msg):
+            await self.send_message(
+                utils.get_secret("ADMIN"), f"Someone just used send:\n {msg}"
+            )
+        if obj and param:
+            if obj in await self.displayname_lookup_cache.keys():
+                obj = await self.displayname_lookup_cache.get(obj)
+            try:
+                result = await self.send_message(obj, param)
+                return result
+            except Exception as err:
+                return str(err)
+        if not obj:
+            msg.arg1 = await self.ask_freeform_question(
+                msg.uuid, "Who would you like to message?"
+            )
+        if not param:
+            msg.arg2 = await self.ask_freeform_question(
+                msg.uuid, "What would you like to say?"
+            )
+        return await self.do_send(msg)
 
     async def get_displayname(self, uuid: str) -> str:
         """Retrieves a display name from a UUID, stores in the cache, handles error conditions."""
@@ -122,12 +128,42 @@ class ClanGat(PayBotPro):
         else:
             user_given = maybe_user_profile.get("givenName", "")
         if uuid and ("+" not in uuid and "-" in uuid):
-            user_short = user_given + f"_{uuid.split('-')[1]}"
+            user_short = f"{user_given}_{uuid.split('-')[1]}"
         else:
             user_short = user_given + uuid
         await self.displayname_cache.set(uuid, user_short)
         await self.displayname_lookup_cache.set(user_short, uuid)
         return user_short
+
+    async def talkback(self, msg: Message) -> Response:
+        source = msg.uuid or msg.source
+        await self.admin(f"{await self.get_displayname(source)} says: {msg.full_text}")
+
+
+class ClanGat(TalkBack):
+    def __init__(self) -> None:
+        self.no_repay: list[str] = []
+        self.pending_orders = aPersistDict("pending_orders")
+        self.pending_funds = aPersistDict("pending_funds")
+        self.event_limits = aPersistDict("event_limits")
+        self.event_prompts = aPersistDict("event_prompts")
+        self.event_prices = aPersistDict("event_prices")
+        self.event_images = aPersistDict("event_images")
+        self.event_owners = aPersistDict("event_owners")
+        self.event_attendees = aPersistDict("event_attendees")
+        self.event_lists = aPersistDict("event_lists")
+        self.list_owners = aPersistDict("list_owners")
+        self.easter_eggs = aPersistDict("easter_eggs")
+        self.successful_pays = aPersistDict("successful_pays")
+        self.payout_balance_mmob = aPersistDict("payout_balance_mmob")
+        self.pay_lock: asyncio.Lock = asyncio.Lock()
+        # okay, this now maps the tag (restore key) of each of the above to the instance of the PersistDict class
+        self.state = {
+            self.__getattribute__(attr).tag: self.__getattribute__(attr)
+            for attr in dir(self)
+            if isinstance(self.__getattribute__(attr), aPersistDict)
+        }
+        super().__init__()
 
     @requires_admin
     async def do_dump(self, msg: Message) -> Response:
@@ -361,19 +397,16 @@ class ClanGat(PayBotPro):
                         await self.successful_pays.extend(save_key, target)
                         await self.payout_balance_mmob.decrement(list_, amount_mmob)
                         await self.send_message(target, "I've sent you a payment!")
-                    await asyncio.sleep(0.1)
                     return result
                 except Exception as e:
                     return None
 
-            results = await asyncio.gather(
-                *[
-                    do_pay_logging_success(
-                        target, amount_mmob, message, input_txo_ids=[valid_utxos.pop(0)]
-                    )
-                    for target in filtered_send_list
-                ]
-            )
+            results = [
+                do_pay_logging_success(
+                    target, amount_mmob, message, input_txo_ids=[valid_utxos.pop(0)]
+                )
+                for target in filtered_send_list
+            ]
             failed = [filtered_send_list[i] for (i, x) in enumerate(results) if not x]
             await self.send_message(
                 msg.uuid,
@@ -381,34 +414,6 @@ class ClanGat(PayBotPro):
             )
             return "completed sends"
         return "failed"
-
-    @requires_admin
-    async def do_send(self, msg: Message) -> Response:
-        """Send <recipient> <message>
-        Sends a message as MOBot."""
-        obj = msg.arg1
-        param = msg.arg2
-        if not is_admin(msg):
-            await self.send_message(
-                utils.get_secret("ADMIN"), f"Someone just used send:\n {msg}"
-            )
-        if obj and param:
-            if obj in await self.displayname_lookup_cache.keys():
-                obj = await self.displayname_lookup_cache.get(obj)
-            try:
-                result = await self.send_message(obj, param)
-                return result
-            except Exception as err:
-                return str(err)
-        if not obj:
-            msg.arg1 = await self.ask_freeform_question(
-                msg.uuid, "Who would you like to message?"
-            )
-        if not param:
-            msg.arg2 = await self.ask_freeform_question(
-                msg.uuid, "What would you like to say?"
-            )
-        return await self.do_send(msg)
 
     @hide
     async def do_fund(self, msg: Message) -> Response:
@@ -737,20 +742,8 @@ class ClanGat(PayBotPro):
             return f"Successfully added '{value}' to event {param}'s {obj}!"
         return f"Failed to add {value} to event {param}'s {obj}!"
 
-    async def default(self, msg: Message) -> Response:
+    async def maybe_unlock(self, msg: Message) -> Response:
         code = msg.arg0
-        if not code:
-            return
-        if code == "?":
-            return await self.do_help(msg)
-        if code == "y":
-            return await self.do_yes(msg)
-        if code == "n":
-            return await self.do_no(msg)
-        if code and code.rstrip(string.punctuation) == "yes":  # yes!
-            return await self.do_yes(msg)
-        if code in "+ buy purchase":  # was a function, now helptext
-            return self.PAYMENTS_HELPTEXT
         # if the event has an owner and a price and there's attendee space and the user hasn't already bought tickets
         if (
             code
@@ -802,9 +795,10 @@ class ClanGat(PayBotPro):
             and msg.uuid in await self.event_attendees[code]  # user on the list
         ):
             return f"You're already on the attendee list for the '{code}' event."
-        if not code:
-            return None
-        # handle default case
+        return None
+
+    async def talkback(self, msg: Message) -> Response:
+        code = msg.arg0
         lists = []
         all_owners = []
         for list_ in await self.event_lists.keys():
@@ -828,10 +822,6 @@ class ClanGat(PayBotPro):
                 all_owners += await self.event_owners.get(maybe_pending, [])
                 lists += [f"pending: {maybe_pending}"]
         user_given = await self.get_displayname(msg.uuid)
-        if msg.full_text in [key.lower() for key in await self.easter_eggs.keys()]:
-            return await self.easter_eggs.get(msg.full_text)
-        if code in await self.easter_eggs.keys():
-            return await self.easter_eggs.get(code)
         # being really lazy about owners / all_owners here
         for owner in list(set(all_owners)):
             # don't flood j
@@ -841,6 +831,32 @@ class ClanGat(PayBotPro):
                     f"{user_given} ( {msg.source} ) says: {code} {msg.text}\nThey are on the following lists: {list(set(lists))}",
                 )
                 await asyncio.sleep(0.1)
+
+    async def default(self, msg: Message) -> Response:
+        code = msg.arg0
+        if not code:
+            return
+        if code == "?":
+            return await self.do_help(msg)
+        if code == "y":
+            return await self.do_yes(msg)
+        if code == "n":
+            return await self.do_no(msg)
+        if code and code.rstrip(string.punctuation) == "yes":  # yes!
+            return await self.do_yes(msg)
+        if code in "+ buy purchase":  # was a function, now helptext
+            return self.PAYMENTS_HELPTEXT
+        if not code:
+            return None
+        if msg.full_text in [key.lower() for key in await self.easter_eggs.keys()]:
+            return await self.easter_eggs.get(msg.full_text)
+        if code in await self.easter_eggs.keys():
+            return await self.easter_eggs.get(code)
+        maybe_unlocked = await self.maybe_unlock(msg)
+        if maybe_unlocked:
+            return maybe_unlocked
+        await self.talkback(msg)
+        # handle default case
         return await self.do_help(msg)
 
     @time_(REQUEST_TIME)  # type: ignore
