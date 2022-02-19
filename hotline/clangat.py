@@ -32,31 +32,6 @@ FEE = int(1e12 * 0.0004)
 REQUEST_TIME = Summary("request_processing_seconds", "Time spent processing request")
 
 
-krng = open("/dev/urandom", "rb")
-
-purchase_helptext = """If you have payments activated, open the conversation on your Signal mobile app, click on the plus (+) sign and choose payment.\n\nIf you don't have Payments activated follow these instructions to activate it.
-
-1. Update Signal app: https://signal.org/install/
-2. Open Signal, tap on the icon in the top left for Settings. If you don’t see *Payments*, reboot your phone. It can take a few hours.
-3. Tap *Payments* and *Activate Payments*
-
-For more information on Signal Payments visit:
-
-https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
-
-
-def r1dx(x: int = 20) -> int:
-    """returns a random, fair integer from 1 to X as if rolling a dice with the specified number of sides"""
-    max_r = 256
-    assert x <= max_r
-    while True:
-        # get one byte, take as int on [1,256]
-        r = int.from_bytes(krng.read(1), "little") + 1
-        # if byte is less than the max factor of 'x' on the interval max_r, return r%x+1
-        if r < (max_r - (max_r % x) + 1):
-            return (r % x) + 1
-
-
 class PayBotPro(QuestionBot):
     def __init__(self) -> None:
         self.last_seen: dict[str, float] = {}
@@ -66,22 +41,6 @@ class PayBotPro(QuestionBot):
         user_last_seen = self.last_seen.get(message.source, 0)
         self.last_seen[message.source] = message.timestamp / 1000
         return await super().handle_message(message)
-
-    async def do_signalme(self, _: Message) -> Response:
-        """signalme
-        Returns a link to share the bot with friends!"""
-        return f"https://signal.me/#p/{self.bot_number}"
-
-    @requires_admin
-    async def do_balance(self, _: Message) -> Response:
-        """Returns bot balance in MOB."""
-        return f"Bot has balance of {pmob2mob(await self.mobster.get_balance()).quantize(Decimal('1.0000'))} MOB"
-
-    async def do_rot13(self, msg: Message) -> Response:
-        """rot13 encodes the message.
-        > rot13 hello world
-        uryyb jbeyq"""
-        return codecs.encode(msg.text, "rot13")
 
     async def do_roll(self, msg: Message) -> Response:
         """Rolls N dice of M sides: ie) roll 1 d20.
@@ -103,17 +62,87 @@ class PayBotPro(QuestionBot):
             return "Try with a smaller number of sides (<256)."
         return [
             f"Okay, we rolled {num_dice} {dice_sides}-sided dice!"
-            f"{[r1dx(dice_sides)-offset for _ in range(num_dice)]}"
+            f"{[secrets.randbelow(dice_sides-1)-offset+1 for _ in range(num_dice)]}"
         ]
 
 
-class ClanGat(PayBotPro):
+class TalkBack(PayBotPro):
     def __init__(self) -> None:
-        self.no_repay: list[str] = []
-        self.address_cache = aPersistDict("address_cache")
         self.profile_cache = aPersistDict("profile_cache")
         self.displayname_cache = aPersistDict("displayname_cache")
         self.displayname_lookup_cache = aPersistDict("displayname_lookup_cache")
+        super().__init__()
+
+    @requires_admin
+    async def do_send(self, msg: Message) -> Response:
+        """Send <recipient> <message>
+        Sends a message as MOBot."""
+        obj = msg.arg1
+        param = msg.arg2
+        if not is_admin(msg):
+            await self.send_message(
+                utils.get_secret("ADMIN"), f"Someone just used send:\n {msg}"
+            )
+        if obj and param:
+            if obj in await self.displayname_lookup_cache.keys():
+                obj = await self.displayname_lookup_cache.get(obj)
+            try:
+                result = await self.send_message(obj, param)
+                return result
+            except Exception as err:
+                return str(err)
+        if not obj:
+            msg.arg1 = await self.ask_freeform_question(
+                msg.uuid, "Who would you like to message?"
+            )
+        if not param:
+            msg.arg2 = await self.ask_freeform_question(
+                msg.uuid, "What would you like to say?"
+            )
+        return await self.do_send(msg)
+
+    async def get_displayname(self, uuid: str) -> str:
+        """Retrieves a display name from a UUID, stores in the cache, handles error conditions."""
+        uuid = uuid.strip("\u2068\u2069")
+        # displayname provided, not uuid or phone
+        if uuid.count("-") != 4 and not uuid.startswith("+"):
+            uuid = await self.displayname_lookup_cache.get(uuid, uuid)
+        # phone number, not uuid provided
+        if uuid.startswith("+"):
+            uuid = self.get_uuid_by_phone(uuid) or uuid
+        maybe_displayname = await self.displayname_cache.get(uuid)
+        if maybe_displayname:
+            return maybe_displayname
+        maybe_user_profile = await self.profile_cache.get(uuid)
+        # if no luck, but we have a valid uuid
+        if not maybe_user_profile and uuid.count("-") == 4:
+            try:
+                maybe_user_profile = (
+                    await self.signal_rpc_request("getprofile", peer_name=uuid)
+                ).blob
+                user_given = maybe_user_profile.get("givenName", "givenName")
+                await self.profile_cache.set(uuid, maybe_user_profile)
+            except AttributeError:
+                # this returns a Dict containing an error key
+                user_given = "[error]"
+        else:
+            user_given = maybe_user_profile.get("givenName", "")
+        if uuid and ("+" not in uuid and "-" in uuid):
+            user_short = f"{user_given}_{uuid.split('-')[1]}"
+        else:
+            user_short = user_given + uuid
+        await self.displayname_cache.set(uuid, user_short)
+        await self.displayname_lookup_cache.set(user_short, uuid)
+        return user_short
+
+    async def talkback(self, msg: Message) -> Response:
+        source = msg.uuid or msg.source
+        await self.admin(f"{await self.get_displayname(source)} says: {msg.full_text}")
+
+
+class ClanGat(TalkBack):
+    def __init__(self) -> None:
+        self.no_repay: list[str] = []
         self.pending_orders = aPersistDict("pending_orders")
         self.pending_funds = aPersistDict("pending_funds")
         self.event_limits = aPersistDict("event_limits")
@@ -135,35 +164,6 @@ class ClanGat(PayBotPro):
             if isinstance(self.__getattribute__(attr), aPersistDict)
         }
         super().__init__()
-
-    async def get_displayname(self, uuid: str) -> str:
-        """Retrieves a display name from a UUID, stores in the cache, handles error conditions."""
-        uuid = uuid.strip("\u2068\u2069")
-        maybe_displayname = await self.displayname_cache.get(uuid)
-        if maybe_displayname:
-            return maybe_displayname
-        maybe_user_profile = await self.profile_cache.get(uuid)
-        if not maybe_user_profile:
-            try:
-                maybe_user_profile = (
-                    await self.signal_rpc_request(
-                        "getprofile", peer_name=uuid.strip("\u2068\u2069")
-                    )
-                ).blob
-                user_given = maybe_user_profile.get("givenName", "givenName")
-                await self.profile_cache.set(uuid, maybe_user_profile)
-            except AttributeError:
-                # this returns a Dict containing an error key
-                user_given = "[error]"
-        else:
-            user_given = maybe_user_profile.get("givenName", "")
-        if "+" not in uuid and "-" in uuid:
-            user_short = user_given + f"_{uuid.split('-')[1]}"
-        else:
-            user_short = user_given + uuid
-        await self.displayname_cache.set(uuid, user_short)
-        await self.displayname_lookup_cache.set(user_short, uuid)
-        return user_short
 
     @requires_admin
     async def do_dump(self, msg: Message) -> Response:
@@ -351,6 +351,10 @@ class ClanGat(PayBotPro):
             msg.uuid,
             f"about to send {total_mmob}mmob to {len(filtered_send_list)} folks on {list_}",
         )
+        await self.send_message(
+            msg.uuid,
+            f"Using this for the memo:\n\n > {message}",
+        )
         if not await self.ask_yesno_question(msg.uuid):
             return "OK, canceling"
         async with self.pay_lock:
@@ -377,32 +381,32 @@ class ClanGat(PayBotPro):
             async def do_pay_logging_success(
                 target, amount_mmob, message="", input_txo_ids=[]
             ):
-                result = await self.send_payment(
-                    recipient=target,
-                    amount_pmob=amount_mmob * 1_000_000_000,
-                    receipt_message=message or "",
-                    input_txo_ids=input_txo_ids,
-                )
-                # if we didn't get a result indicating success
-                if not result or (result and result.status == "tx_status_failed"):
-                    # stash as failed
-                    return None
-                else:
-                    # persist user as successfully paid
-                    await self.successful_pays.extend(save_key, target)
-                    await self.payout_balance_mmob.decrement(list_, amount_mmob)
-                    await self.send_message(target, "I've sent you a payment!")
-                await asyncio.sleep(0.01)
-                return result
-
-            results = await asyncio.gather(
-                *[
-                    do_pay_logging_success(
-                        target, amount_mmob, message, input_txo_ids=[valid_utxos.pop(0)]
+                try:
+                    result = await self.send_payment(
+                        recipient=target,
+                        amount_pmob=amount_mmob * 1_000_000_000,
+                        receipt_message=message or "",
+                        input_txo_ids=input_txo_ids,
                     )
-                    for target in filtered_send_list
-                ]
-            )
+                    # if we didn't get a result indicating success
+                    if not result or (result and result.status == "tx_status_failed"):
+                        # stash as failed
+                        return None
+                    else:
+                        # persist user as successfully paid
+                        await self.successful_pays.extend(save_key, target)
+                        await self.payout_balance_mmob.decrement(list_, amount_mmob)
+                        await self.send_message(target, "I've sent you a payment!")
+                    return result
+                except Exception as e:
+                    return None
+
+            results = [
+                do_pay_logging_success(
+                    target, amount_mmob, message, input_txo_ids=[valid_utxos.pop(0)]
+                )
+                for target in filtered_send_list
+            ]
             failed = [filtered_send_list[i] for (i, x) in enumerate(results) if not x]
             await self.send_message(
                 msg.uuid,
@@ -410,34 +414,6 @@ class ClanGat(PayBotPro):
             )
             return "completed sends"
         return "failed"
-
-    @requires_admin
-    async def do_send(self, msg: Message) -> Response:
-        """Send <recipient> <message>
-        Sends a message as MOBot."""
-        obj = msg.arg1
-        param = msg.arg2
-        if not is_admin(msg):
-            await self.send_message(
-                utils.get_secret("ADMIN"), f"Someone just used send:\n {msg}"
-            )
-        if obj and param:
-            if obj in await self.displayname_lookup_cache.keys():
-                obj = await self.displayname_lookup_cache.get(obj)
-            try:
-                result = await self.send_message(obj, param)
-                return result
-            except Exception as err:
-                return str(err)
-        if not obj:
-            msg.arg1 = await self.ask_freeform_question(
-                msg.uuid, "Who would you like to message?"
-            )
-        if not param:
-            msg.arg2 = await self.ask_freeform_question(
-                msg.uuid, "What would you like to say?"
-            )
-        return await self.do_send(msg)
 
     @hide
     async def do_fund(self, msg: Message) -> Response:
@@ -721,10 +697,10 @@ class ClanGat(PayBotPro):
                     new_owner_uuid = value
                 if user_owns == "event":
                     if value not in await self.event_owners.get(param, []):
-                        await self.event_owners.extend(param, value)
+                        await self.event_owners.extend(param, new_owner_uuid)
                 if user_owns == "list":
                     if value not in await self.list_owners.get(param, []):
-                        await self.list_owners.extend(param, value)
+                        await self.list_owners.extend(param, new_owner_uuid)
                 if user_owns:
                     await self.send_message(
                         new_owner_uuid,
@@ -766,20 +742,8 @@ class ClanGat(PayBotPro):
             return f"Successfully added '{value}' to event {param}'s {obj}!"
         return f"Failed to add {value} to event {param}'s {obj}!"
 
-    async def default(self, msg: Message) -> Response:
+    async def maybe_unlock(self, msg: Message) -> Response:
         code = msg.arg0
-        if not code:
-            return
-        if code == "?":
-            return await self.do_help(msg)
-        if code == "y":
-            return await self.do_yes(msg)
-        if code == "n":
-            return await self.do_no(msg)
-        if code and code.rstrip(string.punctuation) == "yes":  # yes!
-            return await self.do_yes(msg)
-        if code in "+ buy purchase":  # was a function, now helptext
-            return purchase_helptext
         # if the event has an owner and a price and there's attendee space and the user hasn't already bought tickets
         if (
             code
@@ -831,9 +795,10 @@ class ClanGat(PayBotPro):
             and msg.uuid in await self.event_attendees[code]  # user on the list
         ):
             return f"You're already on the attendee list for the '{code}' event."
-        if not code:
-            return None
-        # handle default case
+        return None
+
+    async def talkback(self, msg: Message) -> Response:
+        code = msg.arg0
         lists = []
         all_owners = []
         for list_ in await self.event_lists.keys():
@@ -857,10 +822,6 @@ class ClanGat(PayBotPro):
                 all_owners += await self.event_owners.get(maybe_pending, [])
                 lists += [f"pending: {maybe_pending}"]
         user_given = await self.get_displayname(msg.uuid)
-        if msg.full_text in [key.lower() for key in await self.easter_eggs.keys()]:
-            return await self.easter_eggs.get(msg.full_text)
-        if code in await self.easter_eggs.keys():
-            return await self.easter_eggs.get(code)
         # being really lazy about owners / all_owners here
         for owner in list(set(all_owners)):
             # don't flood j
@@ -870,6 +831,32 @@ class ClanGat(PayBotPro):
                     f"{user_given} ( {msg.source} ) says: {code} {msg.text}\nThey are on the following lists: {list(set(lists))}",
                 )
                 await asyncio.sleep(0.1)
+
+    async def default(self, msg: Message) -> Response:
+        code = msg.arg0
+        if not code:
+            return
+        if code == "?":
+            return await self.do_help(msg)
+        if code == "y":
+            return await self.do_yes(msg)
+        if code == "n":
+            return await self.do_no(msg)
+        if code and code.rstrip(string.punctuation) == "yes":  # yes!
+            return await self.do_yes(msg)
+        if code in "+ buy purchase":  # was a function, now helptext
+            return self.PAYMENTS_HELPTEXT
+        if not code:
+            return None
+        if msg.full_text in [key.lower() for key in await self.easter_eggs.keys()]:
+            return await self.easter_eggs.get(msg.full_text)
+        if code in await self.easter_eggs.keys():
+            return await self.easter_eggs.get(code)
+        maybe_unlocked = await self.maybe_unlock(msg)
+        if maybe_unlocked:
+            return maybe_unlocked
+        await self.talkback(msg)
+        # handle default case
         return await self.do_help(msg)
 
     @time_(REQUEST_TIME)  # type: ignore
