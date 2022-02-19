@@ -295,6 +295,7 @@ class ClanGat(TalkBack):
     async def do_pay(self, msg: Message) -> Response:
         """Allows an event/list owner to distribute available funds across those on a list."""
         user = msg.uuid
+        to_send = []
         if not msg.arg2 or not msg.arg2.isnumeric():
             msg.arg2 = await self.ask_freeform_question(
                 msg.uuid,
@@ -321,7 +322,6 @@ class ClanGat(TalkBack):
                 user, "Who would you like to send the mMOB to?"
             )
             return await self.do_pay(msg)
-        to_send = []
         user_owns = await self.check_user_owns(user, list_)
         if not is_admin(msg) and not user_owns:
             return "Sorry, you are not authorized."
@@ -392,11 +392,10 @@ class ClanGat(TalkBack):
                     if not result or (result and result.status == "tx_status_failed"):
                         # stash as failed
                         return None
-                    else:
-                        # persist user as successfully paid
-                        await self.successful_pays.extend(save_key, target)
-                        await self.payout_balance_mmob.decrement(list_, amount_mmob)
-                        await self.send_message(target, "I've sent you a payment!")
+                    # persist user as successfully paid
+                    await self.successful_pays.extend(save_key, target)
+                    await self.payout_balance_mmob.decrement(list_, amount_mmob)
+                    await self.send_message(target, "I've sent you a payment!")
                     return result
                 except Exception as e:
                     return None
@@ -435,7 +434,7 @@ class ClanGat(TalkBack):
         """blast  <listname> "message"
         blast <eventname> "message"
         """
-        obj, param, value = (msg.arg1 or ""), (msg.arg2 or ""), msg.arg3
+        obj, param = (msg.arg1 or ""), (msg.arg2 or "")
         user = msg.uuid
         sent = []
         success = False
@@ -461,7 +460,7 @@ class ClanGat(TalkBack):
             # ask for confirmation
             if not await self.ask_yesno_question(
                 msg.uuid,
-                f"Would you like to blast the above message (as written) to {len(target_users)}? (yes/no)",
+                f"Would you like to blast the above message (as written) to {len(target_users)}? (yes/no)"
             ):
                 return "ok, let's not."
             # do the blast
@@ -648,7 +647,6 @@ class ClanGat(TalkBack):
             await self.event_images.set(param, [])
             await self.event_prompts.set(param, "")
             await self.payout_balance_mmob.set(param, 0)
-            successs = True
             if await self.ask_yesno_question(
                 user, f"Would you like to setup your new event '{param}' now? (yes/no)"
             ):
@@ -832,10 +830,11 @@ class ClanGat(TalkBack):
                 )
                 await asyncio.sleep(0.1)
 
-    async def default(self, msg: Message) -> Response:
+    async def default(self, message: Message) -> Response:
+        msg = message
         code = msg.arg0
         if not code:
-            return
+            return None
         if code == "?":
             return await self.do_help(msg)
         if code == "y":
