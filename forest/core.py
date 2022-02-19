@@ -1167,7 +1167,7 @@ class QuestionBot(PayBot):
         pending_answer, probably_future = get_source_or_uuid_from_dict(
             message, self.pending_answers
         )
-        requires_first_device, _ = get_source_or_uuid_from_dict(
+        _, requires_first_device = get_source_or_uuid_from_dict(
             message, self.requires_first_device
         )
         if message.full_text and pending_answer:
@@ -1184,7 +1184,7 @@ class QuestionBot(PayBot):
     async def do_yes(self, msg: Message) -> Response:
         """Handles 'yes' in response to a pending_confirmation."""
         _, question = get_source_or_uuid_from_dict(msg, self.pending_confirmations)
-        requires_first_device, _ = get_source_or_uuid_from_dict(
+        _, requires_first_device = get_source_or_uuid_from_dict(
             msg, self.requires_first_device
         )
         if not question:
@@ -1199,12 +1199,12 @@ class QuestionBot(PayBot):
     async def do_no(self, msg: Message) -> Response:
         """Handles 'no' in response to a pending_confirmation."""
         _, question = get_source_or_uuid_from_dict(msg, self.pending_confirmations)
-        requires_first_device, _ = get_source_or_uuid_from_dict(
+        _, requires_first_device = get_source_or_uuid_from_dict(
             msg, self.requires_first_device
         )
         if not question:
             return self.UNEXPECTED_ANSWER
-        if not requires_first_device and not is_first_device(msg):
+        if requires_first_device and not is_first_device(msg):
             return self.FIRST_DEVICE_PLEASE
         if question:
             question.set_result(False)
