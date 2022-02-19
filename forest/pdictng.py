@@ -259,22 +259,30 @@ class aPersistDict(Generic[K, V]):
     #             return await self._set(key, value_to_extend)
     #         raise TypeError(f"value {value_to_extend} for key {key} is not a list")
     #
-    # async def increment(self, key: K, value: V) -> str:
-    #     """Since one cannot simply add to a coroutine, this function exists.
-    #     If the key exists and the value is None, or an empty array, the provided value is added to a(the) list at that value."""
-    #     value_to_extend = 0
-    #     async with self.rwlock:
-    #         value_to_extend = self.dict_.get(key, 0)
-    #         return await self._set(key, value_to_extend + value)
-    #
-    # async def decrement(self, key: K, value: V) -> str:
-    #     """Since one cannot simply add to a coroutine, this function exists.
-    #     If the key exists and the value is None, or an empty array, the provided value is added to a(the) list at that value."""
-    #     value_to_extend = 0
-    #     async with self.rwlock:
-    #         value_to_extend = self.dict_.get(key, 0)
-    #         return await self._set(key, value_to_extend - value)
-    #         
+    async def increment(self, key: K, value: int) -> str:
+        """Since one cannot simply add to a coroutine, this function exists.
+        If the key exists and the value is None, or an empty array, the provided value is added to a(the) list at that value."""
+        value_to_extend: Any = 0
+        async with self.rwlock:
+            value_to_extend = self.dict_.get(key, 0)
+            if isinstance(value_to_extend, int):
+                reveal_type(value_to_extend)
+                reveal_type(self.dict_)
+                return await self._set(key, value_to_extend + value)
+            else:
+                raise TypeError(f"key {key} is not an int")
+
+    async def decrement(self, key: K, value: int) -> str:
+        """Since one cannot simply add to a coroutine, this function exists.
+        If the key exists and the value is None, or an empty array, the provided value is added to a(the) list at that value."""
+        value_to_extend: Any = 0
+        async with self.rwlock:
+            value_to_extend = self.dict_.get(key, 0)
+            if isinstance(value_to_extend, int):
+                return await self._set(key, value_to_extend - value)
+            else:
+                raise TypeError(f"key {key} is not an int")
+
     # async def remove_from(self, key: K, not_value: V) -> str:
     #     """Removes a value specified from the list, if present.
     #     Returns metadata"""
@@ -305,6 +313,3 @@ class aPersistDict(Generic[K, V]):
         """Sets a value at a given key, returns metadata."""
         async with self.rwlock:
             return await self._set(key, value)
-
-
-
