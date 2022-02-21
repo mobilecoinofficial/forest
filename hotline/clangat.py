@@ -95,6 +95,13 @@ class TalkBack(PayBotPro):
             msg.arg1 = await self.ask_freeform_question(
                 msg.uuid, "Who would you like to message?"
             )
+        if param.rstrip(string.punctuation).isalnum():
+            param = (
+                (msg.full_text or "")
+                .lstrip("/")
+                .replace(f"send {msg.arg1} ", "", 1)
+                .replace(f"Send {msg.arg1} ", "", 1)
+            )  # thanks mikey :)
         if not param:
             msg.arg2 = await self.ask_freeform_question(
                 msg.uuid, "What would you like to say?"
@@ -365,7 +372,8 @@ class ClanGat(TalkBack):
             ]
             if len(valid_utxos) < len(filtered_send_list):
                 await self.send_message(
-                    msg.uuid, "Insufficient number of utxos!\nBuilding more..."
+                    msg.uuid,
+                    "Please wait! Insufficient number of utxos!\nBuilding more...",
                 )
                 building_msg = await self.mobster.split_txos_slow(
                     amount_mmob, (len(filtered_send_list) - len(valid_utxos))
@@ -388,6 +396,7 @@ class ClanGat(TalkBack):
                         receipt_message=message or "",
                         input_txo_ids=input_txo_ids,
                     )
+                    await asyncio.sleep(0.5)
                     # if we didn't get a result indicating success
                     if not result or (result and result.status == "tx_status_failed"):
                         # stash as failed
@@ -401,16 +410,20 @@ class ClanGat(TalkBack):
                     return None
 
             results = [
-                do_pay_logging_success(
+                await do_pay_logging_success(
                     target, amount_mmob, message, input_txo_ids=[valid_utxos.pop(0)]
                 )
                 for target in filtered_send_list
             ]
             failed = [filtered_send_list[i] for (i, x) in enumerate(results) if not x]
-            await self.send_message(
-                msg.uuid,
-                f"failed on\n{[await self.get_displayname(uuid) for uuid in failed]}",
-            )
+            if len(failed):
+                await self.send_message(
+                    msg.uuid,
+                    (
+                        f"failed on\n{[await self.get_displayname(uuid) for uuid in failed]}\n"
+                        "Copy and paste your original pay message and resend to retry."
+                    ),
+                )
             return "completed sends"
         return "failed"
 
@@ -460,7 +473,7 @@ class ClanGat(TalkBack):
             # ask for confirmation
             if not await self.ask_yesno_question(
                 msg.uuid,
-                f"Would you like to blast the above message (as written) to {len(target_users)}? (yes/no)"
+                f"Would you like to blast the above message (as written) to {len(target_users)}? (yes/no)",
             ):
                 return "ok, let's not."
             # do the blast
@@ -747,18 +760,33 @@ class ClanGat(TalkBack):
             code
             and code in await self.event_owners.keys()  # event has an owner
             and code in await self.event_prices.keys()  # and a price
-            and len(await self.event_attendees.get(code, []))
-            < await self.event_limits.get(code, 1e5)  # and there's space
+            and (
+                len(await self.event_attendees.get(code, []))
+                < await self.event_limits.get(code, 1e5)
+            )  # and there's space
             and msg.uuid
             not in await self.event_attendees[
                 code
             ]  # and they're not already on the list
         ):
-            self.pending_orders[msg.uuid] = code
-            return [
-                await self.event_prompts.get(code) or "Event Unlocked!",
-                f"You may now make one purchase of up to 2 tickets at {await self.event_prices[code]} MOB ea.\nIf you have payments activated, open the conversation on your Signal mobile app, click on the plus (+) sign and choose payment.",
-            ]
+            if await self.event_prices.get(code, 0) > 0:
+
+                self.pending_orders[msg.uuid] = code
+                return [
+                    await self.event_prompts.get(code) or "Event Unlocked!",
+                    f"You may now make one purchase of up to 2 tickets at {await self.event_prices[code]} MOB ea.\nIf you have payments activated, open the conversation on your Signal mobile app, click on the plus (+) sign and choose payment.",
+                ]
+            else:
+                await self.send_message(
+                    msg.uuid,
+                    f"{await self.event_prompts.get(code) or 'You have unlocked an event!'}",
+                )
+                if await self.ask_yesno_question(
+                    msg.uuid, "Would you like to bring a guest?"
+                ):
+                    await self.event_attendees.extend(code, msg.uuid)
+                await self.event_attendees.extend(code, msg.uuid)
+                return f"You're on the list for {code}!"
         # if there's a list but no attendees
         if (
             code  # if there's a code and...
@@ -777,7 +805,7 @@ class ClanGat(TalkBack):
                 return f"Sorry, {code} is full!"
             if not await self.ask_yesno_question(
                 msg.uuid,
-                f"You've unlocked the {code} list! Would you like to subscribe to this announcement list?",
+                f"You've unlocked {code}! Would you like to be added to the list?",
             ):
                 return f"Okay, but you're missing out! \n\nIf you change your mind, unlock the list again by sending '{code}'"
             if await self.event_prompts.get(code):

@@ -26,5 +26,6 @@ COPY --from=builder /app/auxin/target/release/auxin-cli /app/auxin-cli
 COPY --from=libbuilder /app/venv/lib/python3.9/site-packages /app/
 COPY ./forest/ /app/forest/
 COPY ./mc_util/ /app/mc_util/
+COPY ./captcha/ /app/captcha/
 COPY ./clangat.py /app/
 ENTRYPOINT ["/usr/bin/python3.9", "/app/clangat.py"]
