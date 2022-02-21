@@ -15,6 +15,10 @@ class SynonymBot(Bot):
 
     @requires_admin
     async def do_build_synonyms(self, _) -> str:
+        """Build synonyms from in-code definitions. 
+        
+        Run this command as admin when bot is first deployed.
+        """
         for short_cmd in self.commands:
             command = "do_" + short_cmd
             method = None
@@ -26,8 +30,7 @@ class SynonymBot(Bot):
                 if hasattr(method, "syns"):
                     syns = getattr(method, "syns")
                     await self.synonyms.set(short_cmd, syns)
-        if syns := self.synonyms:
-            return(f'Built synonym list: {syns}')
+        return(f'Built synonym list: {self.synonyms}')
     
     @requires_admin
     async def do_clear_synonyms(self, _) -> str:
@@ -42,8 +45,7 @@ class SynonymBot(Bot):
             syns = await self.synonyms.get(msg.arg1)
             return f"Synonyms for {msg.arg1} are: {syns}"
         else:
-            syns = self.synonyms.dict_
-            valid_syns = {k:v for k, v in syns.items() if k in valid_commands}
+            valid_syns = {k:v for k, v in self.synonyms.dict_.items() if k in valid_commands}
             return f"Synonym list: {valid_syns}"
 
     async def do_link(self, msg: Message) -> str:
@@ -58,7 +60,7 @@ class SynonymBot(Bot):
                 return f"Linked synonym {msg.arg2} to command {msg.arg1}"
             else:
                 return f"Need a synonym to link to command '{msg.arg1}', try again"
-        return "Syntax for linking commands is 'link command synonym', try again"
+        return "Syntax for linking commands is 'link command synonym'. Synonyms must be a single word or snake_cased. Please try again"
 
     async def do_unlink(self, msg: Message) -> str:
         valid_commands = self.commands if is_admin(msg) else self.visible_commands
@@ -70,6 +72,21 @@ class SynonymBot(Bot):
             else:
                 return f"Need a synonym to unlink from command '{msg.arg1}'. Valid synonyms are {syns}"
         return "Syntax for unlinking commands is 'unlink command synonym', try again"
+
+    def match_command(self, msg: Message) -> str:
+        if not msg.arg0:
+            return ""
+
+        valid_commands = self.commands if is_admin(msg) else self.visible_commands
+        valid_syns = {k:v for k, v in self.synonyms.dict_.items() if k in valid_commands}
+        
+        if msg.arg0 in valid_commands:
+            return msg.arg0
+
+        for k, v in valid_syns.items():
+            if msg.arg0 in v:
+                return k
+        return super().match_command(msg)
 
     async def do_hello(self, _: Message) -> str:
         return "Hello, world!"
