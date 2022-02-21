@@ -8,7 +8,6 @@ from forest.pdictng import aPersistDict
 
 
 class SynonymBot(Bot):
-
     def __init__(self) -> None:
         self.synonyms = aPersistDict("synonyms")
         super().__init__()
@@ -16,13 +15,13 @@ class SynonymBot(Bot):
     def get_valid_syns(self, msg: Message) -> Tuple:
         "Get commands and synonyms without leaking admin commands"
         valid_cmds = self.commands if is_admin(msg) else self.visible_commands
-        valid_syns = {k:v for k, v in self.synonyms.dict_.items() if k in valid_cmds}
-        return(valid_cmds, valid_syns)
+        valid_syns = {k: v for k, v in self.synonyms.dict_.items() if k in valid_cmds}
+        return (valid_cmds, valid_syns)
 
     @requires_admin
-    async def do_build_synonyms(self, _) -> str:
-        """Build synonyms from in-code definitions. 
-        
+    async def do_build_synonyms(self, _: Message) -> str:
+        """Build synonyms from in-code definitions.
+
         Run this command as admin when bot is first deployed.
         """
         for cmd in self.commands:
@@ -35,27 +34,26 @@ class SynonymBot(Bot):
                 if hasattr(method, "syns"):
                     syns = getattr(method, "syns")
                     await self.synonyms.set(cmd, syns)
-        return(f'Built synonym list: {self.synonyms}')
-    
+        return f"Built synonym list: {self.synonyms}"
+
     @requires_admin
-    async def do_clear_synonyms(self, _) -> str:
+    async def do_clear_synonyms(self, _: Message) -> str:
         "Remove all synonyms from persistent storage. Admin-only"
         cmds = await self.synonyms.keys()
         for cmd in cmds:
             await self.synonyms.remove(cmd)
-        return('Synonym list cleared')
+        return "Synonym list cleared"
 
     async def do_list_synonyms(self, msg: Message) -> str:
         "Print synonyms for all commands, or a single command if included"
         valid_cmds, valid_syns = self.get_valid_syns(msg)
         if msg.arg1 in valid_cmds:
-            syns = await self.synonyms.get(msg.arg1)
+            syns = await self.synonyms.get(str(msg.arg1))
             return f"Synonyms for '{msg.arg1}' are: {syns}"
-        elif any(msg.arg1 in v for v in valid_syns.values()):
-            cmds = [k for k,v in valid_syns.items() if msg.arg1 in v]
+        if any(msg.arg1 in v for v in valid_syns.values()):
+            cmds = [k for k, v in valid_syns.items() if msg.arg1 in v]
             return f"'{msg.arg1}' is a synonym for {cmds}"
-        else:
-            return f"Synonym list: {valid_syns}"
+        return f"Synonym list: {valid_syns}"
 
     async def do_link(self, msg: Message) -> str:
         "Link a command to a synonym"
@@ -66,13 +64,13 @@ class SynonymBot(Bot):
                 if msg.arg2 in valid_cmds:
                     return f"Sorry, '{msg.arg2}' is a command"
                 if any(msg.arg2 in v for v in valid_syns.values()):
-                    cmds = [k for k,v in valid_syns.items() if msg.arg2 in v]
+                    cmds = [k for k, v in valid_syns.items() if msg.arg2 in v]
                     return f"Sorry, '{msg.arg2}' is already associated with one or more commands: {cmds}"
                 # Happy path, add the synonym
                 if msg.arg1 not in valid_syns.keys():
-                    await self.synonyms.set(msg.arg1, [msg.arg2])
+                    await self.synonyms.set(str(msg.arg1), [msg.arg2])
                 else:
-                    await self.synonyms.extend(msg.arg1, msg.arg2)
+                    await self.synonyms.extend(str(msg.arg1), msg.arg2)
                 return f"Linked synonym '{msg.arg2}' to command '{msg.arg1}'"
             # No synonym detected
             else:
@@ -87,22 +85,21 @@ class SynonymBot(Bot):
         if msg.arg1 in valid_cmds:
             syns = valid_syns[msg.arg1]
             # Happy path, remove the synonym
-            if (msg.arg2 and msg.arg2 in syns):
-                await self.synonyms.remove_from(msg.arg1, msg.arg2)
+            if msg.arg2 and msg.arg2 in syns:
+                await self.synonyms.remove_from(str(msg.arg1), str(msg.arg2))
                 return f"Unlinked synonym '{msg.arg2}' from command '{msg.arg1}'"
             # No synonym detected
-            else:
-                return f"Need a synonym to unlink from command '{msg.arg1}'. Valid synonyms are {syns}"
+            return f"Need a synonym to unlink from command '{msg.arg1}'. Valid synonyms are {syns}"
         # Look for a synonym by itself
         if any(msg.arg1 in v for v in valid_syns.values()):
-            cmds = [k for k,v in valid_syns.items() if msg.arg1 in v]
+            cmds = [k for k, v in valid_syns.items() if msg.arg1 in v]
             print(cmds)
             # Synonym points to multiple commands
             if len(cmds) > 1:
                 return f"Multiple commands have that synonym: {cmds}. Please try again in the form 'unlink command synonym'"
             # Only points to one command, remove the synonym
-            elif len(cmds) == 1 :
-                await self.synonyms.remove_from(cmds[0], msg.arg1)
+            if len(cmds) == 1:
+                await self.synonyms.remove_from(cmds[0], str(msg.arg1))
                 return f"Synonym '{msg.arg1}' removed from command '{cmds[0]}'"
         return "Syntax for unlinking commands is 'unlink command synonym', try again"
 
@@ -113,7 +110,7 @@ class SynonymBot(Bot):
         if hasattr(self, "do_" + msg.arg0):
             return msg.arg0
         # Try synonyms
-        _, valid_syns = self.get_valid_syns(msg)              
+        _, valid_syns = self.get_valid_syns(msg)
         for k, v in valid_syns.items():
             if msg.arg0 in v:
                 return k
@@ -122,18 +119,22 @@ class SynonymBot(Bot):
 
     async def do_hello(self, _: Message) -> str:
         return "Hello, world!"
+
     # We can add synonyms in development, just register a .syns attribute on any method
-    do_hello.syns = ['hi', 'hey', 'whatup', 'aloha']
+    # This seems to be unsupported in mypy though, ergo ↓
+    do_hello.syns = ["hi", "hey", "whatup", "aloha"]  # type: ignore
 
     async def do_goodbye(self, _: Message) -> str:
         return "Goodbye, cruel world!"
-    do_goodbye.syns = ['bye', 'goodby', 'later', 'aloha']
+
+    do_goodbye.syns = ["bye", "goodby", "later", "aloha"]  # type: ignore
 
     async def do_help(self, msg: Message) -> Response:
         return await super().do_help(msg)
+
     # We can also add .syns attributes to inherited methods in this manner
-    do_help.syns = ['documentation', 'docs', 'commands', 'man']
-    
+    do_help.syns = ["documentation", "docs", "commands", "man"]  # type: ignore
+
 
 if __name__ == "__main__":
     run_bot(SynonymBot)
