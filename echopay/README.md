@@ -130,6 +130,83 @@ With these, you're ready to run Echopay
 
 ## Echopay aka PayMeBot ##
 
+Just like Hellobot is the simplest possible forest bot that reads and replies to messages. Echopay is the simplest possible bot that sends and receives payments. It used to be a bot that took any payment and returned it to sender, minus the network fee, hence the name Echopay. Now it is a bot with 3 capabilities:
+
+- Pay an user that messages it
+- Receive payments from an user and reply to thank them
+- Allow an admin to send a payment to a third party.
+
+You could run:
+
+```bash
+pipenv run python -m echopay.echopay
+```
+
+To try it right now, but first let's go through the code a little bit to make sure you understand it. 
+
+<br/>
+
+### Set Payment Address  
+
+
+If you look in echopay Py, one of the first things you'll see is that we've overloaded the `__init__` method to call a function called `set_payment_address`. 
+
+```python
+async def set_payment_address(self) -> None:
+        """Updates the Bot Signal Profile to have the correct payments address
+        as specified by FS_ACCOUNT_NAME"""
+
+        fs_address = await self.mobster.get_my_address()
+
+        # Singal addresses require Base64 encoding, but full service uses Base58.
+        # This method handles the conversion
+        signal_address = mc_util.b58_wrapper_to_b64_public_address(fs_address)
+
+        await self.set_profile_auxin(
+            given_name="PaymeBot",
+            family_name="",
+            payment_address=signal_address,
+            profile_path="avatar.png",
+        )
+```
+`set_payments_address` first calls `mobster.get_my_address()` a method which returns a Mobilecoin wallet address from the running full service instance. It will search for an `FS_ACCOUNT_NAME` in dev_secrets, if it finds an account with that name it'll return that address, otherwise it defaults to the first account in Full Service. The method then sends a message to Signal's servers to update the bot's user profile. Crucially it sets a payment's address for the bot. This will allow the bot to receive payments on Signal, and have those payments be deposited on that Full Service account. It will also set the bot's behaviour to extract funds from that account when the bot sends a payment. These properties are linked but not one and the same. This method takes care of both.
+
+Additionally, you can change the bot's given name, last name, and profile picture here by editing the appropriate values. The avatar file must be in the directory you're running the bot from. The name of the bot does not have to match the `FS_ACCOUNT_NAME`.
+
+<br />
+
+## do_payme
+
+The next main important function is `do_payme`, as you know, any function with the `do_` prefix translates to a command that the user can message the bot. do_payme runs whenever an user texts the bot "payme".
+
+<img width=500px src="images/payme.png">
+
+Here's what that method looks like:
+
+```python
+
+async def do_payme(self, message: Message) -> Response:
+        """Sends payment to requestee for a certain amount"""
+        amount_mob = 0.001  ##payment amount in MOB
+        amount_picomob = self.to_picomob(amount_mob)
+
+        await self.send_payment(
+            message.source, amount_picomob, confirm_tx_timeout=10,      
+            receipt_message=""
+        )
+
+        return f"Sent you a payment for {str(amount_mob)} MOB"
+```
+
+
+
+Echopay used to be a bot that received payments and immediately returned them minus the fee. Hence, Echopay. It has been rewritten to serve more as an introduction to Bots that use Signal Pay. If you just want to run the bot, you can start it by issuing the following command from your home directory.
+
+
+
+The bot has a couple capabilities which we will Illustrate:
+
+
 
 
 Your account is a hash on that's tracked on Mobilecoin's blockchain. One's account is represented by a mnemonic phrase that's created along with the account. Full Service also allows you to manage imported account, you can import a wallet just by knowing it's entropy (the 12 word recovery phrase given at creation). Therefore be very careful with your entropy. Your local instance of full service stores information on a local database, with your entropy. Be very guarded with your Full Service instance. This is why you need additional security measures when running the wallet on a shared device or a server. Anyone who can make HTTP requests to full service has complete control to the accounts stored.
