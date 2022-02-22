@@ -86,7 +86,7 @@ Auxin can run hellobot as good as signal-cli. To test hellobot with auxin, edit 
 
 ```bash
 NO_MEMFS=1
-ROOT=.
+ROOT_DIR=.
 SIGNAL=auxin
 ADMIN=+15551111111
 BOT_NUMBER=+15551234567
@@ -116,7 +116,7 @@ Once you've done that, you can put your Full Service URL and Full Service accoun
 
 ``` bash
 NO_MEMFS=1
-ROOT=.
+ROOT_DIR=.
 SIGNAL=auxin
 ADMIN=+15551111111
 BOT_NUMBER=+15551234567
@@ -149,7 +149,17 @@ To try it right now, but first let's go through the code a little bit to make su
 ### Set Payment Address  
 
 
-If you look in echopay Py, one of the first things you'll see is that we've overloaded the `__init__` method to call a function called `set_payment_address`. 
+If you look in echopay Py, one of the first things you'll see is that we've overloaded the `__init__` method:
+
+```python
+def __init__(self) -> None:
+        """Creates AND STARTS a bot that routes commands to do_x handlers"""
+        super().__init__()
+        asyncio.create_task(self.set_payment_address())
+```
+
+
+The first thing we do is call `super().__init__()` to run the proper init method inherited from the PayBot class. Then `asyncio.create_task(self.set_payment_address())` calls the `set_payment_address` function, which is below:
 
 ```python
 async def set_payment_address(self) -> None:
@@ -195,8 +205,150 @@ async def do_payme(self, message: Message) -> Response:
             receipt_message=""
         )
 
+        if 
+        
         return f"Sent you a payment for {str(amount_mob)} MOB"
 ```
+This method has a predefined amount of Mob it gives out, in this case $0.001 Mob. All of the payment methods in forest.core use picoMOB ammounts since that's the lowest precision available to MOB. 1 pMOB is 1*10^`12 MOB or $0.000000000001 MOB. 1MOB is 10^12 pMOB or 10000000000000 pMOB.
+
+We use a helper method to handle the conversion and then we're ready for `send_payment`. `send_payment` will send a payment to a user and we're calling it with the following arguments:
+
+- `recipient=message.source` This means takes the phone number of whomever sent the `payme` command and use that as the recipient for the payment.
+- `amount_picomob` The payment amount in picomob which we got by converting amount_mob to picomob. Should be 0.001 MOB or 1000000000 pMOB.
+- `confirm_tx_timeout=10` This is how long the bot waits to verify that the transaction has completed before sending a receipt. It waits 10 seconds, more than enough.
+- `receipt_message` (this section will change cause I want to change the messaging logic to only work on success)
+
+So this code will send 0.01 MOB to anyone that asks. You can modify it to change the amount. However, this isn't very nice, that means anyone can spam your bot to empty it's wallet. Maybe we can add some logic to prevent people from doing that. One easy way to do it is to set a password so only people who've been given the password can get paid.
+
+In echopay_final.py there's an example of such a modification:
+
+``` python
+async def do_payme(self, message: Message) -> Response:
+        """Sends payment to requestee for a certain amount"""
+        amount_mob = 0.001  ##payment amount in MOB
+        amount_picomob = self.to_picomob(amount_mob)
+
+        password = "please"
+
+        # for convenience, message.arg0 is the first word of the message in this case "payme"
+        # and msg.arg1 is the next word after that. In "payme please" please is msg.arg1
+
+        if message.arg1 == password:
+            await self.send_payment(message.source, amount_picomob)
+            return f"Of course, here's {str(amount_mob)} MOB"
+
+        if message.arg1 is None:
+            return "What's the secret word?"
+
+        return "That's not the right secret word!!"
+```
+
+This code sets the password to the word "please" and will only pay user's if they type "payme please". Of course if someone can see your code they can find your password pretty easily. Also anyone with the password can still spam the bot. Ways to further modify the code are left as an exercise to the reader.
+
+<br />
+
+### do_pay_user
+
+`do_pay_user` makes use of the `@requires_admin` annotation. Any method with this annotation will only work when an user listed as an admin in dev_secrets texts the bot. (This is currently buggy so don't trust it too much) When an admint texts "pay_user" followed by a phone number, the bot will attempt to send that user a payment.
+
+<img width=500px src="images/pay_user1.png">
+<img width=500px src="images/pay_user2.png">
+
+ Here's what that method looks like:
+
+```python
+@requires_admin
+    async def do_pay_user(self, message: Message) -> Response:
+        """Send payment to user by phone number: `pay_user +15554135555`"""
+        amount_mob = 0.001
+        amount_picomob = self.to_picomob(amount_mob)
+
+        ## message.arg1 is the first word of the message after the pay_user command
+
+        if not isinstance(message.arg1, str):
+            response = (
+                "Please specify the User to be paid as a phone number"
+                " with country code example: pay_user +15554135555"
+            )
+            return response
+
+        recipient = message.arg1
+        await self.send_payment(
+            recipient,
+            amount_picomob,
+            confirm_tx_timeout=10,
+            receipt_message="Here's some money from your friendly Paymebot",
+        )
+        return f"Sent Payment to {recipient} for {amount_mob} MOB"
+```
+The body of this method looks pretty similar to `do_payme`, but there are a couple crucial differences. First, it takes an argument. Forest Core implements a special type of message parsing where the first 4 words of a message (as delineated by spaces `" "`) are defined as arg0 to arg3. So if someone sends 
+
+`pay_user +15554135555`
+
+`arg0 = "pay_user"`  
+`arg1 = "+15554135555`  
+`arg2 = ""`  
+`arg3 = ""`  
+
+`if not isinstance(message.arg1, str):` checks to make sure arg1 is defined and is a string. Which won't happen if the message is only the one word. If not it instructs the user to add a phone number. Otherwise it calls the send_payment method. We're not doing any logic to verify that the phone number is formatted properly. `send_payment` already checks that for us and will return an error if not.
+
+ The main difference in this call to `send_message` and the one in `do_payme` is that we've added a receipt_message. This message will be sent to the recipient of the payment if the payment succeeds. The method also returns a message, this message is sent to the admin that requested the payment.
+
+ A fun way to modify this method is implemented in `echopay_final`. It allows you to specify an payment amount as the second argument in the message, defaulting to the original payment_amount if none is specified. (again be careful with this, since requires_admin is not working properly and someone could use this to again, clear your bot's account)
+
+ ```python
+@requires_admin
+    async def do_pay_user(self, message: Message) -> Response:
+        """Send payment to user by phone number: `pay_user +15554135555`"""
+        amount_mob = 0.001
+        amount_picomob = self.to_picomob(amount_mob)
+
+        ## message.arg1 is the first word of the message after the pay_user command
+
+        if not isinstance(message.arg1, str):
+            response = (
+                "Please specify the User to be paid as a phone number"
+                " with country code example: pay_user +15554135555"
+            )
+            return response
+
+        if isinstance(message.arg2, str):
+            amount_mob = message.arg2
+            try:
+                amount_picomob = self.to_picomob(amount_mob)
+            except:
+                return "That didn't look like a valid amount of MOB."
+
+
+        recipient = message.arg1
+        await self.send_payment(
+            recipient,
+            amount_picomob,
+            confirm_tx_timeout=10,
+            receipt_message="Here's some money from your friendly Paymebot",
+        )
+        return f"Sent Payment to {recipient} for {amount_mob} MOB"
+```
+
+<br /> 
+
+### payment_response
+
+`payment_response` is the second overloaded method in Echopay. `payment_response` is the method that triggers upon receiving a signal pay payment. 
+
+<img width=500px src="images/handle_payment1.png">
+
+
+- Should it echo payments
+- what should the files be called
+- how do we make it so it actually checks the payment succeeded
+
+```python
+
+
+
+```
+
 
 
 
@@ -204,7 +356,7 @@ Echopay used to be a bot that received payments and immediately returned them mi
 
 
 
-The bot has a couple capabilities which we will Illustrate:
+The bot has a couple capabilities which we will Illustrate
 
 
 
