@@ -189,7 +189,7 @@ class Mobster:
         return await self.req({"method": "import_account", "params": params})
 
     async def get_my_address(self) -> str:
-        """ Returns either the address set, or the address specified by the secret
+        """Returns either the address set, or the address specified by the secret
         or the first address in the full service instance in that order"""
         acc_id = await self.get_account()
         res = await self.req({"method": "get_all_accounts"})

@@ -36,7 +36,7 @@ class Echopay(PayBot):
         # This method handles the conversion
         signal_address = mc_util.b58_wrapper_to_b64_public_address(fs_address)
 
-        #This will set the bot's Signal profile, replace avatar.png to give your bot a custom avatar
+        # This will set the bot's Signal profile, replace avatar.png to give your bot a custom avatar
         await self.set_profile_auxin(
             given_name="PaymeBot",
             family_name="",
