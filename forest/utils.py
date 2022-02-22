@@ -56,10 +56,12 @@ def parse_secrets(secrets: str) -> dict[str, str]:
         for line in secrets
         if line and not line.startswith("#")
     ]
-    can_be_a_dict = cast(list[tuple[str, str]], secrets)
+    can_be_a_dict = cast(list[tuple[str, str]], pairs)
     return dict(can_be_a_dict)
 
+
 # to dump: "\n".join(f"{k}={v}" for k, v in secrets.items())
+
 
 @functools.cache  # don't load the same env more than once?
 def load_secrets(env: Optional[str] = None, overwrite: bool = False) -> None:
