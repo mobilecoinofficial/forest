@@ -519,12 +519,15 @@ class Signal:
 
 
 def is_admin(msg: Message) -> bool:
+    ADMIN = utils.get_secret("ADMIN")
+    ADMIN_GROUP = utils.get_secret("ADMIN_GROUP")
+    ADMINS = utils.get_secret("ADMINS")
     return (
-        msg.source == utils.get_secret("ADMIN")
-        or msg.uuid == utils.get_secret("ADMIN")
-        or msg.group == utils.get_secret("ADMIN_GROUP")
-        or msg.source in utils.get_secret("ADMINS").split(",")
-        or msg.uuid in utils.get_secret("ADMINS")
+        (ADMIN and msg.source in ADMIN)
+        or (ADMIN and msg.uuid in ADMIN)
+        or (ADMIN_GROUP and msg.group in ADMIN_GROUP)
+        or (ADMINS and msg.source in ADMINS)
+        or (ADMINS and msg.uuid in ADMINS)
     )
 
 
