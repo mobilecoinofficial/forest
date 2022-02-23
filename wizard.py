@@ -120,8 +120,8 @@ def do_auxin():
     auxins = inquirer.select(
         message="Do you have auxin already?",
         choices=[
-            Choice(value=build_auxin, name="No, build Auxin for me using cargo",enabled=True)])
-    Choice(value=switch_auxin, name="I have auxin, just change the parameter in 'dev_secrets'").execute()
+            Choice(value=build_auxin, name="No, build Auxin for me using cargo",enabled=True),
+            Choice(value=switch_auxin, name="I have auxin, just change the parameter in 'dev_secrets'")]).execute()
 
     auxins()
 
