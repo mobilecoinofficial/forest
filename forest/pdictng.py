@@ -69,8 +69,9 @@ def get_cleartext_value(value_: str) -> str:
 
 class fasterpKVStoreClient:
     """Strongly consistent, persistent storage.
-    Redis with strong consistency via Upstash..
+    Redis with [strong consistency via Upstash](https://docs.upstash.com/redis/features/consistency)
     On top of Redis and Webdis.
+    Check out <https://github.com/mobilecoinofficial/forest/blob/main/pdictng_docs/upstash_pauth.png> for setup / pAUTH
     """
 
     def __init__(
