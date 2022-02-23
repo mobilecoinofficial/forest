@@ -21,18 +21,8 @@ def FuckAiohttp(record: logging.LogRecord) -> bool:
     return True
 
 
-# TRACE = logging.DEBUG - 10
-# logging.addLevelName(TRACE, "TRACE")
-
 logger_class = logging.getLoggerClass()
 
-# doesn't work / not used
-# class TraceLogger(logger_class):  # type: ignore
-#     def trace(self, msg: str, *args: Any, **kwargs: Any) -> None:
-#         self.log(TRACE, msg, *args, **kwargs)
-
-
-# logging.setLoggerClass(TraceLogger)
 logger = logging.getLogger()
 logger.setLevel("DEBUG")
 fmt = logging.Formatter("{levelname} {module}:{lineno}: {message}", style="{")
@@ -44,10 +34,11 @@ console_handler.setFormatter(fmt)
 console_handler.addFilter(FuckAiohttp)
 logger.addHandler(console_handler)
 
+
+#### Configure Parameters
+
 # edge cases:
 # accessing an unset secret loads other variables and potentially overwrites existing ones
-# "false" being truthy is annoying
-
 
 def parse_secrets(secrets: str) -> dict[str, str]:
     pairs = [
@@ -62,7 +53,7 @@ def parse_secrets(secrets: str) -> dict[str, str]:
 # to dump: "\n".join(f"{k}={v}" for k, v in secrets.items())
 
 
-@functools.cache  # don't load the same env more than once?
+@functools.cache  # don't load the same env more than once
 def load_secrets(env: Optional[str] = None, overwrite: bool = False) -> None:
     if not env:
         env = os.environ.get("ENV", "dev")
@@ -79,7 +70,7 @@ def load_secrets(env: Optional[str] = None, overwrite: bool = False) -> None:
         pass
 
 
-# TODO: split this into get_flag and get_secret; move all of the flags into fly.toml;
+# potentially split this into get_flag and get_secret; move all of the flags into fly.toml;
 # maybe keep all the tomls and dockerfiles in a separate dir with a deploy script passing --config and --dockerfile explicitly
 def get_secret(key: str, env: Optional[str] = None) -> str:
     try:
@@ -91,6 +82,7 @@ def get_secret(key: str, env: Optional[str] = None) -> str:
         return ""
     return secret
 
+## Parameters for easy access and ergonomic use
 
 SIGNAL = (get_secret("SIGNAL") or "auxin").removesuffix("-cli") + "-cli"
 AUXIN = SIGNAL.lower() == "auxin-cli"
@@ -104,10 +96,6 @@ MEMFS = get_secret("AUTOSAVE")
 #### Configure logging to file
 
 if get_secret("LOGFILES") or not LOCAL:
-    # tracelog = logging.FileHandler("trace.log")
-    # tracelog.setLevel(TRACE)
-    # tracelog.setFormatter(fmt)
-    # logger.addHandler(tracelog)
     handler = logging.FileHandler("debug.log")
     handler.setLevel("DEBUG")
     handler.setFormatter(fmt)
@@ -122,21 +110,3 @@ def signal_format(raw_number: str) -> Optional[str]:
         return None
 
 
-@asynccontextmanager
-async def get_url(port: int = 8080) -> AsyncIterator[str]:
-    if not APP_NAME:
-        try:
-            logging.info("starting tunnel")
-            tunnel = await create_subprocess_exec(
-                *(f"lt -p {port}".split()),
-                stdout=PIPE,
-            )
-            assert tunnel.stdout
-            line = await tunnel.stdout.readline()
-            url = line.decode().lstrip("your url is: ").strip()
-            yield url + "/inbound"
-        finally:
-            logging.info("terminaitng tunnel")
-            tunnel.terminate()
-    else:
-        yield APP_NAME + ".fly.io"
