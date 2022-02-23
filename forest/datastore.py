@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import shutil
+import socket
 import sys
 import time
 from io import BytesIO
@@ -162,7 +163,8 @@ class SignalDatastore:
         )
         tarball.extractall(utils.ROOT_DIR)
         # open("last_downloaded_checksum", "w").write(zlib.crc32(buffer.seek(0).read()))
-        await self.account_interface.mark_account_claimed(self.number, utils.HOSTNAME)
+        hostname = socket.gethostname()
+        await self.account_interface.mark_account_claimed(self.number, hostname)
         logging.debug("marked account as claimed, asserting that this is the case")
         assert await self.is_claimed()
         return
@@ -264,7 +266,7 @@ async def getFreeSignalDatastore() -> SignalDatastore:
 
 # this stuff needs to be cleaned up
 # maybe a config about where we're running:
-# MEMFS, DOWNLOAD, ROOT_DIR, HOSTNAME, etc
+# MEMFS, DOWNLOAD, ROOT_DIR, etc
 # is HCL overkill?
 
 
