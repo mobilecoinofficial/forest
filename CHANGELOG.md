@@ -1,8 +1,33 @@
+## 1.0.10
+
+- captchas! (#124, #126)
+- QuestionBot can `ask_intable`, `ask_floatable`, and `require_first_device` for those pesky profile keys (#122)
+- small OSX portability fix (#137)
+
+## 1.0.9
+
+- restart handle_messages after crashing and fix backoff logic (#99)
+- refactor forest internals, improving naming schemes for signal clients. Notably replaces old things with inbox/outbox, `signal_rpc_request`, and `wait_for_response` (#105)
+- many small fixes: MOBot Helper (#107, #111), echopay (#114), pong semantics (#110)
+
+## 1.0.8
+
+- QuestionBot uuids, better error handling for failed to `build_transaction`, `is_admin` supports uuid, eval can access globals() (#104)
+- Imogen manpage! (#79)
+
+
+## 1.0.7
+
+- add QuestionBot (#93)
+- Prevent tx receipt delivery on tx failure (#97) 
+- MOBot Helper: Conversational UI, q&a workflow for creation, confirmations for redemption, no slashes, mild rebranding, etc (#98)
+- aPersistDict improvements (#101)
+
 ## 1.0.6
 
 - Use ULIDs for JSON RPC ids (#92)
 - Switch to Levenshtein distance, improve matching logic, and accept mentions as commands (#94)
-- Add pdict and pdictng offering PersistDict and aPersistDict, easy state management abstractions (#XX)
+- Add pdict and pdictng offering PersistDict and aPersistDict, easy state management abstractions (#95)
 
 ## 1.0.5
 
