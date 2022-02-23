@@ -37,12 +37,10 @@ logger.addHandler(console_handler)
 
 # edge cases:
 # accessing an unset secret loads other variables and potentially overwrites existing ones
-
-
 def parse_secrets(secrets: str) -> dict[str, str]:
     pairs = [
         line.strip().split("=", 1)
-        for line in secrets
+        for line in secrets.split("\n")
         if line and not line.startswith("#")
     ]
     can_be_a_dict = cast(list[tuple[str, str]], pairs)
