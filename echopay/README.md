@@ -338,14 +338,16 @@ The body of this method looks pretty similar to `do_payme`, but there are a coup
 
 <img width=500px src="images/handle_payment1.png">
 
-
-- Should it echo payments
-- what should the files be called
-- how do we make it so it actually checks the payment succeeded
+It's a pretty simple method. 
 
 ```python
+    async def payment_response(self, msg: Message, amount_pmob: int) -> Response:
+        """Triggers on Succesful payment, overriden from forest.core"""
 
+        # amounts are received in picoMob, convert to Mob for readability
+        amount_mob = self.to_mob(amount_pmob)
 
+        return f"Thank you for your payment of {str(amount_mob)} MOB"
 
 ```
 
