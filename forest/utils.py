@@ -4,7 +4,6 @@
 import functools
 import logging
 import os
-import socket
 from asyncio.subprocess import PIPE, create_subprocess_exec
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, Optional, cast
@@ -88,7 +87,6 @@ def get_secret(key: str, env: Optional[str] = None) -> str:
 
 SIGNAL = (get_secret("SIGNAL") or "auxin").removesuffix("-cli") + "-cli"
 AUXIN = SIGNAL.lower() == "auxin-cli"
-HOSTNAME = socket.gethostname()
 APP_NAME = os.getenv("FLY_APP_NAME")
 URL = os.getenv("URL_OVERRIDE", f"https://{APP_NAME}.fly.dev")
 LOCAL = os.getenv("FLY_APP_NAME") is None
@@ -96,7 +94,7 @@ ROOT_DIR = (
     "." if get_secret("NO_DOWNLOAD") else "/tmp/local-signal" if LOCAL else "/app"
 )
 UPLOAD = DOWNLOAD = not get_secret("NO_DOWNLOAD")
-MEMFS = not get_secret("NO_MEMFS")
+MEMFS = not get_secret("NO_MEMFS") or False
 
 if get_secret("LOGFILES") or not LOCAL:
     # tracelog = logging.FileHandler("trace.log")
