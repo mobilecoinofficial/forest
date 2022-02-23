@@ -5,7 +5,7 @@
 ## 1.0.10
 
 - captchas! (#124, #126)
-- QuestionBot can `ask_intable`, `ask_floatable`, and `require_first_device` for those pesky profile keys
+- QuestionBot can `ask_intable`, `ask_floatable`, and `require_first_device` for those pesky profile keys (#122)
 - small OSX portability fix (#137)
 
 ## 1.0.9
