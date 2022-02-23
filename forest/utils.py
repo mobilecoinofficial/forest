@@ -49,24 +49,31 @@ logger.addHandler(console_handler)
 # "false" being truthy is annoying
 
 
+def parse_secrets(secrets: str) -> dict[str, str]:
+    pairs = [
+        line.strip().split("=", 1)
+        for line in secrets
+        if line and not line.startswith("#")
+    ]
+    can_be_a_dict = cast(list[tuple[str, str]], pairs)
+    return dict(can_be_a_dict)
+
+
+# to dump: "\n".join(f"{k}={v}" for k, v in secrets.items())
+
+
 @functools.cache  # don't load the same env more than once?
 def load_secrets(env: Optional[str] = None, overwrite: bool = False) -> None:
     if not env:
         env = os.environ.get("ENV", "dev")
     try:
         logging.info("loading secrets from %s_secrets", env)
-        secrets = [
-            line.strip().split("=", 1)
-            for line in open(f"{env}_secrets")
-            if line and not line.startswith("#")
-        ]
-        can_be_a_dict = cast(list[tuple[str, str]], secrets)
+        secrets = parse_secrets(open(f"{env}_secrets").read())
         if overwrite:
-            new_env = dict(can_be_a_dict)
+            new_env = secrets
         else:
-            new_env = (
-                dict(can_be_a_dict) | os.environ
-            )  # mask loaded secrets with existing env
+            # mask loaded secrets with existing env
+            new_env = secrets | os.environ
         os.environ.update(new_env)
     except FileNotFoundError:
         pass
