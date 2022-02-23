@@ -1,3 +1,7 @@
+## 1.1.0
+
+- `AUTOSAVE`, `DOWNLOAD` replace `NO_MEMFS`, `NO_DOWNLOAD`
+
 ## 1.0.6
 
 - Use ULIDs for JSON RPC ids (#92)

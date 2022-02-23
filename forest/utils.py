@@ -4,9 +4,7 @@
 import functools
 import logging
 import os
-from asyncio.subprocess import PIPE, create_subprocess_exec
-from contextlib import asynccontextmanager
-from typing import AsyncIterator, Optional, cast
+from typing import Optional, cast
 
 import phonenumbers as pn
 from phonenumbers import NumberParseException
@@ -39,6 +37,7 @@ logger.addHandler(console_handler)
 
 # edge cases:
 # accessing an unset secret loads other variables and potentially overwrites existing ones
+
 
 def parse_secrets(secrets: str) -> dict[str, str]:
     pairs = [
@@ -82,6 +81,7 @@ def get_secret(key: str, env: Optional[str] = None) -> str:
         return ""
     return secret
 
+
 ## Parameters for easy access and ergonomic use
 
 SIGNAL = (get_secret("SIGNAL") or "auxin").removesuffix("-cli") + "-cli"
@@ -108,5 +108,3 @@ def signal_format(raw_number: str) -> Optional[str]:
         return pn.format_number(pn.parse(raw_number, "US"), pn.PhoneNumberFormat.E164)
     except NumberParseException:
         return None
-
-
