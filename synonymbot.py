@@ -2,9 +2,17 @@
 # Copyright (c) 2021 MobileCoin Inc.
 # Copyright (c) 2021 The Forest Team
 
-from typing import Tuple
+from typing import Tuple, Protocol, Any
 from forest.core import Bot, Message, Response, requires_admin, is_admin, run_bot
 from forest.pdictng import aPersistDict
+
+
+class SynonymAttributes(Protocol):
+    syns: list
+
+
+def has_synonyms(func: Any) -> SynonymAttributes:
+    return func
 
 
 class SynonymBot(Bot):
@@ -117,23 +125,27 @@ class SynonymBot(Bot):
         # Pass the buck
         return super().match_command(msg)
 
+    # We can add synonyms in development. give your command the
+    # @has_synonyms decorator and register a .syns attribute
+    @has_synonyms
     async def do_hello(self, _: Message) -> str:
         return "Hello, world!"
 
-    # We can add synonyms in development, just register a .syns attribute on any method
-    # This seems to be unsupported in mypy though, ergo ↓
-    do_hello.syns = ["hi", "hey", "whatup", "aloha"]  # type: ignore
+    do_hello.syns = ["hi", "hey", "whatup", "aloha"]
 
+    @has_synonyms
     async def do_goodbye(self, _: Message) -> str:
         return "Goodbye, cruel world!"
 
-    do_goodbye.syns = ["bye", "goodby", "later", "aloha"]  # type: ignore
+    do_goodbye.syns = ["bye", "goodby", "later", "aloha"]
 
+    # We can also add.syns attributes to inherited methods in this manner
+    # but doesn't play well with mypy, becuase the signature doesn't match
+    # the supertype, so we use type:ignore, as seen below        ↓
     async def do_help(self, msg: Message) -> Response:
         return await super().do_help(msg)
 
-    # We can also add .syns attributes to inherited methods in this manner
-    do_help.syns = ["documentation", "docs", "commands", "man"]  # type: ignore
+    do_help.syns = ["documentation", "docs", "commands", "man"]  # type:ignore
 
 
 if __name__ == "__main__":
