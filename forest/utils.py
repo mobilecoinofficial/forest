@@ -38,7 +38,7 @@ logger.setLevel("DEBUG")
 fmt = logging.Formatter("{levelname} {module}:{lineno}: {message}", style="{")
 console_handler = logging.StreamHandler()
 console_handler.setLevel(
-    ((os.getenv("LOGLEVEL") or os.getenv("LOG_LEVEL")) or "INFO").upper()
+    ((os.getenv("LOGLEVEL") or os.getenv("LOG_LEVEL")) or "DEBUG").upper()
 )
 console_handler.setFormatter(fmt)
 console_handler.addFilter(FuckAiohttp)
@@ -97,11 +97,11 @@ AUXIN = SIGNAL.lower() == "auxin-cli"
 APP_NAME = os.getenv("FLY_APP_NAME")
 URL = os.getenv("URL_OVERRIDE", f"https://{APP_NAME}.fly.dev")
 LOCAL = os.getenv("FLY_APP_NAME") is None
-ROOT_DIR = (
-    "." if get_secret("NO_DOWNLOAD") else "/tmp/local-signal" if LOCAL else "/app"
-)
-UPLOAD = DOWNLOAD = not get_secret("NO_DOWNLOAD")
-MEMFS = not get_secret("NO_MEMFS") or False
+UPLOAD = DOWNLOAD = get_secret("DOWNLOAD")
+ROOT_DIR = "/tmp/local-signal" if DOWNLOAD else "." if LOCAL else "/app"
+MEMFS = get_secret("AUTOSAVE")
+
+#### Configure logging to file
 
 if get_secret("LOGFILES") or not LOCAL:
     # tracelog = logging.FileHandler("trace.log")
