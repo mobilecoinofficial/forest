@@ -205,7 +205,6 @@ async def do_payme(self, message: Message) -> Response:
             receipt_message=""
         )
 
-        if 
         
         return f"Sent you a payment for {str(amount_mob)} MOB"
 ```
@@ -338,7 +337,7 @@ The body of this method looks pretty similar to `do_payme`, but there are a coup
 
 <img width=500px src="images/handle_payment1.png">
 
-It's a pretty simple method. 
+This method is wide open. Return values are sent as messages to the payer and payer information comes along with the message.
 
 ```python
     async def payment_response(self, msg: Message, amount_pmob: int) -> Response:
@@ -350,6 +349,34 @@ It's a pretty simple method.
         return f"Thank you for your payment of {str(amount_mob)} MOB"
 
 ```
+
+As it is now, all it does is thank the user for their payment. As you see the available information is the msg, of which msg.source is the payer. And the payment amount in picoMob. How can we make this method more exciting, well we can reimplement the original echopay functinality like so:
+
+
+```python
+    async def payment_response(self, msg: Message, amount_pmob: int) -> Response:
+        """Triggers on Succesful payment, overriden from forest.core"""
+
+        # amounts are received in picoMob, convert to Mob for readability
+        amount_mob = self.to_mob(amount_pmob) 
+
+        to_return = amount_pmob - FEE_PMOB
+
+        
+        await self.send_payment(
+            msg.source,
+            to_return,
+            confirm_tx_timeout=10,
+            receipt_message="",
+        )
+        [the thing to make sure the payment actually went]
+            return f"Thank you for your payment of {str(amount_mob)} MOB. Here's your money back, minus the network fee"
+
+        return f"Couldn't return your payment for some reason. Please contact administrator for assistance"
+
+```
+
+## Try it out
 
 
 
