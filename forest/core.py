@@ -519,12 +519,16 @@ class Signal:
 
 
 def is_admin(msg: Message) -> bool:
+    ADMIN = utils.get_secret("ADMIN") or ""
+    ADMIN_GROUP = utils.get_secret("ADMIN_GROUP") or ""
+    ADMINS = utils.get_secret("ADMINS") or ""
     return (
-        msg.source == utils.get_secret("ADMIN")
-        or msg.uuid == utils.get_secret("ADMIN")
-        or msg.group == utils.get_secret("ADMIN_GROUP")
-        or msg.source in utils.get_secret("ADMINS").split(",")
-        or msg.uuid in utils.get_secret("ADMINS")
+        (ADMIN and msg.source in ADMIN)
+        or (ADMIN and msg.uuid in ADMIN)
+        or (ADMIN_GROUP and msg.group and msg.group in ADMIN_GROUP)
+        or (ADMINS and msg.source in ADMINS)
+        or (ADMINS and msg.uuid in ADMINS)
+        or False
     )
 
 
@@ -1167,7 +1171,7 @@ class QuestionBot(PayBot):
         pending_answer, probably_future = get_source_or_uuid_from_dict(
             message, self.pending_answers
         )
-        requires_first_device, _ = get_source_or_uuid_from_dict(
+        _, requires_first_device = get_source_or_uuid_from_dict(
             message, self.requires_first_device
         )
         if message.full_text and pending_answer:
@@ -1184,7 +1188,7 @@ class QuestionBot(PayBot):
     async def do_yes(self, msg: Message) -> Response:
         """Handles 'yes' in response to a pending_confirmation."""
         _, question = get_source_or_uuid_from_dict(msg, self.pending_confirmations)
-        requires_first_device, _ = get_source_or_uuid_from_dict(
+        _, requires_first_device = get_source_or_uuid_from_dict(
             msg, self.requires_first_device
         )
         if not question:
@@ -1193,21 +1197,25 @@ class QuestionBot(PayBot):
             return self.FIRST_DEVICE_PLEASE
         if question:
             question.set_result(True)
+            self.requires_first_device.pop(msg.uuid, None)
+            self.requires_first_device.pop(msg.source, None)
         return None
 
     @hide
     async def do_no(self, msg: Message) -> Response:
         """Handles 'no' in response to a pending_confirmation."""
         _, question = get_source_or_uuid_from_dict(msg, self.pending_confirmations)
-        requires_first_device, _ = get_source_or_uuid_from_dict(
+        _, requires_first_device = get_source_or_uuid_from_dict(
             msg, self.requires_first_device
         )
         if not question:
             return self.UNEXPECTED_ANSWER
-        if not requires_first_device and not is_first_device(msg):
+        if requires_first_device and not is_first_device(msg):
             return self.FIRST_DEVICE_PLEASE
         if question:
             question.set_result(False)
+            self.requires_first_device.pop(msg.uuid, None)
+            self.requires_first_device.pop(msg.source, None)
         return None
 
     async def ask_freeform_question(

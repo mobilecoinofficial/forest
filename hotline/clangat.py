@@ -95,6 +95,13 @@ class TalkBack(PayBotPro):
             msg.arg1 = await self.ask_freeform_question(
                 msg.uuid, "Who would you like to message?"
             )
+        if param.rstrip(string.punctuation).isalnum():
+            param = (
+                (msg.full_text or "")
+                .lstrip("/")
+                .replace(f"send {msg.arg1} ", "", 1)
+                .replace(f"Send {msg.arg1} ", "", 1)
+            )  # thanks mikey :)
         if not param:
             msg.arg2 = await self.ask_freeform_question(
                 msg.uuid, "What would you like to say?"
@@ -156,6 +163,7 @@ class ClanGat(TalkBack):
         self.easter_eggs = aPersistDict("easter_eggs")
         self.successful_pays = aPersistDict("successful_pays")
         self.payout_balance_mmob = aPersistDict("payout_balance_mmob")
+        self.challenging = aPersistDict("challenging")
         self.pay_lock: asyncio.Lock = asyncio.Lock()
         # okay, this now maps the tag (restore key) of each of the above to the instance of the PersistDict class
         self.state = {
@@ -206,6 +214,7 @@ class ClanGat(TalkBack):
                     f"paid attendees: {[await self.get_displayname(uuid) for uuid in await self.event_attendees.get(obj, [])]}",
                     f"list has {len(await self.event_lists.get(obj,[]))} members",
                     f"list members: {[await self.get_displayname(uuid) for uuid in await self.event_lists.get(obj, [])]}",
+                    f"CAPTCHA enabled: {await self.challenging.get(obj, False)}",
                     f"balance: {await self.payout_balance_mmob.get(obj, 0)}mmob",
                 ]
             )
@@ -295,6 +304,7 @@ class ClanGat(TalkBack):
     async def do_pay(self, msg: Message) -> Response:
         """Allows an event/list owner to distribute available funds across those on a list."""
         user = msg.uuid
+        to_send = []
         if not msg.arg2 or not msg.arg2.isnumeric():
             msg.arg2 = await self.ask_freeform_question(
                 msg.uuid,
@@ -321,7 +331,6 @@ class ClanGat(TalkBack):
                 user, "Who would you like to send the mMOB to?"
             )
             return await self.do_pay(msg)
-        to_send = []
         user_owns = await self.check_user_owns(user, list_)
         if not is_admin(msg) and not user_owns:
             return "Sorry, you are not authorized."
@@ -365,7 +374,8 @@ class ClanGat(TalkBack):
             ]
             if len(valid_utxos) < len(filtered_send_list):
                 await self.send_message(
-                    msg.uuid, "Insufficient number of utxos!\nBuilding more..."
+                    msg.uuid,
+                    "Please wait! Insufficient number of utxos!\nBuilding more...",
                 )
                 building_msg = await self.mobster.split_txos_slow(
                     amount_mmob, (len(filtered_send_list) - len(valid_utxos))
@@ -388,30 +398,34 @@ class ClanGat(TalkBack):
                         receipt_message=message or "",
                         input_txo_ids=input_txo_ids,
                     )
+                    await asyncio.sleep(0.5)
                     # if we didn't get a result indicating success
                     if not result or (result and result.status == "tx_status_failed"):
                         # stash as failed
                         return None
-                    else:
-                        # persist user as successfully paid
-                        await self.successful_pays.extend(save_key, target)
-                        await self.payout_balance_mmob.decrement(list_, amount_mmob)
-                        await self.send_message(target, "I've sent you a payment!")
+                    # persist user as successfully paid
+                    await self.successful_pays.extend(save_key, target)
+                    await self.payout_balance_mmob.decrement(list_, amount_mmob)
+                    await self.send_message(target, "I've sent you a payment!")
                     return result
                 except Exception as e:
                     return None
 
             results = [
-                do_pay_logging_success(
+                await do_pay_logging_success(
                     target, amount_mmob, message, input_txo_ids=[valid_utxos.pop(0)]
                 )
                 for target in filtered_send_list
             ]
             failed = [filtered_send_list[i] for (i, x) in enumerate(results) if not x]
-            await self.send_message(
-                msg.uuid,
-                f"failed on\n{[await self.get_displayname(uuid) for uuid in failed]}",
-            )
+            if len(failed):
+                await self.send_message(
+                    msg.uuid,
+                    (
+                        f"failed on\n{[await self.get_displayname(uuid) for uuid in failed]}\n"
+                        "Copy and paste your original pay message and resend to retry."
+                    ),
+                )
             return "completed sends"
         return "failed"
 
@@ -435,7 +449,7 @@ class ClanGat(TalkBack):
         """blast  <listname> "message"
         blast <eventname> "message"
         """
-        obj, param, value = (msg.arg1 or ""), (msg.arg2 or ""), msg.arg3
+        obj, param = (msg.arg1 or ""), (msg.arg2 or "")
         user = msg.uuid
         sent = []
         success = False
@@ -470,7 +484,10 @@ class ClanGat(TalkBack):
                 sent.append(target_user)
                 await asyncio.sleep(0.01)
         elif user_owns:
-            return "Try again - and add a message!"
+            msg.full_text = msg.arg2 = param = await self.ask_freeform_question(
+                msg.uuid, "What would you like to send?"
+            )
+            return await self.do_blast(msg)
         if not success:
             return "That didn't work! Try 'blast <list code> 'mymessage'. You can only send to lists you own!"
         # confirm we finished
@@ -648,7 +665,6 @@ class ClanGat(TalkBack):
             await self.event_images.set(param, [])
             await self.event_prompts.set(param, "")
             await self.payout_balance_mmob.set(param, 0)
-            successs = True
             if await self.ask_yesno_question(
                 user, f"Would you like to setup your new event '{param}' now? (yes/no)"
             ):
@@ -749,39 +765,62 @@ class ClanGat(TalkBack):
             code
             and code in await self.event_owners.keys()  # event has an owner
             and code in await self.event_prices.keys()  # and a price
-            and len(await self.event_attendees.get(code, []))
-            < await self.event_limits.get(code, 1e5)  # and there's space
+            and (
+                len(await self.event_attendees.get(code, []))
+                < await self.event_limits.get(code, 1e5)
+            )  # and there's space
             and msg.uuid
             not in await self.event_attendees[
                 code
             ]  # and they're not already on the list
         ):
-            self.pending_orders[msg.uuid] = code
-            return [
-                await self.event_prompts.get(code) or "Event Unlocked!",
-                f"You may now make one purchase of up to 2 tickets at {await self.event_prices[code]} MOB ea.\nIf you have payments activated, open the conversation on your Signal mobile app, click on the plus (+) sign and choose payment.",
-            ]
+            if await self.event_prices.get(code, 0) > 0:
+
+                self.pending_orders[msg.uuid] = code
+                return [
+                    await self.event_prompts.get(code) or "Event Unlocked!",
+                    f"You may now make one purchase of up to 2 tickets at {await self.event_prices[code]} MOB ea.\nIf you have payments activated, open the conversation on your Signal mobile app, click on the plus (+) sign and choose payment.",
+                ]
+            else:
+                await self.send_message(
+                    msg.uuid,
+                    f"{await self.event_prompts.get(code) or 'You have unlocked an event!'}",
+                )
+                if await self.ask_yesno_question(
+                    msg.uuid, "Would you like to bring a guest?"
+                ):
+                    await self.event_attendees.extend(code, msg.uuid)
+                await self.event_attendees.extend(code, msg.uuid)
+                return f"You're on the list for {code}!"
         # if there's a list but no attendees
         if (
             code  # if there's a code and...
             and code in await self.event_lists.keys()  # if there's a list and...
             and not await self.event_prices.get(code, 0)  # and it's free
         ):
-            if msg.uuid in await self.event_lists[code]:
-                return f"You're already on the {code} list!"
-            if not (
-                await self.event_limits.get(code)
-                or (
-                    len(await self.event_lists.get(code, []))
-                    < await self.event_limits.get(code, 1000)
-                )
+            if len(await self.event_lists.get(code, [])) > await self.event_limits.get(
+                code, 1000
             ):
                 return f"Sorry, {code} is full!"
-            if not await self.ask_yesno_question(
-                msg.uuid,
-                f"You've unlocked the {code} list! Would you like to subscribe to this announcement list?",
-            ):
-                return f"Okay, but you're missing out! \n\nIf you change your mind, unlock the list again by sending '{code}'"
+            if msg.uuid in await self.event_lists[code]:
+                return f"You're already on the {code} list!"
+            if await self.challenging.get(code):
+                await self.send_message(
+                    msg.uuid, "Before you continue, you need to solve a challenge!"
+                )
+                await self.do_challenge(msg)
+                if not await self.ask_yesno_question(
+                    msg.uuid,
+                    f"Thank you for helping keep our community safe!\n\nYou've unlocked {code}, would you like to be added to the list?",
+                    require_first_device=True,
+                ):
+                    return f"Okay, but you're missing out! \n\nIf you change your mind, unlock the list again by sending '{code}'"
+            else:
+                if not await self.ask_yesno_question(
+                    msg.uuid,
+                    f"You've unlocked {code}! Would you like to be added to the list?",
+                ):
+                    return f"Okay, but you're missing out! \n\nIf you change your mind, unlock the list again by sending '{code}'"
             if await self.event_prompts.get(code):
                 await self.send_message(msg.uuid, await self.event_prompts.get(code))
             await self.event_lists.extend(code, msg.uuid)
@@ -832,10 +871,11 @@ class ClanGat(TalkBack):
                 )
                 await asyncio.sleep(0.1)
 
-    async def default(self, msg: Message) -> Response:
+    async def default(self, message: Message) -> Response:
+        msg = message
         code = msg.arg0
         if not code:
-            return
+            return None
         if code == "?":
             return await self.do_help(msg)
         if code == "y":
@@ -882,7 +922,8 @@ class ClanGat(TalkBack):
         if msg.uuid in await self.pending_funds.keys():
             code = await self.pending_funds.pop(msg.uuid)
             await self.payout_balance_mmob.increment(code, amount_mmob)
-            self.no_repay.remove(msg.uuid)
+            if msg.uuid in self.no_repay:
+                self.no_repay.remove(msg.uuid)
             return (
                 f"We have credited your event {code} {amount_mob}MOB!\n"
                 + "You may sweep your balance with 'payout' or distrbute specific amounts of millimobb to attendees and individuals with 'pay <user_or_group> <amount> <memo>'."

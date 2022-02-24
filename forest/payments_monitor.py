@@ -143,14 +143,14 @@ class Mobster:
             return sorted_
         return {}
 
-    async def split_txos_slow(
-        self, output_millimob: int = 100, target_quantity: int = 200
-    ) -> str:
+    async def split_txos_slow(self, output_millimob=100, target_quantity=200) -> str:
         output_millimob = int(output_millimob)
-        utxos = list(reversed(await self.get_utxos()))
         built = 0
         i = 0
-        while built < (target_quantity + 10):
+        utxos = []
+        while built < (target_quantity + 3):
+            if len(utxos) < 1:
+                utxos = list(reversed(await self.get_utxos()))
             split_transaction = await self.req_(
                 "build_split_txo_transaction",
                 **dict(
@@ -165,14 +165,16 @@ class Mobster:
                 ),
             )
             params = split_transaction.get("result", {})
-            if not params:
-                return f"{split_transaction}"
             # use this maybe
-            _ = await self.req_("submit_transaction", **params)
-            time.sleep(2)
-            built += 15
-            i += 1
-        time.sleep(10)
+            if params:
+                results = await self.req_("submit_transaction", **params)
+            else:
+                results = {}
+            if results.get("results"):
+                await asyncio.sleep(2)
+                built += 15
+                i += 1
+        await asyncio.sleep(10)
         return f"built {built} utxos each containing {output_millimob} mmob/ea"
 
     rate_cache: tuple[int, Optional[float]] = (0, None)
@@ -385,7 +387,7 @@ class Mobster:
 
 
 class StatefulMobster(Mobster):
-    def __init__(self) -> None:
+    def __init__(self):
         self.ledger_manager = LedgerManager()
         self.invoice_manager = InvoiceManager()
         super().__init__()
