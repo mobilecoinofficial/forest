@@ -1,7 +1,6 @@
 #!/usr/bin/python3.9
 # Copyright (c) 2021 MobileCoin Inc.
 # Copyright (c) 2021 The Forest Team
-
 import functools
 import logging
 import os
@@ -86,7 +85,6 @@ def get_secret(key: str, env: Optional[str] = None) -> str:
     return secret
 
 
-HOSTNAME = open("/etc/hostname").read().strip()  #  FLY_ALLOC_ID
 APP_NAME = os.getenv("FLY_APP_NAME")
 URL = os.getenv("URL_OVERRIDE", f"https://{APP_NAME}.fly.dev")
 LOCAL = os.getenv("FLY_APP_NAME") is None
@@ -99,7 +97,7 @@ AUXIN = SIGNAL.lower() == "auxin-cli"
 CLIENT_PATH = get_secret("SIGNAL_CLIENT_PATH") or f"{ROOT_DIR}/{SIGNAL}"
 
 UPLOAD = DOWNLOAD = not get_secret("NO_DOWNLOAD")
-MEMFS = not get_secret("NO_MEMFS")
+MEMFS = not get_secret("NO_MEMFS") or False
 
 if get_secret("LOGFILES") or not LOCAL:
     # tracelog = logging.FileHandler("trace.log")

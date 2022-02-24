@@ -143,6 +143,8 @@ export BOT_NUMBER=+15551234567 # number you've obtained for your bot
 export CAPTCHA=$(curl -s --data-binary "https://signalcaptchas.org/registration/generate.html" https://human-after-all-21.fly.dev/6LedYI0UAAAAAMt8HLj4s-_2M_nYOhWMMFRGYHgY | jq -r .solution.gRecaptchaResponse)
 ./signal-cli --config . -u $BOT_NUMBER register --captcha $CAPTCHA
 ```
+The ```CAPTCHA``` command may take a minute or so to complete. 
+
 You will receive an SMS with a 6 digit verification code. Use that code with the verify command to verify your phone number.
 
 ``` bash
