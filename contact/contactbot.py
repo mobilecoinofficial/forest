@@ -151,7 +151,7 @@ class Forest(PayBot):
         if not numbers:
             return "no"
         await self.send_reaction(message, "\N{Busts In Silhouette}")
-        group_resp = await self.auxin_req(
+        group_resp = await self.signal_rpc_request(
             "updateGroup",
             member=[message.source],
             admin=[message.source],
