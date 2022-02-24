@@ -163,6 +163,7 @@ class ClanGat(TalkBack):
         self.easter_eggs = aPersistDict("easter_eggs")
         self.successful_pays = aPersistDict("successful_pays")
         self.payout_balance_mmob = aPersistDict("payout_balance_mmob")
+        self.challenging = aPersistDict("challenging")
         self.pay_lock: asyncio.Lock = asyncio.Lock()
         # okay, this now maps the tag (restore key) of each of the above to the instance of the PersistDict class
         self.state = {
@@ -213,6 +214,7 @@ class ClanGat(TalkBack):
                     f"paid attendees: {[await self.get_displayname(uuid) for uuid in await self.event_attendees.get(obj, [])]}",
                     f"list has {len(await self.event_lists.get(obj,[]))} members",
                     f"list members: {[await self.get_displayname(uuid) for uuid in await self.event_lists.get(obj, [])]}",
+                    f"CAPTCHA enabled: {await self.challenging.get(obj, False)}",
                     f"balance: {await self.payout_balance_mmob.get(obj, 0)}mmob",
                 ]
             )
@@ -482,7 +484,10 @@ class ClanGat(TalkBack):
                 sent.append(target_user)
                 await asyncio.sleep(0.01)
         elif user_owns:
-            return "Try again - and add a message!"
+            msg.full_text = msg.arg2 = param = await self.ask_freeform_question(
+                msg.uuid, "What would you like to send?"
+            )
+            return await self.do_blast(msg)
         if not success:
             return "That didn't work! Try 'blast <list code> 'mymessage'. You can only send to lists you own!"
         # confirm we finished
@@ -793,21 +798,27 @@ class ClanGat(TalkBack):
             and code in await self.event_lists.keys()  # if there's a list and...
             and not await self.event_prices.get(code, 0)  # and it's free
         ):
+            if len(await self.event_lists.get(code, [])) > await self.event_limits.get(code, 1000):
+                return f"Sorry, {code} is full!"
             if msg.uuid in await self.event_lists[code]:
                 return f"You're already on the {code} list!"
-            if not (
-                await self.event_limits.get(code)
-                or (
-                    len(await self.event_lists.get(code, []))
-                    < await self.event_limits.get(code, 1000)
+            if await self.challenging.get(code):
+                await self.send_message(
+                    msg.uuid, "Before you continue, you need to solve a challenge!"
                 )
-            ):
-                return f"Sorry, {code} is full!"
-            if not await self.ask_yesno_question(
-                msg.uuid,
-                f"You've unlocked {code}! Would you like to be added to the list?",
-            ):
-                return f"Okay, but you're missing out! \n\nIf you change your mind, unlock the list again by sending '{code}'"
+                await self.do_challenge(msg)
+                if not await self.ask_yesno_question(
+                    msg.uuid,
+                    f"Thank you for helping keep our community safe!\n\nYou've unlocked {code}, would you like to be added to the list?",
+                    require_first_device=True,
+                ):
+                    return f"Okay, but you're missing out! \n\nIf you change your mind, unlock the list again by sending '{code}'"
+            else:
+                if not await self.ask_yesno_question(
+                    msg.uuid,
+                    f"You've unlocked {code}! Would you like to be added to the list?",
+                ):
+                    return f"Okay, but you're missing out! \n\nIf you change your mind, unlock the list again by sending '{code}'"
             if await self.event_prompts.get(code):
                 await self.send_message(msg.uuid, await self.event_prompts.get(code))
             await self.event_lists.extend(code, msg.uuid)
@@ -909,7 +920,8 @@ class ClanGat(TalkBack):
         if msg.uuid in await self.pending_funds.keys():
             code = await self.pending_funds.pop(msg.uuid)
             await self.payout_balance_mmob.increment(code, amount_mmob)
-            self.no_repay.remove(msg.uuid)
+            if msg.uuid in self.no_repay:
+                self.no_repay.remove(msg.uuid)
             return (
                 f"We have credited your event {code} {amount_mob}MOB!\n"
                 + "You may sweep your balance with 'payout' or distrbute specific amounts of millimobb to attendees and individuals with 'pay <user_or_group> <amount> <memo>'."

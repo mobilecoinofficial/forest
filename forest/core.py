@@ -1197,6 +1197,8 @@ class QuestionBot(PayBot):
             return self.FIRST_DEVICE_PLEASE
         if question:
             question.set_result(True)
+            self.requires_first_device.pop(msg.uuid, None)
+            self.requires_first_device.pop(msg.source, None)
         return None
 
     @hide
@@ -1212,6 +1214,8 @@ class QuestionBot(PayBot):
             return self.FIRST_DEVICE_PLEASE
         if question:
             question.set_result(False)
+            self.requires_first_device.pop(msg.uuid, None)
+            self.requires_first_device.pop(msg.source, None)
         return None
 
     async def ask_freeform_question(
