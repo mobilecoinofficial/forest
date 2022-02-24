@@ -378,34 +378,19 @@ As it is now, all it does is thank the user for their payment. As you see the av
 
 ## Try it out
 
-
-
-
-Echopay used to be a bot that received payments and immediately returned them minus the fee. Hence, Echopay. It has been rewritten to serve more as an introduction to Bots that use Signal Pay. If you just want to run the bot, you can start it by issuing the following command from your home directory.
-
-
-
-The bot has a couple capabilities which we will Illustrate
-
-
-
-
-Your account is a hash on that's tracked on Mobilecoin's blockchain. One's account is represented by a mnemonic phrase that's created along with the account. Full Service also allows you to manage imported account, you can import a wallet just by knowing it's entropy (the 12 word recovery phrase given at creation). Therefore be very careful with your entropy. Your local instance of full service stores information on a local database, with your entropy. Be very guarded with your Full Service instance. This is why you need additional security measures when running the wallet on a shared device or a server. Anyone who can make HTTP requests to full service has complete control to the accounts stored.
-
-You never lose your wallet if you lose your full service instance, but you would lose your transaction history. Full service only keeps transaction history from the point upon which a wallet is created or imported.
-
-it's ok to run a bot like this if you're just running locally on your computer. If you're trying to deploy to a server or a cloud. In any sort of production environment. 
-
-- set up full-service somewhere, like locally. or with https://github.com/i-infra/cert-pinning-demo. if you use the later, you need to take the crypto_secrets file and append it to your dev_secrets.
-- put your FULL_SERVICE_URL in dev_secrets
-- set PROFILE=1
-- forestbot will automatically generate a full-service account if there isn't one and set mobilecoin address field in the signal profile for you
-
-you can either import an account manually, like in ipython with forest.payments_monitor.Mobster(FULL_SERVICE_URL).import_account(MNEMONIC), or put MNEMONIC in your dev_secrets (discouraged)
-
-
+Now that you understand how the bot works, you can try running it with 
 
 ```bash
-cp -r ../forest ../mc_util ../Pipfile* .
-fly deploy --strategy immediate
+pipenv run python -m echopay.echopay
 ```
+
+And try out all the functions yourself. You'll have to seed the bot with some MOB to start with. If you need to buy MOB you can do so at [buymobilecoin.com](https://buymobilecoin.com)
+
+Try it out make changes. 
+
+## Next Steps: infrastructure
+
+Now you can take advantage of the full features of the forest ecosystem. It's time to start developing. Running locally is fine for testing, but for more robust applications you'll want to host on a service or on a cloud. Check out the following tutorials: 
+
+- [Deploy Full Service to Fly with certificate Pinning for Security](https://github.com/i-infra/cert-pinning-demo)
+- Deploy a Forest Bot to Fly.io (Under Construction)
