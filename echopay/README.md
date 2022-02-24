@@ -394,3 +394,7 @@ Now you can take advantage of the full features of the forest ecosystem. It's ti
 
 - [Deploy Full Service to Fly with certificate Pinning for Security](https://github.com/i-infra/cert-pinning-demo)
 - Deploy a Forest Bot to Fly.io (Under Construction)
+
+## Contributing
+
+We welcome pull requests, and issues. We lint out code with Pylint and MyPy and format it with Black.
