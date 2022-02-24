@@ -91,7 +91,7 @@ class Mobster:
             url = utils.get_secret("FULL_SERVICE_URL") or "http://localhost:9090/wallet"
         self.ledger_manager = LedgerManager()
         self.invoice_manager = InvoiceManager()
-        self.account_id = None
+        self.account_id: Optional[str] = None
         logging.info("full-service url: %s", url)
         self.url = url
 
