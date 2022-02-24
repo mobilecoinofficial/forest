@@ -247,15 +247,15 @@ These are the environment variables and flags that the bots read to work. Not al
 - `CLIENTCRT`: client certificate to connect to ssl-enabled full-service.
 - `ROOTCRT`: certificate to validate full-service.
 - `MNEMONIC`: account to import for full-service. Not Secure.
-- `SIGNAL`: which signal client to use. can be 'signal-cli' for signal-cli or 'auxin' for auxin-cli.
-- `ROOT_DIR`: specify the directory where the data file is stored, as well as where the signal-cli executable is.
+- `SIGNAL`: which signal client to use. can be 'signal-cli' or 'auxin-cli'. Defaults to auxin.
+- `ROOT_DIR`: specify the directory where the data file is stored, as well as where the signal-cli executable is. Defaults to `/tmp/local-signal` if DOWNLOAD, `/app` if running on fly, and `.` otherwise
 - `SIGNAL_CLI_PATH`: specify where the signal-cli executable is if it is not in ROOT_DIR.
-- `LOGLEVEL`: what log level to use for console logs (DEBUG, INFO, WARNING, ERROR).
+- `LOGLEVEL`: what log level to use for console logs (DEBUG, INFO, WARNING, ERROR). Defaults to DEBUG
 - `TYPO_THRESHOLD`: maximum normalized Levenshtein edit distance for typo correction. 0 is only exact matches, 1 is any match. Default: 0.3
 
 ## Binary flags
-- `NO_DOWNLOAD`: don't download a signal-cli datastore, instead use what's in the current working directory.
-- `NO_MEMFS`: if this isn't set, MEMFS is started, making a fake filesystem in `./data` and used to upload the signal-cli datastore to the database whenever it is changed. If not `NO_DOWNLOAD`, also create an equivalent tmpdir at /tmp/local-signal, chdir to it, and symlink signal-cli process and avatar.
+- `DOWNLOAD`: download/upload datastore from the database instead of using what's in the current working directory.
+- `AUTOSAVE`: start MEMFS, making a fake filesystem in `./data` and used to upload the signal-cli datastore to the database whenever it is changed. If `DOWNLOAD`, also create an equivalent tmpdir at /tmp/local-signal, chdir to it, and symlink signal-cli process and avatar.
 - `MONITOR_WALLET`: monitor transactions from full-service. Relevant only if you're giving users a payment address to send mobilecoin to instead of using signal pay.  Experimental, do not use.
 - `LOGFILES`: create a debug.log.
 - `ADMIN_METRICS`: send python and roundtrip timedeltas for each command to ADMIN.
@@ -269,4 +269,4 @@ Code style: Ensure that `mypy *py` and `pylint *py` do not return errors before 
 
 Use [black](https://github.com/psf/black) to format your python code. Prefer verbose, easier to read names over conciser ones.
 
-Install black pre-commit hook with `ln -s .githooks/* .git/hooks/`. Requires black to be installed.
+Install black pre-commit hook with `ln -s (readlink -f .githooks/pre-commit) .git/hooks/pre-commit` on fish, or `ln -s $(readlink -f .githooks/pre-commit) .git/hooks/pre-commit` on bash. Requires black to be installed.

@@ -1,3 +1,7 @@
+## 1.1.0
+
+- `AUTOSAVE`, `DOWNLOAD` replace `NO_MEMFS`, `NO_DOWNLOAD`. Requires updating secrets for most bots. 
+
 ## 1.0.10
 
 - captchas! (#124, #126)
