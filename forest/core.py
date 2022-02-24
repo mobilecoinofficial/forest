@@ -916,10 +916,13 @@ class PayBot(Bot):
         await self.respond(message, await self.payment_response(message, amount_pmob))
 
     async def payment_response(self, msg: Message, amount_pmob: int) -> Response:
-        del msg, amount_pmob  # shush linters
-        return "This bot doesn't have a response for payments."
+        """Triggers on successful payment"""
+        del msg  # shush linter
+        amount_mob = float(mc_util.pmob2mob(amount_pmob))
+        amount_usd = round(await self.mobster.pmob2usd(amount_pmob), 2)
+        return f"Thank you for sending {float(amount_mob)} MOB ({amount_usd} USD)"
 
-    async def get_address(self, recipient: str) -> Optional[str]:
+    async def get_signalpay_address(self, recipient: str) -> Optional[str]:
         "get a receipient's mobilecoin address"
         result = await self.signal_rpc_request("getPayAddress", peer_name=recipient)
         b64_address = (
@@ -935,7 +938,7 @@ class PayBot(Bot):
         """
         /address
         Returns your MobileCoin address (in standard b58 format.)"""
-        address = await self.get_address(msg.source)
+        address = await self.get_signalpay_address(msg.source)
         return address or "Sorry, couldn't get your MobileCoin address"
 
     @requires_admin
@@ -1031,7 +1034,7 @@ class PayBot(Bot):
         params are pasted to the full-service build_transaction call.
         some useful params are comment and input_txo_ids
         """
-        address = await self.get_address(recipient)
+        address = await self.get_signalpay_address(recipient)
         account_id = await self.mobster.get_account()
         if not address:
             await self.send_message(
@@ -1054,18 +1057,18 @@ class PayBot(Bot):
         # wants it private.
         if confirm_tx_timeout:
             # putting the account_id into the request logs it to full service,
-            tx_result = await self.mob_request(
+            tx_result: Optional[dict] = await self.mob_request(
                 "submit_transaction",
                 tx_proposal=prop,
                 comment=params.get("comment", ""),
                 account_id=account_id,
             )
-        elif not prop or not tx_id:
-            tx_result = {"error": {"message": "InternalError"}}
-        else:
+        elif prop and tx_id:
             # if you omit account_id, tx doesn't get logged. Good for privacy,
             # but transactions can't be confirmed by the sending party (you)!
             tx_result = await self.mob_request("submit_transaction", tx_proposal=prop)
+        else:
+            tx_result = {"error": {"message": "InternalError"}}
         # {'method': 'submit_transaction', 'error': {'code': -32603, 'message': 'InternalError', 'data': {'server_error': 'Database(Diesel(DatabaseError(__Unknown, "database is locked")))', 'details': 'Error interacting with the database: Diesel Error: database is locked'}}, 'jsonrpc': '2.0', 'id': 1}
         if not tx_result or (
             tx_result.get("error")
@@ -1075,7 +1078,6 @@ class PayBot(Bot):
             # logging.info("InternalError occurred, retrying in 60s")
             # await asyncio.sleep(1)
             # tx_result = await self.mob_request("submit_transaction", tx_proposal=prop)
-
         if not isinstance(tx_result, dict) or not tx_result.get("result"):
             # avoid sending tx receipt if there's a tx submission error
             # and send error message back to tx sender
@@ -1095,7 +1097,7 @@ class PayBot(Bot):
         # pass our beautifully composed spicy JSON content to auxin.
         # message body is ignored in this case.
         payment_notif = await self.send_message(recipient, "", content=content)
-        resp_fut = asyncio.create_task(self.wait_for_response(rpc_id=payment_notif))
+        resp_future = asyncio.create_task(self.wait_for_response(rpc_id=payment_notif))
 
         if confirm_tx_timeout:
             logging.debug("Attempting to confirm tx status for %s", recipient)
@@ -1129,12 +1131,11 @@ class PayBot(Bot):
                     recipient,
                     tx_status.get("result"),
                 )
-            resp = await resp_fut
+            resp = await resp_future
             # the calling function can use these to check the payment status
             resp.status, resp.transaction_log_id = status, tx_id  # type: ignore
             return resp
-
-        return await resp_fut
+        return await resp_future
 
 
 def get_source_or_uuid_from_dict(

@@ -91,6 +91,7 @@ class Mobster:
             url = utils.get_secret("FULL_SERVICE_URL") or "http://localhost:9090/wallet"
         self.ledger_manager = LedgerManager()
         self.invoice_manager = InvoiceManager()
+        self.account_id: Optional[str] = None
         logging.info("full-service url: %s", url)
         self.url = url
 
@@ -174,17 +175,53 @@ class Mobster:
         }
         return await self.req({"method": "import_account", "params": params})
 
-    # cache?
-    async def get_address(self) -> str:
+    async def get_my_address(self) -> str:
+        """Returns either the address set, or the address specified by the secret
+        or the first address in the full service instance in that order"""
+        acc_id = await self.get_account()
         res = await self.req({"method": "get_all_accounts"})
-        acc_id = res["result"]["account_ids"][0]
         return res["result"]["account_map"][acc_id]["main_address"]
+
+    async def get_account(self, account_name: Optional[str] = None) -> str:
+        """returns the account id matching account_name in Full Service Wallet"""
+
+        if isinstance(self.account_id, str):
+            return self.account_id
+
+        if account_name is None:
+            account_name = utils.get_secret("FS_ACCOUNT_NAME")
+
+        ## get all account IDs for the Wallet / fullservice instance
+        account_ids = (await self.req({"method": "get_all_accounts"}))["result"][
+            "account_ids"
+        ]
+        maybe_account_id = []
+        if account_name is not None:
+            ## get the account map for the accounts in the wallet
+            account_map = [
+                (await self.req({"method": "get_all_accounts"}))["result"][
+                    "account_map"
+                ][x]
+                for x in account_ids
+            ]
+
+            ## get the account_id that matches the name
+            maybe_account_id = [
+                x["account_id"] for x in account_map if x["name"] == account_name
+            ]
+        if len(maybe_account_id) == 0:
+            account_id = account_ids[0]
+            logging.info("falling back to zeroth account: %s", account_id)
+        else:
+            account_id = maybe_account_id[0]
+        self.account_id = account_id
+        return account_id
 
     async def get_receipt_amount_pmob(self, receipt_str: str) -> Optional[int]:
         full_service_receipt = mc_util.b64_receipt_to_full_service_receipt(receipt_str)
         logging.info("fs receipt: %s", full_service_receipt)
         params = {
-            "address": await self.get_address(),
+            "address": await self.get_my_address(),
             "receiver_receipt": full_service_receipt,
         }
         while 1:
@@ -203,13 +240,6 @@ class Mobster:
             return pmob
 
     account_id: Optional[str] = None
-
-    async def get_account(self) -> str:
-        if not isinstance(self.account_id, str):
-            self.account_id = (await self.req({"method": "get_all_accounts"}))[
-                "result"
-            ]["account_ids"][0]
-        return self.account_id
 
     async def get_balance(self) -> int:
         value = (

@@ -336,7 +336,7 @@ class MobFriend(QuestionBot):
             * the memo "Pay me a MOB!",
             * a 1MOB value,
             * and the address of the requester's Signal account."""
-        address = await self.get_address(msg.source)
+        address = await self.get_signalpay_address(msg.source)
         if not address:
             return "Unable to retrieve your MobileCoin address!"
         payload = mc_util.printable_pb2.PrintableWrapper()
@@ -418,7 +418,7 @@ class MobFriend(QuestionBot):
         Claims a gift code! Redeems a provided code to the bot's wallet and sends the redeemed balance."""
         if not msg.arg1:
             return "/redeem [base58 gift code]"
-        if not await self.get_address(msg.uuid):
+        if not await self.get_signalpay_address(msg.uuid):
             return "I couldn't get your MobileCoin Address!\n\nPlease make sure you have activated your wallet and messaged me from your phone before continuing!"
         check_status = await self.mobster.req_(
             "check_gift_code_status", gift_code_b58=msg.arg1
@@ -462,7 +462,7 @@ class MobFriend(QuestionBot):
                 "Who should this pay, you or someone else?\nYou can reply 'me' or 'else'.",
             )
             if target.lower() == "me":
-                msg.arg1 = await self.get_address(msg.source)
+                msg.arg1 = await self.get_signalpay_address(msg.source)
             else:
                 msg.arg1 = await self.ask_freeform_question(
                     msg.source, "What MobileCoin address should this request pay?"
