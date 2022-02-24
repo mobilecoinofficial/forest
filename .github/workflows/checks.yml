@@ -22,7 +22,7 @@ jobs:
       - name: Install dependencies
         if: steps.cache-pipenv.outputs.cache-hit != 'true'
         run: cp .github/Pipfile .; pipenv install --skip-lock --pre
-      - name: check versions
+      - name: List dependency versions (check this if you get confusing results)
         run: pipenv graph
       # - name: Setup tmate session # this lets you SSH into the container
       #   uses: mxschmitt/action-tmate@v3
@@ -35,5 +35,5 @@ jobs:
       - name: Pylint
         run: pipenv run pylint --version; pipenv run pylint sample_bots mc_util forest mobfriend/mobfriend.py contact imogen/imogen.py
         if: always()
-      - name: pytest
+      - name: Pytest
         run: pipenv run python -m pytest
