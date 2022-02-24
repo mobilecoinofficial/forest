@@ -8,6 +8,7 @@ import ast
 import asyncio
 import asyncio.subprocess as subprocess  # https://github.com/PyCQA/pylint/issues/1469
 import base64
+import codecs
 import datetime
 import json
 import logging
@@ -52,11 +53,10 @@ roundtrip_summary = Summary("roundtrip_s", "Roundtrip message response time")
 MessageParser = AuxinMessage if utils.AUXIN else StdioMessage
 logging.info("Using message parser: %s", MessageParser)
 fee_pmob = int(1e12 * 0.0004)
-
 try:
     import captcha
 except ImportError:
-    captcha = None
+    captcha = None  # type:ignore
 
 
 def rpc(
@@ -530,12 +530,16 @@ class Signal:
 
 
 def is_admin(msg: Message) -> bool:
+    ADMIN = utils.get_secret("ADMIN") or ""
+    ADMIN_GROUP = utils.get_secret("ADMIN_GROUP") or ""
+    ADMINS = utils.get_secret("ADMINS") or ""
     return (
-        msg.source == utils.get_secret("ADMIN")
-        or msg.uuid == utils.get_secret("ADMIN")
-        or msg.group == utils.get_secret("ADMIN_GROUP")
-        or msg.source in utils.get_secret("ADMINS").split(",")
-        or msg.uuid in utils.get_secret("ADMINS")
+        (ADMIN and msg.source in ADMIN)
+        or (ADMIN and msg.uuid in ADMIN)
+        or (ADMIN_GROUP and msg.group and msg.group in ADMIN_GROUP)
+        or (ADMINS and msg.source in ADMINS)
+        or (ADMINS and msg.uuid in ADMINS)
+        or False
     )
 
 
@@ -781,22 +785,41 @@ class Bot(Signal):
             return str(await async_exec(source_blob, env))
         return None
 
+    def get_recipients(self) -> list[dict[str, str]]:
+        """Returns a list of all known recipients by parsing underlying datastore."""
+        return json.loads(
+            open(f"data/{self.bot_number}.d/recipients-store").read()
+        ).get("recipients", [])
+
+    def get_uuid_by_phone(self, phonenumber: str) -> Optional[str]:
+        """Queries the recipients-store file for a UUID, provided a phone number."""
+        if phonenumber.startswith("+"):
+            maybe_recipient = [
+                recipient
+                for recipient in self.get_recipients()
+                if phonenumber == recipient.get("number")
+            ]
+            if maybe_recipient:
+                return maybe_recipient[0]["uuid"]
+        return None
+
+    def get_number_by_uuid(self, uuid_: str) -> Optional[str]:
+        """Queries the recipients-store file for a phone number, provided a uuid."""
+        if uuid_.count("-") == 4:
+            maybe_recipient = [
+                recipient
+                for recipient in self.get_recipients()
+                if uuid_ == recipient.get("uuid")
+            ]
+            if maybe_recipient:
+                return maybe_recipient[0]["number"]
+        return None
+
     async def do_ping(self, message: Message) -> str:
         """replies to /ping with /pong"""
         if message.text:
             return f"/pong {message.text}"
         return "/pong"
-
-    @hide
-    async def do_uptime(self, _: Message) -> str:
-        """Returns a message containing the bot uptime."""
-        tot_mins, sec = divmod(int(time.time() - self.start_time), 60)
-        hr, mins = divmod(tot_mins, 60)
-        t = "Uptime: "
-        t += f"{hr}h" if hr else ""
-        t += f"{mins}m" if mins else ""
-        t += f"{sec}s"
-        return t
 
     @hide
     async def do_pong(self, message: Message) -> str:
@@ -809,8 +832,41 @@ class Bot(Signal):
             return f"OK, stashing {message.text}"
         return "OK"
 
+    async def do_signalme(self, _: Message) -> Response:
+        """signalme
+        Returns a link to share the bot with friends!"""
+        return f"https://signal.me/#p/{self.bot_number}"
+
+    @hide
+    async def do_rot13(self, msg: Message) -> Response:
+        """rot13 encodes the message.
+        > rot13 hello world
+        uryyb jbeyq"""
+        return codecs.encode(msg.text, "rot13")
+
+    @hide
+    async def do_uptime(self, _: Message) -> str:
+        """Returns a message containing the bot uptime."""
+        tot_mins, sec = divmod(int(time.time() - self.start_time), 60)
+        hr, mins = divmod(tot_mins, 60)
+        t = "Uptime: "
+        t += f"{hr}h" if hr else ""
+        t += f"{mins}m" if mins else ""
+        t += f"{sec}s"
+        return t
+
 
 class PayBot(Bot):
+    PAYMENTS_HELPTEXT = """Enable Signal Pay:
+
+    1. In Signal, tap “🠔“ & tap on your profile icon in the top left & tap *Settings*
+
+    2. Tap *Payments* & tap *Activate Payments*
+
+    For more information on Signal Payments visit:
+
+    https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
+
     @requires_admin
     async def do_fsr(self, msg: Message) -> Response:
         """
@@ -922,7 +978,7 @@ class PayBot(Bot):
         """Pass a request through to full-service, but send a message to an admin in case of error"""
         result = await self.mobster.req_(method, **params)
         if "error" in result:
-            await self.admin(f"{params}\n{result}")
+            await self.admin(f"{result}\nReturned by:\n\n{str(params)[:1024]}...")
         return result
 
     async def fs_receipt_to_payment_message_content(
@@ -1016,11 +1072,20 @@ class PayBot(Bot):
                 account_id=account_id,
             )
         elif not prop or not tx_id:
-            tx_result = {}
+            tx_result = {"error": {"message": "InternalError"}}
         else:
             # if you omit account_id, tx doesn't get logged. Good for privacy,
             # but transactions can't be confirmed by the sending party (you)!
             tx_result = await self.mob_request("submit_transaction", tx_proposal=prop)
+        # {'method': 'submit_transaction', 'error': {'code': -32603, 'message': 'InternalError', 'data': {'server_error': 'Database(Diesel(DatabaseError(__Unknown, "database is locked")))', 'details': 'Error interacting with the database: Diesel Error: database is locked'}}, 'jsonrpc': '2.0', 'id': 1}
+        if not tx_result or (
+            tx_result.get("error")
+            and "InternalError" in tx_result.get("error", {}).get("message", "")
+        ):
+            return None
+            # logging.info("InternalError occurred, retrying in 60s")
+            # await asyncio.sleep(1)
+            # tx_result = await self.mob_request("submit_transaction", tx_proposal=prop)
 
         if not isinstance(tx_result, dict) or not tx_result.get("result"):
             # avoid sending tx receipt if there's a tx submission error
@@ -1059,8 +1124,6 @@ class PayBot(Bot):
                         recipient,
                         tx_status.get("result"),
                     )
-                    if receipt_message:
-                        await self.send_message(recipient, receipt_message)
                     break
                 if status == "tx_status_failed":
                     logging.warning(
@@ -1119,7 +1182,7 @@ class QuestionBot(PayBot):
         pending_answer, probably_future = get_source_or_uuid_from_dict(
             message, self.pending_answers
         )
-        requires_first_device, _ = get_source_or_uuid_from_dict(
+        _, requires_first_device = get_source_or_uuid_from_dict(
             message, self.requires_first_device
         )
         if message.full_text and pending_answer:
@@ -1136,7 +1199,7 @@ class QuestionBot(PayBot):
     async def do_yes(self, msg: Message) -> Response:
         """Handles 'yes' in response to a pending_confirmation."""
         _, question = get_source_or_uuid_from_dict(msg, self.pending_confirmations)
-        requires_first_device, _ = get_source_or_uuid_from_dict(
+        _, requires_first_device = get_source_or_uuid_from_dict(
             msg, self.requires_first_device
         )
         if not question:
@@ -1151,12 +1214,12 @@ class QuestionBot(PayBot):
     async def do_no(self, msg: Message) -> Response:
         """Handles 'no' in response to a pending_confirmation."""
         _, question = get_source_or_uuid_from_dict(msg, self.pending_confirmations)
-        requires_first_device, _ = get_source_or_uuid_from_dict(
+        _, requires_first_device = get_source_or_uuid_from_dict(
             msg, self.requires_first_device
         )
         if not question:
             return self.UNEXPECTED_ANSWER
-        if not requires_first_device and not is_first_device(msg):
+        if requires_first_device and not is_first_device(msg):
             return self.FIRST_DEVICE_PLEASE
         if question:
             question.set_result(False)

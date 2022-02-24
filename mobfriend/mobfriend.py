@@ -219,7 +219,7 @@ class MobFriend(QuestionBot):
             return "Okay, nevermind about that tip."
         return "Couldn't find a tip in process to cancel!"
 
-    @time(REQUEST_TIME)  # type: ignore
+    @time(REQUEST_TIME)
     @requires_admin
     async def do_pay(self, msg: Message) -> Response:
         if msg.arg1:
@@ -235,7 +235,7 @@ class MobFriend(QuestionBot):
             self.signal_roundtrip_latency.append((msg.timestamp, "payment", delta))
         return None
 
-    @time(REQUEST_TIME)  # type: ignore
+    @time(REQUEST_TIME)
     async def payment_response(self, msg: Message, amount_pmob: int) -> Response:
         if msg.source in self.exchanging_gift_code:
             resp_list = await self.build_gift_code(amount_pmob - FEE)
