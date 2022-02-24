@@ -798,7 +798,9 @@ class ClanGat(TalkBack):
             and code in await self.event_lists.keys()  # if there's a list and...
             and not await self.event_prices.get(code, 0)  # and it's free
         ):
-            if len(await self.event_lists.get(code, [])) > await self.event_limits.get(code, 1000):
+            if len(await self.event_lists.get(code, [])) > await self.event_limits.get(
+                code, 1000
+            ):
                 return f"Sorry, {code} is full!"
             if msg.uuid in await self.event_lists[code]:
                 return f"You're already on the {code} list!"
