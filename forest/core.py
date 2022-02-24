@@ -1135,8 +1135,7 @@ class PayBot(Bot):
             # the calling function can use these to check the payment status
             resp.status, resp.transaction_log_id = status, tx_id  # type: ignore
             return resp
-
-        return await resp_fut
+        return await resp_future
 
 
 def get_source_or_uuid_from_dict(

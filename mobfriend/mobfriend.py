@@ -418,7 +418,7 @@ class MobFriend(QuestionBot):
         Claims a gift code! Redeems a provided code to the bot's wallet and sends the redeemed balance."""
         if not msg.arg1:
             return "/redeem [base58 gift code]"
-        if not await self.get_address(msg.uuid):
+        if not await self.get_signalpay_address(msg.uuid):
             return "I couldn't get your MobileCoin Address!\n\nPlease make sure you have activated your wallet and messaged me from your phone before continuing!"
         check_status = await self.mobster.req_(
             "check_gift_code_status", gift_code_b58=msg.arg1
