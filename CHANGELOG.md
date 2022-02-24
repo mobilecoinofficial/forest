@@ -1,6 +1,12 @@
+## 1.2.0
+
+- Breaking change! Disambiguate `.get_address(..)` method. (#121)
+- `Mobster.get_my_address()` returns the MOB address associated with the full service account
+- `PayBot.get_pay_address(signal_user_id)` returns the MOB address associated associated with a Signal user
+
 ## 1.1.0
 
-- `AUTOSAVE`, `DOWNLOAD` replace `NO_MEMFS`, `NO_DOWNLOAD`. Requires updating secrets for most bots. 
+- `AUTOSAVE`, `DOWNLOAD` replace `NO_MEMFS`, `NO_DOWNLOAD`. Requires updating secrets for most bots.
 
 ## 1.0.10
 
@@ -23,7 +29,7 @@
 ## 1.0.7
 
 - add QuestionBot (#93)
-- Prevent tx receipt delivery on tx failure (#97) 
+- Prevent tx receipt delivery on tx failure (#97)
 - MOBot Helper: Conversational UI, q&a workflow for creation, confirmations for redemption, no slashes, mild rebranding, etc (#98)
 - aPersistDict improvements (#101)
 
