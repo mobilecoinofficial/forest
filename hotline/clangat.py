@@ -177,6 +177,8 @@ class ClanGat(TalkBack):
         )
         self.payout_balance_mmob = aPersistDictOfInts("payout_balance_mmob")
         self.challenging: aPersistDict[bool] = aPersistDict("challenging")
+        self.charities: aPersistDict[str] = aPersistDict("charities")
+        self.charities_balance_mmob = aPersistDictOfInts("charities_balance_mmob")
         self.pay_lock: asyncio.Lock = asyncio.Lock()
         # okay, this now maps the tag (restore key) of each of the above to the instance of the PersistDict class
         self.state = {
@@ -466,6 +468,38 @@ class ClanGat(TalkBack):
             self.no_repay += [user]
             return "Okay, waiting for your funds."
         return "Sorry, can't find an event by that name."
+
+    @hide
+    async def do_give(self, msg: Message) -> Response:
+        """Donate to one of the supported charities!
+        give <charityname>
+        """
+        obj = (msg.arg1 or "").lower()
+        user = msg.uuid
+        await self.pending_donations.remove(msg.uuid)
+        give_message = await self.easter_eggs.get("give", "")
+        await self.send_message(
+            user,
+            "Charity donations to date!\n\n"
+            + "\n".join(
+                [
+                    f"{k}: {str(v/1000)[:5]}MOB"
+                    for (k, v) in self.charities_balance_mmob.dict_.items()
+                ]
+            ),
+        )
+        if not obj:
+            obj = await self.ask_freeform_question(user, give_message)
+            obj = obj.lower()
+        if obj in await self.charities.keys():
+            await self.pending_donations.set(user, obj)
+            charity_info = await self.charities.get(obj, "")
+            self.no_repay += [user]
+            return f"Okay, waiting for your donation to {obj}!\n\n{charity_info}\n\nSend me a payment over Signal and I will make sure it gets to them."
+        if obj not in self.TERMINAL_ANSWERS:
+            msg.arg1 = await self.ask_freeform_question(user, give_message)
+            return await self.do_give(msg)
+        return "Okay, maybe later!"
 
     @hide
     async def do_blast(self, msg: Message) -> Response:
@@ -823,7 +857,7 @@ class ClanGat(TalkBack):
                 code, 1000
             ):
                 return f"Sorry, {code} is full!"
-            if msg.uuid in await self.event_lists[code]:
+            if msg.uuid in await self.event_lists.get(code, []):
                 return f"You're already on the {code} list!"
             if await self.challenging.get(code):
                 await self.send_message(
@@ -871,7 +905,7 @@ class ClanGat(TalkBack):
             # if user bought tickets
             if (
                 list_ in await self.event_attendees.keys()
-                and msg.uuid in await self.event_attendees[list_]
+                and msg.uuid in await self.event_attendees.get(list_, [])
             ):
                 owners = await self.event_owners.get(list_, [])
                 all_owners += owners
@@ -954,6 +988,15 @@ class ClanGat(TalkBack):
             return (
                 f"We have credited your event {code} {amount_mob}MOB!\n"
                 + "You may sweep your balance with 'payout' or distrbute specific amounts of millimobb to attendees and individuals with 'pay <user_or_group> <amount> <memo>'."
+            )
+        if msg.uuid in await self.pending_donations.keys():
+            code = await self.pending_donations.pop(msg.uuid)
+            await self.charities_balance_mmob.increment(code, amount_mmob)
+            if msg.uuid in self.no_repay:
+                self.no_repay.remove(msg.uuid)
+            return (
+                f"Your selected charity {code} has been credited {amount_mob}MOB!\n"
+                + "Thank you for your gift!"
             )
         if msg.uuid not in self.no_repay:
             if not await self.ask_yesno_question(
