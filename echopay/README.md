@@ -8,7 +8,7 @@ In this tutorial you will
 * send and receive payments with Signal
 * deploy echopay, a bot that receives payments and then sends the money back
 
-So, let's get started
+So, let's get started.
 
 ## Auxin CLI ##
 
@@ -100,11 +100,11 @@ pipenv run python -m sample_bots.hellobot
 <br>
 
 
-## Mobile Coin Wallet and Full Service ##
+## MobileCoin Wallet and Full Service ##
 
-Now for the payments enabled part of payments-enabled Signal bot. Signal Pay uses a lightweight version of the Mobilecoin wallet called Fog. For running a bot however, we want to use the full service version of the wallet, appropriately named Full Service. The easiest way to create and use a Mobilecoin Wallet is with the Desktop Wallet which can be installed here.
+Now for the payments enabled part of payments-enabled Signal bot. Signal Pay uses a lightweight version of the MobileCoin wallet called Fog. For running a bot however, we want to use the full service version of the wallet, appropriately named Full Service. The easiest way to create and use a MobileCoin Wallet is with the Desktop Wallet which can be installed here.
 
-Running the Mobilecoin Desktop Wallet creates an instance of Full Service. Full Service is, at its core, a client that talks to Mobilecoin consensus nodes and allows you to submit transactions and receive transactions. The Desktop Wallet uses Full Service to interact with the Mobilecoin Blockchain. You can use this instance of Full Service to create additional accounts.
+Running the MobileCoin Desktop Wallet creates an instance of Full Service. Full Service is, at its core, a client that talks to MobileCoin consensus nodes and allows you to submit transactions and receive transactions. The Desktop Wallet uses Full Service to interact with the MobileCoin Blockchain. You can use this instance of Full Service to create additional accounts.
 
 Forest bots interact with a Full Service instance through HTTP. When you start the desktop wallet, it opens a socket on `http://127.0.0.1:9090/wallet`. You can put this URL in your dev_secrets file and the bot will be able to communicate with your wallet, meaning it can send and receive MOB and create separate accounts. If you don't want to use your main account for your bot, and in fact we recommend you don't, you can create a separate account in the desktop wallet and use that. That's what we'll be doing in this tutorial. If you want to host your bot on a server or cloud instance, you must enact additional security to ensure only authorised requests are being made to full-service. We'll explain one way to do that at the end.
 
@@ -386,7 +386,7 @@ pipenv run python -m echopay.echopay
 
 And try out all the functions yourself. You'll have to seed the bot with some MOB to start with. If you need to buy MOB you can do so at [buymobilecoin.com](https://buymobilecoin.com)
 
-Try it out make changes. 
+Try it out and make changes!
 
 ## Next Steps: infrastructure
 
