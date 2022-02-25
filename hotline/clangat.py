@@ -5,10 +5,10 @@
 import asyncio
 import codecs
 import json
+import secrets
 import string
 from decimal import Decimal
 from typing import Any, Optional
-import secrets
 
 from aiohttp import web
 from prometheus_async import aio
@@ -96,7 +96,7 @@ class TalkBack(PayBotPro):
             msg.arg1 = await self.ask_freeform_question(
                 msg.uuid, "Who would you like to message?"
             )
-        if param and param.rstrip(string.punctuation).isalnum():
+        if param and param.strip(string.punctuation).isalnum():
             param = (
                 (msg.full_text or "")
                 .lstrip("/")
@@ -123,18 +123,21 @@ class TalkBack(PayBotPro):
             return maybe_displayname
         maybe_user_profile = await self.profile_cache.get(uuid)
         # if no luck, but we have a valid uuid
+        user_given = ""
         if not maybe_user_profile and uuid.count("-") == 4:
             try:
                 maybe_user_profile = (
                     await self.signal_rpc_request("getprofile", peer_name=uuid)
                 ).blob
-                user_given = maybe_user_profile.get("givenName", "givenName")
+                user_given = maybe_user_profile.get("givenName", "")
                 await self.profile_cache.set(uuid, maybe_user_profile)
             except AttributeError:
                 # this returns a Dict containing an error key
                 user_given = "[error]"
-        else:
-            user_given = maybe_user_profile.get("givenName", "")
+        elif maybe_user_profile and "givenName" in maybe_user_profile:
+            user_given = maybe_user_profile["givenName"]
+        if not user_given:
+            user_given = "givenName"
         if uuid and ("+" not in uuid and "-" in uuid):
             user_short = f"{user_given}_{uuid.split('-')[1]}"
         else:
@@ -146,6 +149,7 @@ class TalkBack(PayBotPro):
     async def talkback(self, msg: Message) -> Response:
         source = msg.uuid or msg.source
         await self.admin(f"{await self.get_displayname(source)} says: {msg.full_text}")
+        return None
 
 
 class ClanGat(TalkBack):
@@ -202,7 +206,8 @@ class ClanGat(TalkBack):
         """check | check <list_or_event>
         returns all lists the user's on, or optionally info about a specified list."""
         obj = (msg.arg1 or "").lower()
-        if msg.arg1 and await self.check_user_owns(msg.uuid, msg.arg1):
+        user = msg.uuid or msg.source
+        if msg.arg1 and await self.check_user_owns(user, msg.arg1):
             return "\n\n".join(
                 [
                     f"code: {obj}",
@@ -222,17 +227,17 @@ class ClanGat(TalkBack):
         lists_ = [
             list_
             for list_ in await self.event_lists.keys()
-            if msg.uuid in await self.event_lists.get(list_, [])
+            if user in await self.event_lists.get(list_, [])
         ]
         owns_event = [
             list_
             for list_ in await self.event_lists.keys()
-            if msg.uuid in await self.event_owners.get(list_, [])
+            if user in await self.event_owners.get(list_, [])
         ]
         owns_list = [
             list_
             for list_ in await self.event_lists.keys()
-            if msg.uuid in await self.list_owners.get(list_, [])
+            if user in await self.list_owners.get(list_, [])
         ]
         return f"You're on the list for {lists_}.\n\nYou own these paid events: {owns_event}\n\nYou own these free lists: {owns_list}\n\nFor more information reply: check <code>."
 
@@ -390,8 +395,11 @@ class ClanGat(TalkBack):
             failed = []
 
             async def do_pay_logging_success(
-                target, amount_mmob, message="", input_txo_ids=[]
-            ):
+                target: str,
+                amount_mmob: int,
+                message: Optional[str] = "",
+                input_txo_ids: list[str] = [],
+            ) -> Optional[dict[str, str]]:
                 try:
                     result = await self.send_payment(
                         recipient=target,
@@ -414,7 +422,10 @@ class ClanGat(TalkBack):
 
             results = [
                 await do_pay_logging_success(
-                    target, amount_mmob, message, input_txo_ids=[valid_utxos.pop(0)]
+                    target,
+                    amount_mmob,
+                    message,
+                    input_txo_ids=[valid_utxos.pop(0) or ""],
                 )
                 for target in filtered_send_list
             ]
@@ -618,8 +629,8 @@ class ClanGat(TalkBack):
             msg.arg3 or "",
         )
         value = value.strip("\u2068\u2069")
-        user = msg.uuid
-        user_owns = await self.check_user_owns(msg.uuid, param)
+        user = msg.uuid or msg.source  # should always be uuid, be nice to types tho
+        user_owns = await self.check_user_owns(user, param)
         success = False
         if (
             obj in "egg easteregg"
@@ -768,7 +779,7 @@ class ClanGat(TalkBack):
             and code in await self.event_prices.keys()  # and a price
             and (
                 len(await self.event_attendees.get(code, []))
-                < await self.event_limits.get(code, 1e5)
+                < await self.event_limits.get(code, 1000)
             )  # and there's space
             and msg.uuid
             not in await self.event_attendees[
