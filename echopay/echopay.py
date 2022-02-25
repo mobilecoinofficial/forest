@@ -31,7 +31,6 @@ class AuthorizedPayer(PayBot):
     @time(REQUEST_TIME)  # type: ignore
     async def do_pay(self, msg: Message) -> Response:
 
-        
         payment_notif_sent = await self.send_payment(msg.source, int(1e9))
         if payment_notif_sent:
             logging.info(payment_notif_sent)
