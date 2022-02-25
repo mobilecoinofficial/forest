@@ -97,8 +97,8 @@ if Path(SIGNAL).exists():
     SIGNAL_PATH = str(Path(SIGNAL).absolute())
 elif Path(ROOT_DIR) / SIGNAL:
     SIGNAL_PATH = str(Path(ROOT_DIR) / SIGNAL)
-elif shutil.which(SIGNAL):
-    SIGNAL_PATH = shutil.which(SIGNAL)
+elif which := shutil.which(SIGNAL):
+    SIGNAL_PATH = which
 else:
     raise FileNotFoundError(
         f"Couldn't find a {SIGNAL} executable in the working directory, {ROOT_DIR}, or as an executable. "

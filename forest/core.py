@@ -112,11 +112,12 @@ class Signal:
         restart_count = 0
         max_backoff = 15
         while self.sigints == 0 and not self.exiting:
+            path = utils.SIGNAL_PATH
             if utils.AUXIN:
                 path += " --download-path /tmp"
             else:
                 path += " --trust-new-identities always"
-            command = f"{utils.SIGNAL_PATH} --config {utils.ROOT_DIR} --user {self.bot_number} jsonRpc".split()
+            command = f"{path} --config {utils.ROOT_DIR} --user {self.bot_number} jsonRpc".split()
             logging.info(command)
             proc_launch_time = time.time()
             # this ought to FileNotFoundError but doesn't
