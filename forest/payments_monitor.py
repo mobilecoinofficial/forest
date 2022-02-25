@@ -81,20 +81,6 @@ class LedgerManager(PGInterface):
         super().__init__(queries, database, loop)
 
 
-# def auxin_addr_to_b58(auxin_output: str) -> str:
-# requires protobuf stuff
-#     mc_util.b64_public_address_to_b58_wrapper(
-#         base64.b64encode(
-#             bytes(
-#                 json.loads(auxin_output)
-#                 .get("Address")
-#                 .get("mobileCoinAddress")
-#                 .get("address")
-#             )
-#         )
-#     )
-
-
 class Mobster:
     """Class to keep track of a aiohttp session and cached rate"""
 
@@ -119,6 +105,7 @@ class Mobster:
         better_data = {"jsonrpc": "2.0", "id": 1, **data}
         async with aiohttp.TCPConnector(ssl=ssl_context) as conn:
             async with aiohttp.ClientSession(connector=conn) as sess:
+                # this can hang (forever?) if there's no full-service at that url
                 mob_req = sess.post(
                     self.url,
                     data=json.dumps(better_data),

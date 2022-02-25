@@ -86,8 +86,8 @@ def get_secret(key: str, env: Optional[str] = None) -> str:
     return secret
 
 
-SIGNAL = get_secret("SIGNAL") or "auxin"
-AUXIN = SIGNAL.lower() == "auxin"
+SIGNAL = (get_secret("SIGNAL") or "auxin").removesuffix("-cli") + "-cli"
+AUXIN = SIGNAL.lower() == "auxin-cli"
 HOSTNAME = open("/etc/hostname").read().strip()  #  FLY_ALLOC_ID
 APP_NAME = os.getenv("FLY_APP_NAME")
 URL = os.getenv("URL_OVERRIDE", f"https://{APP_NAME}.fly.dev")

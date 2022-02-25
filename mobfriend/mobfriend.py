@@ -6,7 +6,7 @@ import json
 import glob
 import logging
 from decimal import Decimal
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from textwrap import dedent
 
 
@@ -53,14 +53,6 @@ class MobFriend(QuestionBot):
                     )
                     if len(attachment_paths) > 0:
                         attachment_path = attachment_paths.pop()
-                        if ".jpeg" in attachment_path:
-                            os.rename(
-                                attachment_path,
-                                attachment_path.replace(".jpeg", ".jpg", 1),
-                            )
-                            attachment_path = attachment_path.replace(
-                                ".jpeg", ".jpg", 1
-                            )
                         download_path = self.user_images[
                             message.source
                         ] = f"{attachment_path}"
@@ -89,6 +81,7 @@ class MobFriend(QuestionBot):
                 )
                 # if it's plausibly b58, check it
                 if all(char in base58.alphabet.decode() for char in payload):
+                    message.attachments = []
                     return await self.do_check(message)
                 return None
             if not message.arg0:
@@ -116,15 +109,21 @@ class MobFriend(QuestionBot):
         return "Saved!"
 
     async def _actually_build_wait_and_send_qr(
-        self, text: str, user_id: str, image_path: Any = None
+        self, text: str, user_id: str, image_path: Optional[str] = None
     ) -> str:
         if not image_path:
             image_path = self.user_images.get(user_id, "template.png")
-        if image_path and "." in image_path:
-            extension = image_path.split(".")[-1]
+        if image_path and ".gif" in image_path:
+            save_name = f"{user_id}_{base58.b58encode(text[:16]).decode()}.gif"
         else:
-            extension = "png"
-        save_name = f"{user_id}_{base58.b58encode(text[:16]).decode()}.{extension}"
+            save_name = f"{user_id}_{base58.b58encode(text[:16]).decode()}.png"
+        if image_path and ".jpeg" in image_path:
+            os.rename(
+                image_path,
+                image_path.replace(".jpeg", ".jpg", 1),
+            )
+            image_path = image_path.replace(".jpeg", ".jpg", 1)
+            self.user_images[user_id] = image_path
         default_params: dict[str, Any] = dict(save_name=save_name, save_dir="/tmp")
         if image_path:
             default_params.update(
@@ -137,13 +136,28 @@ class MobFriend(QuestionBot):
                     picture=image_path,
                 )
             )
-        await self.send_message(user_id, "Building your QR code! Please be patient!")
+        await self.send_message(
+            user_id,
+            "Please be patient! Building your QR code!\n\nUsing this value:",
+        )
+        await self.send_message(user_id, text)
         p = aioprocessing.AioProcess(
             target=amzqr.run, args=(text,), kwargs=default_params
         )
         p.start()  # pylint: disable=no-member
-        await p.coro_join()  # pylint: disable=no-member
-        await self.send_message(user_id, text, attachments=[f"/tmp/{save_name}"])
+        try:
+            # pylint: disable=no-member
+            await asyncio.wait_for(p.coro_join(), timeout=30)
+            await self.send_message(
+                user_id,
+                "You can share this QR with others!",
+                attachments=[f"/tmp/{save_name}"],
+            )
+        except asyncio.TimeoutError:
+            await self.send_message(
+                user_id,
+                "Sorry, no luck!\n\nTry sending a simpler template (or saying 'clear') and saying 'makeqr <value>'",
+            )
         return save_name
 
     async def do_signalme(self, _: Message) -> Response:
@@ -218,7 +232,7 @@ class MobFriend(QuestionBot):
             logging.info(payment_notif_sent)
             delta = (payment_notif_sent.timestamp - msg.timestamp) / 1000
             await self.admin(f"payment delta: {delta}")
-            self.auxin_roundtrip_latency.append((msg.timestamp, "payment", delta))
+            self.signal_roundtrip_latency.append((msg.timestamp, "payment", delta))
         return None
 
     @time(REQUEST_TIME)  # type: ignore
@@ -236,7 +250,7 @@ class MobFriend(QuestionBot):
             if not payment_notif:
                 return None
             delta = (payment_notif.timestamp - msg.timestamp) / 1000
-            self.auxin_roundtrip_latency.append((msg.timestamp, "repayment", delta))
+            self.signal_roundtrip_latency.append((msg.timestamp, "repayment", delta))
             return None
         if msg.source in self.no_repay:
             self.no_repay.remove(msg.source)
@@ -268,10 +282,14 @@ class MobFriend(QuestionBot):
             return await self.do_redeem(msg)
         return f'Okay, send "redeem {msg.arg1}" to redeem at any time!'
 
+    # pylint: disable=too-many-branches,too-many-return-statements
     async def do_check(self, msg: Message) -> Response:
         """
         /check [base58 code]
         Helps identify a b58 code. If it's a gift code, it will return the balance."""
+        # default, if the attachment is a QR
+        if len(msg.attachments) > 0:
+            return None
         if not msg.arg1:
             msg.arg1 = await self.ask_freeform_question(
                 msg.source,
@@ -280,6 +298,11 @@ class MobFriend(QuestionBot):
             if msg.arg1.lower() in "stop,exit,quit,no,none":
                 return "Okay, nevermind about that"
             return await self.do_check(msg)
+        extra_chars = [
+            char for char in msg.arg1 if char not in base58.alphabet.decode()
+        ]
+        if len(extra_chars) > 0:
+            return f"This doesn't look like something I know about! It has the characters '{''.join(extra_chars)}' in it!"
         status = await self.mobster.req_("check_b58_type", b58_code=msg.arg1)
         if status and status.get("result", {}).get("b58_type") == "PaymentRequest":
             status["result"]["data"]["type"] = "PaymentRequest"
@@ -395,6 +418,8 @@ class MobFriend(QuestionBot):
         Claims a gift code! Redeems a provided code to the bot's wallet and sends the redeemed balance."""
         if not msg.arg1:
             return "/redeem [base58 gift code]"
+        if not await self.get_address(msg.uuid):
+            return "I couldn't get your MobileCoin Address!\n\nPlease make sure you have activated your wallet and messaged me from your phone before continuing!"
         check_status = await self.mobster.req_(
             "check_gift_code_status", gift_code_b58=msg.arg1
         )
@@ -412,7 +437,7 @@ class MobFriend(QuestionBot):
                 msg.source, amount_pmob - FEE, "Gift code has been redeemed!"
             )
             amount_mob = pmob2mob(amount_pmob - FEE).quantize(Decimal("1.0000"))
-            return f"Claimed a gift code containing {amount_mob}MOB.\nTransaction ID: {status.get('result', {}).get('txo_id')}"
+            return f"Claimed a gift code containing {amount_mob}MOB.\nSupport ID: {status.get('result', {}).get('txo_id')}"
         return f"Sorry, that doesn't look like a valid code.\nDEBUG: {status.get('result')}"
 
     async def do_make(self, msg: Message) -> Response:
@@ -446,7 +471,7 @@ class MobFriend(QuestionBot):
                 msg.source, "For how many MOB should this request be made?"
             )
             msg.arg3 = await self.ask_freeform_question(
-                msg.source, "What memo would you like to use? ('None' for empty"
+                msg.source, "What memo would you like to use? ('None' for empty)"
             )
             if msg.arg3.lower() == "none":
                 msg.arg3 = ""
