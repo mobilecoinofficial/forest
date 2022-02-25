@@ -173,9 +173,6 @@ Hellobot will read environment variables from a secrets file. By default it look
 ```bash
 ADMIN=+15551111111
 BOT_NUMBER=+15551234567
-NO_DOWNLOAD=1
-NO_MEMFS=1
-ROOT_DIR=.
 SIGNAL=signal-cli
 ```
 
@@ -252,6 +249,7 @@ These are the environment variables and flags that the bots read to work. Not al
 - `SIGNAL_CLI_PATH`: specify where the signal-cli executable is if it is not in ROOT_DIR.
 - `LOGLEVEL`: what log level to use for console logs (DEBUG, INFO, WARNING, ERROR). Defaults to DEBUG
 - `TYPO_THRESHOLD`: maximum normalized Levenshtein edit distance for typo correction. 0 is only exact matches, 1 is any match. Default: 0.3
+- `SIGNAL_CLI_PATH`: path to executable to use. useful for running signal-cli with graalvm tracing agent
 
 ## Binary flags
 - `DOWNLOAD`: download/upload datastore from the database instead of using what's in the current working directory.
