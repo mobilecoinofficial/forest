@@ -233,19 +233,6 @@ def setup_tmpdir() -> None:
             logging.warning("couldn't remove rootdir: %s", e)
     if not utils.MEMFS:
         (Path(utils.ROOT_DIR) / "data").mkdir(exist_ok=True, parents=True)
-    # assume we're running in the repo and our signal client is in the current directory
-    client = utils.get_secret("SIGNAL_CLI_PATH") or utils.SIGNAL
-    client_path = Path(client).absolute()
-    if not client_path.exists():
-        raise FileNotFoundError(
-            f"{client_path} doesn't exist, try symlinking {utils.SIGNAL} to the current directory"
-            " or specifying SIGNAL_CLI_PATH"
-        )
-    try:
-        logging.info("symlinking %s to %s", client_path, utils.CLIENT_PATH)
-        os.symlink(client_path, utils.CLIENT_PATH)
-    except FileExistsError:
-        logging.info("%s's already there", utils.SIGNAL)
     try:
         os.symlink(Path("avatar.png").absolute(), utils.ROOT_DIR + "/avatar.png")
     except FileExistsError:
@@ -269,11 +256,9 @@ async def getFreeSignalDatastore() -> SignalDatastore:
     return SignalDatastore(number)
 
 
-# this stuff needs to be cleaned up
 # maybe a config about where we're running:
 # MEMFS, DOWNLOAD, ROOT_DIR, etc
 # is HCL overkill?
-
 
 parser = argparse.ArgumentParser(
     description="manage the signal datastore. use ENV=... to use something other than dev"
