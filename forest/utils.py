@@ -93,7 +93,7 @@ MEMFS = get_secret("AUTOSAVE")
 SIGNAL = (get_secret("SIGNAL") or "auxin").removesuffix("-cli") + "-cli"
 AUXIN = SIGNAL.lower() == "auxin-cli"
 
-maybe_path = get_secert("SIGNAL_PATH")
+maybe_path = get_secret("SIGNAL_PATH")
 if maybe_path and Path(maybe_path).exists():
     SIGNAL_PATH = str(Path(maybe_path).absolute())
 elif Path(SIGNAL).exists():
