@@ -174,7 +174,9 @@ class fastpKVStoreClient:
 
 
 K = TypeVar("K")
-V = TypeVar("V", str, int, list[str], dict[str, str])
+V = TypeVar("V")
+# V = TypeVar("V", str, int, list, dict[str, str]) # adding the constraints causes:
+# Value of type variable "V" of "aPersistDict" cannot be "list"
 
 
 class aPersistDict(Generic[K, V]):
@@ -248,50 +250,6 @@ class aPersistDict(Generic[K, V]):
         await self.set(key, None)
         return None
 
-    # async def extend(self, key: K, value: V) -> str:
-    #     """Since one cannot simply add to a coroutine, this function exists.
-    #     If the key exists and the value is None, or an empty array, the provided value is added to a(the) list at that value."""
-    #     value_to_extend: Union[None, V, list[V]] = []
-    #     async with self.rwlock:
-    #         value_to_extend = self.dict_.get(key, [])
-    #         if isinstance(value_to_extend, list):
-    #             value_to_extend.append(value)
-    #             return await self._set(key, value_to_extend)
-    #         raise TypeError(f"value {value_to_extend} for key {key} is not a list")
-    #
-    async def increment(self, key: K, value: int) -> str:
-        """Since one cannot simply add to a coroutine, this function exists.
-        If the key exists and the value is None, or an empty array, the provided value is added to a(the) list at that value."""
-        value_to_extend: Any = 0
-        async with self.rwlock:
-            value_to_extend = self.dict_.get(key, 0)
-            if isinstance(value_to_extend, int):
-                reveal_type(value_to_extend)
-                reveal_type(self.dict_)
-                return await self._set(key, value_to_extend + value)
-            else:
-                raise TypeError(f"key {key} is not an int")
-
-    async def decrement(self, key: K, value: int) -> str:
-        """Since one cannot simply add to a coroutine, this function exists.
-        If the key exists and the value is None, or an empty array, the provided value is added to a(the) list at that value."""
-        value_to_extend: Any = 0
-        async with self.rwlock:
-            value_to_extend = self.dict_.get(key, 0)
-            if isinstance(value_to_extend, int):
-                return await self._set(key, value_to_extend - value)
-            else:
-                raise TypeError(f"key {key} is not an int")
-
-    # async def remove_from(self, key: K, not_value: V) -> str:
-    #     """Removes a value specified from the list, if present.
-    #     Returns metadata"""
-    #     async with self.rwlock:
-    #         values_without_specified = [
-    #             el for el in self.dict_.get(key, []) if not_value != el
-    #         ]
-    #         return await self._set(key, values_without_specified)
-
     async def pop(self, key: K, default: Optional[V] = None) -> Optional[V]:
         """Returns and removes a value if it exists"""
         res = await self.get(key, default)
@@ -313,3 +271,53 @@ class aPersistDict(Generic[K, V]):
         """Sets a value at a given key, returns metadata."""
         async with self.rwlock:
             return await self._set(key, value)
+
+
+class aPersistDictOfInts(aPersistDict[str, int]):
+    async def increment(self, key: str, value: int) -> str:
+        """Since one cannot simply add to a coroutine, this function exists.
+        If the key exists and the value is None, or an empty array, the provided value is added to a(the) list at that value."""
+        value_to_extend: Any = 0
+        async with self.rwlock:
+            value_to_extend = self.dict_.get(key, 0)
+            if isinstance(value_to_extend, int) and isinstance(V, int):
+                return await self._set(key, value_to_extend + value)
+            raise TypeError(f"key {key} is not an int")
+
+    async def decrement(self, key: str, value: int) -> str:
+        """Since one cannot simply add to a coroutine, this function exists.
+        If the key exists and the value is None, or an empty array, the provided value is added to a(the) list at that value."""
+        value_to_extend: Any = 0
+        async with self.rwlock:
+            value_to_extend = self.dict_.get(key, 0)
+            if isinstance(value_to_extend, int):
+                return await self._set(key, value_to_extend - value)
+            raise TypeError(f"key {key} is not an int")
+
+
+I = TypeVar("I")  # item
+
+
+class aPersistDictOfLists(aPersistDict[str, list[I]]):
+    async def extend(self, key: str, value: I) -> str:
+        """Since one cannot simply add to a coroutine, this function exists.
+        If the key exists and the value is None, or an empty array, the provided value is added to a(the) list at that value."""
+        value_to_extend: Optional[list[I]] = []
+        async with self.rwlock:
+            value_to_extend = self.dict_.get(key, [])
+            if isinstance(value_to_extend, list):
+                value_to_extend.append(value)
+                return await self._set(key, value_to_extend)
+            raise TypeError(f"value {value_to_extend} for key {key} is not a list")
+
+    async def remove_from(self, key: str, not_value: I) -> str:
+        """Removes a value specified from the list, if present.
+        Returns metadata"""
+        async with self.rwlock:
+            values_to_filter = self.dict_.get(key, [])
+            if isinstance(values_to_filter, list):
+                values_without_specified = [
+                    el for el in values_to_filter if not_value != el
+                ]
+                return await self._set(key, values_without_specified)
+            raise TypeError(f"key {key} is not a list")

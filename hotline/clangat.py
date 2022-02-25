@@ -8,6 +8,7 @@ import json
 import string
 from decimal import Decimal
 from typing import Any, Optional
+import secrets
 
 from aiohttp import web
 from prometheus_async import aio
@@ -25,7 +26,7 @@ from forest.core import (
     requires_admin,
     is_admin,
 )
-from forest.pdictng import aPersistDict
+from forest.pdictng import aPersistDict, aPersistDictOfInts, aPersistDictOfLists
 from mc_util import pmob2mob
 
 FEE = int(1e12 * 0.0004)
@@ -95,7 +96,7 @@ class TalkBack(PayBotPro):
             msg.arg1 = await self.ask_freeform_question(
                 msg.uuid, "Who would you like to message?"
             )
-        if param.rstrip(string.punctuation).isalnum():
+        if param and param.rstrip(string.punctuation).isalnum():
             param = (
                 (msg.full_text or "")
                 .lstrip("/")
@@ -150,20 +151,20 @@ class TalkBack(PayBotPro):
 class ClanGat(TalkBack):
     def __init__(self) -> None:
         self.no_repay: list[str] = []
-        self.pending_orders = aPersistDict("pending_orders")
-        self.pending_funds = aPersistDict("pending_funds")
-        self.event_limits = aPersistDict("event_limits")
-        self.event_prompts = aPersistDict("event_prompts")
-        self.event_prices = aPersistDict("event_prices")
-        self.event_images = aPersistDict("event_images")
-        self.event_owners = aPersistDict("event_owners")
-        self.event_attendees = aPersistDict("event_attendees")
-        self.event_lists = aPersistDict("event_lists")
-        self.list_owners = aPersistDict("list_owners")
-        self.easter_eggs = aPersistDict("easter_eggs")
-        self.successful_pays = aPersistDict("successful_pays")
-        self.payout_balance_mmob = aPersistDict("payout_balance_mmob")
-        self.challenging = aPersistDict("challenging")
+        self.pending_orders: aPersistDict[str, str] = aPersistDict("pending_orders")
+        self.pending_funds: aPersistDict[str, str] = aPersistDict("pending_funds")
+        self.event_limits: aPersistDict[str, str] = aPersistDict("event_limits")
+        self.event_prompts: aPersistDict[str, str] = aPersistDict("event_prompts")
+        self.event_prices: aPersistDict[str, str] = aPersistDict("event_prices")
+        self.event_images: aPersistDict[str, str] = aPersistDict("event_images")
+        self.event_owners = aPersistDictOfLists("event_owners")
+        self.event_attendees = aPersistDictOfLists("event_attendees")
+        self.event_lists = aPersistDictOfLists("event_lists")
+        self.list_owners = aPersistDictOfLists("list_owners")
+        self.easter_eggs: aPersistDict[str, str] = aPersistDict("easter_eggs")
+        self.successful_pays = aPersistDictOfLists("successful_pays")
+        self.payout_balance_mmob = aPersistDictOfInts("payout_balance_mmob")
+        self.challenging: aPersistDict[str, str] = aPersistDict("challenging")
         self.pay_lock: asyncio.Lock = asyncio.Lock()
         # okay, this now maps the tag (restore key) of each of the above to the instance of the PersistDict class
         self.state = {
