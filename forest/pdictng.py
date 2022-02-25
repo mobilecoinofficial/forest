@@ -233,7 +233,7 @@ class aPersistDict:
             self.write_task = None
         # then grab the lock
         async with self.rwlock:
-            return self.dict_.get(key, default)
+            return self.dict_.get(key) or default
 
     async def keys(self) -> List[str]:
         async with self.rwlock:

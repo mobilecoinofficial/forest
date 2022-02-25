@@ -9,7 +9,7 @@ import logging
 import random
 import ssl
 import time
-from typing import Optional
+from typing import Optional, List
 
 import aiohttp
 import asyncpg
@@ -131,7 +131,7 @@ class Mobster:
     async def get_utxos(self) -> dict[str, int]:
         txos = await self.get_all_txos_for_account()
         utxos = {
-            txo: int(status.get("value_pmob"))
+            txo: int(status.get("value_pmob", 0))
             for txo, status in txos.items()
             if status.get("account_status_map", {})
             .get(await self.get_account(), {})
@@ -143,11 +143,13 @@ class Mobster:
             return sorted_
         return {}
 
-    async def split_txos_slow(self, output_millimob=100, target_quantity=200) -> str:
+    async def split_txos_slow(
+        self, output_millimob: int = 100, target_quantity: int = 200
+    ) -> str:
         output_millimob = int(output_millimob)
         built = 0
         i = 0
-        utxos = []
+        utxos: List[str] = []
         while built < (target_quantity + 3):
             if len(utxos) < 1:
                 utxos = list(reversed(await self.get_utxos()))
@@ -387,7 +389,7 @@ class Mobster:
 
 
 class StatefulMobster(Mobster):
-    def __init__(self):
+    def __init__(self) -> None:
         self.ledger_manager = LedgerManager()
         self.invoice_manager = InvoiceManager()
         super().__init__()

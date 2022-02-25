@@ -150,7 +150,7 @@ class Signal:
             if runtime > max_backoff * 4:
                 restart_count = 0
             restart_count += 1
-            backoff = 0.5 * (2**restart_count - 1)
+            backoff = 0.5 * (2 ** restart_count - 1)
             logging.warning("Signal exited with returncode %s", returncode)
             if backoff > max_backoff:
                 logging.info(

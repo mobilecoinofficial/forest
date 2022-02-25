@@ -7,7 +7,7 @@ import logging
 import os
 from asyncio.subprocess import PIPE, create_subprocess_exec
 from contextlib import asynccontextmanager
-from typing import AsyncIterator, Optional, cast
+from typing import AsyncIterator, Optional, cast, Dict
 
 import phonenumbers as pn
 from phonenumbers import NumberParseException
@@ -73,7 +73,7 @@ def load_secrets(env: Optional[str] = None, overwrite: bool = False) -> None:
         pass
 
 
-secret_cache: dict[str, str] = {}
+secret_cache: Dict[str, str] = {}
 
 # TODO: split this into get_flag and get_secret; move all of the flags into fly.toml;
 # maybe keep all the tomls and dockerfiles in a separate dir with a deploy script passing --config and --dockerfile explicitly
