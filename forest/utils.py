@@ -1,13 +1,12 @@
 #!/usr/bin/python3.9
 # Copyright (c) 2021 MobileCoin Inc.
 # Copyright (c) 2021 The Forest Team
-
 import functools
 import logging
 import os
-from asyncio.subprocess import PIPE, create_subprocess_exec
-from contextlib import asynccontextmanager
-from typing import AsyncIterator, Optional, cast
+import shutil
+from pathlib import Path
+from typing import Optional, cast
 
 import phonenumbers as pn
 from phonenumbers import NumberParseException
@@ -22,56 +21,55 @@ def FuckAiohttp(record: logging.LogRecord) -> bool:
     return True
 
 
-# TRACE = logging.DEBUG - 10
-# logging.addLevelName(TRACE, "TRACE")
-
 logger_class = logging.getLoggerClass()
 
-# doesn't work / not used
-# class TraceLogger(logger_class):  # type: ignore
-#     def trace(self, msg: str, *args: Any, **kwargs: Any) -> None:
-#         self.log(TRACE, msg, *args, **kwargs)
-
-
-# logging.setLoggerClass(TraceLogger)
 logger = logging.getLogger()
 logger.setLevel("DEBUG")
 fmt = logging.Formatter("{levelname} {module}:{lineno}: {message}", style="{")
 console_handler = logging.StreamHandler()
-console_handler.setLevel(((os.getenv("LOGLEVEL") or os.getenv("LOG_LEVEL")) or "INFO").upper())
+console_handler.setLevel(
+    ((os.getenv("LOGLEVEL") or os.getenv("LOG_LEVEL")) or "DEBUG").upper()
+)
 console_handler.setFormatter(fmt)
 console_handler.addFilter(FuckAiohttp)
 logger.addHandler(console_handler)
 
+
+#### Configure Parameters
+
 # edge cases:
 # accessing an unset secret loads other variables and potentially overwrites existing ones
-# "false" being truthy is annoying
+def parse_secrets(secrets: str) -> dict[str, str]:
+    pairs = [
+        line.strip().split("=", 1)
+        for line in secrets.split("\n")
+        if line and not line.startswith("#")
+    ]
+    can_be_a_dict = cast(list[tuple[str, str]], pairs)
+    return dict(can_be_a_dict)
 
 
-@functools.cache  # don't load the same env more than once?
+# to dump: "\n".join(f"{k}={v}" for k, v in secrets.items())
+
+
+@functools.cache  # don't load the same env more than once
 def load_secrets(env: Optional[str] = None, overwrite: bool = False) -> None:
     if not env:
         env = os.environ.get("ENV", "dev")
     try:
         logging.info("loading secrets from %s_secrets", env)
-        secrets = [
-            line.strip().split("=", 1)
-            for line in open(f"{env}_secrets")
-            if line and not line.startswith("#")
-        ]
-        can_be_a_dict = cast(list[tuple[str, str]], secrets)
+        secrets = parse_secrets(open(f"{env}_secrets").read())
         if overwrite:
-            new_env = dict(can_be_a_dict)
+            new_env = secrets
         else:
-            new_env = (
-                dict(can_be_a_dict) | os.environ
-            )  # mask loaded secrets with existing env
+            # mask loaded secrets with existing env
+            new_env = secrets | os.environ
         os.environ.update(new_env)
     except FileNotFoundError:
         pass
 
 
-# TODO: split this into get_flag and get_secret; move all of the flags into fly.toml;
+# potentially split this into get_flag and get_secret; move all of the flags into fly.toml;
 # maybe keep all the tomls and dockerfiles in a separate dir with a deploy script passing --config and --dockerfile explicitly
 def get_secret(key: str, env: Optional[str] = None) -> str:
     try:
@@ -84,23 +82,33 @@ def get_secret(key: str, env: Optional[str] = None) -> str:
     return secret
 
 
-SIGNAL = get_secret("SIGNAL") or "auxin"
-AUXIN = SIGNAL.lower() == "auxin"
-HOSTNAME = open("/etc/hostname").read().strip()  #  FLY_ALLOC_ID
+## Parameters for easy access and ergonomic use
+
+SIGNAL = (get_secret("SIGNAL") or "auxin").removesuffix("-cli") + "-cli"
+AUXIN = SIGNAL.lower() == "auxin-cli"
 APP_NAME = os.getenv("FLY_APP_NAME")
 URL = os.getenv("URL_OVERRIDE", f"https://{APP_NAME}.fly.dev")
 LOCAL = os.getenv("FLY_APP_NAME") is None
-ROOT_DIR = (
-    "." if get_secret("NO_DOWNLOAD") else "/tmp/local-signal" if LOCAL else "/app"
-)
-UPLOAD = DOWNLOAD = not get_secret("NO_DOWNLOAD")
-MEMFS = not get_secret("NO_MEMFS")
+UPLOAD = DOWNLOAD = get_secret("DOWNLOAD")
+ROOT_DIR = "/tmp/local-signal" if DOWNLOAD else "." if LOCAL else "/app"
+MEMFS = get_secret("AUTOSAVE")
+
+if Path(SIGNAL).exists():
+    SIGNAL_PATH = str(Path(SIGNAL).absolute())
+elif Path(ROOT_DIR) / SIGNAL:
+    SIGNAL_PATH = str(Path(ROOT_DIR) / SIGNAL)
+elif which := shutil.which(SIGNAL):
+    SIGNAL_PATH = which
+else:
+    raise FileNotFoundError(
+        f"Couldn't find a {SIGNAL} executable in the working directory, {ROOT_DIR}, or as an executable. "
+        f"Install {SIGNAL} or try symlinking {SIGNAL} to the working directory"
+    )
+
+
+#### Configure logging to file
 
 if get_secret("LOGFILES") or not LOCAL:
-    # tracelog = logging.FileHandler("trace.log")
-    # tracelog.setLevel(TRACE)
-    # tracelog.setFormatter(fmt)
-    # logger.addHandler(tracelog)
     handler = logging.FileHandler("debug.log")
     handler.setLevel("DEBUG")
     handler.setFormatter(fmt)
@@ -113,23 +121,3 @@ def signal_format(raw_number: str) -> Optional[str]:
         return pn.format_number(pn.parse(raw_number, "US"), pn.PhoneNumberFormat.E164)
     except NumberParseException:
         return None
-
-
-@asynccontextmanager
-async def get_url(port: int = 8080) -> AsyncIterator[str]:
-    if not APP_NAME:
-        try:
-            logging.info("starting tunnel")
-            tunnel = await create_subprocess_exec(
-                *(f"lt -p {port}".split()),
-                stdout=PIPE,
-            )
-            assert tunnel.stdout
-            line = await tunnel.stdout.readline()
-            url = line.decode().lstrip("your url is: ").strip()
-            yield url + "/inbound"
-        finally:
-            logging.info("terminaitng tunnel")
-            tunnel.terminate()
-    else:
-        yield APP_NAME + ".fly.io"

@@ -6,14 +6,15 @@ name = "pypi"
 [packages]
 aioprocessing = "*"
 asyncpg = "*"
-mobilecoin = "*"
 base58 = "*"
 phonenumbers = "*"
 termcolor = "*"
-prometheus_async = "*"
-prometheus_client = "*"
-pyqrcode = "*"
-pypng = "*"
+prometheus-async = "*"
+prometheus-client = "*"
+protobuf = "*"
+ulid2 = "*"
+Pillow = "*"
+pycryptodome = "*"
 
 [requires]
 python_version = "3.9"
@@ -23,11 +24,14 @@ allow_prereleases = true
 
 [dev-packages]
 black = "*"
-mypy = "*"
-pylint = "*"
-types-termcolor = "*"
-types-protobuf = "*"
 
 [packages.aiohttp]
 extras = [ "speedups",]
 version = "==3.8.1"
+
+[packages.zbar-py]
+git = "https://github.com/zplab/zbar-py"
+
+[packages.amzqr]
+git = "https://github.com/itdaniher/amazing-qr"
+ref = "63cbdfd"

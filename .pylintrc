@@ -11,6 +11,8 @@ disable=
     consider-using-with,
     consider-using-from-import,
     fixme,
+    no-self-use,
+    unspecified-encoding,
     # handled by black
     format,
     line-too-long
@@ -20,3 +22,7 @@ ignored-classes=PrintableWrapper
 
 [VARIABLES]
 dummy-variables-rgx=(_|dummy|unused|i)
+
+[SIMILARITY]
+min-similarity-lines=9
+ignore-imports=yes

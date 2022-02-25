@@ -18,17 +18,22 @@ jobs:
         uses: actions/cache@v1
         with:
           path: ~/.local/share/virtualenvs
-          key: '${{ runner.os }}-pipenv-v2-${{ hashFiles(''**/Pipfile.lock'') }}'
+          key: '${{ runner.os }}-pipenv-v1-${{ hashFiles(''**/Pipfile.lock'') }}'
       - name: Install dependencies
         if: steps.cache-pipenv.outputs.cache-hit != 'true'
-        run: pipenv install --deploy --dev
+        run: cp .github/Pipfile .; pipenv install --skip-lock --pre
+      - name: List dependency versions (check this if you get confusing results)
+        run: pipenv graph
+      # - name: Setup tmate session # this lets you SSH into the container
+      #   uses: mxschmitt/action-tmate@v3
       - name: Black
         run: pipenv run black . --check
-        continue-on-error: true
+        if: always()
       - name: Mypy
-        run: pipenv run mypy *py other_bots mc_util forest mobfriend
-        continue-on-error: true
+        run: pipenv run mypy sample_bots mc_util forest mobfriend contact imogen
+        if: always()
       - name: Pylint
-        run: pipenv run pylint *py other_bots mc_util forest mobfriend/mobfriend.py
-        continue-on-error: true
-
+        run: pipenv run pylint --version; pipenv run pylint sample_bots mc_util forest mobfriend/mobfriend.py contact imogen/imogen.py
+        if: always()
+      - name: Pytest
+        run: pipenv run python -m pytest

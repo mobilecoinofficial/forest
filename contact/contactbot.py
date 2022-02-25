@@ -5,11 +5,11 @@ import logging
 from functools import wraps
 from typing import Callable, Union, cast
 import phonenumbers as pn
-from aiohttp import web
 import teli
+from aiohttp import web
+from forest_tables import GroupRoutingManager, PaymentsManager, RoutingManager
 from forest import utils
 from forest.core import Message, PayBot, Response, app, requires_admin, run_bot
-from forest_tables import GroupRoutingManager, PaymentsManager, RoutingManager
 
 
 def takes_number(command: Callable) -> Callable:
@@ -151,7 +151,7 @@ class Forest(PayBot):
         if not numbers:
             return "no"
         await self.send_reaction(message, "\N{Busts In Silhouette}")
-        group_resp = await self.auxin_req(
+        group_resp = await self.signal_rpc_request(
             "updateGroup",
             member=[message.source],
             admin=[message.source],
@@ -293,15 +293,15 @@ class Forest(PayBot):
     if not utils.get_secret("ORDER"):
         del do_order, do_pay
 
-    async def start_process2(self) -> None:
-        """Make sure full-service has a wallet before starting signal"""
-        try:
-            await self.mobster.get_address()
-        except IndexError:
-            await self.mobster.import_account()
-        if utils.get_secret("MIGRATE"):
-            await self.migrate()
-        await super().start_process()
+    # async def start_process(self) -> None:
+    #     """Make sure full-service has a wallet before starting signal"""
+    #     try:
+    #         await self.mobster.get_my_address()
+    #     except IndexError:
+    #         await self.mobster.import_account()
+    #     if utils.get_secret("MIGRATE"):
+    #         await self.migrate()
+    #     await super().start_process()
 
     async def migrate(self) -> None:
         """Add a status column to routing, make sure all destinations are E164,

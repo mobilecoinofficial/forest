@@ -1,60 +1,105 @@
 #!/usr/bin/python3.9
-import logging
+import asyncio
+from decimal import Decimal
+from typing import Union
+import mc_util
+from forest.core import Message, PayBot, Response, requires_admin, run_bot
 
-from aiohttp import web
-from prometheus_async import aio
-from prometheus_async.aio import time
-from prometheus_client import Summary
-
-from forest.core import Message, PayBot, Response, app
-
-britbot = "+447888866969"
-fee = int(1e12 * 0.0004)
-
-REQUEST_TIME = Summary("request_processing_seconds", "Time spent processing request")
+FEE_PMOB = int(1e12 * 0.0004)  # Mobilecoin transaction fee in Picomob.
 
 
-class AuthorizedPayer(PayBot):
-    no_repay: list[str] = []
+class Echopay(PayBot):
+    """A simple Payments Enabled Bot"""
 
-    async def handle_message(self, message: Message) -> Response:
-        if "hook me up" in message.text.lower():
-            return await self.do_pay(message)
-        return await super().handle_message(message)
+    def __init__(self) -> None:
+        """Creates AND STARTS a bot that routes commands to do_x handlers"""
+        super().__init__()
+        asyncio.create_task(self.set_payment_address())
 
-    async def do_no_repay(self, msg: Message) -> Response:
-        if msg.source in self.no_repay:
-            self.no_repay.remove(msg.source)
-            return "will repay you"
-        self.no_repay.append(msg.source)
-        return "won't repay you"
+    @staticmethod
+    def to_mob(amount_picomob: int) -> Decimal:
+        """converts amount from pmob to mob"""
+        return mc_util.pmob2mob(amount_picomob).quantize(Decimal("1.0000"))
 
-    @time(REQUEST_TIME)  # type: ignore
-    async def do_pay(self, msg: Message) -> Response:
-        payment_notif_sent = await self.send_payment(msg.source, int(1e9))
-        if payment_notif_sent:
-            logging.info(payment_notif_sent)
-            delta = (payment_notif_sent.timestamp - msg.timestamp) / 1000
-            await self.admin(f"payment delta: {delta}")
-            self.auxin_roundtrip_latency.append((msg.timestamp, "payment", delta))
-        return None
+    @staticmethod
+    def to_picomob(amount_mob: Union[int, float, Decimal]) -> int:
+        """converts amount from mob to picomob"""
+        return mc_util.mob2pmob(amount_mob)
 
-    @time(REQUEST_TIME)  # type: ignore
+    async def set_payment_address(self) -> None:
+        """Updates the Bot Signal Profile to have the correct payments address
+        as specified by FS_ACCOUNT_NAME"""
+
+        fs_address = await self.mobster.get_my_address()
+
+        # Singal addresses require Base64 encoding, but full service uses Base58.
+        # This method handles the conversion
+        signal_address = mc_util.b58_wrapper_to_b64_public_address(fs_address)
+
+        # This will set the bot's Signal profile, replace avatar.png to give your bot a custom avatar
+        await self.set_profile_auxin(
+            given_name="PaymeBot",
+            family_name="",
+            payment_address=signal_address,
+            profile_path="avatar.png",
+        )
+
+    async def do_payme(self, message: Message) -> Response:
+        """Sends payment to requestee for a certain amount"""
+        amount_mob = 0.001  ##payment amount in MOB
+        amount_picomob = self.to_picomob(amount_mob)
+
+        password = "please"
+
+        # for convenience, message.arg0 is the first word of the message in this case "payme"
+        # and msg.arg1 is the next word after that. In "payme please" please is msg.arg1
+
+        if message.arg1 == password:
+            await self.send_payment(message.source, amount_picomob)
+            return f"Of course, here's {str(amount_mob)} MOB"
+
+        if message.arg1 is None:
+            return "What's the secret word?"
+
+        return "That's not the right secret word!!"
+
+    @requires_admin
+    async def do_pay_user(self, message: Message) -> Response:
+        """Send payment to user by phone number: `pay_user +15554135555`"""
+        amount_mob = 0.001
+        amount_picomob = self.to_picomob(amount_mob)
+
+        # for convenience, message.arg0 is the first word of the message in this case "pay_user"
+        # and msg.arg1 is the next word after that. message.arg1 should be a phone number
+        # send_payment takes care of validating that it is a proper recipient,
+        # but for type safety we first check that it exists and is a string
+        if not isinstance(message.arg1, str):
+            response = (
+                "Please specify the User to be paid as a phone number"
+                " with country code example: pay_user +15554135555"
+            )
+            return response
+
+        recipient = message.arg1
+        await self.send_payment(
+            recipient,
+            amount_picomob,
+            confirm_tx_timeout=10,
+            receipt_message="Here's some money from your friendly Paymebot",
+        )
+        return f"Sent Payment to {recipient} for {amount_mob} MOB"
+
     async def payment_response(self, msg: Message, amount_pmob: int) -> Response:
-        payment_notif = await self.send_payment(msg.source, amount_pmob - fee)
-        if not payment_notif:
-            return None
-        delta = (payment_notif.timestamp - msg.timestamp) / 1000
-        self.auxin_roundtrip_latency.append((msg.timestamp, "repayment", delta))
-        await self.admin(f"repayment delta: {delta}")
-        return None
+        """Triggers on Succesful payment, overriden from forest.core"""
+
+        # amounts are received in picoMob, convert to Mob for readability
+        amount_mob = self.to_mob(amount_pmob)
+
+        if amount_mob > 0.002:
+            return f"Wow! Thank you for your payment of {str(amount_mob)} MOB"
+
+        return "Thanks I guess"
 
 
 if __name__ == "__main__":
-    app.add_routes([web.get("/metrics", aio.web.server_stats)])
-
-    @app.on_startup.append
-    async def start_wrapper(out_app: web.Application) -> None:
-        out_app["bot"] = AuthorizedPayer()
-
-    web.run_app(app, port=8080, host="0.0.0.0", access_log=None)
+    run_bot(Echopay)
