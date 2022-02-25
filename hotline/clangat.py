@@ -153,9 +153,9 @@ class ClanGat(TalkBack):
         self.no_repay: list[str] = []
         self.pending_orders: aPersistDict[str, str] = aPersistDict("pending_orders")
         self.pending_funds: aPersistDict[str, str] = aPersistDict("pending_funds")
-        self.event_limits: aPersistDict[str, str] = aPersistDict("event_limits")
+        self.event_limits = aPersistDictOfInts("event_limits")
         self.event_prompts: aPersistDict[str, str] = aPersistDict("event_prompts")
-        self.event_prices: aPersistDict[str, str] = aPersistDict("event_prices")
+        self.event_prices: aPersistDict[str, float] = aPersistDict("event_prices")
         self.event_images: aPersistDict[str, str] = aPersistDict("event_images")
         self.event_owners = aPersistDictOfLists("event_owners")
         self.event_attendees = aPersistDictOfLists("event_attendees")
@@ -907,21 +907,24 @@ class ClanGat(TalkBack):
         if msg.uuid in await self.pending_orders.keys():
             code = (await self.pending_orders[msg.uuid]).lower()
             price = await self.event_prices.get(code, 1000)
-            if amount_mob >= price and len(
-                await self.event_attendees.get(code, [])
-            ) < await self.event_limits.get(code, 1e5):
-                if msg.uuid not in await self.event_attendees.get(code, []):
-                    await self.payout_balance_mmob.increment(code, amount_mmob)
-                    end_note = ""
-                    if (amount_mob // price) == 2:
-                        await self.event_attendees.extend(code, msg.uuid)
-                        end_note = "(times two!)"
+            if (
+                price
+                and amount_mob >= price
+                and len(await self.event_attendees.get(code, []))
+                < await self.event_limits.get(code)
+                or 1e5
+                and msg.uuid not in (await self.event_attendees.get(code) or [])
+            ):
+                await self.payout_balance_mmob.increment(code, amount_mmob)
+                end_note = ""
+                if (amount_mob // price) == 2:
                     await self.event_attendees.extend(code, msg.uuid)
-                    thank_you = f"Thanks for paying for {await self.pending_orders[msg.uuid]}.\nYou're on the list! {end_note}"
-                    await self.pending_orders.remove(msg.uuid)
-                    return thank_you
-        if msg.uuid in await self.pending_funds.keys():
-            code = await self.pending_funds.pop(msg.uuid)
+                    end_note = "(times two!)"
+                await self.event_attendees.extend(code, msg.uuid)
+                thank_you = f"Thanks for paying for {await self.pending_orders[msg.uuid]}.\nYou're on the list! {end_note}"
+                await self.pending_orders.remove(msg.uuid)
+                return thank_you
+        if code := await self.pending_funds.pop(msg.uuid):
             await self.payout_balance_mmob.increment(code, amount_mmob)
             if msg.uuid in self.no_repay:
                 self.no_repay.remove(msg.uuid)
