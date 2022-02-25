@@ -4,6 +4,8 @@
 import functools
 import logging
 import os
+import shutil
+from pathlib import Path
 from typing import Optional, cast
 
 import phonenumbers as pn
@@ -90,6 +92,19 @@ LOCAL = os.getenv("FLY_APP_NAME") is None
 UPLOAD = DOWNLOAD = get_secret("DOWNLOAD")
 ROOT_DIR = "/tmp/local-signal" if DOWNLOAD else "." if LOCAL else "/app"
 MEMFS = get_secret("AUTOSAVE")
+
+if Path(SIGNAL).exists():
+    SIGNAL_PATH = str(Path(SIGNAL).absolute())
+elif Path(ROOT_DIR) / SIGNAL:
+    SIGNAL_PATH = str(Path(ROOT_DIR) / SIGNAL)
+elif shutil.which(SIGNAL):
+    SIGNAL_PATH = shutil.which(SIGNAL)
+else:
+    raise FileNotFoundError(
+        f"Couldn't find a {SIGNAL} executable in the working directory, {ROOT_DIR}, or as an executable. "
+        f"Install {SIGNAL} or try symlinking {SIGNAL} to the working directory"
+    )
+
 
 #### Configure logging to file
 

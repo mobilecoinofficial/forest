@@ -112,20 +112,11 @@ class Signal:
         restart_count = 0
         max_backoff = 15
         while self.sigints == 0 and not self.exiting:
-            path = (
-                utils.get_secret("SIGNAL_CLI_PATH")
-                or f"{utils.ROOT_DIR}/{'auxin' if utils.AUXIN else 'signal'}-cli"
-            )
-            # this?? can blocks forever if the file doesn't exist??
-            if not os.path.exists(path):
-                raise FileNotFoundError(
-                    f"{path} doesn't exist! Try symlinking {utils.SIGNAL} to the working directory"
-                )
             if utils.AUXIN:
                 path += " --download-path /tmp"
             else:
                 path += " --trust-new-identities always"
-            command = f"{path} --config {utils.ROOT_DIR} --user {self.bot_number} jsonRpc".split()
+            command = f"{utils.SIGNAL_PATH} --config {utils.ROOT_DIR} --user {self.bot_number} jsonRpc".split()
             logging.info(command)
             proc_launch_time = time.time()
             # this ought to FileNotFoundError but doesn't
