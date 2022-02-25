@@ -173,13 +173,12 @@ class fastpKVStoreClient:
             return ""
 
 
-K = TypeVar("K")
 V = TypeVar("V")
 # V = TypeVar("V", str, int, list, dict[str, str]) # adding the constraints causes:
 # Value of type variable "V" of "aPersistDict" cannot be "list"
 
 
-class aPersistDict(Generic[K, V]):
+class aPersistDict(Generic[V]):
     """Async, consistent, persistent storage.
     Does not inherit from dict, but behaves mostly in the same way.
     Care is taken to offer asynchronous methods and strong consistency.
@@ -190,6 +189,8 @@ class aPersistDict(Generic[K, V]):
     in a way that are persisted across reboots.
     No schemas and privacy preserving, but could be faster.
     Each write takes about 70 ms.
+
+    This takes a type parameter for the value
     """
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -201,7 +202,7 @@ class aPersistDict(Generic[K, V]):
             self.tag = args[0]
         if "tag" in kwargs:
             self.tag = kwargs.pop("tag")
-        self.dict_: dict[K, Optional[V]] = {}
+        self.dict_: dict[str, Optional[V]] = {}
         self.client = fastpKVStoreClient()
         self.rwlock = asyncio.Lock()
         self.loop = asyncio.get_event_loop()
@@ -214,12 +215,12 @@ class aPersistDict(Generic[K, V]):
     def __str__(self) -> str:
         return f"a{self.dict_}"
 
-    async def __getitem__(self, key: K) -> V:
+    async def __getitem__(self, key: str) -> V:
         if value := await self.get(key):
             return value
         raise KeyError(key)
 
-    def __setitem__(self, key: K, value: V) -> None:
+    def __setitem__(self, key: str, value: V) -> None:
         if self.write_task and not self.write_task.done():
             raise ValueError("Can't set value. write_task incomplete.")
         self.write_task = asyncio.create_task(self.set(key, value))
@@ -234,14 +235,14 @@ class aPersistDict(Generic[K, V]):
             self.dict_.update(**kwargs)
 
     @overload
-    async def get(self, key: K, default: V) -> V:
+    async def get(self, key: str, default: V) -> V:
         ...
 
     @overload
-    async def get(self, key: K, default: None = None) -> Optional[V]:
+    async def get(self, key: str, default: None = None) -> Optional[V]:
         ...
 
-    async def get(self, key: K, default: Optional[V] = None) -> Optional[V]:
+    async def get(self, key: str, default: Optional[V] = None) -> Optional[V]:
         """Analogous to dict().get() - but async. Waits until writes have completed on the backend before returning results."""
         # always wait for pending writes - where a task has been created but lock not held
         if self.write_task:
@@ -251,30 +252,30 @@ class aPersistDict(Generic[K, V]):
         async with self.rwlock:
             return self.dict_.get(key) or default
 
-    async def keys(self) -> List[K]:
+    async def keys(self) -> List[str]:
         async with self.rwlock:
             return list(self.dict_.keys())
 
-    async def remove(self, key: K) -> None:
+    async def remove(self, key: str) -> None:
         """Removes a value from the map, if it exists."""
         await self.set(key, None)
         return None
 
     @overload
-    async def pop(self, key: K, default: V) -> V:
+    async def pop(self, key: str, default: V) -> V:
         ...
 
     @overload
-    async def pop(self, key: K, default: None = None) -> Optional[V]:
+    async def pop(self, key: str, default: None = None) -> Optional[V]:
         ...
 
-    async def pop(self, key: K, default: Optional[V] = None) -> Optional[V]:
+    async def pop(self, key: str, default: Optional[V] = None) -> Optional[V]:
         """Returns and removes a value if it exists"""
         res = await self.get(key, default)
         await self.set(key, None)
         return res
 
-    async def _set(self, key: K, value: Optional[V]) -> str:
+    async def _set(self, key: str, value: Optional[V]) -> str:
         """Sets a value at a given key, returns metadata.
         This function exists so *OTHER FUNCTIONS* holding the lock can set values."""
         if key is not None and value is not None:
@@ -285,13 +286,13 @@ class aPersistDict(Generic[K, V]):
         client_value = json.dumps(self.dict_)
         return await self.client.post(client_key, client_value)
 
-    async def set(self, key: K, value: Optional[V]) -> str:
+    async def set(self, key: str, value: Optional[V]) -> str:
         """Sets a value at a given key, returns metadata."""
         async with self.rwlock:
             return await self._set(key, value)
 
 
-class aPersistDictOfInts(aPersistDict[str, int]):
+class aPersistDictOfInts(aPersistDict[int]):
     async def increment(self, key: str, value: int) -> str:
         """Since one cannot simply add to a coroutine, this function exists.
         If the key exists and the value is None, or an empty array, the provided value is added to a(the) list at that value."""
@@ -313,10 +314,12 @@ class aPersistDictOfInts(aPersistDict[str, int]):
             raise TypeError(f"key {key} is not an int")
 
 
-I = TypeVar("I")  # item
+I = TypeVar("I")  # inner value
 
 
-class aPersistDictOfLists(aPersistDict[str, list[I]]):
+class aPersistDictOfLists(aPersistDict[list[I]]):
+    "This takes a type parameter for the values in the *inner* list"
+
     async def extend(self, key: str, value: I) -> str:
         """Since one cannot simply add to a coroutine, this function exists.
         If the key exists and the value is None, or an empty array, the provided value is added to a(the) list at that value."""

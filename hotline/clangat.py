@@ -69,9 +69,11 @@ class PayBotPro(QuestionBot):
 
 class TalkBack(PayBotPro):
     def __init__(self) -> None:
-        self.profile_cache = aPersistDict("profile_cache")
-        self.displayname_cache = aPersistDict("displayname_cache")
-        self.displayname_lookup_cache = aPersistDict("displayname_lookup_cache")
+        self.profile_cache: aPersistDict[dict[str, str]] = aPersistDict("profile_cache")
+        self.displayname_cache: aPersistDict[str] = aPersistDict("displayname_cache")
+        self.displayname_lookup_cache: aPersistDict[str] = aPersistDict(
+            "displayname_lookup_cache"
+        )
         super().__init__()
 
     @requires_admin
@@ -90,7 +92,7 @@ class TalkBack(PayBotPro):
             try:
                 result = await self.send_message(obj, param)
                 return result
-            except Exception as err:
+            except Exception as err:  # pylint: disable=broad-except
                 return str(err)
         if not obj:
             msg.arg1 = await self.ask_freeform_question(
@@ -155,20 +157,26 @@ class TalkBack(PayBotPro):
 class ClanGat(TalkBack):
     def __init__(self) -> None:
         self.no_repay: list[str] = []
-        self.pending_orders: aPersistDict[str, str] = aPersistDict("pending_orders")
-        self.pending_funds: aPersistDict[str, str] = aPersistDict("pending_funds")
+        self.pending_orders: aPersistDict[str] = aPersistDict("pending_orders")
+        self.pending_funds: aPersistDict[str] = aPersistDict("pending_funds")
         self.event_limits = aPersistDictOfInts("event_limits")
-        self.event_prompts: aPersistDict[str, str] = aPersistDict("event_prompts")
-        self.event_prices: aPersistDict[str, float] = aPersistDict("event_prices")
-        # self.event_images: aPersistDict[str, str] = aPersistDict("event_images")
-        self.event_owners = aPersistDictOfLists("event_owners")
-        self.event_attendees = aPersistDictOfLists("event_attendees")
-        self.event_lists = aPersistDictOfLists("event_lists")
-        self.list_owners = aPersistDictOfLists("list_owners")
-        self.easter_eggs: aPersistDict[str, str] = aPersistDict("easter_eggs")
-        self.successful_pays = aPersistDictOfLists("successful_pays")
+        self.event_prompts: aPersistDict[str] = aPersistDict("event_prompts")
+        self.event_prices: aPersistDict[float] = aPersistDict("event_prices")
+        # self.event_images: aPersistDict[str] = aPersistDict("event_images")
+        self.event_owners: aPersistDictOfLists[str] = aPersistDictOfLists(
+            "event_owners"
+        )
+        self.event_attendees: aPersistDictOfLists[str] = aPersistDictOfLists(
+            "event_attendees"
+        )
+        self.event_lists: aPersistDictOfLists[str] = aPersistDictOfLists("event_lists")
+        self.list_owners: aPersistDictOfLists[str] = aPersistDictOfLists("list_owners")
+        self.easter_eggs: aPersistDict[str] = aPersistDict("easter_eggs")
+        self.successful_pays: aPersistDictOfLists[str] = aPersistDictOfLists(
+            "successful_pays"
+        )
         self.payout_balance_mmob = aPersistDictOfInts("payout_balance_mmob")
-        self.challenging: aPersistDict[str, str] = aPersistDict("challenging")
+        self.challenging: aPersistDict[bool] = aPersistDict("challenging")
         self.pay_lock: asyncio.Lock = asyncio.Lock()
         # okay, this now maps the tag (restore key) of each of the above to the instance of the PersistDict class
         self.state = {
@@ -215,7 +223,7 @@ class ClanGat(TalkBack):
                     f"limit: {await self.event_limits.get(obj)}",
                     f"join price: {await self.event_prices.get(obj, 0)}MOB/ea",
                     f"event owned by: {[await self.get_displayname(uuid) for uuid in await self.event_owners.get(obj, [])]}",
-                    f"announce list owned by: {[await self.get_displayname(uuid) for uuid in await self.list_owners.get(obj)]}",
+                    f"announce list owned by: {[await self.get_displayname(uuid) for uuid in await self.list_owners.get(obj, [])]}",
                     f"number paid attendees: {len(await self.event_attendees.get(obj, []))}",
                     f"paid attendees: {[await self.get_displayname(uuid) for uuid in await self.event_attendees.get(obj, [])]}",
                     f"list has {len(await self.event_lists.get(obj,[]))} members",
@@ -310,7 +318,7 @@ class ClanGat(TalkBack):
     async def do_pay(self, msg: Message) -> Response:
         """Allows an event/list owner to distribute available funds across those on a list."""
         user = msg.uuid
-        to_send = []
+        to_send: list[str] = []
         if not msg.arg2 or not msg.arg2.isnumeric():
             msg.arg2 = await self.ask_freeform_question(
                 msg.uuid,
@@ -340,6 +348,7 @@ class ClanGat(TalkBack):
         user_owns = await self.check_user_owns(user, list_)
         if not is_admin(msg) and not user_owns:
             return "Sorry, you are not authorized."
+        # when would to_send not be [] here?
         if len(to_send) == 0 and not (
             list_ in await self.event_lists.keys()
             or list_ in await self.event_attendees.keys()
@@ -398,8 +407,10 @@ class ClanGat(TalkBack):
                 target: str,
                 amount_mmob: int,
                 message: Optional[str] = "",
-                input_txo_ids: list[str] = [],
+                input_txo_ids: Optional[list[str]] = None,
             ) -> Optional[Message]:
+                if not input_txo_ids:
+                    input_txo_ids = []
                 try:
                     result = await self.send_payment(
                         recipient=target,
@@ -417,7 +428,7 @@ class ClanGat(TalkBack):
                     await self.payout_balance_mmob.decrement(list_, amount_mmob)
                     await self.send_message(target, "I've sent you a payment!")
                     return result
-                except Exception as e:
+                except Exception as e:  # pylint: disable=broad-except
                     return None
 
             results = [
@@ -792,17 +803,16 @@ class ClanGat(TalkBack):
                     await self.event_prompts.get(code) or "Event Unlocked!",
                     f"You may now make one purchase of up to 2 tickets at {await self.event_prices[code]} MOB ea.\nIf you have payments activated, open the conversation on your Signal mobile app, click on the plus (+) sign and choose payment.",
                 ]
-            else:
-                await self.send_message(
-                    msg.uuid,
-                    f"{await self.event_prompts.get(code) or 'You have unlocked an event!'}",
-                )
-                if await self.ask_yesno_question(
-                    msg.uuid, "Would you like to bring a guest?"
-                ):
-                    await self.event_attendees.extend(code, msg.uuid)
+            await self.send_message(
+                msg.uuid,
+                f"{await self.event_prompts.get(code) or 'You have unlocked an event!'}",
+            )
+            if await self.ask_yesno_question(
+                msg.uuid, "Would you like to bring a guest?"
+            ):
                 await self.event_attendees.extend(code, msg.uuid)
-                return f"You're on the list for {code}!"
+            await self.event_attendees.extend(code, msg.uuid)
+            return f"You're on the list for {code}!"
         # if there's a list but no attendees
         if (
             code  # if there's a code and...
