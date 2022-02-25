@@ -776,7 +776,6 @@ class ClanGat(TalkBack):
             ]  # and they're not already on the list
         ):
             if await self.event_prices.get(code, 0) > 0:
-
                 self.pending_orders[msg.uuid] = code
                 return [
                     await self.event_prompts.get(code) or "Event Unlocked!",
@@ -889,7 +888,9 @@ class ClanGat(TalkBack):
             return self.PAYMENTS_HELPTEXT
         if not code:
             return None
-        if msg.full_text in [key.lower() for key in await self.easter_eggs.keys()]:
+        if msg.full_text and msg.full_text in [
+            key.lower() for key in await self.easter_eggs.keys()
+        ]:
             return await self.easter_eggs.get(msg.full_text)
         if code in await self.easter_eggs.keys():
             return await self.easter_eggs.get(code)
@@ -900,20 +901,19 @@ class ClanGat(TalkBack):
         # handle default case
         return await self.do_help(msg)
 
-    @time_(REQUEST_TIME)  # type: ignore
+    @time_(REQUEST_TIME)
     async def payment_response(self, msg: Message, amount_pmob: int) -> Response:
         amount_mob = float(mc_util.pmob2mob(amount_pmob).quantize(Decimal("1.0000")))
         amount_mmob = int(amount_mob * 1000)
         if msg.uuid in await self.pending_orders.keys():
-            code = (await self.pending_orders[msg.uuid]).lower()
+            code = (await self.pending_orders.get(msg.uuid, "")).lower()
             price = await self.event_prices.get(code, 1000)
             if (
                 price
                 and amount_mob >= price
                 and len(await self.event_attendees.get(code, []))
-                < await self.event_limits.get(code)
-                or 1e5
-                and msg.uuid not in (await self.event_attendees.get(code) or [])
+                < await self.event_limits.get(code, int(1e5))
+                and msg.uuid not in (await self.event_attendees.get(code, []))
             ):
                 await self.payout_balance_mmob.increment(code, amount_mmob)
                 end_note = ""
