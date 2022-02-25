@@ -160,7 +160,7 @@ class ClanGat(TalkBack):
         self.event_limits = aPersistDictOfInts("event_limits")
         self.event_prompts: aPersistDict[str, str] = aPersistDict("event_prompts")
         self.event_prices: aPersistDict[str, float] = aPersistDict("event_prices")
-        self.event_images: aPersistDict[str, str] = aPersistDict("event_images")
+        # self.event_images: aPersistDict[str, str] = aPersistDict("event_images")
         self.event_owners = aPersistDictOfLists("event_owners")
         self.event_attendees = aPersistDictOfLists("event_attendees")
         self.event_lists = aPersistDictOfLists("event_lists")
@@ -394,12 +394,12 @@ class ClanGat(TalkBack):
                 ]
             failed = []
 
-            async def do_pay_logging_success(
+            async def pay_logging_success(
                 target: str,
                 amount_mmob: int,
                 message: Optional[str] = "",
                 input_txo_ids: list[str] = [],
-            ) -> Optional[dict[str, str]]:
+            ) -> Optional[Message]:
                 try:
                     result = await self.send_payment(
                         recipient=target,
@@ -421,7 +421,7 @@ class ClanGat(TalkBack):
                     return None
 
             results = [
-                await do_pay_logging_success(
+                await pay_logging_success(
                     target,
                     amount_mmob,
                     message,
@@ -674,7 +674,7 @@ class ClanGat(TalkBack):
             await self.list_owners.set(param, [user])
             await self.event_attendees.set(param, [])
             await self.event_lists.set(param, [])
-            await self.event_images.set(param, [])
+            # await self.event_images.set(param, [])
             await self.event_prompts.set(param, "")
             await self.payout_balance_mmob.set(param, 0)
             if await self.ask_yesno_question(
@@ -691,7 +691,7 @@ class ClanGat(TalkBack):
         ):
             await self.list_owners.set(param, [user])
             await self.event_lists.set(param, [])
-            await self.event_images.set(param, [])
+            # await self.event_images.set(param, [])
             await self.event_prompts.set(param, "")
             if await self.ask_yesno_question(
                 user, f"Would you like to setup your new list '{param}' now? (yes/no)"
@@ -847,7 +847,7 @@ class ClanGat(TalkBack):
             return f"You're already on the attendee list for the '{code}' event."
         return None
 
-    async def talkback(self, msg: Message) -> Response:
+    async def talkback(self, msg: Message) -> None:
         code = msg.arg0
         lists = []
         all_owners = []
@@ -935,7 +935,9 @@ class ClanGat(TalkBack):
                 thank_you = f"Thanks for paying for {await self.pending_orders[msg.uuid]}.\nYou're on the list! {end_note}"
                 await self.pending_orders.remove(msg.uuid)
                 return thank_you
-        if code := await self.pending_funds.pop(msg.uuid):
+        maybe_code = await self.pending_funds.pop(msg.uuid)
+        if maybe_code:
+            code = maybe_code
             await self.payout_balance_mmob.increment(code, amount_mmob)
             if msg.uuid in self.no_repay:
                 self.no_repay.remove(msg.uuid)

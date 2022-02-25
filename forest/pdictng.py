@@ -214,8 +214,10 @@ class aPersistDict(Generic[K, V]):
     def __str__(self) -> str:
         return f"a{self.dict_}"
 
-    async def __getitem__(self, key: K) -> Optional[V]:
-        return await self.get(key)
+    async def __getitem__(self, key: K) -> V:
+        if value := await self.get(key):
+            return value
+        raise KeyError(key)
 
     def __setitem__(self, key: K, value: V) -> None:
         if self.write_task and not self.write_task.done():

@@ -9,7 +9,7 @@ import logging
 import random
 import ssl
 import time
-from typing import Optional, List
+from typing import Optional, List, Union
 
 import aiohttp
 import asyncpg
@@ -94,7 +94,7 @@ class Mobster:
         logging.info("full-service url: %s", url)
         self.url = url
 
-    async def req_(self, method: str, **params: str) -> dict:
+    async def req_(self, method: str, **params: Union[str, list]) -> dict:
         logging.info("full-service request: %s", method)
         result = await self.req({"method": method, "params": params})
         if "error" in result:
