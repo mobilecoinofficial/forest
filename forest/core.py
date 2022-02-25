@@ -112,15 +112,7 @@ class Signal:
         restart_count = 0
         max_backoff = 15
         while self.sigints == 0 and not self.exiting:
-            path = (
-                utils.get_secret("SIGNAL_CLI_PATH")
-                or f"{utils.ROOT_DIR}/{'auxin' if utils.AUXIN else 'signal'}-cli"
-            )
-            # this?? can blocks forever if the file doesn't exist??
-            if not os.path.exists(path):
-                raise FileNotFoundError(
-                    f"{path} doesn't exist! Try symlinking {utils.SIGNAL} to the working directory"
-                )
+            path = utils.SIGNAL_PATH
             if utils.AUXIN:
                 path += " --download-path /tmp"
             else:
