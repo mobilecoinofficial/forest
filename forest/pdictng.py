@@ -174,8 +174,11 @@ class fastpKVStoreClient:
 
 
 V = TypeVar("V")
-# V = TypeVar("V", str, int, list, dict[str, str]) # adding the constraints causes:
+# V = TypeVar("V", str, int, list, dict[str, str])
+# that would be nice but causes an error with aPersistDictOfLists
 # Value of type variable "V" of "aPersistDict" cannot be "list"
+# possibly related: https://stackoverflow.com/questions/59933946/difference-between-typevart-a-b-and-typevart-bound-uniona-b
+# https://stackoverflow.com/questions/55375362/why-does-mypy-ignore-a-generic-typed-variable-that-contains-a-type-incompatible
 
 
 class aPersistDict(Generic[V]):
