@@ -8,7 +8,7 @@ import hashlib
 import json
 import os
 import time
-from typing import Union, Any, Optional, cast, List, Generic, TypeVar
+from typing import Any, Generic, List, Optional, TypeVar, Union, cast, overload
 
 import aiohttp
 import base58
@@ -231,6 +231,14 @@ class aPersistDict(Generic[K, V]):
                 self.dict_ = json.loads(result)
             self.dict_.update(**kwargs)
 
+    @overload
+    async def get(self, key: K, default: V) -> V:
+        ...
+
+    @overload
+    async def get(self, key: K, default: None = None) -> Optional[V]:
+        ...
+
     async def get(self, key: K, default: Optional[V] = None) -> Optional[V]:
         """Analogous to dict().get() - but async. Waits until writes have completed on the backend before returning results."""
         # always wait for pending writes - where a task has been created but lock not held
@@ -249,6 +257,14 @@ class aPersistDict(Generic[K, V]):
         """Removes a value from the map, if it exists."""
         await self.set(key, None)
         return None
+
+    @overload
+    async def pop(self, key: K, default: V) -> V:
+        ...
+
+    @overload
+    async def pop(self, key: K, default: None = None) -> Optional[V]:
+        ...
 
     async def pop(self, key: K, default: Optional[V] = None) -> Optional[V]:
         """Returns and removes a value if it exists"""
