@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 setup(
     name="forestbot",
     packages=find_packages(),
-    url="https://github.abc.com/mobilecoinofficial/forestbot",
+    url="https://github.com/mobilecoinofficial/forest",
     description="a forest of signal bots",
     long_description=open("README.md").read(),
     install_requires=[
