@@ -31,7 +31,7 @@ def takes_number(command: Callable) -> Callable:
     return wrapped_command
 
 
-class Forest(PayBot, QuestionBot):
+class Forest(QuestionBot):
     def __init__(self, *args: str) -> None:
         self.teli = teli.Teli()
         self.payments_manager = PaymentsManager()
