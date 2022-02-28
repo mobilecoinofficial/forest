@@ -150,7 +150,7 @@ class Signal:
             if runtime > max_backoff * 4:
                 restart_count = 0
             restart_count += 1
-            backoff = 0.5 * (2 ** restart_count - 1)
+            backoff = 0.5 * (2**restart_count - 1)
             logging.warning("Signal exited with returncode %s", returncode)
             if backoff > max_backoff:
                 logging.info(
@@ -767,7 +767,7 @@ class Bot(Signal):
             # pylint: disable=eval-used
             return await eval(f"{fn_name}()", env or locals())
 
-        if msg.full_text and len(msg.tokens) > 1:
+        if msg.full_text and msg.tokens and len(msg.tokens) > 1:
             source_blob = msg.full_text.replace(msg.arg0, "", 1).lstrip("/ ")
             env = globals()
             env.update(locals())
@@ -1137,6 +1137,9 @@ class PayBot(Bot):
         return await resp_fut
 
 
+# we should just have either a hasable user type or a mapping subtype
+
+
 def get_source_or_uuid_from_dict(
     msg: Message, dict_: dict[str, Any]
 ) -> Tuple[bool, Any]:
@@ -1181,7 +1184,7 @@ class QuestionBot(PayBot):
             self.requires_first_device.pop(message.uuid, None)
             if probably_future:
                 probably_future.set_result(message)
-            return
+            return None
         return await super().handle_message(message)
 
     @hide

@@ -36,6 +36,7 @@ class Message:
 
     timestamp: int
     text: str
+    full_text: str
     attachments: list[dict[str, str]]
     group: Optional[str]
     quoted_text: str
