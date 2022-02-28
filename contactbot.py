@@ -40,7 +40,7 @@ class Forest(QuestionBot):
         super().__init__(*args)
 
 
-    async def start(self, message: Message) -> Response:
+    async def default(self, message: Message) -> Response:
         if not message.arg1: 
             maybe_resp = message.arg1 = await self.ask_freeform_question(
                 message.source, 'Welcome to MobileCoin Contact! Im a bot that can help you buy phone numbers, and use them to send and recieve text messages. Would you like to "buy" a phone number? or check the "status" of your account?'
