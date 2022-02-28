@@ -5,7 +5,7 @@ import logging
 from functools import wraps
 from typing import Callable, Union, cast
 import phonenumbers as pn
-import teli
+import teli as api
 from aiohttp import web
 from forest_tables import GroupRoutingManager, PaymentsManager, RoutingManager
 from forest import utils
@@ -33,7 +33,7 @@ def takes_number(command: Callable) -> Callable:
 
 class Forest(QuestionBot):
     def __init__(self, *args: str) -> None:
-        self.teli = teli.Teli()
+        self.api = api.Api()
         self.payments_manager = PaymentsManager()
         self.routing_manager = RoutingManager()
         self.group_routing_manager = GroupRoutingManager()
@@ -71,7 +71,7 @@ class Forest(QuestionBot):
         return response_json
 
     async def get_user_numbers(self, message: Message) -> list[str]:
-        """List the teli numbers a user owns"""
+        """List the numbers a user owns"""
         if message.source:
             maybe_routable = await self.routing_manager.get_id(message.source)
             return [registered.get("id") for registered in maybe_routable]
@@ -167,8 +167,8 @@ class Forest(QuestionBot):
             name=f"SMS with {target_number} via {numbers[0]}",
         )
         await self.group_routing_manager.set_sms_route_for_group(
-            teli.teli_format(target_number),
-            teli.teli_format(numbers[0]),
+            api.api_format(target_number),
+            api.api_format(numbers[0]),
             group_resp.group,
         )
         logging.info(
@@ -260,19 +260,19 @@ class Forest(QuestionBot):
             number = available_numbers[0]
             await self.send_message(msg.source, f"Found {number} for you...")
         else:
-            numbers = await self.teli.search_numbers(area_code=msg.arg1, limit=1)
+            numbers = await self.api.search_numbers(area_code=msg.arg1, limit=1)
             if not numbers:
                 return "Sorry, no numbers for that area code"
             number = numbers[0]
             await self.send_message(msg.source, f"Found {number}")
             await self.routing_manager.intend_to_buy(number)
-            buy_info = await self.teli.buy_number(number)
+            buy_info = await self.api.buy_number(number)
             await self.send_message(msg.source, f"Bought {number}")
             if "error" in buy_info:
                 await self.routing_manager.delete(number)
                 return f"Something went wrong: {buy_info}"
             await self.routing_manager.mark_bought(number)
-        await self.teli.set_sms_url(number, utils.URL + "/inbound")
+        await self.api.set_sms_url(number, utils.URL + "/inbound")
         await self.routing_manager.set_destination(number, msg.source)
         if await self.routing_manager.get_destination(number):
             await self.mobster.ledger_manager.put_usd_tx(
@@ -284,11 +284,11 @@ class Forest(QuestionBot):
     @requires_admin
     async def do_make_rule(self, msg: Message) -> Response:
         """creates or updates a routing rule.
-        usage: /make_rule <teli number> <signal destination number>"""
+        usage: /make_rule <number> <signal destination number>"""
         if msg.source != utils.get_secret("ADMIN"):
             return "Sorry, this command is only for admins"
-        teli_num, signal_num = msg.text.split(" ")
-        _id = teli.teli_format(teli_num)
+        api_num, signal_num = msg.text.split(" ")
+        _id = api.teli_format(api_num)
         destination = utils.signal_format(signal_num)
         if not (_id and destination):
             return "that doesn't look like valid numbers"
@@ -322,7 +322,7 @@ class Forest(QuestionBot):
         rows = await self.routing_manager.execute("SELECT id, destination FROM routing")
         for row in rows if rows else []:
             if not utils.LOCAL:
-                await self.teli.set_sms_url(row.get("id"), utils.URL + "/inbound")
+                await self.api.set_sms_url(row.get("id"), utils.URL + "/inbound")
             if dest := row.get("destination"):
                 new_dest = utils.signal_format(dest)
                 await self.routing_manager.set_destination(row.get("id"), new_dest)
