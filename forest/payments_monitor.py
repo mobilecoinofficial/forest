@@ -9,7 +9,7 @@ import logging
 import random
 import ssl
 import time
-from typing import Any, Optional, List, Union
+from typing import Any, Optional, List
 
 import aiohttp
 import asyncpg
