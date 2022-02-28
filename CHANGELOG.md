@@ -1,3 +1,5 @@
+- upload requires note
+
 ## 1.2.0
 
 - Breaking change! Disambiguate `.get_address(..)` method. (#121)
