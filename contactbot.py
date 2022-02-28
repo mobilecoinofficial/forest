@@ -33,7 +33,7 @@ def takes_number(command: Callable) -> Callable:
 
 class Forest(QuestionBot):
     def __init__(self, *args: str) -> None:
-        self.api = api.Api()
+        self.api = api.Teli()
         self.payments_manager = PaymentsManager()
         self.routing_manager = RoutingManager()
         self.group_routing_manager = GroupRoutingManager()
