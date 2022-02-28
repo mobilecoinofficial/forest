@@ -481,11 +481,13 @@ class ClanGat(TalkBack):
         if not obj:
             obj = await self.ask_freeform_question(user, give_message)
             obj = obj.lower()
+            if obj.isnumeric():
+                obj = await self.easter_eggs.get(f"{obj}_give")
         if obj in await self.charities.keys():
             await self.pending_donations.set(user, obj)
             charity_info = await self.charities.get(obj, "")
             self.no_repay += [user]
-            return f"Okay, waiting for your donation to {obj}!\n\n{charity_info}\n\nSend me a payment over Signal and I will make sure it gets to them."
+            return f"Okay, waiting for your donation to {await self.easter_eggs.get(obj, obj)}!\n\n{charity_info}\n\nSend me a payment over Signal and I will make sure it gets to them."
         if obj not in self.TERMINAL_ANSWERS:
             msg.arg1 = await self.ask_freeform_question(user, give_message)
             return await self.do_give(msg)
@@ -984,7 +986,7 @@ class ClanGat(TalkBack):
             if msg.uuid in self.no_repay:
                 self.no_repay.remove(msg.uuid)
             return (
-                f"Your selected charity {code} has been credited {amount_mob}MOB!\n"
+                f"Your selected charity {await self.easter_eggs.get(code, code)} has been credited {amount_mob}MOB!\n"
                 + "Thank you for your gift!"
             )
         if msg.uuid not in self.no_repay:
