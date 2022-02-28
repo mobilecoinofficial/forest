@@ -219,7 +219,7 @@ class MobFriend(QuestionBot):
             return "Okay, nevermind about that tip."
         return "Couldn't find a tip in process to cancel!"
 
-    @time(REQUEST_TIME)  # type: ignore
+    @time(REQUEST_TIME)
     @requires_admin
     async def do_pay(self, msg: Message) -> Response:
         if msg.arg1:
@@ -235,7 +235,7 @@ class MobFriend(QuestionBot):
             self.signal_roundtrip_latency.append((msg.timestamp, "payment", delta))
         return None
 
-    @time(REQUEST_TIME)  # type: ignore
+    @time(REQUEST_TIME)
     async def payment_response(self, msg: Message, amount_pmob: int) -> Response:
         if msg.source in self.exchanging_gift_code:
             resp_list = await self.build_gift_code(amount_pmob - FEE)
@@ -336,7 +336,7 @@ class MobFriend(QuestionBot):
             * the memo "Pay me a MOB!",
             * a 1MOB value,
             * and the address of the requester's Signal account."""
-        address = await self.get_address(msg.source)
+        address = await self.get_signalpay_address(msg.source)
         if not address:
             return "Unable to retrieve your MobileCoin address!"
         payload = mc_util.printable_pb2.PrintableWrapper()
@@ -418,7 +418,7 @@ class MobFriend(QuestionBot):
         Claims a gift code! Redeems a provided code to the bot's wallet and sends the redeemed balance."""
         if not msg.arg1:
             return "/redeem [base58 gift code]"
-        if not await self.get_address(msg.uuid):
+        if not await self.get_signalpay_address(msg.uuid):
             return "I couldn't get your MobileCoin Address!\n\nPlease make sure you have activated your wallet and messaged me from your phone before continuing!"
         check_status = await self.mobster.req_(
             "check_gift_code_status", gift_code_b58=msg.arg1
@@ -462,7 +462,7 @@ class MobFriend(QuestionBot):
                 "Who should this pay, you or someone else?\nYou can reply 'me' or 'else'.",
             )
             if target.lower() == "me":
-                msg.arg1 = await self.get_address(msg.source)
+                msg.arg1 = await self.get_signalpay_address(msg.source)
             else:
                 msg.arg1 = await self.ask_freeform_question(
                     msg.source, "What MobileCoin address should this request pay?"
