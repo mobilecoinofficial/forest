@@ -30,10 +30,10 @@ PyQRCode = "^1.2.1"
 pytest = "*"
 pytest-cov = "*"
 termcolor = "*"
-types-protobuf = "*"
-types-termcolor = "*"
 ulid2 = "*"
 zbar-py = {git = "https://github.com/zplab/zbar-py"}
+types-protobuf = "^3.19.12"
+types-termcolor = "^1.1.3"
 
 [tool.poetry.dev-dependencies]
 

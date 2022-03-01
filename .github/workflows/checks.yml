@@ -21,7 +21,7 @@ jobs:
           key: '${{ runner.os }}-poetry-v2-${{ hashFiles(''**/poetry.lock'') }}'
       - name: Install dependencies
         if: steps.cache-poetry.outputs.cache-hit != 'true'
-        run: cp .github/pyproject.toml .; poetry install
+        run: cp .github/pyproject.toml .; rm poetry.lock; poetry install
       - name: List dependency versions (check this if you get confusing results)
         run: poetry show --tree
       # - name: Setup tmate session # this lets you SSH into the container
