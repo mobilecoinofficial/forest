@@ -24,8 +24,8 @@ jobs:
         run: cp .github/pyproject.toml .; rm poetry.lock; poetry install
       - name: List dependency versions (check this if you get confusing results)
         run: poetry show --tree
-      # - name: Setup tmate session # this lets you SSH into the container
-      #   uses: mxschmitt/action-tmate@v3
+      - name: Setup tmate session # this lets you SSH into the container
+        uses: mxschmitt/action-tmate@v3
       - name: Black
         run: poetry run black . --check
         if: always()
