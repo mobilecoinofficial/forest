@@ -20,5 +20,5 @@ def test_root(tmp_path: pathlib.Path) -> None:
     os.chdir(tmp_path)
     open(tmp_path / "dev_secrets", "w").write("DOWNLOAD=1")
     assert reload(utils).ROOT_DIR == "/tmp/local-signal"
-    open(tmp_path / "dev_secrets", "w").write("FLY_APP_NAME=A")
+    os.environ["FLY_APP_NAME"] = "A"
     assert reload(utils).ROOT_DIR == "/app"
