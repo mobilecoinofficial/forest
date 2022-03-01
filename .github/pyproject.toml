@@ -10,29 +10,30 @@ packages = [{include = "forest"}, {include = "mc_util"}]
 readme = "README.md"
 
 [tool.poetry.dependencies]
+python = "^3.9"
+aiohttp = {extras = ["speedups"], version = "^3.8.1"}
 aioprocessing = "*"
-asyncpg = "*"
-phonenumbers = "*"
-termcolor = "*"
 aioredis = "*"
+amzqr = {git = "https://github.com/itdaniher/amazing-qr", rev = "63cbdfd"}
+asyncpg = "*"
 base58 = "*"
-openai = "*"
-prometheus_async = "*"
-prometheus_client = "*"
 black = "*"
 mypy = "*"
+openai = "*"
+phonenumbers = "*"
+prometheus_async = "*"
+prometheus_client = "*"
+protobuf = "*"
+pycryptodome = "*"
 pylint = "*"
+PyQRCode = "^1.2.1"
 pytest = "*"
 pytest-cov = "*"
-protobuf = "*"
-types-termcolor = "*"
+termcolor = "*"
 types-protobuf = "*"
-pyqrcode = "*"
+types-termcolor = "*"
 ulid2 = "*"
-pycryptodome = "*"
-aiohttp = {extras = ["speedups"], version = "^3.8.1"}
 zbar-py = {git = "https://github.com/zplab/zbar-py"}
-amzqr = {git = "https://github.com/itdaniher/amazing-qr", rev = "63cbdfd"}
 
 [tool.poetry.dev-dependencies]
 
