@@ -29,13 +29,10 @@ class Echopay(PayBot):
     async def set_payment_address(self) -> None:
         """Updates the Bot Signal Profile to have the correct payments address
         as specified by FS_ACCOUNT_NAME"""
-
         fs_address = await self.mobster.get_my_address()
-
         # Singal addresses require Base64 encoding, but full service uses Base58.
         # This method handles the conversion
         signal_address = mc_util.b58_wrapper_to_b64_public_address(fs_address)
-
         # This will set the bot's Signal profile, replace avatar.png to give your bot a custom avatar
         await self.set_profile_auxin(
             given_name="PaymeBot",
@@ -48,20 +45,10 @@ class Echopay(PayBot):
         """Sends payment to requestee for a certain amount"""
         amount_mob = 0.001  ##payment amount in MOB
         amount_picomob = self.to_picomob(amount_mob)
-
-        password = "please"
-
-        # for convenience, message.arg0 is the first word of the message in this case "payme"
-        # and msg.arg1 is the next word after that. In "payme please" please is msg.arg1
-
-        if message.arg1 == password:
-            await self.send_payment(message.source, amount_picomob)
-            return f"Of course, here's {str(amount_mob)} MOB"
-
-        if message.arg1 is None:
-            return "What's the secret word?"
-
-        return "That's not the right secret word!!"
+        await self.send_payment(
+            message.source, amount_picomob, confirm_tx_timeout=10, receipt_message=""
+        )
+        return f"Sent you a payment for {str(amount_mob)} MOB"
 
     @requires_admin
     async def do_pay_user(self, message: Message) -> Response:
@@ -91,14 +78,9 @@ class Echopay(PayBot):
 
     async def payment_response(self, msg: Message, amount_pmob: int) -> Response:
         """Triggers on Succesful payment, overriden from forest.core"""
-
         # amounts are received in picoMob, convert to Mob for readability
         amount_mob = self.to_mob(amount_pmob)
-
-        if amount_mob > 0.002:
-            return f"Wow! Thank you for your payment of {str(amount_mob)} MOB"
-
-        return "Thanks I guess"
+        return f"Thank you for your payment of {str(amount_mob)} MOB"
 
 
 if __name__ == "__main__":

@@ -36,16 +36,11 @@ if not utils.LOCAL:
         logging.info("couldn't find creds")
     ssh_key = utils.get_secret("SSH_KEY")
     open("id_rsa", "w").write(base64.b64decode(ssh_key).decode())
-url = "redis://:speak-friend-and-enter@forest-redis.fly.dev:10000" or utils.get_secret(
-    "FLY_REDIS_CACHE_URL"
-)
-# password, rest = url.removeprefix("redis://:").split("@")
-# host, port = rest.split(":")
-# redis = aioredis.Redis(host=host, port=int(port), password=password)
 
-redis = aioredis.Redis(
-    host="forest-redis.fly.dev", port=10000, password="speak-friend-and-enter"
-)
+password, rest = utils.get_secret("REDIS_URL").removeprefix("redis://:").split("@")
+host, port = rest.split(":")
+redis = aioredis.Redis(host=host, port=int(port), password=password)
+
 instance_id = "aws ec2 describe-instances --region us-east-1 | jq -r .Reservations[].Instances[].InstanceId"
 status = "aws ec2 describe-instances --region us-east-1| jq -r '..|.State?|.Name?|select(.!=null)'"
 start = "aws ec2 start-instances --region us-east-1 --instance-ids {}"
