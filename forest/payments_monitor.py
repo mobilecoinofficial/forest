@@ -167,15 +167,13 @@ class Mobster(FullService):
             .get("main_address", "")
         )
 
-    async def get_account(self, account_name: Optional[str] = None) -> str:
+    async def get_account(self, account_name: str = "", index: int = 0) -> str:
         """returns the account id matching account_name in Full Service Wallet"""
-
+        del index
         if isinstance(self.account_id, str):
             return self.account_id
-
-        if account_name is None:
+        if not account_name:
             account_name = utils.get_secret("FS_ACCOUNT_NAME")
-
         ## get all account IDs for the Wallet / fullservice instance
         account_ids = (await self.req({"method": "get_all_accounts"}))["result"][
             "account_ids"
@@ -189,7 +187,6 @@ class Mobster(FullService):
                 ][x]
                 for x in account_ids
             ]
-
             ## get the account_id that matches the name
             maybe_account_id = [
                 x["account_id"] for x in account_map if x["name"] == account_name
