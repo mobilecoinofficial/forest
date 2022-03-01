@@ -370,7 +370,7 @@ async def free(ns: argparse.Namespace) -> None:
 async def set_note(ns: argparse.Namespace) -> None:
     "set the note field for a number"
     await get_account_interface().execute(
-        f"update signal_accounts set notes=$1 where id=$2", ns.note, ns.number
+        "update signal_accounts set notes=$1 where id=$2", ns.note, ns.number
     )
 
 
