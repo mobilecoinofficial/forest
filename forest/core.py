@@ -139,12 +139,15 @@ class Signal:
             returncode = await self.proc.wait()
             proc_exit_time = time.time()
             runtime = proc_exit_time - proc_launch_time
-            if runtime < RESTART_TIME:
-                logging.info("sleeping briefly")
-                await asyncio.sleep(RESTART_TIME**restart_count)
-            logging.warning("auxin-cli exited: %s", returncode)
-            if returncode == 0:
-                logging.info("auxin-cli apparently exited cleanly, not restarting")
+            if runtime > max_backoff * 4:
+                restart_count = 0
+            restart_count += 1
+            backoff = 0.5 * (2**restart_count - 1)
+            logging.warning("Signal exited with returncode %s", returncode)
+            if backoff > max_backoff:
+                logging.info(
+                    "%s exiting after %s retries", self.bot_number, restart_count
+                )
                 break
             logging.info("%s will restart in %s second(s)", self.bot_number, backoff)
             await asyncio.sleep(backoff)
