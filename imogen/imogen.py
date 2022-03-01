@@ -250,18 +250,18 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
                 await self.send_message(None, message, group=msg.group, **quote)
             else:
                 await self.send_message(msg.source, message, **quote)
-        if current_reaction_count in (2, 6):
-            await self.admin(f"trying to pay {prompt_author}")
-            await self.client_session.post(
-                utils.get_secret("PURSE_URL") + "/pay",
-                data={
-                    "destination": prompt_author,
-                    "amount": 0.01,
-                    "message": f'sent you a tip for your prompt "{prompt.get("prompt")}" getting {current_reaction_count} reactions',
-                    "prompt_id": prompt.get("id"),
-                },
-            )
-            return None
+        # if current_reaction_count in (2, 6):
+        #     await self.admin(f"trying to pay {prompt_author}")
+        #     await self.client_session.post(
+        #         utils.get_secret("PURSE_URL") + "/pay",
+        #         data={
+        #             "destination": prompt_author,
+        #             "amount": 0.01,
+        #             "message": f'sent you a tip for your prompt "{prompt.get("prompt")}" getting {current_reaction_count} reactions',
+        #             "prompt_id": prompt.get("id"),
+        #         },
+        #     )
+        #     return None
 
     def match_command(self, msg: Message) -> str:
         if msg.full_text and msg.full_text.lower().startswith("computer"):
@@ -352,7 +352,8 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         out = await get_output(f"kubectl create -f {yaml_path}")
         if "AlreadyExists" in out:
             return False
-        await self.admin("\N{rocket}\N{squared free}: " + out)
+        free = "\N{squared free}" if "free" in yaml_path else ""
+        await self.admin(f"\N{rocket}{free}: " + out)
         return "error" not in out.lower()
 
     async def ensure_paid_worker(self, enqueue_result: dict) -> bool:
@@ -417,6 +418,30 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
             )
             keys.append(key)
         return {"image_prompts": keys}
+
+    async def do_upsample(self, msg: Message) -> str:
+        if not msg.quote:
+            return "Quote an image I sent to use this command"
+        ret = await self.queue.execute(
+            "SELECT filepath FROM prompt_queue WHERE sent_ts=$1", msg.quote.ts
+        )
+        if not (filepath := ret[0].get("filepath")):
+            return "Sorry, I don't have that image saved for upsampling right now"
+        slug = (
+            filepath.removeprefix("output/")
+            .removesuffix(".png")
+            .removesuffix("/progress")
+        )
+        await self.queue.execute(
+            "INSERT INTO prompt_queue (prompt, author, group_id, signal_ts, url, selector, paid) VALUES ($1, $2, $3, $4, $5, 'ESRGAN', true) ;",
+            slug,
+            msg.source,
+            msg.group,
+            msg.timestamp,
+            utils.URL,
+        )
+        await self.ensure_unique_worker("esrgan-job.yaml")
+        return "You're in line"
 
     async def enqueue_prompt(
         self,
@@ -768,8 +793,7 @@ async def store_image_handler(  # pylint: disable=too-many-locals
     request: web.Request,
 ) -> web.Response:
     bot = request.app.get("bot")
-    assert isinstance(bot, Imogen)
-    if not bot:
+    if not bot or not isinstance(bot, Imogen):
         return web.Response(status=504, text="Sorry, no live workers.")
     async for field in await request.multipart():
         logging.info(field)
@@ -851,9 +875,69 @@ async def store_image_handler(  # pylint: disable=too-many-locals
     return web.Response(text=info)
 
 
-app.add_routes([web.post("/attachment", store_image_handler)])
-app.add_routes([])
+async def prompt_msg_handler(request: web.Request) -> web.Response:
+    """Allow webhooks to send messages to users.
+    Turn this off, authenticate, or obfuscate in prod to someone from using your bot to spam people
+    """
+    bot = request.app.get("bot")
+    if not bot or not isinstance(bot, Imogen):
+        return web.Response(status=504, text="Sorry, no live workers.")
+    prompt_id = int(request.query.get("id", "-1"))
+    cols = ", ".join(Prompt.__annotations__)  # pylint: disable=no-member
+    row = await bot.queue.execute(
+        f"SELECT {cols} FROM prompt_queue WHERE id=$1", prompt_id
+    )
+    if not row or (not row[0].get("author") and not row[0].get("group_id")):
+        await bot.admin("no prompt id found?")
+        info = f"prompt id not found"
+        logging.info(info)
+        return web.Response(text=info)
+    prompt = Prompt(**row[0])
+    minutes, seconds = divmod(prompt.elapsed_gpu, 60)
+    message = await request.text()
+    message += "\n\N{Object Replacement Character}"
+    # needs to be String.length in Java, i.e. number of utf-16 code units,
+    # which are 2 bytes each. we need to specify any endianness to skip
+    # byte-order mark.
+    mention_start = len(message.encode("utf-16-be")) // 2 - 1
+    quote = (
+        {
+            "quote-timestamp": int(prompt.signal_ts),
+            "quote-author": str(prompt.author),
+            "quote-message": str(prompt.prompt),
+            "mention": f"{mention_start}:1:{prompt.author}",
+        }
+        if prompt.author and prompt.signal_ts
+        else {}
+    )
+    if prompt.group_id:
+        rpc_id = await bot.send_message(
+            None, message, group=prompt.group_id, **quote  # type: ignore
+        )
+    else:
+        rpc_id = await bot.send_message(prompt.author, message, **quote)  # type: ignore
+        if prompt.author != utils.get_secret("ADMIN"):
+            admin_task = bot.admin(
+                message
+                + f"\nrequested by {prompt.author} in DMs. prompt id: {prompt_id}",
+            )
+            asyncio.create_task(admin_task)
+    result = await bot.pending_requests[rpc_id]
+    await bot.queue.execute(
+        "UPDATE prompt_queue SET sent_ts=$1 WHERE id=$2",
+        result.timestamp,
+        prompt_id,
+    )
+    logging.info("upsampled sent")
+    return web.Response(text="sent")
 
+
+app.add_routes(
+    [
+        web.post("/attachment", store_image_handler),
+        web.post("/prompt_message", prompt_msg_handler),
+    ]
+)
 
 if __name__ == "__main__":
     run_bot(Imogen, app)
