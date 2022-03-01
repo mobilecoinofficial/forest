@@ -9,7 +9,15 @@ import teli as api
 from aiohttp import web
 from forest_tables import GroupRoutingManager, PaymentsManager, RoutingManager
 from forest import utils
-from forest.core import Message, PayBot, Response, app, requires_admin, run_bot, QuestionBot
+from forest.core import (
+    Message,
+    PayBot,
+    Response,
+    app,
+    requires_admin,
+    run_bot,
+    QuestionBot,
+)
 
 
 def takes_number(command: Callable) -> Callable:
@@ -39,14 +47,12 @@ class Forest(QuestionBot):
         self.group_routing_manager = GroupRoutingManager()
         super().__init__(*args)
 
-
     async def default(self, message: Message) -> Response:
-        if not message.arg1: 
+        if not message.arg1:
             maybe_resp = message.arg1 = await self.ask_freeform_question(
-                message.source, 'Welcome to MobileCoin Contact! Im a bot that can help you buy phone numbers, and use them to send and recieve text messages. Would you like to "buy" a phone number? or check the "status" of your account?'
-
+                message.source,
+                'Welcome to MobileCoin Contact! I\'m a bot that can help you buy phone numbers, and use them to send and recieve text messages. Would you like to "buy" a phone number? or check the "status" of your account?',
             )
-
 
     async def send_sms(
         self, source: str, destination: str, message_text: str
