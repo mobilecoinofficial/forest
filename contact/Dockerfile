@@ -5,7 +5,7 @@ RUN mv /usr/bin/signal-cli-native /usr/bin/signal-cli
 FROM python:3.9 as libbuilder
 WORKDIR /app
 RUN pip install poetry
-RUN python3.9 -m venv /app/venv 
+RUN python3.9 -m venv --without-pip /app/venv 
 COPY ./pyproject.toml ./poetry.lock /app/
 RUN VIRTUAL_ENV=/app/venv poetry install 
 
