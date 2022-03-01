@@ -893,7 +893,6 @@ async def prompt_msg_handler(request: web.Request) -> web.Response:
         logging.info(info)
         return web.Response(text=info)
     prompt = Prompt(**row[0])
-    minutes, seconds = divmod(prompt.elapsed_gpu, 60)
     message = await request.text()
     message += "\n\N{Object Replacement Character}"
     # needs to be String.length in Java, i.e. number of utf-16 code units,
