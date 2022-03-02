@@ -476,7 +476,7 @@ class ClanGat(TalkBack):
         """Donate to one of the supported charities!
         give <charityname>
         """
-        obj = (msg.arg1 or "").lower()
+        obj = (msg.arg1 or "3").lower()
         user = msg.uuid
         await self.pending_donations.remove(msg.uuid)
         give_message = await self.easter_eggs.get("give", "")

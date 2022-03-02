@@ -1,7 +1,7 @@
 FROM ghcr.io/rust-lang/rust:nightly as builder
 WORKDIR /app
 RUN rustup default nightly
-RUN git clone https://github.com/mobilecoinofficial/auxin && cd auxin && git pull origin 0.1.11
+RUN git clone https://github.com/mobilecoinofficial/auxin && cd auxin && git pull origin main
 WORKDIR /app/auxin
 RUN cargo +nightly build --release
 
