@@ -29,6 +29,7 @@ pylint = "*"
 PyQRCode = "^1.2.1"
 pytest = "*"
 pytest-cov = "*"
+pytest-asyncio = "*"
 termcolor = "*"
 ulid2 = "*"
 zbar-py = {git = "https://github.com/zplab/zbar-py"}
