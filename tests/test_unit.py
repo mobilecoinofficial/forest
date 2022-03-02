@@ -30,6 +30,7 @@ class MockMessage(Message):
     def __init__(self, text: str) -> None:
         self.text = text
         self.source = "+" + "2" * 11
+        self.uuid = "cf3d7d34-2dcd-4fcd-b193-cbc6a666758b"
         super().__init__({})
 
 
@@ -52,7 +53,11 @@ alice = "+" + "1" * 11
 @pytest.mark.asyncio
 async def test_commands() -> None:
     bot = MockBot(alice)
-    assert await bot.get_output("/ping foo") == "/pong foo"
-    assert "printer" in (await bot.get_output("printerfact")).lower()
-    os.environ["ENABLE_MAGIC"] = True
-    assert (await bot.get_output("/uptimee").startswith("Uptime: ")
+    os.environ["ENABLE_MAGIC"] = "1"
+    assert await bot.get_output("/pingg foo") == "/pong foo"
+    # slightly slow
+    # assert "printer" in (await bot.get_output("/printerfactt")).lower()
+    assert (await bot.get_output("uptime")).startswith("Uptime: ")
+    assert (
+        await bot.get_output("/eval 1+1")
+    ) == "you must be an admin to use this command"
