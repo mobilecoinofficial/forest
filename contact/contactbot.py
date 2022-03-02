@@ -9,7 +9,7 @@ import teli
 from aiohttp import web
 from forest_tables import GroupRoutingManager, PaymentsManager, RoutingManager
 from forest import utils
-from forest.core import Message, PayBot, Response, app, requires_admin, run_bot
+from forest.core import Message, PayBot, Response, app, requires_admin
 
 
 def takes_number(command: Callable) -> Callable:
@@ -211,11 +211,22 @@ class Forest(PayBot):
 
     usd_price = 0.5
 
-    async def do_register(self, _: Message) -> Response:
+    async def do_register(self, message: Message) -> Response:
         """register for a phone number"""
-        return (
-            f"Please send {await self.mobster.usd2mob(self.usd_price)} via Signal Pay"
+        if int(message.source[1:3]) in (44, 49, 33, 41):
+            # keep in sync with https://github.com/signalapp/Signal-Android/blob/master/app/build.gradle#L174
+            return "Please send {await self.mobster.usd2mob(self.usd_price)} via Signal Pay"
+        mob_price_exact = await self.mobster.create_invoice(
+            self.usd_price, message.source, "/register"
         )
+        address = await self.mobster.get_my_address()
+        return [
+            f"The current price for a SMS number is {mob_price_exact}MOB/month. If you would like to continue, please send exactly...",
+            f"{mob_price_exact}",
+            "to",
+            address,
+            "Upon payment, you will be able to select the area code for your new phone number!",
+        ]
 
     async def get_user_balance(self, account: str) -> float:
         res = await self.mobster.ledger_manager.get_usd_balance(account)
@@ -297,7 +308,7 @@ class Forest(PayBot):
     async def start_process(self) -> None:
         """Make sure full-service has a wallet before starting signal"""
         try:
-            await self.mobster.get_address()
+            await self.mobster.get_my_address()
         except IndexError:
             await self.mobster.import_account()
         if utils.get_secret("MIGRATE"):
@@ -376,4 +387,11 @@ async def inbound_sms_handler(request: web.Request) -> web.Response:
 app.add_routes([web.post("/inbound", inbound_sms_handler)])
 
 if __name__ == "__main__":
-    run_bot(Forest, app)
+
+    @app.on_startup.append
+    async def start_wrapper(our_app: web.Application) -> None:
+        our_app["bot"] = Forest()
+        our_app["routing"] = RoutingManager()
+        our_app["group_routing"] = GroupRoutingManager()
+
+    web.run_app(app, port=8080, host="0.0.0.0", access_log=None)
