@@ -24,7 +24,15 @@ pycryptodome = "*"
 aiohttp = {extras = ["speedups"], version = "^3.8.1"}
 
 [tool.poetry.dev-dependencies]
-black = "^22.1.0"
+black = "*"
+mypy = "*"
+pylint = "*"
+pytest = "*"
+pytest-cov = "*"
+pytest-asyncio = "*"
+types-protobuf = "^3.19.12"
+types-termcolor = "^1.1.3"
+isort = "*"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
