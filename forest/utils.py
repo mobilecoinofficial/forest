@@ -84,14 +84,30 @@ def get_secret(key: str, env: Optional[str] = None) -> str:
 
 ## Parameters for easy access and ergonomic use
 
-SIGNAL = (get_secret("SIGNAL") or "auxin").removesuffix("-cli") + "-cli"
-AUXIN = SIGNAL.lower() == "auxin-cli"
 APP_NAME = os.getenv("FLY_APP_NAME")
 URL = os.getenv("URL_OVERRIDE", f"https://{APP_NAME}.fly.dev")
 LOCAL = os.getenv("FLY_APP_NAME") is None
 UPLOAD = DOWNLOAD = get_secret("DOWNLOAD")
 ROOT_DIR = "/tmp/local-signal" if DOWNLOAD else "." if LOCAL else "/app"
 MEMFS = get_secret("AUTOSAVE")
+SIGNAL = (get_secret("SIGNAL") or "auxin").removesuffix("-cli") + "-cli"
+AUXIN = SIGNAL.lower() == "auxin-cli"
+
+maybe_path = get_secret("SIGNAL_PATH")
+if maybe_path and Path(maybe_path).exists():
+    SIGNAL_PATH = str(Path(maybe_path).absolute())
+elif Path(SIGNAL).exists():
+    SIGNAL_PATH = str(Path(SIGNAL).absolute())
+elif Path(ROOT_DIR) / SIGNAL:
+    SIGNAL_PATH = str((Path(ROOT_DIR) / SIGNAL).absolute())
+elif which := shutil.which(SIGNAL):
+    SIGNAL_PATH = which
+else:
+    raise FileNotFoundError(
+        f"Couldn't find a {SIGNAL} executable in the working directory, {ROOT_DIR}, or as an executable. "
+        f"Install {SIGNAL} or try symlinking {SIGNAL} to the working directory"
+    )
+
 
 if Path(SIGNAL).exists():
     SIGNAL_PATH = str(Path(SIGNAL).absolute())
