@@ -68,6 +68,4 @@ def levenshtein_norm(source: str, target: str) -> float:
 # list_que, status_list; dark, synthwav, synthese, "fantasy,"; bing
 # could you embedify these instead of recalculating string distance? or cache
 def match(source: str, targets: list[str]) -> tuple[float, str]:
-    return sorted(((levenshtein_norm(source, target), target) for target in targets))[
-        -1
-    ]
+    return sorted(((levenshtein_norm(source, target), target) for target in targets))[0]

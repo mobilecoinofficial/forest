@@ -5,35 +5,35 @@ jobs:
   tests:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v1
+      - uses: actions/checkout@v3
         with:
           fetch-depth: 1
       - name: Set up Python 3.9
         uses: actions/setup-python@v1
         with:
           python-version: 3.9
-      - name: Install pipenv
-        run: python -m pip install --upgrade pipenv wheel
-      - id: cache-pipenv
+      - name: Install poetry
+        run: python -m pip install --upgrade poetry
+      - id: cache-poetry
         uses: actions/cache@v1
         with:
-          path: ~/.local/share/virtualenvs
-          key: '${{ runner.os }}-pipenv-v2-${{ hashFiles(''**/Pipfile.lock'') }}'
+          path: ~/.cache/pypoetry/virtualenvs
+          key: '${{ runner.os }}-poetry-v1-${{ hashFiles(''**/poetry.lock'') }}'
       - name: Install dependencies
-        if: steps.cache-pipenv.outputs.cache-hit != 'true'
-        run: cp .github/Pipfile .; pipenv install --skip-lock --pre
+        if: steps.cache-poetry.outputs.cache-hit != 'true'
+        run: cp .github/pyproject.toml .; rm poetry.lock; poetry install
       - name: List dependency versions (check this if you get confusing results)
-        run: pipenv graph
+        run: poetry show --tree
       # - name: Setup tmate session # this lets you SSH into the container
       #   uses: mxschmitt/action-tmate@v3
       - name: Black
-        run: pipenv run black . --check
+        run: poetry run black . --check
         if: always()
       - name: Mypy
-        run: pipenv run mypy sample_bots mc_util forest mobfriend contact imogen
+        run: poetry run mypy sample_bots mc_util forest mobfriend contact imogen
         if: always()
       - name: Pylint
-        run: pipenv run pylint --version; pipenv run pylint sample_bots mc_util forest mobfriend/mobfriend.py contact imogen/imogen.py
+        run: poetry run pylint --version; poetry run pylint sample_bots mc_util forest mobfriend/mobfriend.py contact imogen/imogen.py
         if: always()
       - name: Pytest
-        run: pipenv run python -m pytest --cov forest
+        run: poetry run python -m pytest --cov forest

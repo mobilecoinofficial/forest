@@ -665,6 +665,7 @@ class Bot(Signal):
             return msg.arg0
         # always match in dms, only match /commands or @bot in groups
         if utils.get_secret("ENABLE_MAGIC") and (not msg.group or self.is_command(msg)):
+            logging.info("running enable magic")
             # don't leak admin commands
             valid_commands = self.commands if is_admin(msg) else self.visible_commands
             # closest match
