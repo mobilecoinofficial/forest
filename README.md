@@ -240,6 +240,7 @@ These are the environment variables and flags that the bots read to work. Not al
 - `BOT_NUMBER`: the number for the bot's signal account
 - `ADMIN`: admin's phone number, primarily as a fallback recipient for invalid webhooks; may also be used to send error messages and metrics.
 - `ADMINS`: additional list of people who can use admin commands
+- `ADMIN_GROUP`: group to get admin messages. all messages in that group will have admin
 - `DATABASE_URL`: URL for the Postgres database to store the signal keys in as well as other information.
 - `FULL_SERVICE_URL`: URL for [full-service](https://github.com/mobilecoinofficial/full-service) instance to use for sending and receiving payments
 - `CLIENTCRT`: client certificate to connect to ssl-enabled full-service.
@@ -254,6 +255,7 @@ These are the environment variables and flags that the bots read to work. Not al
 
 ## Binary flags
 - `DOWNLOAD`: download/upload datastore from the database instead of using what's in the current working directory.
+- `UPLOAD`: can be used to upload as a backup without downloading
 - `AUTOSAVE`: start MEMFS, making a fake filesystem in `./data` and used to upload the signal-cli datastore to the database whenever it is changed. If `DOWNLOAD`, also create an equivalent tmpdir at /tmp/local-signal, chdir to it, and symlink signal-cli process and avatar.
 - `MONITOR_WALLET`: monitor transactions from full-service. Relevant only if you're giving users a payment address to send mobilecoin to instead of using signal pay.  Experimental, do not use.
 - `LOGFILES`: create a debug.log.
