@@ -239,6 +239,7 @@ These are the environment variables and flags that the bots read to work. Not al
 - `ENV`: if running locally, which {ENV}_secrets file to use. 
 - `BOT_NUMBER`: the number for the bot's signal account
 - `ADMIN`: admin's phone number, primarily as a fallback recipient for invalid webhooks; may also be used to send error messages and metrics.
+- `ADMINS`: additional list of people who can use admin commands
 - `DATABASE_URL`: URL for the Postgres database to store the signal keys in as well as other information.
 - `FULL_SERVICE_URL`: URL for [full-service](https://github.com/mobilecoinofficial/full-service) instance to use for sending and receiving payments
 - `CLIENTCRT`: client certificate to connect to ssl-enabled full-service.

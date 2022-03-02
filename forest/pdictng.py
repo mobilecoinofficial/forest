@@ -244,7 +244,7 @@ class aPersistDict:
         await self.set(key, None)
         return None
 
-    async def extend(self, key: str, value: str) -> None:
+    async def extend(self, key: str, value: Any) -> None:
         """Since one cannot simply add to a coroutine, this function exists.
         If the key exists and the value is None, or an empty array, the provided value is added to a(the) list at that value."""
         value_to_extend = []
