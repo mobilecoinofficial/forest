@@ -3,12 +3,11 @@
 # Copyright (c) 2021 The Forest Team
 
 import asyncio
-import codecs
 import json
 import secrets
 import string
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Optional
 
 from aiohttp import web
 from prometheus_async import aio
@@ -278,7 +277,9 @@ class ClanGat(TalkBack):
         return None
 
     @hide
-    async def do_payout(self, msg: Message) -> Response:
+    async def do_payout(
+        self, msg: Message
+    ) -> Response:  # pylint: disable=too-many-return-statements
         """Sweeps all balance for an event to the requesting owner.
         Prompts admin for approval."""
         user = msg.uuid
@@ -432,7 +433,7 @@ class ClanGat(TalkBack):
                     await self.payout_balance_mmob.decrement(list_, amount_mmob)
                     await self.send_message(target, "I've sent you a payment!")
                     return result
-                except Exception as e:  # pylint: disable=broad-except
+                except Exception:  # pylint: disable=broad-except
                     return None
 
             results = [
@@ -476,7 +477,7 @@ class ClanGat(TalkBack):
         """Donate to one of the supported charities!
         give <charityname>
         """
-        obj = (msg.arg1 or "3").lower()
+        obj = (msg.arg1 or "").lower()
         user = msg.uuid
         await self.pending_donations.remove(msg.uuid)
         give_message = await self.easter_eggs.get("give", "")
@@ -487,12 +488,16 @@ class ClanGat(TalkBack):
                 [
                     f"{k}: {str(v/1000)[:5]}MOB"
                     for (k, v) in self.charities_balance_mmob.dict_.items()
+                    if v and isinstance(v, int)
                 ]
             ),
         )
         if not obj:
             obj = await self.ask_freeform_question(user, give_message)
-            obj = obj.lower()
+            if obj:
+                obj = obj.lower()
+            else:
+                return None
             if obj.isnumeric():
                 obj = await self.easter_eggs.get(f"{obj}_give")
         if obj in await self.charities.keys():
@@ -656,7 +661,9 @@ class ClanGat(TalkBack):
         return await self.do_check(msg)
 
     @hide
-    async def do_add(self, msg: Message) -> Response:
+    async def do_add(
+        self, msg: Message
+    ) -> Response:  # pylint: disable=too-many-return-statements, too-many-branches
         """add event <eventcode>
         > add event TEAMNYE22
         Okay, you're now the proud owner of an event on The Hotline, secret code TEAMNYE22!
@@ -962,7 +969,7 @@ class ClanGat(TalkBack):
 
     @time_(REQUEST_TIME)
     async def payment_response(self, msg: Message, amount_pmob: int) -> Response:
-        amount_mob = float(mc_util.pmob2mob(amount_pmob).quantize(Decimal("1.0000")))
+        amount_mob = float(pmob2mob(amount_pmob).quantize(Decimal("1.0000")))
         amount_mmob = int(amount_mob * 1000)
         if msg.uuid in await self.pending_orders.keys():
             code = (await self.pending_orders.get(msg.uuid, "")).lower()
