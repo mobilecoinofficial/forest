@@ -83,3 +83,6 @@ dummy-variables-rgx="(_|dummy|unused|i)"
 [tool.pylint.SIMILARITY]
 min-similarity-lines=9
 ignore-imports="yes"
+
+[tool.pytest.ini_options]
+asyncio_mode = "strict"

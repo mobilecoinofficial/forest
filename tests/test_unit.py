@@ -1,3 +1,4 @@
+import asyncio
 import os
 import pathlib
 from importlib import reload
@@ -25,17 +26,31 @@ def test_root(tmp_path: pathlib.Path) -> None:
     assert reload(utils).ROOT_DIR == "/app"
 
 
-class MockBot(Bot):
-    def __init__(self, number: str = "") -> None:
-        pass
-
-
 class MockMessage(Message):
     def __init__(self, text: str) -> None:
         self.text = text
+        self.source = "+" + "2" * 11
         super().__init__({})
 
 
+class MockBot(Bot):
+    async def start_process(self) -> None:
+        pass
+
+    async def get_output(self, text: str) -> str:
+        await self.inbox.put(MockMessage(text))
+        try:
+            msg = await asyncio.wait_for(self.outbox.get(), timeout=1)
+            return msg["params"]["message"]
+        except asyncio.TimeoutError:
+            return ""
+
+
+alice = "+" + "1" * 11
+
+
 @pytest.mark.asyncio
-async def test_ping() -> None:
-    assert await MockBot().do_ping(MockMessage("/ping foo")) == "/pong foo"
+async def test_commands() -> None:
+    bot = MockBot(alice)
+    assert await bot.get_output("/ping foo") == "/pong foo"
+    assert "printer" in (await bot.get_output("printerfact")).lower()
