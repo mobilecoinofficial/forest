@@ -12,6 +12,7 @@ import time
 from typing import Optional
 
 import aiohttp
+import asyncpg
 
 import mc_util
 from forest import utils
