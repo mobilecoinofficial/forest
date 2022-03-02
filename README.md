@@ -33,14 +33,14 @@ sudo apt install python3.9 python3.9-dev python3-pip
 
 ### Dependencies ###
 
-We use pipenv to handle dependencies, run:
+We use poetry to handle dependencies, run:
 
 ```bash
-python3.9 -m pip install pipenv
+python3.9 -m pip install poetry
 ```
 then to install the prerequisites:
 ```bash
-pipenv install
+poetry install
 ```
 
 </br>
@@ -178,7 +178,7 @@ SIGNAL=signal-cli
 
 Finally you can run hellobot with
 ```bash
-pipenv run python -m sample_bots.hellobot
+poetry run python -m sample_bots.hellobot
 ```
 
 You should see an output like this:
