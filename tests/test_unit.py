@@ -4,7 +4,7 @@ import pathlib
 from importlib import reload
 import pytest
 from forest import utils
-from forest.core import Message, Bot
+from forest.core import Message, QuestionBot
 
 
 def test_secrets(tmp_path: pathlib.Path) -> None:
@@ -33,7 +33,7 @@ class MockMessage(Message):
         super().__init__({})
 
 
-class MockBot(Bot):
+class MockBot(QuestionBot):
     async def start_process(self) -> None:
         pass
 
@@ -54,3 +54,5 @@ async def test_commands() -> None:
     bot = MockBot(alice)
     assert await bot.get_output("/ping foo") == "/pong foo"
     assert "printer" in (await bot.get_output("printerfact")).lower()
+    os.environ["ENABLE_MAGIC"] = True
+    assert (await bot.get_output("/uptimee").startswith("Uptime: ")
