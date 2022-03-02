@@ -1158,7 +1158,7 @@ class QuestionBot(PayBot):
         self.pending_answers: dict[str, asyncio.Future[Message]] = {}
         self.requires_first_device: dict[str, bool] = {}
         self.failed_user_challenges: dict[str, int] = {}
-        self.TERMINAL_ANSWERS = "0 no stop quit exit break cancel abort".split()
+        self.TERMINAL_ANSWERS = "0 no none stop quit exit break cancel abort".split()
         self.FIRST_DEVICE_PLEASE = "Please answer from your phone or primary device!"
         self.UNEXPECTED_ANSWER = "Did I ask you a question?"
         super().__init__(bot_number)

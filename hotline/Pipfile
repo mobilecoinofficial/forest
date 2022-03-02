@@ -14,8 +14,10 @@ prometheus-async = "*"
 prometheus-client = "*"
 pycryptodome = "*"
 ulid2 = "*"
-pillow = "*"
+Pillow = "*"
 num2words = "*"
+words2num = "*"
+maya = "*"
 
 [requires]
 python_version = "3.9"
@@ -24,7 +26,6 @@ python_version = "3.9"
 allow_prereleases = true
 
 [dev-packages]
-black = "*"
 mypy = "*"
 pylint = "*"
 types-termcolor = "*"

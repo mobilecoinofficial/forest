@@ -159,6 +159,7 @@ class ClanGat(TalkBack):
         self.no_repay: list[str] = []
         self.pending_orders: aPersistDict[str] = aPersistDict("pending_orders")
         self.pending_funds: aPersistDict[str] = aPersistDict("pending_funds")
+        self.pending_donations: aPersistDict[str] = aPersistDict("pending_donations")
         self.event_limits = aPersistDictOfInts("event_limits")
         self.event_prompts: aPersistDict[str] = aPersistDict("event_prompts")
         self.event_prices: aPersistDict[float] = aPersistDict("event_prices")
@@ -179,6 +180,7 @@ class ClanGat(TalkBack):
         self.challenging: aPersistDict[bool] = aPersistDict("challenging")
         self.charities: aPersistDict[str] = aPersistDict("charities")
         self.charities_balance_mmob = aPersistDictOfInts("charities_balance_mmob")
+        self.scratch_pad: aPersistDict[str] = aPersistDict("scratch_pad")
         self.pay_lock: asyncio.Lock = asyncio.Lock()
         # okay, this now maps the tag (restore key) of each of the above to the instance of the PersistDict class
         self.state = {
