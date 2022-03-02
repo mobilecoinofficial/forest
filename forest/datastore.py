@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import shutil
+import socket
 import sys
 import time
 import datetime
@@ -163,7 +164,7 @@ class SignalDatastore:
         tarball.extractall(utils.ROOT_DIR)
         # open("last_downloaded_checksum", "w").write(zlib.crc32(buffer.seek(0).read()))
         app_prefix = utils.APP_NAME + "-" if utils.APP_NAME else ""
-        node_name = app_prefix + utils.HOSTNAME
+        node_name = app_prefix + socket.gethostname()
         await self.account_interface.mark_account_claimed(self.number, node_name)
         logging.debug("marked account as claimed, asserting that this is the case")
         assert await self.is_claimed()
@@ -222,7 +223,7 @@ class SignalDatastore:
 def setup_tmpdir() -> None:
     logging.info("setup tmpdir")
     if not utils.LOCAL:
-        logging.warning("not setting up tmpdir, running on fly")
+        logging.warning("not setting up tmpdir, FLY_APP_NAME is set")
         return
     if utils.ROOT_DIR == ".":
         logging.warning("not setting up tmpdir, using current directory")
@@ -235,14 +236,6 @@ def setup_tmpdir() -> None:
     Path(utils.ROOT_DIR).mkdir(exist_ok=True, parents=True)
     if not utils.MEMFS:
         (Path(utils.ROOT_DIR) / "data").mkdir(exist_ok=True, parents=True)
-    # assume we're running in the repo
-    sigcli = utils.get_secret("SIGNAL_CLI_PATH") or f"{utils.SIGNAL}"
-    sigcli_path = Path(sigcli).absolute()
-    try:
-        logging.info("symlinking %s to %s", sigcli_path, utils.ROOT_DIR)
-        os.symlink(sigcli_path, f"{utils.ROOT_DIR}/{utils.SIGNAL}")
-    except FileExistsError:
-        logging.info("%s's already there", utils.SIGNAL)
     try:
         os.symlink(Path("avatar.png").absolute(), utils.ROOT_DIR + "/avatar.png")
     except FileExistsError:
@@ -266,11 +259,9 @@ async def getFreeSignalDatastore() -> SignalDatastore:
     return SignalDatastore(number)
 
 
-# this stuff needs to be cleaned up
 # maybe a config about where we're running:
-# MEMFS, DOWNLOAD, ROOT_DIR, HOSTNAME, etc
+# MEMFS, DOWNLOAD, ROOT_DIR, etc
 # is HCL overkill?
-
 
 parser = argparse.ArgumentParser(
     description="manage the signal datastore. use ENV=... to use something other than dev"
