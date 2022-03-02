@@ -307,7 +307,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         "shows worker state"
         return json.loads(await get_output(worker_status)) or "no workers running"
 
-    @hide
+    @requires_admin
     async def do_costs(self, _: Message) -> str:
         return repr((await self.queue.costs())[0])
 
