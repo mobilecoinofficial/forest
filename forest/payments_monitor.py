@@ -51,6 +51,23 @@ LedgerPGExpressions = PGExpressions(
         FROM {self.table} WHERE account=$1",
 )
 
+InvoicePGEExpressions = PGExpressions(
+    table="invoices",
+    create_table="CREATE TABLE IF NOT EXISTS {self.table} (\
+        invoice_id SERIAL PRIMARY KEY, \
+        account CHARACTER VARYING(16), \
+        unique_pmob BIGINT, \
+        memo CHARACTER VARYING(32), \
+        unique(unique_pmob))",
+    create_invoice="INSERT INTO {self.table} (account, unique_pmob, memo) VALUES($1, $2, $3)",
+    get_invoice_by_amount="SELECT invoice_id, account FROM {self.table} WHERE unique_pmob=$1",
+)
+
+
+class InvoiceManager(PGInterface):
+    def __init__(self) -> None:
+        super().__init__(InvoicePGEExpressions, DATABASE_URL, None)
+
 
 class LedgerManager(PGInterface):
     def __init__(
@@ -134,6 +151,17 @@ class Mobster:
         if perturb:
             return round(mob_amount, 8)
         return round(mob_amount, 3)  # maybe ceil?
+
+    async def create_invoice(self, amount_usd: float, account: str, memo: str) -> float:
+        while 1:
+            try:
+                mob_price_exact = await self.usd2mob(amount_usd, perturb=True)
+                await self.invoice_manager.create_invoice(
+                    account, mc_util.mob2pmob(mob_price_exact), memo
+                )
+                return mob_price_exact
+            except asyncpg.UniqueViolationError:
+                pass
 
     async def import_account(self) -> dict:
         params = {

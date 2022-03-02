@@ -801,14 +801,6 @@ class Bot(Signal):
             resp = self.documented_commands()
         return resp
 
-    async def do_printerfact(self, _: Message) -> str:
-        "Learn a fact about printers"
-        async with self.client_session.get(
-            utils.get_secret("FACT_SOURCE") or "https://colbyolson.com/printers"
-        ) as resp:
-            fact = await resp.text()
-        return fact.strip()
-
     @requires_admin
     async def do_eval(self, msg: Message) -> Response:
         """Evaluates a few lines of Python. Preface with "return" to reply with result."""
@@ -870,18 +862,21 @@ class Bot(Signal):
                 return maybe_recipient[0]["number"]
         return None
 
+
+class ExtrasBot(Bot):
+    async def do_printerfact(self, _: Message) -> str:
+        "Learn a fact about printers"
+        async with self.client_session.get(
+            utils.get_secret("FACT_SOURCE") or "https://colbyolson.com/printers"
+        ) as resp:
+            fact = await resp.text()
+        return fact.strip()
+
     async def do_ping(self, message: Message) -> str:
         """replies to /ping with /pong"""
         if message.text:
             return f"/pong {message.text}"
         return "/pong"
-
-    @hide
-    async def do_commit_msg(self, _: Message) -> str:
-        try:
-            return f"Commit message: {open('COMMIT_EDITMSG').read()}"
-        except FileNotFoundError:
-            return "No commit message available"
 
     @hide
     async def do_pong(self, message: Message) -> str:
@@ -893,6 +888,13 @@ class Bot(Signal):
             self.pongs[message.text] = message.text
             return f"OK, stashing {message.text}"
         return "OK"
+
+    @hide
+    async def do_commit_msg(self, _: Message) -> str:
+        try:
+            return f"Commit message: {open('COMMIT_EDITMSG').read()}"
+        except FileNotFoundError:
+            return "No commit message available"
 
     async def do_signalme(self, _: Message) -> Response:
         """signalme
@@ -918,7 +920,7 @@ class Bot(Signal):
         return t
 
 
-class PayBot(Bot):
+class PayBot(ExtrasBot):
     PAYMENTS_HELPTEXT = """Enable Signal Pay:
 
     1. In Signal, tap “🠔“ & tap on your profile icon in the top left & tap *Settings*

@@ -889,7 +889,7 @@ async def prompt_msg_handler(request: web.Request) -> web.Response:
     )
     if not row or (not row[0].get("author") and not row[0].get("group_id")):
         await bot.admin("no prompt id found?")
-        info = f"prompt id not found"
+        info = "prompt id not found"
         logging.info(info)
         return web.Response(text=info)
     prompt = Prompt(**row[0])
