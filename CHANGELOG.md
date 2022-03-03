@@ -1,4 +1,10 @@
+## 1.2.2
+
 - upload requires note
+
+## 1.2.1
+
+- use `SIGNAL_PATH` instead of `SIGNAL_CLI_PATH`; it uses `which signal-cli` or `which auxin-cli` as appropriate as a fallback. (#145)
 
 ## 1.2.0
 

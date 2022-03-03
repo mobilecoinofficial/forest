@@ -33,14 +33,14 @@ sudo apt install python3.9 python3.9-dev python3-pip
 
 ### Dependencies ###
 
-We use pipenv to handle dependencies, run:
+We use poetry to handle dependencies, run:
 
 ```bash
-python3.9 -m pip install pipenv
+python3.9 -m pip install poetry
 ```
 then to install the prerequisites:
 ```bash
-pipenv install
+poetry install
 ```
 
 </br>
@@ -178,7 +178,7 @@ SIGNAL=signal-cli
 
 Finally you can run hellobot with
 ```bash
-pipenv run python -m sample_bots.hellobot
+poetry run python -m sample_bots.hellobot
 ```
 
 You should see an output like this:
@@ -229,7 +229,7 @@ DATABASE_URL=postgres://<your database url>
 Then, you can upload your datastore with:
 
 ```bash
-./forest/datastore.py upload --number $BOT_NUMBER --path .
+./forest/datastore.py upload --number $BOT_NUMBER --path . --note "this number is for my special bot"
 ```
 
 ## Options and secrets
@@ -246,7 +246,7 @@ These are the environment variables and flags that the bots read to work. Not al
 - `MNEMONIC`: account to import for full-service. Not Secure.
 - `SIGNAL`: which signal client to use. can be 'signal-cli' or 'auxin-cli'. Defaults to auxin.
 - `ROOT_DIR`: specify the directory where the data file is stored, as well as where the signal-cli executable is. Defaults to `/tmp/local-signal` if DOWNLOAD, `/app` if running on fly, and `.` otherwise
-- `SIGNAL_CLI_PATH`: specify where the signal-cli executable is if it is not in ROOT_DIR.
+- `SIGNAL_PATH`: specify where the signal client executable is if it is not in ROOT_DIR.
 - `LOGLEVEL`: what log level to use for console logs (DEBUG, INFO, WARNING, ERROR). Defaults to DEBUG
 - `TYPO_THRESHOLD`: maximum normalized Levenshtein edit distance for typo correction. 0 is only exact matches, 1 is any match. Default: 0.3
 - `SIGNAL_CLI_PATH`: path to executable to use. useful for running signal-cli with graalvm tracing agent
@@ -266,5 +266,7 @@ We accept Issues and Pull Requests. These are our style guides:
 Code style: Ensure that `mypy *py` and `pylint *py` do not return errors before you push.
 
 Use [black](https://github.com/psf/black) to format your python code. Prefer verbose, easier to read names over conciser ones.
+
+`pip install black pylint mypy types-protobuf types-termcolor`
 
 Install black pre-commit hook with `ln -s (readlink -f .githooks/pre-commit) .git/hooks/pre-commit` on fish, or `ln -s $(readlink -f .githooks/pre-commit) .git/hooks/pre-commit` on bash. Requires black to be installed.
