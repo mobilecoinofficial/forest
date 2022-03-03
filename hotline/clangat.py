@@ -320,7 +320,7 @@ class ClanGat(TalkBack):
     @hide
     async def do_pay(self, msg: Message) -> Response:
         """Allows an event/list owner to distribute available funds across those on a list."""
-        # pylint: disable=too-many-return-statements, too-many-branches
+        # pylint: disable=too-many-return-statements, too-many-branches, too-many-locals
         user = msg.uuid
         to_send: list[str] = []
         if not msg.arg2 or not msg.arg2.isnumeric():
@@ -498,7 +498,7 @@ class ClanGat(TalkBack):
             else:
                 return None
             if obj.isnumeric():
-                obj = await self.easter_eggs.get(f"{obj}_give")
+                obj = await self.easter_eggs.get(f"{obj}_give", "3_give")
         if obj in await self.charities.keys():
             await self.pending_donations.set(user, obj)
             charity_info = await self.charities.get(obj, "")
@@ -672,7 +672,7 @@ class ClanGat(TalkBack):
         > add limit TEAMNYE22 200
         > add list COWORKERS
         """
-        # pylint: disable=too-many-return-statements,too-many-branches
+        # pylint: disable=too-many-return-statements,too-many-branches,too-many-statements
         if not msg.arg1:
             msg.arg1 = await self.ask_freeform_question(
                 msg.uuid, "Would you like to add an event, easteregg, or a list?"
@@ -1003,7 +1003,7 @@ class ClanGat(TalkBack):
                 + "You may sweep your balance with 'payout' or distrbute specific amounts of millimobb to attendees and individuals with 'pay <user_or_group> <amount> <memo>'."
             )
         if msg.uuid in await self.pending_donations.keys():
-            code = await self.pending_donations.pop(msg.uuid)
+            code = (await self.pending_donations.pop(msg.uuid)) or ""
             await self.charities_balance_mmob.increment(code, amount_mmob)
             if msg.uuid in self.no_repay:
                 self.no_repay.remove(msg.uuid)
