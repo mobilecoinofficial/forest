@@ -31,41 +31,7 @@ FEE = int(1e12 * 0.0004)
 REQUEST_TIME = Summary("request_processing_seconds", "Time spent processing request")
 
 
-class PayBotPro(QuestionBot):
-    def __init__(self) -> None:
-        self.last_seen: dict[str, float] = {}
-        super().__init__()
-
-    async def handle_message(self, message: Message) -> Response:
-        user_last_seen = self.last_seen.get(message.source, 0)
-        self.last_seen[message.source] = message.timestamp / 1000
-        return await super().handle_message(message)
-
-    async def do_roll(self, msg: Message) -> Response:
-        """Rolls N dice of M sides: ie) roll 1 d20.
-        Optionally accepts a third argument to specify starting at 0 instead of 1."""
-        num_dice, dice_sides, offset = 1, 20, 0
-        if msg.arg1 and msg.arg1.isnumeric():
-            num_dice = int(msg.arg1)
-        if msg.arg2 and msg.arg2.lstrip("d").isnumeric():
-            dice_sides = int(msg.arg2.lstrip("d"))
-        if msg.arg1 and "d" in msg.arg1:
-            maybe_num_dice, maybe_dice_sides = msg.arg1.split("d")
-            if maybe_num_dice.isnumeric():
-                num_dice = int(maybe_num_dice)
-            if maybe_dice_sides.isnumeric():
-                dice_sides = int(maybe_dice_sides)
-        if msg.arg3 and msg.arg3 == "0":
-            offset = 1
-        if dice_sides > 256:
-            return "Try with a smaller number of sides (<256)."
-        return [
-            f"Okay, we rolled {num_dice} {dice_sides}-sided dice!"
-            f"{[secrets.randbelow(dice_sides-1)-offset+1 for _ in range(num_dice)]}"
-        ]
-
-
-class TalkBack(PayBotPro):
+class TalkBack(PayBot):
     def __init__(self) -> None:
         self.profile_cache: aPersistDict[dict[str, str]] = aPersistDict("profile_cache")
         self.displayname_cache: aPersistDict[str] = aPersistDict("displayname_cache")
