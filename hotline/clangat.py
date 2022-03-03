@@ -14,7 +14,6 @@ from prometheus_async import aio
 from prometheus_async.aio import time as time_
 from prometheus_client import Summary
 
-import mc_util
 from forest import utils
 from forest.core import (
     Message,
@@ -277,11 +276,10 @@ class ClanGat(TalkBack):
         return None
 
     @hide
-    async def do_payout(
-        self, msg: Message
-    ) -> Response:  # pylint: disable=too-many-return-statements
+    async def do_payout(self, msg: Message) -> Response:
         """Sweeps all balance for an event to the requesting owner.
         Prompts admin for approval."""
+        # pylint: disable=too-many-return-statements
         user = msg.uuid
         list_ = (msg.arg1 or "").lower()
         user_owns = await self.check_user_owns(user, list_)
@@ -322,6 +320,7 @@ class ClanGat(TalkBack):
     @hide
     async def do_pay(self, msg: Message) -> Response:
         """Allows an event/list owner to distribute available funds across those on a list."""
+        # pylint: disable=too-many-return-statements, too-many-branches
         user = msg.uuid
         to_send: list[str] = []
         if not msg.arg2 or not msg.arg2.isnumeric():
@@ -505,7 +504,7 @@ class ClanGat(TalkBack):
             charity_info = await self.charities.get(obj, "")
             self.no_repay += [user]
             return f"Okay, waiting for your donation to {await self.easter_eggs.get(obj, obj)}!\n\n{charity_info}\n\nSend me a payment over Signal and I will make sure it gets to them."
-        if obj not in self.TERMINAL_ANSWERS:
+        if not obj or obj not in self.TERMINAL_ANSWERS:
             msg.arg1 = await self.ask_freeform_question(user, give_message)
             return await self.do_give(msg)
         return "Okay, maybe later!"
@@ -661,9 +660,7 @@ class ClanGat(TalkBack):
         return await self.do_check(msg)
 
     @hide
-    async def do_add(
-        self, msg: Message
-    ) -> Response:  # pylint: disable=too-many-return-statements, too-many-branches
+    async def do_add(self, msg: Message) -> Response:
         """add event <eventcode>
         > add event TEAMNYE22
         Okay, you're now the proud owner of an event on The Hotline, secret code TEAMNYE22!
@@ -675,6 +672,7 @@ class ClanGat(TalkBack):
         > add limit TEAMNYE22 200
         > add list COWORKERS
         """
+        # pylint: disable=too-many-return-statements,too-many-branches
         if not msg.arg1:
             msg.arg1 = await self.ask_freeform_question(
                 msg.uuid, "Would you like to add an event, easteregg, or a list?"
@@ -827,6 +825,8 @@ class ClanGat(TalkBack):
         return f"Failed to add {value} to event {param}'s {obj}!"
 
     async def maybe_unlock(self, msg: Message) -> Response:
+        """Possibly unlocks an event."""
+        # pylint: disable=too-many-return-statements,too-many-branches
         code = msg.arg0
         # if the event has an owner and a price and there's attendee space and the user hasn't already bought tickets
         if (
@@ -938,6 +938,7 @@ class ClanGat(TalkBack):
                 await asyncio.sleep(0.1)
 
     async def default(self, message: Message) -> Response:
+        # pylint: disable=too-many-return-statements,too-many-branches
         msg = message
         code = msg.arg0
         if not code:
@@ -969,6 +970,7 @@ class ClanGat(TalkBack):
 
     @time_(REQUEST_TIME)
     async def payment_response(self, msg: Message, amount_pmob: int) -> Response:
+        # pylint: disable=too-many-return-statements
         amount_mob = float(pmob2mob(amount_pmob).quantize(Decimal("1.0000")))
         amount_mmob = int(amount_mob * 1000)
         if msg.uuid in await self.pending_orders.keys():
