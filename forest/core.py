@@ -472,7 +472,7 @@ class Signal:
         await self.outbox.put(cmd)
 
     backoff = False
-    messages_until_rate_limit = 50.0
+    messages_until_rate_limit = 1000.0
     last_update = time.time()
 
     def update_and_check_rate_limit(self) -> bool:

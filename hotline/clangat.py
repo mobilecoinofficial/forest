@@ -4,7 +4,6 @@
 
 import asyncio
 import json
-import secrets
 import string
 from decimal import Decimal
 from typing import Optional
@@ -31,7 +30,7 @@ FEE = int(1e12 * 0.0004)
 REQUEST_TIME = Summary("request_processing_seconds", "Time spent processing request")
 
 
-class TalkBack(PayBot):
+class TalkBack(QuestionBot):
     def __init__(self) -> None:
         self.profile_cache: aPersistDict[dict[str, str]] = aPersistDict("profile_cache")
         self.displayname_cache: aPersistDict[str] = aPersistDict("displayname_cache")
@@ -94,7 +93,7 @@ class TalkBack(PayBot):
             try:
                 maybe_user_profile = (
                     await self.signal_rpc_request("getprofile", peer_name=uuid)
-                ).blob
+                ).blob or {}
                 user_given = maybe_user_profile.get("givenName", "")
                 await self.profile_cache.set(uuid, maybe_user_profile)
             except AttributeError:
@@ -286,7 +285,7 @@ class ClanGat(TalkBack):
     @hide
     async def do_pay(self, msg: Message) -> Response:
         """Allows an event/list owner to distribute available funds across those on a list."""
-        # pylint: disable=too-many-return-statements, too-many-branches, too-many-locals
+        # pylint: disable=too-many-return-statements,too-many-branches,too-many-locals
         user = msg.uuid
         to_send: list[str] = []
         if not msg.arg2 or not msg.arg2.isnumeric():
