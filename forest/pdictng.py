@@ -302,7 +302,7 @@ class aPersistDictOfInts(aPersistDict[int]):
         value_to_extend: Any = 0
         async with self.rwlock:
             value_to_extend = self.dict_.get(key, 0)
-            if isinstance(value_to_extend, int) and isinstance(V, int):
+            if isinstance(value_to_extend, int):
                 return await self._set(key, value_to_extend + value)
             raise TypeError(f"key {key} is not an int")
 

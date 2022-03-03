@@ -5,6 +5,7 @@
 import asyncio
 import json
 import string
+import time
 from decimal import Decimal
 from typing import Optional
 
@@ -22,6 +23,7 @@ from forest.core import (
     hide,
     requires_admin,
     is_admin,
+    get_uid,
 )
 from forest.pdictng import aPersistDict, aPersistDictOfInts, aPersistDictOfLists
 from mc_util import pmob2mob
@@ -142,9 +144,12 @@ class ClanGat(TalkBack):
         self.payout_balance_mmob = aPersistDictOfInts("payout_balance_mmob")
         self.challenging: aPersistDict[bool] = aPersistDict("challenging")
         self.charities: aPersistDict[str] = aPersistDict("charities")
-        self.charities_balance_mmob = aPersistDictOfInts("charities_balance_mmob")
+        self.charities_balance_mmob: aPersistDictOfInts = aPersistDictOfInts(
+            "charities_balance_mmob"
+        )
         self.scratch_pad: aPersistDict[str] = aPersistDict("scratch_pad")
         self.pay_lock: asyncio.Lock = asyncio.Lock()
+        self.donations: aPersistDict[str] = aPersistDict("donations")
         # okay, this now maps the tag (restore key) of each of the above to the instance of the PersistDict class
         self.state = {
             self.__getattribute__(attr).tag: self.__getattribute__(attr)
@@ -445,6 +450,8 @@ class ClanGat(TalkBack):
         user = msg.uuid
         await self.pending_donations.remove(msg.uuid)
         give_message = await self.easter_eggs.get("give", "")
+        self.no_repay += [user]
+        await self.pending_donations.set(user, "standwithukraine")
         await self.send_message(
             user,
             "Charity donations to date!\n\n"
@@ -463,14 +470,16 @@ class ClanGat(TalkBack):
             else:
                 return None
             if obj.isnumeric():
-                obj = await self.easter_eggs.get(f"{obj}_give", "3_give")
+                obj = await self.easter_eggs.get(f"{obj}_give", "standwithukraine")
         if obj in await self.charities.keys():
             await self.pending_donations.set(user, obj)
             charity_info = await self.charities.get(obj, "")
-            self.no_repay += [user]
             return f"Okay, waiting for your donation to {await self.easter_eggs.get(obj, obj)}!\n\n{charity_info}\n\nSend me a payment over Signal and I will make sure it gets to them."
         if not obj or obj not in self.TERMINAL_ANSWERS:
-            msg.arg1 = await self.ask_freeform_question(user, give_message)
+            obj = await self.ask_freeform_question(user, give_message)
+            if obj.isnumeric():
+                obj = await self.easter_eggs.get(f"{obj}_give", "standwithukraine")
+            msg.arg1 = obj
             return await self.do_give(msg)
         return "Okay, maybe later!"
 
@@ -968,7 +977,12 @@ class ClanGat(TalkBack):
                 + "You may sweep your balance with 'payout' or distrbute specific amounts of millimobb to attendees and individuals with 'pay <user_or_group> <amount> <memo>'."
             )
         if msg.uuid in await self.pending_donations.keys():
-            code = (await self.pending_donations.pop(msg.uuid)) or ""
+            code = (await self.pending_donations.get(msg.uuid)) or ""
+            donation_uid = get_uid()
+            donation_time = time.time()
+            await self.donations.set(
+                donation_uid, f"{msg.uuid}, {donation_time}, {amount_mob}, {code}"
+            )
             await self.charities_balance_mmob.increment(code, amount_mmob)
             if msg.uuid in self.no_repay:
                 self.no_repay.remove(msg.uuid)
