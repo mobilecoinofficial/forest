@@ -8,7 +8,7 @@ you'll need to grab [https://github.com/forestcontact/signal-cli], check out the
 
 you also need to register an account -- you can use https://github.com/forestcontact/go_ham/blob/main/register.py or https://github.com/forestcontact/message-in-a-bottle as a starting point. you can also grab one from the DB if you have access to secrets.
 
-you can use `forest/datastore.py upload --number` or `forest/datastore.py sync --number` to mess with the DB. your secrets file should be named {prod,staging,dev}_secrets.
+you can use `forest/datastore.py upload --note MyBotName --number` or `forest/datastore.py sync --number` to mess with the DB. your secrets file should be named {prod,staging,dev}_secrets.
 
 you can use `forest/datastore.py` to select said file accordingly. Use `ENV=prod forest..` to use prod_secrets, etc.
 

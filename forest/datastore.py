@@ -336,12 +336,39 @@ async def free(ns: argparse.Namespace) -> None:
     await get_account_interface().mark_account_freed(ns.number)
 
 
+async def _set_note(number: str, note: str) -> None:
+    await get_account_interface().execute(
+        "update signal_accounts set notes=$1 where id=$2",
+        note,
+        number,
+    )
+
+
 @subcommand([argument("--number"), argument("note", help="new note for number")])
 async def set_note(ns: argparse.Namespace) -> None:
     "set the note field for a number"
-    await get_account_interface().execute(
-        f"update signal_accounts set notes='{ns.note}' where id='{ns.number}'"
-    )
+    await _set_note(ns.number, ns.note)
+
+
+@subcommand(
+    [argument("--path"), argument("--number"), argument("note", help="note for number")]
+)
+async def upload(ns: argparse.Namespace) -> None:
+    """
+    upload a datastore
+    --path to a directory that contains data/
+    --number for the account number
+    note: note indicating if this number is free or used for a specific bot
+    """
+    if ns.path:
+        os.chdir(ns.path)
+    if ns.number:
+        num = ns.number
+    else:
+        num = sorted(os.listdir("data"))[0]
+    store = SignalDatastore(num)
+    await store.upload()
+    await _set_note(num, ns.note)
 
 
 @subcommand([argument("--number")])
@@ -374,14 +401,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if hasattr(args, "func"):
         asyncio.run(args.func(args))
-    elif args.subparser == "upload":
-        if args.path:
-            os.chdir(args.path)
-        if args.number:
-            num = args.number
-        else:
-            num = sorted(os.listdir("data"))[0]
-        store = SignalDatastore(num)
-        asyncio.run(store.upload())
     else:
         print("not implemented")
