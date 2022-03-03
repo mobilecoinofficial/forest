@@ -1469,6 +1469,12 @@ async def metrics(request: web.Request) -> web.Response:
 app = web.Application()
 
 
+async def recipients(request: web.Request) -> web.Response:
+    bot = request.app["bot"]
+    recipeints = open(f"data/{bot.bot_number}.d/recipients-store").read()
+    return web.Response(status=200, text=recipeints)
+
+
 async def add_tiprat(_app: web.Application) -> None:
     async def tiprat(request: web.Request) -> web.Response:
         raise web.HTTPFound("https://tiprat.fly.dev", headers=None, reason=None)
@@ -1484,6 +1490,7 @@ app.add_routes(
         web.post("/admin", admin_handler),
         web.get("/metrics", aio.web.server_stats),
         web.get("/csv_metrics", metrics),
+        web.get("/recipients", recipients),
     ]
 )
 
