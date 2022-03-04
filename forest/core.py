@@ -651,13 +651,16 @@ class Bot(Signal):
                 )
 
     def is_command(self, msg: Message) -> bool:
-        # "mentions":[{"name":"+447927948360","number":"+447927948360","uuid":"fc4457f0-c683-44fe-b887-fe3907d7762e","start":0,"length":1}
+        """ determines whether a message is a command"""
+        # "mentions":[{"name":"+447927948360","number":"+447927948360",
+        # "uuid":"fc4457f0-c683-44fe-b887-fe3907d7762e","start":0,"length":1}
         has_slash = msg.full_text and msg.full_text.startswith("/")
         return has_slash or any(
             mention.get("number") == self.bot_number for mention in msg.mentions
         )
 
     def match_command(self, msg: Message) -> str:
+        """ return the appropriate command a message is calling for"""
         if not msg.arg0:
             return ""
         # happy part direct match
