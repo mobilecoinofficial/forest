@@ -28,6 +28,7 @@ if len(AESKEY) == 64:
     AESKEY = AESKEY[:32]
 
 pAUTH = os.getenv("PAUTH", "")
+pURL = os.getenv("PURL", "https://gusc1-charming-parrot-31440.upstash.io")
 
 if not pAUTH:
     raise ValueError("Need to set PAUTH envvar for persistence")
@@ -76,7 +77,7 @@ class fasterpKVStoreClient:
 
     def __init__(
         self,
-        base_url: str = "https://gusc1-charming-parrot-31440.upstash.io",
+        base_url: str = pURL,
         auth_str: str = pAUTH,
         namespace: str = NAMESPACE,
     ):
@@ -133,7 +134,7 @@ class fastpKVStoreClient:
 
     def __init__(
         self,
-        base_url: str = "https://vwaurvyhomqleagryqcc.supabase.co/rest/v1/keyvalue",
+        base_url: str = pURL,
         auth_str: str = pAUTH,
         namespace: str = NAMESPACE,
     ):
@@ -238,7 +239,10 @@ class aPersistDict:
         if "tag" in kwargs:
             self.tag = kwargs.pop("tag")
         self.dict_: dict[str, Any] = {}
-        self.client = fasterpKVStoreClient()
+        if "supabase" in pURL:
+            self.client = fastpKVStoreClient()
+        else:
+            self.client = fasterpKVStoreClient()
         self.rwlock = asyncio.Lock()
         self.loop = asyncio.get_event_loop()
         self.init_task = asyncio.create_task(self.finish_init(**kwargs))
