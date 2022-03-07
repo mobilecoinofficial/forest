@@ -48,8 +48,9 @@ progress = Progress(
 )
 
 #to do:
-#organize functions, dear god can i get some classes? 
-#prune dependencies, make things less verbose
+# organize functions, dear god can i get some classes? 
+# prune dependencies, make things less verbose
+# make stubs do something 
 
 
 #change this to opening from another file
@@ -71,20 +72,20 @@ MM88MMM ,adPPYba,  8b,dPPYba,  ,adPPYba, ,adPPYba, MM88MMM      ...........%%...
                                 ...........%%..............%%%..........
                                 @.......................................
 '''
-#prep opening the readme
+# prep opening the readme
 rdme = open("README.md", "r")
 readme = rdme.read()
 rdme.close()
 
-#make rich happy
+# make rich happy
 style = "green"
 console = Console()
 tasks = [f"task {n}" for n in range(1, 11)]
 
-#print art
+# print art
 console.print(tree,style=style)
 
-
+# maybe i could reference something more portable to make changing menus around easier 
 def main():
     menu = inquirer.select(
         message="Welcome to the forest setup wizard.",
@@ -98,7 +99,7 @@ def main():
     menu()
 
 def settings():
-    secrets = open("dev_secrets", "w+")
+    secrets = open("dev_secrets", "w+") # this probably shouldn't be here 
     current_secrets = secrets.read()
     pref = inquirer.select(
         message="What would you like to do?",
@@ -114,7 +115,7 @@ def do_docs():
     md = Markdown(readme)
     console.print(md)
     hint = Text()
-    hint.append("\nScroll up to read from the beginning!", style="bold green")
+    hint.append("\nScroll up to read from the beginning!", style="bold green") # probably a better solution then this?
     console.print(hint)
 
 
@@ -189,27 +190,29 @@ def do_newbot():
             Choice(value=do_hellobot, name="HelloBot"),]).execute()
     print(newbot())
 
+# make this generic 
 def do_hellobot():
     shutil.copyfile("./sample_bots/hellobot.py", "bot.py")
     return("Okay, your brand new bot template is in your Forest directory!")
 
+# why 
 def do_deps():
     bashdeps()
-
+# why part 2
 def bashdeps():
     os.system('sh setup.sh')
 
 def do_exit():
     exit()
 
-
+# what needs this? 
 done_event = Event()
 
 def handle_sigint(signum, frame):
     done_event.set()
 
 
-
+# maybe put these in a class 
 def copy_url(task_id: 1, url: str, path: str) -> None:
     progress.console.log(f"Requesting {url}")
     response = urlopen(url)
