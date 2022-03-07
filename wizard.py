@@ -47,9 +47,12 @@ progress = Progress(
     TimeRemainingColumn(),
 )
 
+#to do:
+#organize functions, dear god can i get some classes? 
+#prune dependencies, make things less verbose
 
 
-
+#change this to opening from another file
 tree = '''
                                                                 @@@@.................................@@@
    ad88                                                         @.......................................
@@ -68,17 +71,17 @@ MM88MMM ,adPPYba,  8b,dPPYba,  ,adPPYba, ,adPPYba, MM88MMM      ...........%%...
                                 ...........%%..............%%%..........
                                 @.......................................
 '''
-
+#prep opening the readme
 rdme = open("README.md", "r")
 readme = rdme.read()
 rdme.close()
 
+#make rich happy
 style = "green"
-
 console = Console()
-
 tasks = [f"task {n}" for n in range(1, 11)]
 
+#print art
 console.print(tree,style=style)
 
 
@@ -173,6 +176,7 @@ def do_signalcli():
         task2 = progress.add_task("unzip", )
         do_unzip_signal(archive='signal-cli.tar.gz')
 
+#change this to something generic 
 def do_unzip_signal(archive):
     archive = 'signal-cli.tar.gz'
     os.system('tar -xvf {}'.format(archive))
