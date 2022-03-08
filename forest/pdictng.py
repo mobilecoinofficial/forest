@@ -70,10 +70,10 @@ def get_cleartext_value(value_: str) -> str:
 
 class persistentKVStoreClient:
     async def post(self, key: str, data: str) -> str:
-        raise NotImplemented
+        raise NotImplementedError
 
     async def get(self, key: str) -> str:
-        raise NotImplemented
+        raise NotImplementedError
 
 
 class fasterpKVStoreClient(persistentKVStoreClient):
