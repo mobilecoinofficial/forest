@@ -69,7 +69,11 @@ def get_cleartext_value(value_: str) -> str:
 
 
 class persistentKVStoreClient:
-    pass
+    async def post(self, key: str, data: str) -> str:
+        raise NotImplemented
+
+    async def get(self, key: str) -> str:
+        raise NotImplemented
 
 
 class fasterpKVStoreClient(persistentKVStoreClient):
@@ -243,10 +247,9 @@ class aPersistDict:
         if "tag" in kwargs:
             self.tag = kwargs.pop("tag")
         self.dict_: dict[str, Any] = {}
-        if "supabase" in pURL:
-            self.client = fastpKVStoreClient()
-        else:
-            self.client = fasterpKVStoreClient()
+        self.client: persistentKVStoreClient = (
+            fastpKVStoreClient() if "supabase" in pURL else fasterpKVStoreClient()
+        )
         self.rwlock = asyncio.Lock()
         self.loop = asyncio.get_event_loop()
         self.init_task = asyncio.create_task(self.finish_init(**kwargs))
