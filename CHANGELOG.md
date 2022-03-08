@@ -1,6 +1,8 @@
 ## 1.2.2
 
 - fasterpKVStoreClient (#112). probably need to change PAUTH if you're using pdict
+- upload requires note (#147)
+- switch from pipenv to poetry (#148)
 
 ## 1.2.1
 

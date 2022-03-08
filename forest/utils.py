@@ -88,7 +88,7 @@ APP_NAME = os.getenv("FLY_APP_NAME")
 URL = os.getenv("URL_OVERRIDE", f"https://{APP_NAME}.fly.dev")
 LOCAL = os.getenv("FLY_APP_NAME") is None
 UPLOAD = DOWNLOAD = get_secret("DOWNLOAD")
-ROOT_DIR = "/tmp/local-signal" if DOWNLOAD else "." if LOCAL else "/app"
+ROOT_DIR = "/app" if not LOCAL else "/tmp/local-signal" if DOWNLOAD else "."
 MEMFS = get_secret("AUTOSAVE")
 SIGNAL = (get_secret("SIGNAL") or "auxin").removesuffix("-cli") + "-cli"
 AUXIN = SIGNAL.lower() == "auxin-cli"
