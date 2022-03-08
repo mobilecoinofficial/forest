@@ -1154,6 +1154,7 @@ def is_first_device(msg: Message) -> bool:
 
 
 class QuestionBot(PayBot):
+    """ Class for bots that can asks questions and await for answers"""
     def __init__(self, bot_number: Optional[str] = None) -> None:
         self.pending_confirmations: dict[str, asyncio.Future[bool]] = {}
         self.pending_answers: dict[str, asyncio.Future[Message]] = {}
@@ -1243,12 +1244,19 @@ class QuestionBot(PayBot):
         answer = await answer_future
         self.pending_answers.pop(recipient)
         answer_text = answer.full_text
+
+        # This checks to see if the answer is a valid candidate for float by replacing 
+        # the first comma or decimal point with a number to see if the resulting string .isnumeric()
         if answer_text and not (
             answer_text.replace(".", "1", 1).isnumeric()
             or answer_text.replace(",", "1", 1).isnumeric()
         ):
+            # cancel if user replies with any of the terminal answers "stop, cancel, quit, etc. defined above"
             if answer.full_text.lower() in self.TERMINAL_ANSWERS:
                 return None
+
+            # Check to see if the original question already specified wanting the answer as a decimal.
+            # If not asks the question again and adds "as a decimal" to clarify
             if question_text and "as a decimal" in question_text:
                 return await self.ask_floatable_question(recipient, question_text)
             return await self.ask_floatable_question(
@@ -1275,8 +1283,13 @@ class QuestionBot(PayBot):
         answer = await answer_future
         self.pending_answers.pop(recipient)
         if answer.full_text and not answer.full_text.isnumeric():
+
+            # cancel if user replies with any of the terminal answers "stop, cancel, quit, etc. defined above"
             if answer.full_text.lower() in self.TERMINAL_ANSWERS:
                 return None
+
+            # Check to see if the original question already specified wanting the answer as a decimal.
+            # If not asks the question again and adds "as a whole number, ie '1' or '2000'" to clarify
             if question_text and "as a whole number" in question_text:
                 return await self.ask_intable_question(recipient, question_text)
             return await self.ask_intable_question(
@@ -1293,6 +1306,9 @@ class QuestionBot(PayBot):
         question_text: str = "Are you sure? yes/no",
         require_first_device: bool = False,
     ) -> bool:
+
+        """ Asks a question that expects yes or no as an answer"""
+
         self.pending_confirmations[recipient] = asyncio.Future()
         if require_first_device:
             self.requires_first_device[recipient] = True
@@ -1302,7 +1318,8 @@ class QuestionBot(PayBot):
         return result
 
     async def do_challenge(self, msg: Message) -> Response:
-        """Challenges a user to do a simple math problem, optionally provided as an image to increase attacker complexity."""
+        """Challenges a user to do a simple math problem, 
+        optionally provided as an image to increase attacker complexity."""
         # the captcha module delivers graphical challenges of the same format
         if captcha is not None:
             challenge, answer = captcha.get_challenge_and_answer()
