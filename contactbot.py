@@ -85,9 +85,7 @@ class Forest(QuestionBot):
 
     async def handle_message(self, message: Message) -> Response:
         """Handle an invidiual Message from Signal.
-        If it's a group creation blob, make a new routing rule from it.
         If it's a group message, route it to the relevant conversation.
-        If it's a payment, deal with that separately.
         Otherwise, use the default Bot do_x method dispatch
         """
         numbers = await self.get_user_numbers(message)
@@ -127,13 +125,14 @@ class Forest(QuestionBot):
             return "Couldn't send that reply"
         return await super().handle_message(message)
 
-    async def do_help(self, _: Message) -> Response:
+    async def do_help(self, msg: Message) -> Response:
         # TODO: https://github.com/forestcontact/forest-draft/issues/14
+        if msg.arg1:
+            return await super().do_help(msg)
         return (
             "Welcome to the Forest.contact Pre-Release!\n"
             "To get started, try /register, or /status! "
             "If you've already registered, try to send a message via /send."
-            ""
         )
 
     @takes_number
@@ -230,10 +229,6 @@ class Forest(QuestionBot):
         """register for a phone number"""
         return f"Please send {await self.mobster.usd2mob(self.usd_price)} MOB via Signal Pay"
 
-    async def get_user_balance(self, account: str) -> float:
-        res = await self.mobster.ledger_manager.get_usd_balance(account)
-        return float(round(res[0].get("balance"), 2))
-
     async def do_balance(self, message: Message) -> str:
         """Check your balance"""
         balance = await self.get_user_balance(message.source)
@@ -251,11 +246,12 @@ class Forest(QuestionBot):
 
     async def do_order(self, msg: Message) -> str:
         """Usage: /order <area code>"""
+
         if not (msg.arg1 and len(msg.arg1) == 3 and msg.arg1.isnumeric()):
             return """Usage: /order <area code>"""
         diff = await self.get_user_balance(msg.source) - self.usd_price
         if diff < 0:
-            return "Make a payment with Signal Pay or /register first"
+            return await self.do_register(msg)
         await self.routing_manager.sweep_expired_destinations()
         available_numbers = [
             num
@@ -291,8 +287,6 @@ class Forest(QuestionBot):
     async def do_make_rule(self, msg: Message) -> Response:
         """creates or updates a routing rule.
         usage: /make_rule <number> <signal destination number>"""
-        if msg.source != utils.get_secret("ADMIN"):
-            return "Sorry, this command is only for admins"
         api_num, signal_num = msg.text.split(" ")
         _id = api.teli_format(api_num)
         destination = utils.signal_format(signal_num)

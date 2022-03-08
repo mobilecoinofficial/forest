@@ -53,7 +53,7 @@ class Forest(QuestionBot):
                 message.source,
                 'Welcome to MobileCoin Contact! I\'m a bot that can help you buy phone numbers, and use them to send and recieve text messages. Would you like to "buy" a phone number? or check the "status" of your account?',
             )
-    
+
     async def send_sms(
         self, source: str, destination: str, message_text: str
     ) -> dict[str, str]:
