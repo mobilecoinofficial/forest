@@ -68,7 +68,11 @@ def get_cleartext_value(value_: str) -> str:
     return gzip.decompress(decrypt(base58.b58decode(value_), AESKEY)).decode()
 
 
-class fasterpKVStoreClient:
+class persistentKVStoreClient:
+    pass
+
+
+class fasterpKVStoreClient(persistentKVStoreClient):
     """Strongly consistent, persistent storage.
     Redis with [strong consistency via Upstash](https://docs.upstash.com/redis/features/consistency)
     On top of Redis and Webdis.
@@ -110,7 +114,7 @@ class fasterpKVStoreClient:
         return ""
 
 
-class fastpKVStoreClient:
+class fastpKVStoreClient(persistentKVStoreClient):
     """Strongly consistent, persistent storage.
     Stores a sneak table mapping keys to their existence to update faster.
     On top of Postgresql and Postgrest.
