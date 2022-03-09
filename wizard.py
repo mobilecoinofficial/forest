@@ -1,30 +1,25 @@
 import asyncio
+import os
+import random
+import shutil
+import subprocess
 from contextlib import redirect_stdout
 from email.policy import default
 from fileinput import filename
+from functools import partial
 from random import choice
 from statistics import mode
-from InquirerPy import inquirer, prompt_async, base, validator, prompt
+from threading import Event
+from time import sleep
+from typing import Iterable
+from urllib.request import urlopen
+
+import rich
+from InquirerPy import base, inquirer, prompt, prompt_async, validator
 from InquirerPy.base.control import Choice
 from InquirerPy.separator import Separator
-import rich
-from functools import partial
 from rich.console import Console
 from rich.markdown import Markdown
-from rich.text import Text
-from rich.prompt import Prompt
-from threading import Event
-from typing import Iterable
-
-from time import sleep
-import os
-import subprocess
-import shutil
-from urllib.request import urlopen
-import random
-import shutil
-
-
 from rich.progress import (
     BarColumn,
     DownloadColumn,
@@ -34,6 +29,8 @@ from rich.progress import (
     TimeRemainingColumn,
     TransferSpeedColumn,
 )
+from rich.prompt import Prompt
+from rich.text import Text
 
 progress = Progress(
     TextColumn("[bold blue]{task.fields[filename]}", justify="right"),
@@ -47,13 +44,13 @@ progress = Progress(
     TimeRemainingColumn(),
 )
 
-#to do:
-# organize functions, dear god can i get some classes? 
+# to do:
+# organize functions, dear god can i get some classes?
 # prune dependencies, make things less verbose
-# make stubs do something 
+# make stubs do something
 
 
-#change this to opening from another file
+# change this to opening from another file
 tree = '''
                                                                 @@@@.................................@@@
    ad88                                                         @.......................................
@@ -73,9 +70,7 @@ MM88MMM ,adPPYba,  8b,dPPYba,  ,adPPYba, ,adPPYba, MM88MMM      ...........%%...
                                 @.......................................
 '''
 # prep opening the readme
-rdme = open("README.md", "r")
-readme = rdme.read()
-rdme.close()
+rdme = open("README.md").read()
 
 # make rich happy
 style = "green"
@@ -83,9 +78,9 @@ console = Console()
 tasks = [f"task {n}" for n in range(1, 11)]
 
 # print art
-console.print(tree,style=style)
+console.print(tree, style=style)
 
-# maybe i could reference something more portable to make changing menus around easier 
+# maybe i could reference something more portable to make changing menus around easier
 def main():
     menu = inquirer.select(
         message="Welcome to the forest setup wizard.",
@@ -95,11 +90,15 @@ def main():
             Choice(value=do_docs, name="Read documentation"),
             Choice(value=do_update, name="Update"),
             Choice(value=do_deps, name="Install Dependencies"),
-            Choice(value=do_exit, name="Exit")],default=None).execute()
+            Choice(value=do_exit, name="Exit"),
+        ],
+        default=None,
+    ).execute()
     menu()
 
+
 def settings():
-    secrets = open("dev_secrets", "w+") # this probably shouldn't be here 
+    secrets = open("dev_secrets", "w+")  # this probably shouldn't be here
     current_secrets = secrets.read()
     pref = inquirer.select(
         message="What would you like to do?",
@@ -108,44 +107,63 @@ def settings():
             Choice(value=set_admin, name="Set admin number."),
             Choice(value=do_auxin, name="Switch to auxin"),
             Choice(value=do_rust, name="Set up Rust for Auxin", enabled=True),
-            Choice(value=do_signalcli, name="Switch back to Signal-Cli.")],default=None).execute()
+            Choice(value=do_signalcli, name="Switch back to Signal-Cli."),
+        ],
+        default=None,
+    ).execute()
     pref()
+
 
 def do_docs():
     md = Markdown(readme)
     console.print(md)
     hint = Text()
-    hint.append("\nScroll up to read from the beginning!", style="bold green") # probably a better solution then this?
+    hint.append(
+        "\nScroll up to read from the beginning!", style="bold green"
+    )  # probably a better solution then this?
     console.print(hint)
-
 
 
 def do_auxin():
     auxins = inquirer.select(
         message="Do you have auxin already?",
         choices=[
-            Choice(value=build_auxin, name="No, build Auxin for me using cargo",enabled=True),
-            Choice(value=switch_auxin, name="I have auxin, just change the parameter in 'dev_secrets'")]).execute()
+            Choice(
+                value=build_auxin,
+                name="No, build Auxin for me using cargo",
+                enabled=True,
+            ),
+            Choice(
+                value=switch_auxin,
+                name="I have auxin, just change the parameter in 'dev_secrets'",
+            ),
+        ],
+    ).execute()
 
     auxins()
 
 
 def do_number():
-    NUMBER = Prompt.ask("Please enter your bot's phone number in international format, e.x: +19991238458")
+    NUMBER = Prompt.ask(
+        "Please enter your bot's phone number in international format, e.x: +19991238458"
+    )
     change_secrets(0, NUMBER)
+
 
 def change_secrets(line, NUMBER):
     line = line
-    dev_secrets = 'dev_secrets'
-    with open(dev_secrets, 'r') as file_:
+    dev_secrets = "dev_secrets"
+    with open(dev_secrets, "r") as file_:
         lines = file_.readlines()
     if len(lines) > int(line):
-        lines[line] = f'ADMIN={NUMBER}'
-    with open(dev_secrets, 'w') as file_:
+        lines[line] = f"ADMIN={NUMBER}"
+    with open(dev_secrets, "w") as file_:
         file_.writelines(lines)
+
 
 def set_admin():
     return "admin stuff here"
+
 
 def do_rust():
     with console.status("[bold green]Setting up rust 'sh rust.sh'...") as status:
@@ -154,65 +172,84 @@ def do_rust():
             get_rust()
             os.system("sh rust.sh")
 
+
 def get_rust():
-    return subprocess.run("curl -o rust.sh --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs", shell=True)
+    return subprocess.run(
+        "curl -o rust.sh --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs",
+        shell=True,
+    )
+
 
 def build_auxin():
-    os.system('git clone https://github.com/mobilecoinofficial/auxin.git')
-    os.system('rustup default nightly')
+    os.system("git clone https://github.com/mobilecoinofficial/auxin.git")
+    os.system("rustup default nightly")
+
 
 def switch_auxin():
     return "switching auxin stuff here"
 
+
 def do_update():
     with console.status("[bold green]git pull") as status:
         while tasks:
-            return os.system('git pull')
+            return os.system("git pull")
 
 
 def do_signalcli():
     task1 = progress.add_task("Downloading...")
-    copy_url(task1,url="https://github.com/AsamK/signal-cli/releases/download/v0.10.3/signal-cli-0.10.3-Linux.tar.gz", path='./signal-cli.tar.gz')
+    v = "0.10.3"
+    copy_url(
+        task1,
+        url=f"https://github.com/AsamK/signal-cli/releases/download/v{v}/signal-cli-{v}-Linux.tar.gz",
+        path="./signal-cli.tar.gz",
+    )
     with console.status("[bold green]unzipping..") as status:
-        task2 = progress.add_task("unzip", )
-        do_unzip_signal(archive='signal-cli.tar.gz')
+        task2 = progress.add_task(
+            "unzip",
+        )
+        do_unzip_signal(archive="signal-cli.tar.gz")
 
-#change this to something generic 
+
+# change this to something generic
 def do_unzip_signal(archive):
-    archive = 'signal-cli.tar.gz'
-    os.system('tar -xvf {}'.format(archive))
+    archive = "signal-cli.tar.gz"
+    os.system("tar -xvf {}".format(archive))
 
 
 def do_newbot():
     newbot = inquirer.select(
         message="What template would you like to start with?",
         choices=[
-            Choice(value=do_hellobot, name="HelloBot"),]).execute()
+            Choice(value=do_hellobot, name="HelloBot"),
+        ],
+    ).execute()
     print(newbot())
 
-# make this generic 
+
+# make this generic
 def do_hellobot():
     shutil.copyfile("./sample_bots/hellobot.py", "bot.py")
-    return("Okay, your brand new bot template is in your Forest directory!")
+    return "Okay, your brand new bot template is in your Forest directory!"
 
-# why 
+
+# why
 def do_deps():
-    bashdeps()
-# why part 2
-def bashdeps():
-    os.system('sh setup.sh')
+    os.system("sh setup.sh")
+
 
 def do_exit():
     exit()
 
-# what needs this? 
+
+# what needs this?
 done_event = Event()
+
 
 def handle_sigint(signum, frame):
     done_event.set()
 
 
-# maybe put these in a class 
+# maybe put these in a class
 def copy_url(task_id: 1, url: str, path: str) -> None:
     progress.console.log(f"Requesting {url}")
     response = urlopen(url)
@@ -238,9 +275,5 @@ def download(urls: Iterable[str], dest_dir: str):
                 pool.submit(copy_url, task_id, url, dest_path)
 
 
-
-
 if __name__ == "__main__":
     main()
-
-
