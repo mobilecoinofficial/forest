@@ -143,26 +143,23 @@ def do_auxin():
     auxins()
 
 
+def change_secrets(new_values: dict[str, str], **kwargs: str) -> None:
+    env = os.environ.get("ENV", "dev")
+    secrets = parse_secrets(open(f"{env}_secrets").read())
+    # py3.9 introduced dict unions
+    changed = secrets | new_values | kwargs
+    open(f"{env}_secrets", "w").write("\n".join(f"{k}={v}" for k, v in changed))
+
+
 def do_number():
     NUMBER = Prompt.ask(
         "Please enter your bot's phone number in international format, e.x: +19991238458"
     )
-    change_secrets(0, NUMBER)
+    change_secrets({"BOT_NUMBER": NUMBER})
 
 
-def change_secrets(line, NUMBER):
-    line = line
-    dev_secrets = "dev_secrets"
-    with open(dev_secrets, "r") as file_:
-        lines = file_.readlines()
-    if len(lines) > int(line):
-        lines[line] = f"ADMIN={NUMBER}"
-    with open(dev_secrets, "w") as file_:
-        file_.writelines(lines)
-
-
-def set_admin():
-    return "admin stuff here"
+def set_admin() -> None:
+    change_secrets({"ADMIN": Prompt.ask("What's your number?")})
 
 
 def do_rust():
