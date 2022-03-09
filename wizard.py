@@ -11,7 +11,7 @@ from random import choice
 from statistics import mode
 from threading import Event
 from time import sleep
-from typing import Iterable
+from typing import Iterable, cast
 from urllib.request import urlopen
 
 import rich
@@ -141,6 +141,16 @@ def do_auxin():
     ).execute()
 
     auxins()
+
+
+def parse_secrets(secrets: str) -> dict[str, str]:
+    pairs = [
+        line.strip().split("=", 1)
+        for line in secrets.split("\n")
+        if line and not line.startswith("#")
+    ]
+    can_be_a_dict = cast(list[tuple[str, str]], pairs)
+    return dict(can_be_a_dict)
 
 
 def change_secrets(new_values: dict[str, str], **kwargs: str) -> None:
