@@ -7,10 +7,12 @@ I've tried to use the Dialogflow Console in the way a low-code user would, build
 Right now the DialogBot connects to a DialogFlow agent that follows the same script as [jerkybot](https://github.com/mobilecoinofficial/forest/blob/jerkybot/jerkybot.py). This is a very simple bot as far as DialogFlow goes, but the flexibility it provides for both the user and the developer is far beyond what's currently possible in Forest.
 
 ![example conversation](jerkybot-ex1.png)
-<figcaption>*The bot takes fuzzy inputs and maintains context when it doesn't understand*</figcaption>
+
+*The bot takes fuzzy inputs and maintains context when it doesn't understand*
 
 ![example conversation](jerkybot-ex2.png)
-<figcaption>*Slot filling is more rigid but gets better with synonyms*</figcaption>
+
+*Slot filling is more rigid but gets better with synonyms*
 
 ## Installation
 
