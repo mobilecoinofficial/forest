@@ -99,3 +99,15 @@ async def test_commands() -> None:
     assert (await bot.get_cmd_output("gibberish two")).startswith(
         "That didn't look like a valid command"
     )
+
+
+@pytest.mark.asyncio
+async def test_questions() -> None:
+    """Tests the various questions from questionbot class"""
+    bot = MockBot(BOT_NUMBER)
+
+    # Enable Magic allows for mistyped commands
+    os.environ["ENABLE_MAGIC"] = "1"
+
+    # Tests do_ping with a mistyped command, expecting "/pong foo"
+    assert await bot.get_cmd_output("/pingg foo") == "/pong foo"
