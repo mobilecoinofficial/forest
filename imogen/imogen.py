@@ -434,7 +434,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         )
         await self.queue.execute(
             "INSERT INTO prompt_queue (prompt, author, group_id, signal_ts, url, selector, paid) VALUES ($1, $2, $3, $4, $5, 'ESRGAN', true) ;",
-            slug,
+            f"https://mcltajcadcrkywecsigc.supabase.in/storage/v1/object/public/imoges/{slug}.png",
             msg.source,
             msg.group,
             msg.timestamp,
