@@ -56,7 +56,7 @@ fee_pmob = int(1e12 * 0.0004)
 try:
     import captcha
 except ImportError:
-    captcha = None  # type:ignore
+    captcha = None  # type: ignore
 
 
 def rpc(
