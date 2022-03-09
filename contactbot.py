@@ -31,6 +31,7 @@ def takes_number(command: Callable) -> Callable:
             target_number = pn.format_number(parsed, pn.PhoneNumberFormat.E164)
             return await command(self, msg, target_number)
         except (pn.phonenumberutil.NumberParseException, AssertionError):
+            # could *maybe* ask_intable_question for the number but it's kinda tricky
             return (
                 f"{msg.arg1} doesn't look a valid number or user. "
                 "did you include the country code?"
@@ -49,10 +50,17 @@ class Forest(QuestionBot):
 
     async def default(self, message: Message) -> Response:
         if not message.arg1:
+            # so i'm not sure asking a freeform question like this makes sense
+            # people can just say 'order' or 'status' on its own
             maybe_resp = message.arg1 = await self.ask_freeform_question(
                 message.source,
                 'Welcome to MobileCoin Contact! I\'m a bot that can help you buy phone numbers, and use them to send and recieve text messages. Would you like to "buy" a phone number? or check the "status" of your account?',
             )
+            if maybe_resp == "buy":
+                return await self.do_order(message)
+            elif maybe_resp == "status":
+                return await self.do_status(message)
+        return await super().default(message)
 
     async def send_sms(
         self, source: str, destination: str, message_text: str
@@ -244,8 +252,12 @@ class Forest(QuestionBot):
 
     async def do_order(self, msg: Message) -> Response:
         """Usage: /order <area code>"""
-        if not (msg.arg1 and len(msg.arg1) == 3 and msg.arg1.isnumeric()):
-            return """Usage: /order <area code>"""
+        if not msg.arg1:
+            msg.arg1 = await self.ask_intable_question(
+                msg.source, "Which area code would you like?"
+            )
+        if not (len(msg.arg1) == 3 and msg.arg1.isnumeric()):
+            return "Usage: /order <area code>"
         diff = await self.get_user_balance(msg.source) - self.usd_price
         numbers = await self.get_user_numbers(msg)
         # one free for everyone, always free in UA
@@ -283,6 +295,8 @@ class Forest(QuestionBot):
             )
             return f"You are now the proud owner of {number}"
         return "Database error?"
+
+    do_buy = do_order
 
     @requires_admin
     async def do_make_rule(self, msg: Message) -> Response:
