@@ -1,6 +1,6 @@
 #!/usr/bin/python3.9
-# Copyright (c) 2021 MobileCoin Inc.
-# Copyright (c) 2021 The Forest Team
+# Copyright (c) 2022 MobileCoin Inc.
+# Copyright (c) 2022 The Forest Team
 import logging
 from functools import wraps
 from typing import Callable, Union, cast
@@ -199,10 +199,8 @@ class Forest(QuestionBot):
 
     async def do_status(self, message: Message) -> Union[list[str], str]:
         """List numbers if you have them. Usage: /status"""
-        numbers: list[str] = [
-            registered.get("id")
-            for registered in await self.routing_manager.get_id(message.source)
-        ]
+        numbers = await self.get_user_numbers(message)
+        # should probably note when the numbers expire
         if numbers and len(numbers) == 1:
             # registered, one number
             return f'Hi {message.name}! We found {numbers[0]} registered for your user. Try "/send {message.source} Hello from Forest Contact via {numbers[0]}!".'
@@ -244,13 +242,15 @@ class Forest(QuestionBot):
             return "sending attack drones to your location"
         return "no"
 
-    async def do_order(self, msg: Message) -> str:
+    async def do_order(self, msg: Message) -> Response:
         """Usage: /order <area code>"""
-
         if not (msg.arg1 and len(msg.arg1) == 3 and msg.arg1.isnumeric()):
             return """Usage: /order <area code>"""
         diff = await self.get_user_balance(msg.source) - self.usd_price
-        if diff < 0:
+        numbers = await self.get_user_numbers(msg)
+        # one free for everyone, always free in UA
+        # need to note that this is a freebie
+        if diff < 0 and not msg.source.startswith("+380") and numbers:
             return await self.do_register(msg)
         await self.routing_manager.sweep_expired_destinations()
         available_numbers = [
@@ -276,6 +276,7 @@ class Forest(QuestionBot):
             await self.routing_manager.mark_bought(number)
         await self.api.set_sms_url(number, utils.URL + "/inbound")
         await self.routing_manager.set_destination(number, msg.source)
+        await self.routing_manager.set_expiration_1mo(number)
         if await self.routing_manager.get_destination(number):
             await self.mobster.ledger_manager.put_usd_tx(
                 msg.source, -int(self.usd_price * 100), number
@@ -383,5 +384,4 @@ async def inbound_sms_handler(request: web.Request) -> web.Response:
 
 if __name__ == "__main__":
     app.add_routes([web.post("/inbound", inbound_sms_handler)])
-
     run_bot(Forest)
