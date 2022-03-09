@@ -11,7 +11,6 @@ from forest_tables import GroupRoutingManager, PaymentsManager, RoutingManager
 from forest import utils
 from forest.core import (
     Message,
-    PayBot,
     Response,
     app,
     requires_admin,
@@ -22,7 +21,7 @@ from forest.core import (
 
 def takes_number(command: Callable) -> Callable:
     @wraps(command)  # keeps original name and docstring for /help
-    async def wrapped_command(self: "PayBot", msg: Message) -> str:
+    async def wrapped_command(self: "QuestionBot", msg: Message) -> str:
         try:
             # todo: parse (123) 456-6789 if it's multiple tokens
             assert msg.arg1
@@ -58,7 +57,7 @@ class Forest(QuestionBot):
             )
             if maybe_resp == "buy":
                 return await self.do_order(message)
-            elif maybe_resp == "status":
+            if maybe_resp == "status":
                 return await self.do_status(message)
         return await super().default(message)
 
@@ -253,10 +252,11 @@ class Forest(QuestionBot):
     async def do_order(self, msg: Message) -> Response:
         """Usage: /order <area code>"""
         if not msg.arg1:
-            msg.arg1 = await self.ask_intable_question(
+            code = await self.ask_intable_question(
                 msg.source, "Which area code would you like?"
             )
-        if not (len(msg.arg1) == 3 and msg.arg1.isnumeric()):
+            msg.arg1 = str(code)
+        if not (msg.arg1 and len(msg.arg1) == 3 and msg.arg1.isnumeric()):
             return "Usage: /order <area code>"
         diff = await self.get_user_balance(msg.source) - self.usd_price
         numbers = await self.get_user_numbers(msg)
