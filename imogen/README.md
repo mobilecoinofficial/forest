@@ -4,7 +4,6 @@ Imogen is a Signal Bot that generates images using VQGan and CLIP. These images 
 
 
 ### Imogen on Signal
-
 [I, Imogen](https://signal.group/#CjQKIEP344g-nF0eIcaZkORbofLzTSlD5DKOUeGEFbus-w9uEhBzb6Q51MWZw6nSDkGLhwKN), Signal Group Chat where you can request Imoges. Since this is a public group we ask that you observe certain guidelines:
 - Treat all users in the group respectfully, this includes Imogen herself.
 - Be mindful of what prompts you request in public.
@@ -25,7 +24,7 @@ In a Group or a direct message send a message of the form:
 
 Where [prompt] is a description of the image you want to generate. Imogen will generate an imoge for you based on the prompt:
 
-<img width=250px src="examples/imagine.png">
+<img width=250px src="https://raw.githubusercontent.com/mobilecoinofficial/forest/main/imogen/examples/imagine.png">
 
 `/imagine` uses the [ImageNet dataset](https://www.image-net.org/) as the training data for its images. This is a general dataset trained on many images on the Internet. Using the `/paint` command instead will generate an image using the [WikiArt dataset](https://github.com/cs-chan/ArtGAN/blob/master/WikiArt%20Dataset/README.md), which produces more painting-like images:
 
@@ -34,7 +33,7 @@ Where [prompt] is a description of the image you want to generate. Imogen will g
 `
 
 
-<img width=250px src="examples/paint.png">
+<img width=250px src="https://raw.githubusercontent.com/mobilecoinofficial/forest/main/imogen/examples/paint.png">
 
  
 
@@ -49,11 +48,11 @@ There are some special commands to specify style for the image.
 
 These are equivalent to appending the style after the imagine prompt. `/dark_fantasy Kirby` -> `/imagine dark fantasy Kirby`
 
-<img width=250px src="examples/darkfantasy.png">
+<img width=250px src="https://raw.githubusercontent.com/mobilecoinofficial/forest/main/imogen/examples/darkfantasy.png">
 
 Imogen can draw in many more styles than those, try asking for a style you like, or ask her to channel a particular artist's style.
 
-<img width=250px src="examples/paint2.png">
+<img width=250px src="https://raw.githubusercontent.com/mobilecoinofficial/forest/main/imogen/examples/paint2.png">
 
 
 ## Priority Queue ##
@@ -63,23 +62,23 @@ Imogen features a priority queue that will guarantee your image is generated soo
 You can message Imogen by visiting  [this link](https://signal.me/#p/+14159495511 ) which will open on Signal Messenger.  
 
 
-<img width=250px src="examples/payment.jpg">  <img width=250px src="examples/payment3.jpg"> 
+<img width=250px src="https://raw.githubusercontent.com/mobilecoinofficial/forest/main/imogen/examples/payment.jpg">  <img width=250px src="https://raw.githubusercontent.com/mobilecoinofficial/forest/main/imogen/examples/payment3.jpg"> 
 
 You will receive a direct message informing you of the receipt of your payment and your new balance.
 
-<img width=250px src="examples/payment-received.jpg">
+<img width=250px src="https://raw.githubusercontent.com/mobilecoinofficial/forest/main/imogen/examples/payment-received.jpg">
 
 You can check your current balance with `/balance`.
 
-<img width=250px src="examples/balance.jpg">
+<img width=250px src="https://raw.githubusercontent.com/mobilecoinofficial/forest/main/imogen/examples/balance.jpg">
 
 When you have Imogen balance your requests are automatically added to the priority queue. The current cost per image is USD $0.10. 
 
-<img width=250px src="examples/priority2.png">
+<img width=250px src="https://raw.githubusercontent.com/mobilecoinofficial/forest/main/imogen/examples/priority2.png">
 
 Imogen will inform you via direct message when your balance reaches 0. At that point you may continue using the free Imogen queue, or send another payment to top up your balance.
 
-<img width=250px src="examples/balance2.png">
+<img width=250px src="https://raw.githubusercontent.com/mobilecoinofficial/forest/main/imogen/examples/balance2.png">
 
 
 
@@ -98,16 +97,16 @@ Imogen wishes to remain free for anyone to collaborate with her. By making use o
 
 You can donate tips to Imogen to show your support. If you have Imogen balance, you can tip some of that balance by using `/tip [amount]`, amounts are currently in USD.
 
-<img width=250px src="examples/tip1.jpg">
+<img width=250px src="https://raw.githubusercontent.com/mobilecoinofficial/forest/main/imogen/examples/tip1.jpg">
 
 Using `/tip all` will donate your whole balance as a tip.
 
 
-<img width=250px src="examples/tipall.jpg">
+<img width=250px src="https://raw.githubusercontent.com/mobilecoinofficial/forest/main/imogen/examples/tipall.jpg">
 
 Finally, you can send a payment as a tip directly by writing "Tip" in the notes field for the payment. Your payment will automatically be added as a tip to Imogen.
 
-<img width=250px src="examples/tip2.jpg">
+<img width=250px src="https://raw.githubusercontent.com/mobilecoinofficial/forest/main/imogen/examples/tip2.jpg">
 
 <br>
 
@@ -150,14 +149,14 @@ Displays Imogen's status
 
 Imogen can generate your image based on a starting image. Attach an image and use one of the generative commands (`/imagine`, `/paint`) and Imogen will generate an image based on your prompt and the starting image.
 
-<img width=250px src="examples/starting1.png">  <img width=250px src="examples/starting2.png">
+<img width=250px src="https://raw.githubusercontent.com/mobilecoinofficial/forest/main/imogen/examples/starting1.png">  <img width=250px src="https://raw.githubusercontent.com/mobilecoinofficial/forest/main/imogen/examples/starting2.png">
 
 ### Videos: ###
 You can give imogen multiple prompts separated by "//" and Imogen will generate a video that transitions between the prompts. Will take longer than a regular `/imagine`.
 Example:  
 `/imagine Jane // Cake `
 
-<img width=250px src="examples/video.png">  <img width=250px src="examples/video2.gif">
+<img width=250px src="https://raw.githubusercontent.com/mobilecoinofficial/forest/main/imogen/examples/video.png">  <img width=250px src="https://raw.githubusercontent.com/mobilecoinofficial/forest/main/imogen/examples/video2.gif">
 
 ### Transform: ###
 You can combine the starting image and the video functionality to make images that dissolve into imoges. 
@@ -166,7 +165,7 @@ Attach an image and use one of the generative commands, start your prompt with `
 `/imagine // cake`
 
 
-<img width=250px src="examples/video3.png">  <img width=250px src="examples/video4.gif">
+<img width=250px src="https://raw.githubusercontent.com/mobilecoinofficial/forest/main/imogen/examples/video3.png">  <img width=250px src="https://raw.githubusercontent.com/mobilecoinofficial/forest/main/imogen/examples/video4.gif">
 
 # Under the Hood #
 
