@@ -8,6 +8,7 @@ import ast
 import asyncio
 import asyncio.subprocess as subprocess  # https://github.com/PyCQA/pylint/issues/1469
 import base64
+import codecs
 import datetime
 import json
 import logging
@@ -19,6 +20,7 @@ import traceback
 import urllib
 import uuid
 import glob
+import secrets
 import functools
 
 from asyncio import Queue, StreamReader, StreamWriter
@@ -26,7 +28,7 @@ from asyncio.subprocess import PIPE
 from decimal import Decimal
 from functools import wraps
 from textwrap import dedent
-from typing import Any, Callable, Optional, Type, Union, Awaitable
+from typing import Any, Callable, Optional, Type, Union, Awaitable, Tuple
 
 import aiohttp
 import termcolor
@@ -51,6 +53,10 @@ roundtrip_summary = Summary("roundtrip_s", "Roundtrip message response time")
 MessageParser = AuxinMessage if utils.AUXIN else StdioMessage
 logging.info("Using message parser: %s", MessageParser)
 fee_pmob = int(1e12 * 0.0004)
+try:
+    import captcha
+except ImportError:
+    captcha = None  # type:ignore
 
 
 def rpc(
@@ -106,15 +112,7 @@ class Signal:
         restart_count = 0
         max_backoff = 15
         while self.sigints == 0 and not self.exiting:
-            path = (
-                utils.get_secret("SIGNAL_CLI_PATH")
-                or f"{utils.ROOT_DIR}/{'auxin' if utils.AUXIN else 'signal'}-cli"
-            )
-            # this?? can blocks forever if the file doesn't exist??
-            if not os.path.exists(path):
-                raise FileNotFoundError(
-                    f"{path} doesn't exist! Try symlinking {utils.SIGNAL} to the working directory"
-                )
+            path = utils.SIGNAL_PATH
             if utils.AUXIN:
                 path += " --download-path /tmp"
             else:
@@ -513,12 +511,16 @@ class Signal:
 
 
 def is_admin(msg: Message) -> bool:
+    ADMIN = utils.get_secret("ADMIN") or ""
+    ADMIN_GROUP = utils.get_secret("ADMIN_GROUP") or ""
+    ADMINS = utils.get_secret("ADMINS") or ""
     return (
-        msg.source == utils.get_secret("ADMIN")
-        or msg.uuid == utils.get_secret("ADMIN")
-        or msg.group == utils.get_secret("ADMIN_GROUP")
-        or msg.source in utils.get_secret("ADMINS").split(",")
-        or msg.uuid in utils.get_secret("ADMINS")
+        (ADMIN and msg.source in ADMIN)
+        or (ADMIN and msg.uuid in ADMIN)
+        or (ADMIN_GROUP and msg.group and msg.group in ADMIN_GROUP)
+        or (ADMINS and msg.source in ADMINS)
+        or (ADMINS and msg.uuid in ADMINS)
+        or False
     )
 
 
@@ -663,6 +665,7 @@ class Bot(Signal):
             return msg.arg0
         # always match in dms, only match /commands or @bot in groups
         if utils.get_secret("ENABLE_MAGIC") and (not msg.group or self.is_command(msg)):
+            logging.info("running enable magic")
             # don't leak admin commands
             valid_commands = self.commands if is_admin(msg) else self.visible_commands
             # closest match
@@ -764,22 +767,41 @@ class Bot(Signal):
             return str(await async_exec(source_blob, env))
         return None
 
+    def get_recipients(self) -> list[dict[str, str]]:
+        """Returns a list of all known recipients by parsing underlying datastore."""
+        return json.loads(
+            open(f"data/{self.bot_number}.d/recipients-store").read()
+        ).get("recipients", [])
+
+    def get_uuid_by_phone(self, phonenumber: str) -> Optional[str]:
+        """Queries the recipients-store file for a UUID, provided a phone number."""
+        if phonenumber.startswith("+"):
+            maybe_recipient = [
+                recipient
+                for recipient in self.get_recipients()
+                if phonenumber == recipient.get("number")
+            ]
+            if maybe_recipient:
+                return maybe_recipient[0]["uuid"]
+        return None
+
+    def get_number_by_uuid(self, uuid_: str) -> Optional[str]:
+        """Queries the recipients-store file for a phone number, provided a uuid."""
+        if uuid_.count("-") == 4:
+            maybe_recipient = [
+                recipient
+                for recipient in self.get_recipients()
+                if uuid_ == recipient.get("uuid")
+            ]
+            if maybe_recipient:
+                return maybe_recipient[0]["number"]
+        return None
+
     async def do_ping(self, message: Message) -> str:
         """replies to /ping with /pong"""
         if message.text:
             return f"/pong {message.text}"
         return "/pong"
-
-    @hide
-    async def do_uptime(self, _: Message) -> str:
-        """Returns a message containing the bot uptime."""
-        tot_mins, sec = divmod(int(time.time() - self.start_time), 60)
-        hr, mins = divmod(tot_mins, 60)
-        t = "Uptime: "
-        t += f"{hr}h" if hr else ""
-        t += f"{mins}m" if mins else ""
-        t += f"{sec}s"
-        return t
 
     @hide
     async def do_pong(self, message: Message) -> str:
@@ -792,8 +814,41 @@ class Bot(Signal):
             return f"OK, stashing {message.text}"
         return "OK"
 
+    async def do_signalme(self, _: Message) -> Response:
+        """signalme
+        Returns a link to share the bot with friends!"""
+        return f"https://signal.me/#p/{self.bot_number}"
+
+    @hide
+    async def do_rot13(self, msg: Message) -> Response:
+        """rot13 encodes the message.
+        > rot13 hello world
+        uryyb jbeyq"""
+        return codecs.encode(msg.text, "rot13")
+
+    @hide
+    async def do_uptime(self, _: Message) -> str:
+        """Returns a message containing the bot uptime."""
+        tot_mins, sec = divmod(int(time.time() - self.start_time), 60)
+        hr, mins = divmod(tot_mins, 60)
+        t = "Uptime: "
+        t += f"{hr}h" if hr else ""
+        t += f"{mins}m" if mins else ""
+        t += f"{sec}s"
+        return t
+
 
 class PayBot(Bot):
+    PAYMENTS_HELPTEXT = """Enable Signal Pay:
+
+    1. In Signal, tap “🠔“ & tap on your profile icon in the top left & tap *Settings*
+
+    2. Tap *Payments* & tap *Activate Payments*
+
+    For more information on Signal Payments visit:
+
+    https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
+
     @requires_admin
     async def do_fsr(self, msg: Message) -> Response:
         """
@@ -854,10 +909,13 @@ class PayBot(Bot):
         await self.respond(message, await self.payment_response(message, amount_pmob))
 
     async def payment_response(self, msg: Message, amount_pmob: int) -> Response:
-        del msg, amount_pmob  # shush linters
-        return "This bot doesn't have a response for payments."
+        """Triggers on successful payment"""
+        del msg  # shush linter
+        amount_mob = float(mc_util.pmob2mob(amount_pmob))
+        amount_usd = round(await self.mobster.pmob2usd(amount_pmob), 2)
+        return f"Thank you for sending {float(amount_mob)} MOB ({amount_usd} USD)"
 
-    async def get_address(self, recipient: str) -> Optional[str]:
+    async def get_signalpay_address(self, recipient: str) -> Optional[str]:
         "get a receipient's mobilecoin address"
         result = await self.signal_rpc_request("getPayAddress", peer_name=recipient)
         b64_address = (
@@ -873,7 +931,7 @@ class PayBot(Bot):
         """
         /address
         Returns your MobileCoin address (in standard b58 format.)"""
-        address = await self.get_address(msg.source)
+        address = await self.get_signalpay_address(msg.source)
         return address or "Sorry, couldn't get your MobileCoin address"
 
     @requires_admin
@@ -905,7 +963,7 @@ class PayBot(Bot):
         """Pass a request through to full-service, but send a message to an admin in case of error"""
         result = await self.mobster.req_(method, **params)
         if "error" in result:
-            await self.admin(f"{params}\n{result}")
+            await self.admin(f"{result}\nReturned by:\n\n{str(params)[:1024]}...")
         return result
 
     async def fs_receipt_to_payment_message_content(
@@ -969,7 +1027,7 @@ class PayBot(Bot):
         params are pasted to the full-service build_transaction call.
         some useful params are comment and input_txo_ids
         """
-        address = await self.get_address(recipient)
+        address = await self.get_signalpay_address(recipient)
         account_id = await self.mobster.get_account()
         if not address:
             await self.send_message(
@@ -992,19 +1050,27 @@ class PayBot(Bot):
         # wants it private.
         if confirm_tx_timeout:
             # putting the account_id into the request logs it to full service,
-            tx_result = await self.mob_request(
+            tx_result: Optional[dict] = await self.mob_request(
                 "submit_transaction",
                 tx_proposal=prop,
                 comment=params.get("comment", ""),
                 account_id=account_id,
             )
-        elif not prop or not tx_id:
-            tx_result = {}
-        else:
+        elif prop and tx_id:
             # if you omit account_id, tx doesn't get logged. Good for privacy,
             # but transactions can't be confirmed by the sending party (you)!
             tx_result = await self.mob_request("submit_transaction", tx_proposal=prop)
-
+        else:
+            tx_result = {"error": {"message": "InternalError"}}
+        # {'method': 'submit_transaction', 'error': {'code': -32603, 'message': 'InternalError', 'data': {'server_error': 'Database(Diesel(DatabaseError(__Unknown, "database is locked")))', 'details': 'Error interacting with the database: Diesel Error: database is locked'}}, 'jsonrpc': '2.0', 'id': 1}
+        if not tx_result or (
+            tx_result.get("error")
+            and "InternalError" in tx_result.get("error", {}).get("message", "")
+        ):
+            return None
+            # logging.info("InternalError occurred, retrying in 60s")
+            # await asyncio.sleep(1)
+            # tx_result = await self.mob_request("submit_transaction", tx_proposal=prop)
         if not isinstance(tx_result, dict) or not tx_result.get("result"):
             # avoid sending tx receipt if there's a tx submission error
             # and send error message back to tx sender
@@ -1024,7 +1090,7 @@ class PayBot(Bot):
         # pass our beautifully composed spicy JSON content to auxin.
         # message body is ignored in this case.
         payment_notif = await self.send_message(recipient, "", content=content)
-        resp_fut = asyncio.create_task(self.wait_for_response(rpc_id=payment_notif))
+        resp_future = asyncio.create_task(self.wait_for_response(rpc_id=payment_notif))
 
         if confirm_tx_timeout:
             logging.debug("Attempting to confirm tx status for %s", recipient)
@@ -1042,8 +1108,6 @@ class PayBot(Bot):
                         recipient,
                         tx_status.get("result"),
                     )
-                    if receipt_message:
-                        await self.send_message(recipient, receipt_message)
                     break
                 if status == "tx_status_failed":
                     logging.warning(
@@ -1060,28 +1124,55 @@ class PayBot(Bot):
                     recipient,
                     tx_status.get("result"),
                 )
-            resp = await resp_fut
+            resp = await resp_future
             # the calling function can use these to check the payment status
             resp.status, resp.transaction_log_id = status, tx_id  # type: ignore
             return resp
+        return await resp_future
 
-        return await resp_fut
+
+def get_source_or_uuid_from_dict(
+    msg: Message, dict_: dict[str, Any]
+) -> Tuple[bool, Any]:
+    """A common pattern is to store intermediate state for individual users as a dictionary.
+    Users can be referred to by some combination of source (a phone number) or uuid (underlying user ID)
+    This abstracts over the possibility space, returning a boolean indicator of whether the sender of a Message
+    is referenced in a dict, and the value pointed at (if any)."""
+    return (
+        (msg.source in dict_ or msg.uuid in dict_),
+        dict_.get(msg.uuid) or dict_.get(msg.source),
+    )
+
+
+def is_first_device(msg: Message) -> bool:
+    if not msg or not msg.blob:
+        return False
+    return msg.blob.get("remote_address", {}).get("device_id", 0) == 1
 
 
 class QuestionBot(PayBot):
     def __init__(self, bot_number: Optional[str] = None) -> None:
         self.pending_confirmations: dict[str, asyncio.Future[bool]] = {}
         self.pending_answers: dict[str, asyncio.Future[Message]] = {}
+        self.requires_first_device: dict[str, bool] = {}
+        self.failed_user_challenges: dict[str, int] = {}
+        self.TERMINAL_ANSWERS = "stop quit exit break cancel abort".split()
+        self.FIRST_DEVICE_PLEASE = "Please answer from your phone or primary device!"
+        self.UNEXPECTED_ANSWER = "Did I ask you a question?"
         super().__init__(bot_number)
 
     async def handle_message(self, message: Message) -> Response:
-        if message.full_text and (
-            message.uuid in self.pending_answers
-            or message.source in self.pending_answers
-        ):
-            probably_future = self.pending_answers.get(
-                message.uuid
-            ) or self.pending_answers.get(message.source)
+        pending_answer, probably_future = get_source_or_uuid_from_dict(
+            message, self.pending_answers
+        )
+        _, requires_first_device = get_source_or_uuid_from_dict(
+            message, self.requires_first_device
+        )
+        if message.full_text and pending_answer:
+            if requires_first_device and not is_first_device(message):
+                return self.FIRST_DEVICE_PLEASE
+            self.requires_first_device.pop(message.source, None)
+            self.requires_first_device.pop(message.uuid, None)
             if probably_future:
                 probably_future.set_result(message)
             return
@@ -1090,14 +1181,14 @@ class QuestionBot(PayBot):
     @hide
     async def do_yes(self, msg: Message) -> Response:
         """Handles 'yes' in response to a pending_confirmation."""
-        if (
-            msg.uuid not in self.pending_confirmations
-            and msg.source not in self.pending_confirmations
-        ):
-            return "Did I ask you a question?"
-        question = self.pending_confirmations.get(
-            msg.uuid
-        ) or self.pending_confirmations.get(msg.source)
+        _, question = get_source_or_uuid_from_dict(msg, self.pending_confirmations)
+        _, requires_first_device = get_source_or_uuid_from_dict(
+            msg, self.requires_first_device
+        )
+        if not question:
+            return self.UNEXPECTED_ANSWER
+        if requires_first_device and not is_first_device(msg):
+            return self.FIRST_DEVICE_PLEASE
         if question:
             question.set_result(True)
         return None
@@ -1105,35 +1196,133 @@ class QuestionBot(PayBot):
     @hide
     async def do_no(self, msg: Message) -> Response:
         """Handles 'no' in response to a pending_confirmation."""
-        if (
-            msg.uuid not in self.pending_confirmations
-            and msg.source not in self.pending_confirmations
-        ):
-            return "Did I ask you a question?"
-        question = self.pending_confirmations.get(
-            msg.uuid
-        ) or self.pending_confirmations.get(msg.source)
+        _, question = get_source_or_uuid_from_dict(msg, self.pending_confirmations)
+        _, requires_first_device = get_source_or_uuid_from_dict(
+            msg, self.requires_first_device
+        )
+        if not question:
+            return self.UNEXPECTED_ANSWER
+        if requires_first_device and not is_first_device(msg):
+            return self.FIRST_DEVICE_PLEASE
         if question:
             question.set_result(False)
         return None
 
     async def ask_freeform_question(
-        self, recipient: str, question_text: str = "What's your favourite colour?"
+        self,
+        recipient: str,
+        question_text: str = "What's your favourite colour?",
+        require_first_device: bool = False,
     ) -> str:
+        """Asks a question fulfilled by a sentence or short answer."""
         await self.send_message(recipient, question_text)
         answer_future = self.pending_answers[recipient] = asyncio.Future()
+        if require_first_device:
+            self.requires_first_device[recipient] = True
         answer = await answer_future
         self.pending_answers.pop(recipient)
         return answer.full_text or ""
 
+    async def ask_floatable_question(
+        self,
+        recipient: str,
+        question_text: Optional[str] = "What's the price of gasoline where you live?",
+        require_first_device: bool = False,
+    ) -> Optional[float]:
+        """Asks a question answered with a floating point or decimal number.
+        Asks user clarifying questions if an invalid number is provided.
+        Returns None if user says any of the terminal answers."""
+        if question_text:
+            await self.send_message(recipient, question_text)
+        answer_future = self.pending_answers[recipient] = asyncio.Future()
+        if require_first_device:
+            self.requires_first_device[recipient] = True
+        answer = await answer_future
+        self.pending_answers.pop(recipient)
+        answer_text = answer.full_text
+        if answer_text and not (
+            answer_text.replace(".", "1", 1).isnumeric()
+            or answer_text.replace(",", "1", 1).isnumeric()
+        ):
+            if answer.full_text.lower() in self.TERMINAL_ANSWERS:
+                return None
+            if question_text and "as a decimal" in question_text:
+                return await self.ask_floatable_question(recipient, question_text)
+            return await self.ask_floatable_question(
+                recipient, (question_text or "") + " (as a decimal, ie 1.01 or 2,02)"
+            )
+        if answer_text:
+            return float(answer.full_text.replace(",", ".", 1))
+        return None
+
+    async def ask_intable_question(
+        self,
+        recipient: str,
+        question_text: Optional[str] = "How many years old do you wish you were?",
+        require_first_device: bool = False,
+    ) -> Optional[int]:
+        """Asks a question answered with an integer or whole number.
+        Asks user clarifying questions if an invalid number is provided.
+        Returns None if user says any of the terminal answers."""
+        if require_first_device:
+            self.requires_first_device[recipient] = True
+        if question_text:
+            await self.send_message(recipient, question_text)
+        answer_future = self.pending_answers[recipient] = asyncio.Future()
+        answer = await answer_future
+        self.pending_answers.pop(recipient)
+        if answer.full_text and not answer.full_text.isnumeric():
+            if answer.full_text.lower() in self.TERMINAL_ANSWERS:
+                return None
+            if question_text and "as a whole number" in question_text:
+                return await self.ask_intable_question(recipient, question_text)
+            return await self.ask_intable_question(
+                recipient,
+                (question_text or "") + " (as a whole number, ie '1' or '2000')",
+            )
+        if answer.full_text:
+            return int(answer.full_text)
+        return None
+
     async def ask_yesno_question(
-        self, recipient: str, question_text: str = "Are you sure? yes/no"
+        self,
+        recipient: str,
+        question_text: str = "Are you sure? yes/no",
+        require_first_device: bool = False,
     ) -> bool:
         self.pending_confirmations[recipient] = asyncio.Future()
+        if require_first_device:
+            self.requires_first_device[recipient] = True
         await self.send_message(recipient, question_text)
         result = await self.pending_confirmations[recipient]
         self.pending_confirmations.pop(recipient)
         return result
+
+    async def do_challenge(self, msg: Message) -> Response:
+        """Challenges a user to do a simple math problem, optionally provided as an image to increase attacker complexity."""
+        # the captcha module delivers graphical challenges of the same format
+        if captcha is not None:
+            challenge, answer = captcha.get_challenge_and_answer()
+            await self.send_message(
+                msg.uuid,
+                "Please answer this arithmetic problem to prove you're (probably) not a bot!",
+                attachments=[challenge],
+            )
+        else:
+            offset = secrets.randbelow(20)
+            challenge = f"What's the sum of one and {offset}?"
+            answer = offset + 1
+            await self.send_message(msg.uuid, challenge)
+        # we already asked the question, either with an attachment, or using the reduced-scope challenge
+        # so question here is None (waits for answer)
+        maybe_answer = await self.ask_intable_question(msg.uuid, None)
+        if maybe_answer != answer:
+            # handles empty case, but has no logic as to what to do if the user exceeds a threshold
+            self.failed_user_challenges[msg.uuid] = (
+                self.failed_user_challenges.get(msg.uuid, 0) + 1
+            )
+            return await self.do_challenge(msg)
+        return "Thanks for helping protect our community!"
 
 
 async def no_get(request: web.Request) -> web.Response:
