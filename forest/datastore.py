@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import shutil
+import socket
 import sys
 import time
 from io import BytesIO
@@ -162,7 +163,8 @@ class SignalDatastore:
         )
         tarball.extractall(utils.ROOT_DIR)
         # open("last_downloaded_checksum", "w").write(zlib.crc32(buffer.seek(0).read()))
-        await self.account_interface.mark_account_claimed(self.number, utils.HOSTNAME)
+        hostname = socket.gethostname()
+        await self.account_interface.mark_account_claimed(self.number, hostname)
         logging.debug("marked account as claimed, asserting that this is the case")
         assert await self.is_claimed()
         return
@@ -219,7 +221,7 @@ class SignalDatastore:
 
 def setup_tmpdir() -> None:
     if not utils.LOCAL:
-        logging.warning("not setting up tmpdir, running on fly")
+        logging.warning("not setting up tmpdir, FLY_APP_NAME is set")
         return
     if utils.ROOT_DIR == ".":
         logging.warning("not setting up tmpdir, using current directory")
@@ -231,14 +233,6 @@ def setup_tmpdir() -> None:
             logging.warning("couldn't remove rootdir: %s", e)
     if not utils.MEMFS:
         (Path(utils.ROOT_DIR) / "data").mkdir(exist_ok=True, parents=True)
-    # assume we're running in the repo
-    sigcli = utils.get_secret("SIGNAL_CLI_PATH") or "auxin-cli"
-    sigcli_path = Path(sigcli).absolute()
-    try:
-        logging.info("symlinking %s to %s", sigcli_path, utils.ROOT_DIR)
-        os.symlink(sigcli_path, utils.ROOT_DIR + "/auxin-cli")
-    except FileExistsError:
-        logging.info("auxin-cli's already there")
     try:
         os.symlink(Path("avatar.png").absolute(), utils.ROOT_DIR + "/avatar.png")
     except FileExistsError:
@@ -262,11 +256,9 @@ async def getFreeSignalDatastore() -> SignalDatastore:
     return SignalDatastore(number)
 
 
-# this stuff needs to be cleaned up
 # maybe a config about where we're running:
-# MEMFS, DOWNLOAD, ROOT_DIR, HOSTNAME, etc
+# MEMFS, DOWNLOAD, ROOT_DIR, etc
 # is HCL overkill?
-
 
 parser = argparse.ArgumentParser(
     description="manage the signal datastore. use ENV=... to use something other than dev"
@@ -344,12 +336,39 @@ async def free(ns: argparse.Namespace) -> None:
     await get_account_interface().mark_account_freed(ns.number)
 
 
+async def _set_note(number: str, note: str) -> None:
+    await get_account_interface().execute(
+        "update signal_accounts set notes=$1 where id=$2",
+        note,
+        number,
+    )
+
+
 @subcommand([argument("--number"), argument("note", help="new note for number")])
 async def set_note(ns: argparse.Namespace) -> None:
     "set the note field for a number"
-    await get_account_interface().execute(
-        f"update signal_accounts set notes='{ns.note}' where id='{ns.number}'"
-    )
+    await _set_note(ns.number, ns.note)
+
+
+@subcommand(
+    [argument("--path"), argument("--number"), argument("note", help="note for number")]
+)
+async def upload(ns: argparse.Namespace) -> None:
+    """
+    upload a datastore
+    --path to a directory that contains data/
+    --number for the account number
+    note: note indicating if this number is free or used for a specific bot
+    """
+    if ns.path:
+        os.chdir(ns.path)
+    if ns.number:
+        num = ns.number
+    else:
+        num = sorted(os.listdir("data"))[0]
+    store = SignalDatastore(num)
+    await store.upload()
+    await _set_note(num, ns.note)
 
 
 @subcommand([argument("--number")])
@@ -382,14 +401,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if hasattr(args, "func"):
         asyncio.run(args.func(args))
-    elif args.subparser == "upload":
-        if args.path:
-            os.chdir(args.path)
-        if args.number:
-            num = args.number
-        else:
-            num = sorted(os.listdir("data"))[0]
-        store = SignalDatastore(num)
-        asyncio.run(store.upload())
     else:
         print("not implemented")
