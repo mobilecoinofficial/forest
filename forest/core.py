@@ -208,9 +208,7 @@ class Signal:
         args:
             task (asyncio.task): Finished task
         """
-        name = task.get_name()
-        if _func:
-            name = _func.__name__
+        name = task.get_name() + "-" + getattr(task.get_coro(), "__name__", "")
         try:
             result = task.result()
             logging.info("final result of %s was %s", name, result)
@@ -219,16 +217,17 @@ class Signal:
         except Exception:  # pylint: disable=broad-except
             logging.exception("%s errored", name)
 
-    def restart_task(
+    def restart_task_callback(
         self,
         _func: AsyncFunc,
-    ) -> None:
-        def handler(*args: Any) -> None:
+    ) -> Callable:
+        def handler(task: asyncio.Task) -> None:
+            name = task.get_name() + "-" + getattr(task.get_coro(), "__name__", "")
             if self.sigints > 1:
                 return
             if asyncio.iscoroutinefunction(_func):
                 task = asyncio.create_task(_func())
-                task.add_done_callback(self.restart_task(_func))
+                task.add_done_callback(self.restart_task_callback(_func))
                 logging.info("%s restarting", name)
 
         return handler
@@ -570,7 +569,7 @@ class Bot(Signal):
         self.handle_messages_task = asyncio.create_task(self.handle_messages())
         self.handle_messages_task.add_done_callback(self.log_task_result)
         self.handle_messages_task.add_done_callback(
-            self.restart_task(self.handle_messages)
+            self.restart_task_callback(self.handle_messages)
         )
 
     async def handle_messages(self) -> None:
@@ -1380,6 +1379,7 @@ async def restart(request: web.Request) -> web.Response:
     bot = request.app["bot"]
     bot.restart_task = asyncio.create_task(bot.start_process())
     bot.restart_task.add_done_callback(functools.partial(bot.handle_task))
+    return web.Response(status=200)
 
 
 app = web.Application()
