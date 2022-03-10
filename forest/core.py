@@ -1386,6 +1386,12 @@ async def metrics(request: web.Request) -> web.Response:
     )
 
 
+async def restart(request: web.Request) -> web.Response:
+    bot = request.app["bot"]
+    bot.restart_task = asyncio.create_task(bot.start_process())
+    bot.restart_task.add_done_callback(functools.partial(bot.handle_task))
+
+
 app = web.Application()
 
 
@@ -1402,6 +1408,7 @@ app.add_routes(
         web.get("/pongs/{pong}", pong_handler),
         web.post("/user/{phonenumber}", send_message_handler),
         web.post("/admin", admin_handler),
+        web.post("/restart", restart),
         web.get("/metrics", aio.web.server_stats),
         web.get("/csv_metrics", metrics),
     ]
