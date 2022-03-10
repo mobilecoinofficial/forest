@@ -17,6 +17,7 @@ import signal
 import sys
 import time
 import traceback
+from unittest import result
 import urllib
 import uuid
 import glob
@@ -1297,6 +1298,67 @@ class QuestionBot(PayBot):
         result = await self.pending_confirmations[recipient]
         self.pending_confirmations.pop(recipient)
         return result
+
+    async def ask_multiple_choice_question(
+        self,
+        recipient,
+        question_text: Optional[str],
+        options: Union[dict[str, str], list[str]],
+        requires_confirmation: bool,
+        requires_first_device: bool,
+    ) -> Optional[Tuple[str, str]]:
+
+        """Prompts the user to select from a series of options"""
+
+        if question_text is None:
+            question_text = "Pick one from these options:"
+
+        # labels provided
+        if isinstance(options, dict):
+            for label, body in options.items():
+                options_text = f"{label} : {body} \n"
+
+            await self.send_message(recipient, question_text + "\n" + options_text)
+            answer_future = self.pending_answers[recipient] = asyncio.Future()
+            answer = await answer_future
+            self.pending_answers.pop(recipient)
+
+            # if the answer given does not match a label
+            if answer.full_text and not answer.full_text in options.keys():
+                if answer.full_text.lower() in self.TERMINAL_ANSWERS:
+                    return None
+                return await self.ask_multiple_choice_question(
+                    recipient,
+                    "Please reply with just the label exactly as typed \n \n"
+                    + question_text,
+                    options,
+                    requires_confirmation,
+                    requires_first_device,
+                )
+
+            if isinstance(answer.full_text, str) and answer.full_text in options.keys:
+
+                if requires_confirmation:
+                    confirmation_text = (
+                        "You picked: \n"
+                        + answer.full_text
+                        + " : "
+                        + options[answer.full_text]
+                        + "\n \n Is this correct? (y/n)"
+                    )
+                    confirmation = self.ask_yesno_question(recipient, confirmation_text)
+
+                    if confirmation:
+                        return answer.full_text, options[answer.full_text]
+
+                return answer.full_text, options[answer.full_text]
+            return None
+
+        if isinstance(options, list):
+            # generate labels
+            return None
+
+        return None
 
     async def do_challenge(self, msg: Message) -> Response:
         """Challenges a user to do a simple math problem, optionally provided as an image to increase attacker complexity."""
