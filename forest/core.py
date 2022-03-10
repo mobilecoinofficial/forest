@@ -1152,6 +1152,7 @@ def is_first_device(msg: Message) -> bool:
 
 
 class QuestionBot(PayBot):
+    """Class of Bots that have methods for asking questions and awaiting answers"""
     def __init__(self, bot_number: Optional[str] = None) -> None:
         self.pending_confirmations: dict[str, asyncio.Future[bool]] = {}
         self.pending_answers: dict[str, asyncio.Future[Message]] = {}
@@ -1291,6 +1292,8 @@ class QuestionBot(PayBot):
         question_text: str = "Are you sure? yes/no",
         require_first_device: bool = False,
     ) -> bool:
+        """Asks a question that expects a yes or no answer. Returns a Boolean:
+        True if Yes False if No."""
         self.pending_confirmations[recipient] = asyncio.Future()
         if require_first_device:
             self.requires_first_device[recipient] = True
@@ -1312,14 +1315,19 @@ class QuestionBot(PayBot):
         Allows asker to provide labels and options with a dict,
         or just options with a list. Optionally asks for confirmation of chosen answer."""
 
+
         if question_text is None:
             question_text = "Pick one from these options:"
+
+        # Text with the options nicely formatted,
+        # will be filled out differently depending on whether user provided labels or not
+        options_text=""
 
         # User can provide labels for the options by passing a dict
         if isinstance(options, dict):
             # Organise options into friendly text to send user.
             for label, body in options.items():
-                options_text = f"{label} : {body} \n"
+                options_text = options_text + f"{label}) {body} \n"
 
         # User can pass just a list of options and we generate labels for them
         if isinstance(options, list):
@@ -1332,13 +1340,14 @@ class QuestionBot(PayBot):
             for item in options:
                 label= str(index)
                 dict_options[label] = item
-                options_text = f"{label} : {item} \n"
+                options_text = options_text + f"{label}) {item} \n"
                 index += 1
 
 
             # replace the options list with the new dict
             options = dict_options
 
+        
         await self.send_message(recipient, question_text + "\n" + options_text)
         answer_future = self.pending_answers[recipient] = asyncio.Future()
         answer = await answer_future
@@ -1357,13 +1366,14 @@ class QuestionBot(PayBot):
                 requires_first_device,
             )
 
+        import pdb;pdb.set_trace()
         if isinstance(answer.full_text, str) and answer.full_text in options.keys:
-
+            
             if requires_confirmation:
                 confirmation_text = (
                     "You picked: \n"
                     + answer.full_text
-                    + " : "
+                    + ") "
                     + options[answer.full_text]
                     + "\n \n Is this correct? (y/n)"
                 )
@@ -1373,9 +1383,9 @@ class QuestionBot(PayBot):
                     return answer.full_text, options[answer.full_text]
 
             return answer.full_text, options[answer.full_text]
+        
         return None
 
-        return None
 
     async def do_challenge(self, msg: Message) -> Response:
         """Challenges a user to do a simple math problem, optionally provided as an image to increase attacker complexity."""
