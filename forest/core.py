@@ -1304,59 +1304,76 @@ class QuestionBot(PayBot):
         recipient,
         question_text: Optional[str],
         options: Union[dict[str, str], list[str]],
-        requires_confirmation: bool,
-        requires_first_device: bool,
+        requires_confirmation: bool = True,
+        requires_first_device: bool = False,
     ) -> Optional[Tuple[str, str]]:
 
-        """Prompts the user to select from a series of options"""
+        """Prompts the user to select from a series of options.
+        Allows asker to provide labels and options with a dict,
+        or just options with a list. Optionally asks for confirmation of chosen answer."""
 
         if question_text is None:
             question_text = "Pick one from these options:"
 
-        # labels provided
+        # User can provide labels for the options by passing a dict
         if isinstance(options, dict):
+            # Organise options into friendly text to send user.
             for label, body in options.items():
                 options_text = f"{label} : {body} \n"
 
-            await self.send_message(recipient, question_text + "\n" + options_text)
-            answer_future = self.pending_answers[recipient] = asyncio.Future()
-            answer = await answer_future
-            self.pending_answers.pop(recipient)
-
-            # if the answer given does not match a label
-            if answer.full_text and not answer.full_text in options.keys():
-                if answer.full_text.lower() in self.TERMINAL_ANSWERS:
-                    return None
-                return await self.ask_multiple_choice_question(
-                    recipient,
-                    "Please reply with just the label exactly as typed \n \n"
-                    + question_text,
-                    options,
-                    requires_confirmation,
-                    requires_first_device,
-                )
-
-            if isinstance(answer.full_text, str) and answer.full_text in options.keys:
-
-                if requires_confirmation:
-                    confirmation_text = (
-                        "You picked: \n"
-                        + answer.full_text
-                        + " : "
-                        + options[answer.full_text]
-                        + "\n \n Is this correct? (y/n)"
-                    )
-                    confirmation = self.ask_yesno_question(recipient, confirmation_text)
-
-                    if confirmation:
-                        return answer.full_text, options[answer.full_text]
-
-                return answer.full_text, options[answer.full_text]
-            return None
-
+        # User can pass just a list of options and we generate labels for them
         if isinstance(options, list):
-            # generate labels
-            return None
+
+            dict_options: dict[str, str] = {}
+            index: int = 1
+
+            # generate labels that are just ints and organise the options
+            # into a friendly text format to send the user in one loop
+            for item in options:
+                label= str(index)
+                dict_options[label] = item
+                options_text = f"{label} : {item} \n"
+                index += 1
+
+
+            # replace the options list with the new dict
+            options = dict_options
+
+        await self.send_message(recipient, question_text + "\n" + options_text)
+        answer_future = self.pending_answers[recipient] = asyncio.Future()
+        answer = await answer_future
+        self.pending_answers.pop(recipient)
+
+        # if the answer given does not match a label
+        if answer.full_text and not answer.full_text in options.keys():
+            if answer.full_text.lower() in self.TERMINAL_ANSWERS:
+                return None
+            return await self.ask_multiple_choice_question(
+                recipient,
+                "Please reply with just the label exactly as typed \n \n"
+                + question_text,
+                options,
+                requires_confirmation,
+                requires_first_device,
+            )
+
+        if isinstance(answer.full_text, str) and answer.full_text in options.keys:
+
+            if requires_confirmation:
+                confirmation_text = (
+                    "You picked: \n"
+                    + answer.full_text
+                    + " : "
+                    + options[answer.full_text]
+                    + "\n \n Is this correct? (y/n)"
+                )
+                confirmation = self.ask_yesno_question(recipient, confirmation_text)
+
+                if confirmation:
+                    return answer.full_text, options[answer.full_text]
+
+            return answer.full_text, options[answer.full_text]
+        return None
 
         return None
 
