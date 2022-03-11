@@ -1311,9 +1311,11 @@ class QuestionBot(PayBot):
         requires_first_device: bool = False,
     ) -> Optional[str]:
         """Prompts the user to select from a series of options.
-        Allows asker to provide labels and options with a dict,
-        or just options with a list. Optionally asks for confirmation of chosen answer."""
-
+        Behaviour alters slightly based on options:
+        options as list -> we write labels for you with "1,2,3,...."
+        options as dict -> dict keys are the labels
+        options as dict with all values "" -> the labels are the options, and only labels are printed"""
+        ## TODO: allow fuzzy answers or lowercase answers. Needs design discussion.
 
         if question_text is None:
             question_text = "Pick one from these options:"
@@ -1322,11 +1324,19 @@ class QuestionBot(PayBot):
         # will be filled out differently depending on whether user provided labels or not
         options_text=""
 
+        #This is the character that will appear between label and option text
+        spacer: str = ") "
+        
         # User can provide labels for the options by passing a dict
+        # Create a question with just labels by having all values be ""
         if isinstance(options, dict):
-            # Organise options into friendly text to send user.
+            
+            # This will format the options text and check for a just labels question
+            spacer = ""
             for label, body in options.items():
-                options_text = options_text + f"{label}) {body} \n"
+                if not body == "":
+                    spacer =") " #don't have a spacer if there's no values
+                options_text = options_text + f"{label}{spacer}{body} \n"
 
         # User can pass just a list of options and we generate labels for them
         if isinstance(options, list):
@@ -1339,7 +1349,7 @@ class QuestionBot(PayBot):
             for item in options:
                 label= str(index)
                 dict_options[label] = item
-                options_text = options_text + f"{label}) {item} \n"
+                options_text = options_text + f"{label}{spacer}{item} \n"
                 index += 1
 
 
@@ -1354,8 +1364,11 @@ class QuestionBot(PayBot):
 
         # if the answer given does not match a label
         if answer.full_text and not answer.full_text in options.keys():
+            # return none and exit if user types cancel, stop, exit, etc...
             if answer.full_text.lower() in self.TERMINAL_ANSWERS:
                 return None
+
+            # otherwise add reminder to type the label exactly as it appears and restate the question
             return await self.ask_multiple_choice_question(
                 recipient,
                 "Please reply with just the label exactly as typed \n \n"
@@ -1365,19 +1378,21 @@ class QuestionBot(PayBot):
                 requires_first_device,
             )
 
-        # import pdb;pdb.set_trace()
+        # when there is a match
         if isinstance(answer.full_text, str) and answer.full_text in options.keys():
-            
+
+            # if confirmation is required ask for it as a yes/no question
             if requires_confirmation:
                 confirmation_text = (
                     "You picked: \n"
                     + answer.full_text
-                    + ") "
+                    + spacer
                     + options[answer.full_text]
                     + "\n \n Is this correct? (yes/no)"
                 )
                 confirmation = await self.ask_yesno_question(recipient, confirmation_text)
 
+                # if no, ask the question again
                 if not confirmation:
                     return await self.ask_multiple_choice_question(
                     recipient,
@@ -1387,8 +1402,9 @@ class QuestionBot(PayBot):
                     requires_first_device,
                 )
 
+            # finally return the option that matches the answer, or if empty the answer itself
             return options[answer.full_text] or answer.full_text
-        
+        # TODO if we made it here I think that means something went wrong so maybe it should fail instead of returning None
         return None
 
 
