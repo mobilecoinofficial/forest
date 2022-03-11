@@ -70,6 +70,20 @@ def rpc(
     }
 
 
+ActivityQueries = pghelp.PGExpressions(
+    table="user_activity",
+    create_table="""CREATE TABLE user_activity (
+        id SERIAL PRIMARY KEY,
+        user TEXT,
+        name TEXT,
+        first_seen TIMESTAMP default now(),
+        last_seen TIMESTAMP default now(),
+        bot TEXT,
+        UNIQUE (user, bot));""",
+    log="INSERT INTO user_activity (user, name, bot, last_seen) VALUES ($1, $2, $3, now()) ON CONFLICT DO UPDATE SET last_seen=now()",
+)
+
+
 class Signal:
     """
     Represents a signal-cli/auxin-cli session.
@@ -90,6 +104,10 @@ class Signal:
         logging.debug("bot number: %s", bot_number)
         self.bot_number = bot_number
         self.datastore = datastore.SignalDatastore(bot_number)
+        self.activity = pghelp.PGInterface(
+            query_strings=ActivityQueries, database=utils.get_secret("DATABASE_URL")
+        )
+        self.batched_activity: list[str] = []
         self.proc: Optional[subprocess.Process] = None
         self.inbox: Queue[Message] = Queue()
         self.outbox: Queue[dict] = Queue()
@@ -570,6 +588,7 @@ class Bot(Signal):
             if not hasattr(getattr(self, f"do_{name}"), "hide")
         ]
         super().__init__(bot_number)
+        self.log_task = asyncio.create_task(self.log_activity())
         self.restart_task = asyncio.create_task(
             self.start_process()
         )  # maybe cancel on sigint?
@@ -583,6 +602,17 @@ class Bot(Signal):
         )
         self.restart_task.add_done_callback(functools.partial(self.handle_task))
 
+    async def log_activity(self):
+        while 1:
+            await asyncio.sleep(60)
+            if self.activity.pool:
+                async with self.activity.pool.acquire() as conn:
+                    conn.executemany(
+                        "INSERT INTO user_activity (user, bot, last_seen) VALUES ($1, $2, now()) ON CONFLICT DO UPDATE SET last_seen=now()",
+                        [(name, utils.APP_NAME) for name in self.batched_activity],
+                    )
+                    self.batched_activity: set[str] = set()
+
     async def handle_messages(self) -> None:
         """
         Read messages from the queue. If it matches a pending request to auxin-cli/signal-cli,
@@ -591,6 +621,7 @@ class Bot(Signal):
         """
         while True:
             message = await self.inbox.get()
+            self.batched_activity.add(message.source)
             if message.id and message.id in self.pending_requests:
                 logging.debug("setting result for future %s: %s", message.id, message)
                 self.pending_requests[message.id].set_result(message)
