@@ -1309,8 +1309,7 @@ class QuestionBot(PayBot):
         options: Union[dict[str, str], list[str]],
         requires_confirmation: bool = True,
         requires_first_device: bool = False,
-    ) -> Optional[Tuple[str, str]]:
-
+    ) -> Optional[str]:
         """Prompts the user to select from a series of options.
         Allows asker to provide labels and options with a dict,
         or just options with a list. Optionally asks for confirmation of chosen answer."""
@@ -1366,8 +1365,8 @@ class QuestionBot(PayBot):
                 requires_first_device,
             )
 
-        import pdb;pdb.set_trace()
-        if isinstance(answer.full_text, str) and answer.full_text in options.keys:
+        # import pdb;pdb.set_trace()
+        if isinstance(answer.full_text, str) and answer.full_text in options.keys():
             
             if requires_confirmation:
                 confirmation_text = (
@@ -1382,7 +1381,7 @@ class QuestionBot(PayBot):
                 if confirmation:
                     return answer.full_text, options[answer.full_text]
 
-            return answer.full_text, options[answer.full_text]
+            return options[answer.full_text]
         
         return None
 

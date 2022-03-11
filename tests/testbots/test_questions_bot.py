@@ -21,12 +21,36 @@ class TestBot(QuestionBot):
         question_text = "What is your favourite forest creature?"
         options = ["Deer", "Foxes", "Faeries", "Crows"]
 
-        _, choice = await self.ask_multiple_choice_question(
+        choice = await self.ask_multiple_choice_question(
             message.source, question_text, options, requires_confirmation=False
         )
-        if choice == "Faeries":
+        if choice and choice == "Faeries":
             return "Faeries are my favourite too c:"
-        return f"I think {choice} are super neat too!"
+        
+        if choice:
+            return f"I think {choice} are super neat too!"
+
+        return "oops, sorry"
+
+    async def do_test_multiple_choice_list_with_confirm(
+        self, message: Message
+    ) -> Response:
+        """Asks a Sample Multiple Choice question with list and confirmation"""
+
+        question_text = "What is your favourite forest creature?"
+        options = ["Deer", "Foxes", "Faeries", "Crows"]
+
+        choice = await self.ask_multiple_choice_question(
+            message.source, question_text, options, requires_confirmation = True
+        )
+        if choice and choice == "Faeries":
+            return "Faeries are my favourite too c:"
+        
+        if choice:
+            return f"I think {choice} are super neat too!"
+
+        return "oops, sorry"
+
 
 
 if __name__ == "__main__":
