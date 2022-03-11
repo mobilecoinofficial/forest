@@ -388,9 +388,6 @@ async def sync(ns: argparse.Namespace) -> None:
         await datastore.mark_freed()
 
 
-upload_parser = subparser.add_parser("upload")
-upload_parser.add_argument("--path")
-upload_parser.add_argument("--number")
 # download_parser = subparser.add_parser("download")
 # download_parser.add_argument("--number")
 # migrate_parser = subparser.add_parser("migrate")
