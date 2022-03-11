@@ -1374,14 +1374,20 @@ class QuestionBot(PayBot):
                     + answer.full_text
                     + ") "
                     + options[answer.full_text]
-                    + "\n \n Is this correct? (y/n)"
+                    + "\n \n Is this correct? (yes/no)"
                 )
-                confirmation = self.ask_yesno_question(recipient, confirmation_text)
+                confirmation = await self.ask_yesno_question(recipient, confirmation_text)
 
-                if confirmation:
-                    return answer.full_text, options[answer.full_text]
+                if not confirmation:
+                    return await self.ask_multiple_choice_question(
+                    recipient,
+                    question_text,
+                    options,
+                    requires_confirmation,
+                    requires_first_device,
+                )
 
-            return options[answer.full_text]
+            return options[answer.full_text] or answer.full_text
         
         return None
 
