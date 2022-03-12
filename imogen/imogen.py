@@ -683,6 +683,19 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         return response["choices"][0]["text"].strip()
 
     @hide
+    async def do_answer(self, msg: Message) -> str:
+        response = openai.Completion.create(  # type: ignore
+            engine="text-davinci-001",
+            prompt=msg.text,
+            temperature=0,
+            max_tokens=120,
+            top_p=1,
+            frequency_penalty=0,
+            presence_penalty=0,
+        )
+        return response["choices"][0]["text"].strip()
+
+    @hide
     async def do_spitball(self, msg: Message) -> str:
         "Spitball a prompt"
         prompt = (
