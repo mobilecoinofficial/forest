@@ -5,14 +5,12 @@ WORKDIR /app/auxin
 RUN rustup default nightly
 RUN cargo +nightly build --release
 
-FROM ubuntu:hirsute as libbuilder
+FROM python:3.9 as libbuilder
 WORKDIR /app
-RUN ln --symbolic --force --no-dereference /usr/share/zoneinfo/EST && echo "EST" > /etc/timezone
-RUN apt update && DEBIAN_FRONTEND="noninteractive" apt upgrade -y
-RUN apt update -y && DEBIAN_FRONTEND="noninteractive" apt install -yy python3.9 python3.9-venv libzbar-dev libfuse2 pipenv git
-RUN python3.9 -m venv /app/venv
-COPY Pipfile.lock Pipfile /app/
-RUN VIRTUAL_ENV=/app/venv pipenv install
+RUN pip install poetry
+RUN python3.9 -m venv /app/venv 
+COPY ./pyproject.toml ./poetry.lock /app/
+RUN VIRTUAL_ENV=/app/venv poetry install 
 
 FROM ubuntu:hirsute
 WORKDIR /app
