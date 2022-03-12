@@ -602,7 +602,7 @@ class Bot(Signal):
         )
         self.restart_task.add_done_callback(functools.partial(self.handle_task))
 
-    async def log_activity(self):
+    async def log_activity(self) -> None:
         while 1:
             await asyncio.sleep(60)
             if self.activity.pool:
