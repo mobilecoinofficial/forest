@@ -229,7 +229,7 @@ DATABASE_URL=postgres://<your database url>
 Then, you can upload your datastore with:
 
 ```bash
-./forest/datastore.py upload --number $BOT_NUMBER --path .
+./forest/datastore.py upload --number $BOT_NUMBER --path . --note "this number is for my special bot"
 ```
 
 ## Options and secrets
