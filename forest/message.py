@@ -157,20 +157,27 @@ class AuxinMessage(Message):
         super().__init__(blob)
 
 
+# auxin:
+# {'dataMessage': {'profileKey': 'LZa0kKwD0/L3qs96L+lIORyi3ATqqsOUEowtAic7Y0A=', 'reaction': {'emoji': '❤️', 'remove': False, 'targetAuthorUuid': 'da1fb04c-bf1a-458f-92c7-6f21ad443684', 'targetSentTimestamp': 1647300333914}, 'timestamp': 1647300340210}}}
 class Reaction:
     def __init__(self, reaction: dict) -> None:
         assert reaction
         self.emoji = reaction["emoji"]
-        self.author = reaction["targetAuthorNumber"]
+        self.uuid = reaction.get("targetAuthorUuid")
+        self.author = reaction.get("targetAuthorNumber") or self.uuid or ""
         self.ts = reaction["targetSentTimestamp"]
 
 
 class Quote:
     def __init__(self, quote: dict) -> None:
         assert quote
+        # signal-cli:
         # {"id":1641591686224,"author":"+16176088864","authorNumber":"+16176088864","authorUuid":"412e180d-c500-4c60-b370-14f6693d8ea7","text":"hi","attachments":[]}
+        # auxin:
+        # {'authorUuid': 'da1fb04c-bf1a-458f-92c7-6f21ad443684', 'id': 1647300333914, 'text': '/pong'}
         self.ts = quote["id"]
-        self.author = quote["authorNumber"]
+        self.uuid = quote.get("authorUuid")
+        self.author = quote.get("authorNumber") or self.uuid or ""
         self.text = quote["text"]
 
 
