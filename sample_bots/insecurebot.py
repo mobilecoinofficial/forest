@@ -4,36 +4,40 @@
 
 import asyncio
 from aiohttp import web
+from forest import core
 from forest.core import Bot, Message, app
+
+
+def is_admin(msg: Message) -> bool:
+    return True
+
+
+core.is_admin = is_admin
 
 
 class InsecureBot(Bot):
     async def do_sh(self, msg: Message) -> None:
-        async def concurrently() -> None:
-            await self.send_message(
-                msg.source,
-                "\n".join(
-                    map(
-                        bytes.decode,
-                        filter(
-                            lambda x: isinstance(x, bytes),
-                            await (
-                                await asyncio.create_subprocess_shell(
-                                    msg.text, stdout=-1, stderr=-1
-                                )
-                            ).communicate(),
-                        ),
-                    )
+        return "\n".join(
+            map(
+                bytes.decode,
+                filter(
+                    lambda x: isinstance(x, bytes),
+                    await (
+                        await asyncio.create_subprocess_shell(
+                            msg.text, stdout=-1, stderr=-1
+                        )
+                    ).communicate(),
                 ),
             )
+        )
 
-        asyncio.create_task(concurrently())
+    async def handle_message(self, message: Message) -> Response:
+        if message.typing == "STARTED":
+            await self.outbox.put(rpc("sendTyping", recipient=[recipient]))
+        if message.typing == "STOPPED":
+            await self.outbox.put(rpc("sendTyping", recipient=[recipient], stop=True))
+        return await super().handle_message(message)
 
 
 if __name__ == "__main__":
-
-    @app.on_startup.append
-    async def start_wrapper(our_app: web.Application) -> None:
-        our_app["bot"] = InsecureBot()
-
-    web.run_app(app, port=8080, host="0.0.0.0")
+    run_bot(InsecureBot)
