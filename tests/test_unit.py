@@ -152,6 +152,8 @@ async def test_questions(bot) -> None:
 
     # Enable Magic allows for mistyped commands
     os.environ["ENABLE_MAGIC"] = "1"
+    # the issue here is that we need to send "yes" *after* the question has been asked
+    # so we make it as create_task, then send the input, then await the task to get the result
     t = asyncio.create_task(bot.ask_yesno_question(USER_NUMBER, "Do you like faeries?"))
     await bot.send_input("yes")
     assert await t == True
