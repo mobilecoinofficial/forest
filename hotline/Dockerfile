@@ -1,7 +1,11 @@
+FROM registry.gitlab.com/packaging/signal-cli/signal-cli-native:latest as signal
+RUN signal-cli --version | tee /signal-version
+RUN mv /usr/bin/signal-cli-native /usr/bin/signal-cli
+
 FROM ghcr.io/rust-lang/rust:nightly as builder
 WORKDIR /app
 RUN rustup default nightly
-RUN git clone https://github.com/mobilecoinofficial/auxin && cd auxin && git pull origin 0.1.11
+RUN git clone https://github.com/mobilecoinofficial/auxin && cd auxin && git pull origin 0.1.12
 WORKDIR /app/auxin
 RUN cargo +nightly build --release
 
@@ -24,6 +28,9 @@ RUN apt-get clean autoclean && apt-get autoremove --yes ; rm -rf /var/lib/{apt,d
 
 COPY --from=builder /app/auxin/target/release/auxin-cli /app/auxin-cli
 COPY --from=libbuilder /app/venv/lib/python3.9/site-packages /app/
+COPY --from=signal /usr/bin/signal-cli /signal-version /app/
+COPY --from=signal /lib/x86_64-linux-gnu/libz.so.1 /lib64/
+
 COPY ./forest/ /app/forest/
 COPY ./mc_util/ /app/mc_util/
 COPY ./captcha/ /app/captcha/
