@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 import pathlib
 from importlib import reload
@@ -81,6 +82,7 @@ class MockBot(QuestionBot):
         return msg
 
     async def get_output(self) -> str:
+        """Runs commands as normal but intercepts the output instead of passing it onto signal"""
         try:
             outgoing_msg = await asyncio.wait_for(self.outbox.get(), timeout=1)
             return outgoing_msg["params"]["message"]
