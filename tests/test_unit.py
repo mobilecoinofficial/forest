@@ -69,19 +69,29 @@ class MockBot(QuestionBot):
             return "That's cool, me too!"
         return "Aww :c"
 
-    async def send_message(self, recipient: Optional[str], msg: Response, group: Optional[str] = None, endsession: bool = False, attachments: Optional[list[str]] = None, content: str = "") -> str:
-        
-        
+    async def send_message(
+        self,
+        recipient: Optional[str],
+        msg: Response,
+        group: Optional[str] = None,
+        endsession: bool = False,
+        attachments: Optional[list[str]] = None,
+        content: str = "",
+    ) -> str:
         return msg
 
-    async def get_cmd_output(self, text: str) -> str:
-        """Runs commands as normal but intercepts the output instead of passing it onto signal"""
-        await self.inbox.put(MockMessage(text))
+    async def get_output(self) -> str:
         try:
             outgoing_msg = await asyncio.wait_for(self.outbox.get(), timeout=1)
             return outgoing_msg["params"]["message"]
         except asyncio.TimeoutError:
+            logging.error("timed out waiting for output")
             return ""
+
+    async def get_cmd_output(self, text: str) -> str:
+        """Runs commands as normal but intercepts the output instead of passing it onto signal"""
+        await self.inbox.put(MockMessage(text))
+        return await self.get_output()
 
 
 @pytest.mark.asyncio

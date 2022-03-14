@@ -651,7 +651,7 @@ class Bot(Signal):
                 )
 
     def is_command(self, msg: Message) -> bool:
-        """ determines whether a message is a command"""
+        """determines whether a message is a command"""
         # "mentions":[{"name":"+447927948360","number":"+447927948360",
         # "uuid":"fc4457f0-c683-44fe-b887-fe3907d7762e","start":0,"length":1}
         has_slash = msg.full_text and msg.full_text.startswith("/")
@@ -660,7 +660,7 @@ class Bot(Signal):
         )
 
     def match_command(self, msg: Message) -> str:
-        """ return the appropriate command a message is calling for"""
+        """return the appropriate command a message is calling for"""
         if not msg.arg0:
             return ""
         # happy part direct match
@@ -1154,7 +1154,8 @@ def is_first_device(msg: Message) -> bool:
 
 
 class QuestionBot(PayBot):
-    """ Class for bots that can asks questions and await for answers"""
+    """Class for bots that can asks questions and await for answers"""
+
     def __init__(self, bot_number: Optional[str] = None) -> None:
         self.pending_confirmations: dict[str, asyncio.Future[bool]] = {}
         self.pending_answers: dict[str, asyncio.Future[Message]] = {}
@@ -1245,7 +1246,7 @@ class QuestionBot(PayBot):
         self.pending_answers.pop(recipient)
         answer_text = answer.full_text
 
-        # This checks to see if the answer is a valid candidate for float by replacing 
+        # This checks to see if the answer is a valid candidate for float by replacing
         # the first comma or decimal point with a number to see if the resulting string .isnumeric()
         if answer_text and not (
             answer_text.replace(".", "1", 1).isnumeric()
@@ -1307,7 +1308,7 @@ class QuestionBot(PayBot):
         require_first_device: bool = False,
     ) -> bool:
 
-        """ Asks a question that expects yes or no as an answer"""
+        """Asks a question that expects yes or no as an answer"""
 
         self.pending_confirmations[recipient] = asyncio.Future()
         if require_first_device:
@@ -1318,7 +1319,7 @@ class QuestionBot(PayBot):
         return result
 
     async def do_challenge(self, msg: Message) -> Response:
-        """Challenges a user to do a simple math problem, 
+        """Challenges a user to do a simple math problem,
         optionally provided as an image to increase attacker complexity."""
         # the captcha module delivers graphical challenges of the same format
         if captcha is not None:

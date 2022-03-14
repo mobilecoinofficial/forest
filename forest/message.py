@@ -13,7 +13,7 @@ from forest.utils import logging
 
 
 def unicode_character_name(i: int) -> str:
-    """Tries to get the unicode character name for any given character. 
+    """Tries to get the unicode character name for any given character.
     Useful for finding quotations"""
     try:
         return unicodedata.name(chr(i))
@@ -63,7 +63,7 @@ class Message:
         try:
             try:
                 arg0, maybe_json = self.text.split(" ", 1)
-                assert json.loads(self.text) # ensure the text is valid json
+                assert json.loads(self.text)  # ensure the text is valid json
                 self.tokens = maybe_json.split(" ")
             except (json.JSONDecodeError, AssertionError):
                 # replace quotes with single quote so as to not break when parsing
@@ -73,10 +73,14 @@ class Message:
                 arg0, *self.tokens = shlex.split(clean_quote_text)
         except ValueError:
             arg0, *self.tokens = self.text.split(" ")
-        self.arg0 = arg0.removeprefix("/").lower() # reformat first word to be able to match to commands later
+        self.arg0 = arg0.removeprefix(
+            "/"
+        ).lower()  # reformat first word to be able to match to commands later
         if self.tokens:
-            self.arg1, self.arg2, self.arg3, *_ = self.tokens + [""] * 3 # sets the next 3 words to arguments, or sets the argument to empty otherwise
-        self.text = " ".join(self.tokens) #reconstitute the text minus arg0
+            self.arg1, self.arg2, self.arg3, *_ = (
+                self.tokens + [""] * 3
+            )  # sets the next 3 words to arguments, or sets the argument to empty otherwise
+        self.text = " ".join(self.tokens)  # reconstitute the text minus arg0
 
     def to_dict(self) -> dict:
         """
@@ -105,6 +109,7 @@ class Message:
 
 class AuxinMessage(Message):
     """Message Type for Auxin CLI"""
+
     def __init__(self, outer_blob: dict, _id: Optional[str] = None) -> None:
         if "id" in outer_blob:
             self.id = outer_blob["id"]
