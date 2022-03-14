@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 import pathlib
 from importlib import reload
@@ -69,16 +70,16 @@ class MockBot(QuestionBot):
             return "That's cool, me too!"
         return "Aww :c"
 
-    async def send_message(
-        self,
-        recipient: Optional[str],
-        msg: Response,
-        group: Optional[str] = None,
-        endsession: bool = False,
-        attachments: Optional[list[str]] = None,
-        content: str = "",
-    ) -> str:
-        return msg
+    # async def send_message(
+    #     self,
+    #     recipient: Optional[str],
+    #     msg: Response,
+    #     group: Optional[str] = None,
+    #     endsession: bool = False,
+    #     attachments: Optional[list[str]] = None,
+    #     content: str = "",
+    # ) -> str:
+    #     return msg
 
     async def get_output(self) -> str:
         try:
@@ -132,5 +133,4 @@ async def test_questions() -> None:
     # Enable Magic allows for mistyped commands
     os.environ["ENABLE_MAGIC"] = "1"
 
-    # Tests do_ping with a mistyped command, expecting "/pong foo"
     assert await bot.get_cmd_output("test_ask_yesno_question") == "Do you like faeries?"
