@@ -31,6 +31,7 @@ class MockMessage(Message):
         self.text = text
         self.source = "+" + "2" * 11
         self.uuid = "cf3d7d34-2dcd-4fcd-b193-cbc6a666758b"
+        self.mentions = []
         super().__init__({})
 
 
