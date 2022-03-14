@@ -263,6 +263,7 @@ class ClanGat(TalkBack):
             ):
                 return "Sorry, admin rejected your payout."
             return await self.pay_user_from_balance(user, list_, balance)
+        return "Sorry, no luck"
 
     async def pay_user_from_balance(
         self, user: str, list_: str, amount_mmob: int
