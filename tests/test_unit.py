@@ -2,13 +2,14 @@ import asyncio
 import os
 import pathlib
 from importlib import reload
+from typing import Optional
 import pytest
 
 # Prevent Utils from importing dev_secrets by default
 os.environ["ENV"] = "test"
 
 from forest import utils
-from forest.core import Message, QuestionBot
+from forest.core import Message, QuestionBot, Response
 
 # Sample bot number alice
 BOT_NUMBER = "+11111111111"
@@ -61,6 +62,18 @@ class MockBot(QuestionBot):
     async def start_process(self) -> None:
         pass
 
+    async def do_test_ask_yesno_question(self, message: Message) -> Response:
+        """Asks a sample Yes or No question"""
+
+        if await self.ask_yesno_question(message.source, "Do you like faeries?"):
+            return "That's cool, me too!"
+        return "Aww :c"
+
+    async def send_message(self, recipient: Optional[str], msg: Response, group: Optional[str] = None, endsession: bool = False, attachments: Optional[list[str]] = None, content: str = "") -> str:
+        
+        
+        return msg
+
     async def get_cmd_output(self, text: str) -> str:
         """Runs commands as normal but intercepts the output instead of passing it onto signal"""
         await self.inbox.put(MockMessage(text))
@@ -110,4 +123,4 @@ async def test_questions() -> None:
     os.environ["ENABLE_MAGIC"] = "1"
 
     # Tests do_ping with a mistyped command, expecting "/pong foo"
-    assert await bot.get_cmd_output("/pingg foo") == "/pong foo"
+    assert await bot.get_cmd_output("test_ask_yesno_question") == "Do you like faeries?"
