@@ -1209,7 +1209,7 @@ class QuestionBot(PayBot):
             self.requires_first_device.pop(message.uuid, None)
             if probably_future:
                 probably_future.set_result(message)
-            return
+            return None
         return await super().handle_message(message)
 
     @hide

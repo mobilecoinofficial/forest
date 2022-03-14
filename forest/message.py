@@ -185,6 +185,7 @@ class StdioMessage(Message):
         self.uuid = envelope.get("sourceUuid")
         self.source: str = envelope.get("source") or self.uuid
         self.name: str = envelope.get("sourceName") or self.source
+        self.device_id = envelope.get("sourceDevice")
         self.timestamp = envelope.get("timestamp") or result.get("timestamp")
 
         # msg data
