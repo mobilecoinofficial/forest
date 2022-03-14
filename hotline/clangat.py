@@ -6,6 +6,8 @@ import asyncio
 import json
 import string
 import time
+import math
+import logging
 from decimal import Decimal
 from typing import Optional
 
@@ -255,35 +257,51 @@ class ClanGat(TalkBack):
         user_owns = await self.check_user_owns(user, list_)
         balance = await self.payout_balance_mmob.get(list_, 0)
         if is_admin(msg) or (user_owns and balance):
+            if not await self.ask_yesno_question(
+                utils.get_secret("ADMIN"),
+                f"Owner of {list_} requests payout of {balance}. Approve?",
+            ):
+                return "Sorry, admin rejected your payout."
+            return await self.pay_user_from_balance(user, list_, balance)
+
+    async def pay_user_from_balance(
+        self, user: str, list_: str, amount_mmob: int
+    ) -> Response:
+        """Pays a user a given amount of MOB by manually grabbing UTXOs until a transaction can be made."""
+        # pylint: disable=too-many-return-statements
+        balance = await self.payout_balance_mmob.get(list_, 0)
+        # pad fees
+        logging.debug(f"PAYING {amount_mmob}mmob from {balance} of {list_}")
+        if amount_mmob < balance:
             async with self.pay_lock:
-                utxos = list((await self.mobster.get_utxos()).items())
+                utxos = list(reversed((await self.mobster.get_utxos()).items()))
                 input_pmob_sum = 0
                 input_txo_ids = []
-                while input_pmob_sum < balance * 1_000_000_000:
+                while input_pmob_sum < ((amount_mmob + 1) * 1_000_000_000):
                     txoid, pmob = utxos.pop()
+                    if pmob < (amount_mmob * 1_000_000_000) // 15:
+                        logging.debug(f"skipping UTXO worth {pmob}pmob")
+                        continue
                     input_txo_ids += [txoid]
                     input_pmob_sum += pmob
                     if len(input_txo_ids) > 15:
                         return "Something went wrong! Please contact your administrator for support. (too many utxos needed)"
+                    logging.debug(
+                        f"found: {input_pmob_sum} / {amount_mmob*1_000_000_000} across {len(input_txo_ids)}utxos"
+                    )
                 if not input_txo_ids:
                     return "Something went wrong! Please contact your administrator for support. (not enough utxos)"
-                await self.send_message(msg.uuid, "Waiting for admin approval")
-                if not await self.ask_yesno_question(
-                    utils.get_secret("ADMIN"),
-                    f"Owner of {list_} requests payout of {balance}. Approve?",
-                ):
-                    return "Sorry, admin rejected your payout."
                 result = await self.send_payment(
                     recipient=user,
-                    amount_pmob=(balance * 1_000_000_000 - FEE),
-                    receipt_message=f'Payout for the "{list_}" event!',
+                    amount_pmob=(amount_mmob * 1_000_000_000),
+                    receipt_message=f'Payment for the "{list_}" event!',
                     input_txo_ids=input_txo_ids,
                 )
                 if result and not result.status == "tx_status_failed":
-                    await self.payout_balance_mmob.decrement(list_, balance)
-                    return f"Payed you you {balance}"
+                    await self.payout_balance_mmob.decrement(list_, amount_mmob)
+                    return f"Payed you you {amount_mmob/1000}MOB"
                 return None
-        if user_owns and not balance:
+        if not balance:
             return "Sorry, {list_} has 0mmob balance!"  # thanks y?!
         return "Sorry, can't help you."
 
@@ -811,10 +829,7 @@ class ClanGat(TalkBack):
                 len(await self.event_attendees.get(code, []))
                 < await self.event_limits.get(code, 1000)
             )  # and there's space
-            and msg.uuid
-            not in await self.event_attendees[
-                code
-            ]  # and they're not already on the list
+            and msg.uuid not in await self.event_attendees.get(code, [])
         ):
             if await self.event_prices.get(code, 0) > 0:
                 self.pending_orders[msg.uuid] = code
@@ -822,6 +837,15 @@ class ClanGat(TalkBack):
                     await self.event_prompts.get(code) or "Event Unlocked!",
                     f"You may now make one purchase of up to 2 tickets at {await self.event_prices[code]} MOB ea.\nIf you have payments activated, open the conversation on your Signal mobile app, click on the plus (+) sign and choose payment.",
                 ]
+            if await self.event_prices.get(code, 0) < 0:
+                res = await self.pay_user_from_balance(
+                    msg.uuid,
+                    code,
+                    math.ceil(-1000 * await self.event_prices.get(code, 0)),
+                )
+                if res and "wrong" not in res:
+                    await self.event_attendees.extend(code, msg.uuid)
+                return res
             await self.send_message(
                 msg.uuid,
                 f"{await self.event_prompts.get(code) or 'You have unlocked an event!'}",

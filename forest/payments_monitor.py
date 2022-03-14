@@ -105,14 +105,15 @@ class Mobster:
     async def req(self, data: dict) -> dict:
         better_data = {"jsonrpc": "2.0", "id": 1, **data}
         logging.debug("url is %s", self.url)
-        conn = aiohttp.TCPConnector(ssl=ssl_context)
-        mob_req = aiohttp.ClientSession(connector=conn).post(
-            self.url,
-            data=json.dumps(better_data),
-            headers={"Content-Type": "application/json"},
-        )
-        async with mob_req as resp:
-            return await resp.json()
+        async with aiohttp.TCPConnector(ssl=ssl_context) as conn:
+            async with aiohttp.ClientSession(connector=conn) as sess:
+                # this can hang (forever?) if there's no full-service at that url
+                async with sess.post(
+                    self.url,
+                    data=json.dumps(better_data),
+                    headers={"Content-Type": "application/json"},
+                ) as resp:
+                    return await resp.json()
 
     async def get_all_txos_for_account(self) -> dict[str, dict]:
         txos = (

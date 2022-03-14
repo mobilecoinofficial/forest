@@ -841,7 +841,7 @@ class Bot(Signal):
 class PayBot(Bot):
     PAYMENTS_HELPTEXT = """Enable Signal Pay:
 
-    1. In Signal, tap “🠔“ & tap on your profile icon in the top left & tap *Settings*
+    1. In Signal, tap “⬅️“ & tap on your profile icon in the top left & tap *Settings*
 
     2. Tap *Payments* & tap *Activate Payments*
 
