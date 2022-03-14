@@ -100,6 +100,9 @@ class MockBot(QuestionBot):
 
 
 # https://github.com/pytest-dev/pytest-asyncio/issues/68
+# all async tests and fixtures implicitly use event_loop, which has scope "function" by default
+# so if we want bot to have scope "session" (so it's not destroyed and created between tests),
+# all the fixtures it uses need to have at least "session" scope
 @pytest.fixture(scope="session")
 def event_loop(request):
     loop = asyncio.get_event_loop_policy().new_event_loop()
