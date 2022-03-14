@@ -31,13 +31,6 @@ class InsecureBot(Bot):
             )
         )
 
-    async def handle_message(self, message: Message) -> Response:
-        if message.typing == "STARTED":
-            await self.outbox.put(rpc("sendTyping", recipient=[recipient]))
-        if message.typing == "STOPPED":
-            await self.outbox.put(rpc("sendTyping", recipient=[recipient], stop=True))
-        return await super().handle_message(message)
-
 
 if __name__ == "__main__":
     run_bot(InsecureBot)
