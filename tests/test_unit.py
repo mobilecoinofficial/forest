@@ -5,11 +5,12 @@ import pathlib
 from importlib import reload
 from typing import Optional
 import pytest
+import pytest_asyncio
 
 # Prevent Utils from importing dev_secrets by default
 os.environ["ENV"] = "test"
 
-from forest import utils
+from forest import utils, core
 from forest.core import Message, QuestionBot, Response
 
 # Sample bot number alice
@@ -81,6 +82,9 @@ class MockBot(QuestionBot):
     # ) -> str:
     #     return msg
 
+    async def send_input(self, text: str) -> None:
+        await self.inbox.put(MockMessage(text))
+
     async def get_output(self) -> str:
         try:
             outgoing_msg = await asyncio.wait_for(self.outbox.get(), timeout=1)
@@ -91,15 +95,32 @@ class MockBot(QuestionBot):
 
     async def get_cmd_output(self, text: str) -> str:
         """Runs commands as normal but intercepts the output instead of passing it onto signal"""
-        await self.inbox.put(MockMessage(text))
+        await self.send_input(text)
         return await self.get_output()
 
 
-@pytest.mark.asyncio
-async def test_commands() -> None:
-    """Tests commands"""
-    bot = MockBot(BOT_NUMBER)
+# https://github.com/pytest-dev/pytest-asyncio/issues/68
+@pytest.fixture(scope="session")
+def event_loop(request):
+    loop = asyncio.get_event_loop_policy().new_event_loop()
+    yield loop
+    loop.close()
 
+
+@pytest_asyncio.fixture(scope="session")
+async def bot():
+    bot = MockBot(BOT_NUMBER)
+    yield bot
+    bot.sigints += 1
+    bot.exiting = True
+    bot.handle_messages_task.cancel()
+    await bot.client_session.close()
+    await core.pghelp.close_pools()
+
+
+@pytest.mark.asyncio
+async def test_commands(bot) -> None:
+    """Tests commands"""
     # Enable Magic allows for mistyped commands
     os.environ["ENABLE_MAGIC"] = "1"
 
@@ -126,11 +147,11 @@ async def test_commands() -> None:
 
 
 @pytest.mark.asyncio
-async def test_questions() -> None:
+async def test_questions(bot) -> None:
     """Tests the various questions from questionbot class"""
-    bot = MockBot(BOT_NUMBER)
 
     # Enable Magic allows for mistyped commands
     os.environ["ENABLE_MAGIC"] = "1"
-
-    assert await bot.get_cmd_output("test_ask_yesno_question") == "Do you like faeries?"
+    t = asyncio.create_task(bot.ask_yesno_question(USER_NUMBER, "Do you like faeries?"))
+    await bot.send_input("yes")
+    assert await t == True
