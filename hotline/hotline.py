@@ -2,6 +2,7 @@
 # Copyright (c) 2021 MobileCoin Inc.
 # Copyright (c) 2021 The Forest Team
 
+
 import asyncio
 import json
 import string
@@ -527,6 +528,7 @@ class ClanGat(TalkBack):
                     await self.event_lists.get(obj.lower(), [])
                     + await self.event_attendees.get(obj.lower(), [])
                     + await self.event_owners.get(obj.lower(), [])
+                    + await self.list_owners.get(obj.lower(), [])
                 )
             )
             # send preview
