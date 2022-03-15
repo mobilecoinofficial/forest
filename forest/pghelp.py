@@ -6,6 +6,7 @@ import asyncio
 import copy
 import logging
 import os
+import time
 from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator, Callable, Optional, Union
 
@@ -57,9 +58,14 @@ class SimpleInterface:
     @asynccontextmanager
     async def get_connection(self) -> AsyncGenerator:
         if not self.pool:
-            self.pool = await asyncpg.create_pool(self.database)
+            logging.info("creating pool")
+            if "localhost" in self.database:
+                self.pool = await asyncpg.create_pool(user="postgres")  # self.database)
+            else:
+                self.pool = await asyncpg.create_pool(self.database)
             pools.append(self.pool)
         async with self.pool.acquire() as conn:
+            logging.info("connection acquired")
             yield conn
 
 
@@ -130,9 +136,9 @@ class PGInterface:
     async def execute(
         self,
         qstring: str,
-        *args: str,
+        *args: Any,
     ) -> Optional[list[asyncpg.Record]]:
-        """Invoke the asyncpg connection's `execute` given a provided query string and set of arguments"""
+        """Invoke the asyncpg connection's `_execute` given a provided query string and set of arguments"""
         timeout: int = 180
         if not self.pool and not isinstance(self.database, dict):
             await self.connect_pg()
@@ -141,10 +147,12 @@ class PGInterface:
                 # try:
                 # except asyncpg.TooManyConnectionsError:
                 # await connection.execute(
-                #     """SELECT pg_terminate_backend(pg_stat_activity.pid)
+                #     """
+                #     SELECT pg_terminate_backend(pg_stat_activity.pid)
                 #     FROM pg_stat_activity
                 #     WHERE pg_stat_activity.datname = 'postgres'
-                #     AND pid <> pg_backend_pid();"""
+                #     AND pid <> pg_backend_pid();
+                #     """
                 # )
                 # return self.execute(qstring, *args, timeout=timeout)
                 # _execute takes query, args, limit, timeout
@@ -221,6 +229,7 @@ class PGInterface:
             def executer_with_args(*args: Any) -> Any:
                 """Closure over 'statement' in local state for application to arguments.
                 Allows deferred execution of f-strs, allowing PGExpresssions to operate on `args`."""
+                start_time = time.time()
                 rebuilt_statement = eval(f'f"{statement}"')  # pylint: disable=eval-used
                 if (
                     rebuilt_statement != statement
@@ -233,6 +242,10 @@ class PGInterface:
                 short_args = self.truncate(str(args))
                 self.logger.debug(
                     f"{rebuilt_statement} {short_args} -> {short_strresp}"
+                )
+                elapsed = f"{time.time() - start_time:.4f}s"  # round to miliseconds
+                logging.info(
+                    "query %s took %s", self.truncate(rebuilt_statement), elapsed
                 )
                 return resp
 

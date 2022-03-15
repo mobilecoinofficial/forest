@@ -38,15 +38,14 @@ MILLIMOB_TO_PICOMOB = 1_000_000_000
 
 DATABASE_URL = utils.get_secret("DATABASE_URL")
 LedgerPGExpressions = PGExpressions(
-    table="ledger",
-    create_table="CREATE TABLE IF NOT EXISTS {self.table} ( \
-        tx_id SERIAL PRIMARY KEY, \
-        account CHARACTER VARYING(16), \
-        amount_usd_cents BIGINT NOT NULL, \
-        amount_pmob BIGINT, \
-        memo CHARACTER VARYING(32), \
-        invoice CHARACTER VARYING(32), \
-        ts TIMESTAMP);",
+    table=utils.get_secret("LEDGER_NAME") or "ledger",
+    create_table="""CREATE TABLE IF NOT EXISTS {self.table} ( 
+        tx_id SERIAL PRIMARY KEY, 
+        account TEXT,
+        amount_usd_cents BIGINT NOT NULL, 
+        amount_pmob BIGINT, 
+        memo TEXT, 
+        ts TIMESTAMP);""",
     put_usd_tx="INSERT INTO {self.table} (account, amount_usd_cents, memo, ts) \
         VALUES($1, $2, $3, CURRENT_TIMESTAMP);",
     put_pmob_tx="INSERT INTO {self.table} (account, amount_usd_cents, amount_pmob, memo, ts) \
@@ -435,37 +434,3 @@ class StatefulMobster(Mobster):
                 return mob_price_exact
             except asyncpg.UniqueViolationError:
                 pass
-
-    async def monitor_wallet(self) -> None:
-        last_transactions: dict[str, dict[str, str]] = {}
-        account_id = await self.get_account()
-        while True:
-            latest_transactions = await self.get_transactions(account_id)
-            for transaction in latest_transactions:
-                if transaction not in last_transactions:
-                    unobserved_tx = latest_transactions.get(transaction, {})
-                    short_tx = {}
-                    for k, v in unobserved_tx.items():
-                        if isinstance(v, list) and len(v) == 1:
-                            v = v[0]
-                        if isinstance(v, str) and k != "value_pmob":
-                            v = v[:16]
-                        short_tx[k] = v
-                    logging.info(short_tx)
-                    value_pmob = int(short_tx["value_pmob"])
-                    invoice = await self.invoice_manager.get_invoice_by_amount(
-                        value_pmob
-                    )
-                    if invoice:
-                        credit = await self.pmob2usd(value_pmob)
-                        # (account, amount_usd_cent, amount_pmob, memo)
-                        await self.ledger_manager.put_pmob_tx(
-                            invoice[0].get("account"),
-                            int(credit * 100),
-                            value_pmob,
-                            short_tx["transaction_log_id"],
-                        )
-                    # otherwise check if it's related to signal pay
-                    # otherwise, complain about this unsolicited payment to an admin or something
-            last_transactions = latest_transactions.copy()
-            await asyncio.sleep(10)
