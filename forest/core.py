@@ -1305,7 +1305,7 @@ class QuestionBot(PayBot):
 
     async def ask_multiple_choice_question(
         self,
-        recipient,
+        recipient: str,
         question_text: Optional[str],
         options: Union[dict[str, str], list[str]],
         requires_confirmation: bool = True,
@@ -1315,7 +1315,8 @@ class QuestionBot(PayBot):
         Behaviour alters slightly based on options:
         options as list -> we write labels for you with "1,2,3,...."
         options as dict -> dict keys are the labels
-        options as dict with all values "" -> the labels are the options, and only labels are printed"""
+        options as dict with all values "" -> the labels are the options,
+        and only labels are printed"""
         ## TODO: allow fuzzy answers or lowercase answers. Needs design discussion.
 
         if question_text is None:
