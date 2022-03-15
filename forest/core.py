@@ -1153,6 +1153,7 @@ def is_first_device(msg: Message) -> bool:
 
 class QuestionBot(PayBot):
     """Class of Bots that have methods for asking questions and awaiting answers"""
+
     def __init__(self, bot_number: Optional[str] = None) -> None:
         self.pending_confirmations: dict[str, asyncio.Future[bool]] = {}
         self.pending_answers: dict[str, asyncio.Future[Message]] = {}
@@ -1322,20 +1323,20 @@ class QuestionBot(PayBot):
 
         # Text with the options nicely formatted,
         # will be filled out differently depending on whether user provided labels or not
-        options_text=""
+        options_text = ""
 
-        #This is the character that will appear between label and option text
+        # This is the character that will appear between label and option text
         spacer: str = ") "
-        
+
         # User can provide labels for the options by passing a dict
         # Create a question with just labels by having all values be ""
         if isinstance(options, dict):
-            
+
             # This will format the options text and check for a just labels question
             spacer = ""
             for label, body in options.items():
                 if not body == "":
-                    spacer =") " #don't have a spacer if there's no values
+                    spacer = ") "  # don't have a spacer if there's no values
                 options_text = options_text + f"{label}{spacer}{body} \n"
 
         # User can pass just a list of options and we generate labels for them
@@ -1347,16 +1348,14 @@ class QuestionBot(PayBot):
             # generate labels that are just ints and organise the options
             # into a friendly text format to send the user in one loop
             for item in options:
-                label= str(index)
+                label = str(index)
                 dict_options[label] = item
                 options_text = options_text + f"{label}{spacer}{item} \n"
                 index += 1
 
-
             # replace the options list with the new dict
             options = dict_options
 
-        
         await self.send_message(recipient, question_text + "\n" + options_text)
         answer_future = self.pending_answers[recipient] = asyncio.Future()
         answer = await answer_future
@@ -1390,23 +1389,24 @@ class QuestionBot(PayBot):
                     + options[answer.full_text]
                     + "\n \n Is this correct? (yes/no)"
                 )
-                confirmation = await self.ask_yesno_question(recipient, confirmation_text)
+                confirmation = await self.ask_yesno_question(
+                    recipient, confirmation_text
+                )
 
                 # if no, ask the question again
                 if not confirmation:
                     return await self.ask_multiple_choice_question(
-                    recipient,
-                    question_text,
-                    options,
-                    requires_confirmation,
-                    requires_first_device,
-                )
+                        recipient,
+                        question_text,
+                        options,
+                        requires_confirmation,
+                        requires_first_device,
+                    )
 
             # finally return the option that matches the answer, or if empty the answer itself
             return options[answer.full_text] or answer.full_text
         # TODO if we made it here I think that means something went wrong so maybe it should fail instead of returning None
         return None
-
 
     async def do_challenge(self, msg: Message) -> Response:
         """Challenges a user to do a simple math problem, optionally provided as an image to increase attacker complexity."""
