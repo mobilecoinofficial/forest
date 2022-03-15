@@ -48,26 +48,31 @@ class Message:
     arg1: Optional[str]
     arg2: Optional[str]
     arg3: Optional[str]
+    reactions: dict[str, str]
+    # reaction: Optional[Reaction]
+    # quote: Optional[Quote]
 
     def __init__(self, blob: dict) -> None:
         self.blob = blob
-        # parsing
-        self.tokens: Optional[list[str]] = None
-        if not self.text:
-            return
+        self.tokens: list[str] = []
+        if self.text:
+            self.parse_text(self.text)
+
+    def parse_text(self, text: str) -> None:
+        "set current self.text and tokenization to text"
         try:
             try:
-                arg0, maybe_json = self.text.split(" ", 1)
-                assert json.loads(self.text)
+                arg0, maybe_json = text.split(" ", 1)
+                assert json.loads(maybe_json)
                 self.tokens = maybe_json.split(" ")
             except (json.JSONDecodeError, AssertionError):
                 # replace quote
-                clean_quote_text = self.text
+                clean_quote_text = text
                 for quote in unicode_quotes:
                     clean_quote_text.replace(quote, "'")
                 arg0, *self.tokens = shlex.split(clean_quote_text)
         except ValueError:
-            arg0, *self.tokens = self.text.split(" ")
+            arg0, *self.tokens = text.split(" ")
         self.arg0 = arg0.removeprefix("/").lower()
         if self.tokens:
             self.arg1, self.arg2, self.arg3, *_ = self.tokens + [""] * 3
@@ -122,6 +127,7 @@ class AuxinMessage(Message):
         self.address = blob.get("Address", {})
         self.quoted_text = "" if not maybe_quote else maybe_quote.get("text")
         address = blob.get("remote_address", {}).get("address", {})
+        self.device_id = blob.get("remote_address", {}).get("device_id", "")
         if "Both" in address:
             self.source, self.uuid = address["Both"]
         elif "Uuid" in address:
@@ -151,6 +157,30 @@ class AuxinMessage(Message):
         super().__init__(blob)
 
 
+# auxin:
+# {'dataMessage': {'profileKey': 'LZa0kKwD0/L3qs96L+lIORyi3ATqqsOUEowtAic7Y0A=', 'reaction': {'emoji': '❤️', 'remove': False, 'targetAuthorUuid': 'da1fb04c-bf1a-458f-92c7-6f21ad443684', 'targetSentTimestamp': 1647300333914}, 'timestamp': 1647300340210}}}
+class Reaction:
+    def __init__(self, reaction: dict) -> None:
+        assert reaction
+        self.emoji = reaction["emoji"]
+        self.uuid = reaction.get("targetAuthorUuid")
+        self.author = reaction.get("targetAuthorNumber") or self.uuid or ""
+        self.ts = reaction["targetSentTimestamp"]
+
+
+class Quote:
+    def __init__(self, quote: dict) -> None:
+        assert quote
+        # signal-cli:
+        # {"id":1641591686224,"author":"+***REMOVED***","authorNumber":"+***REMOVED***","authorUuid":"412e180d-c500-4c60-b370-14f6693d8ea7","text":"hi","attachments":[]}
+        # auxin:
+        # {'authorUuid': 'da1fb04c-bf1a-458f-92c7-6f21ad443684', 'id': 1647300333914, 'text': '/pong'}
+        self.ts = quote["id"]
+        self.uuid = quote.get("authorUuid")
+        self.author = quote.get("authorNumber") or self.uuid or ""
+        self.text = quote["text"]
+
+
 class StdioMessage(Message):
     """Represents a Message received from signal-cli, optionally containing a command with arguments."""
 
@@ -162,6 +192,7 @@ class StdioMessage(Message):
         self.uuid = envelope.get("sourceUuid")
         self.source: str = envelope.get("source") or self.uuid
         self.name: str = envelope.get("sourceName") or self.source
+        self.device_id = envelope.get("sourceDevice")
         self.timestamp = envelope.get("timestamp") or result.get("timestamp")
 
         # msg data
@@ -176,7 +207,15 @@ class StdioMessage(Message):
         ) or result.get("groupId")
         self.quoted_text = msg.get("quote", {}).get("text")
         self.payment = msg.get("payment")
-        # self.reactions: dict[str, str] = {}
+        try:
+            self.quote: Optional[Quote] = Quote(msg.get("quote"))
+        except (AssertionError, KeyError):
+            self.quote = None
+        try:
+            self.reaction: Optional[Reaction] = Reaction(msg.get("reaction"))
+        except (AssertionError, KeyError):
+            self.reaction = None
+        self.reactions: dict[str, str] = {}
         if self.text:
             logging.info(self)  # "parsed a message with body: '%s'", self.text)
         super().__init__(blob)

@@ -91,7 +91,8 @@ def get_secret(key: str, env: Optional[str] = None) -> str:
 APP_NAME = os.getenv("FLY_APP_NAME")
 URL = os.getenv("URL_OVERRIDE", f"https://{APP_NAME}.fly.dev")
 LOCAL = os.getenv("FLY_APP_NAME") is None
-UPLOAD = DOWNLOAD = get_secret("DOWNLOAD")
+DOWNLOAD = get_secret("DOWNLOAD")
+UPLOAD = get_secret("UPLOAD") or DOWNLOAD
 ROOT_DIR = "/app" if not LOCAL else "/tmp/local-signal" if DOWNLOAD else "."
 MEMFS = get_secret("AUTOSAVE")
 SIGNAL = (get_secret("SIGNAL") or "auxin").removesuffix("-cli") + "-cli"
