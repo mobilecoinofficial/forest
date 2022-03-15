@@ -1,4 +1,5 @@
 *secrets
 *-cli
+*.pem
 data
 __pycache__
