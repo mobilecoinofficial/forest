@@ -17,7 +17,6 @@ import signal
 import sys
 import time
 import traceback
-from unittest import result
 import urllib
 import uuid
 import glob
