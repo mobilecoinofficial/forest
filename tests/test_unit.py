@@ -83,10 +83,11 @@ class MockBot(QuestionBot):
     #     return msg
 
     async def send_input(self, text: str) -> None:
+        """Puts a MockMessage in the inbox queue"""
         await self.inbox.put(MockMessage(text))
 
     async def get_output(self) -> str:
-        """Runs commands as normal but intercepts the output instead of passing it onto signal"""
+        """Reads messages in the outbox that would otherwise be sent over signal"""
         try:
             outgoing_msg = await asyncio.wait_for(self.outbox.get(), timeout=1)
             return outgoing_msg["params"]["message"]
@@ -139,7 +140,6 @@ async def test_commands(bot) -> None:
         await bot.get_cmd_output("/eval 1+1")
     ) == "you must be an admin to use this command"
 
-    print("come on man")
     print(await bot.get_cmd_output("/help"))
 
     assert (await bot.get_cmd_output("/help")).startswith("Documented commands:")
