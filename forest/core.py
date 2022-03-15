@@ -1324,7 +1324,7 @@ class QuestionBot(PayBot):
 
         # Text with the options nicely formatted,
         # will be filled out differently depending on whether user provided labels or not
-        options_text = ""
+        options_text: str = ""
 
         # This is the character that will appear between label and option text
         spacer: str = ") "
@@ -1368,7 +1368,7 @@ class QuestionBot(PayBot):
             if answer.full_text.lower() in self.TERMINAL_ANSWERS:
                 return None
 
-            # otherwise add reminder to type the label exactly as it appears and restate the question
+            # otherwise remind to type the label exactly as it appears and restate the question
             return await self.ask_multiple_choice_question(
                 recipient,
                 "Please reply with just the label exactly as typed \n \n"
