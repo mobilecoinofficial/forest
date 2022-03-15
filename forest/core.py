@@ -199,24 +199,16 @@ class Signal:
         # call C fn _exit() without calling cleanup handlers, flushing stdio buffers, etc.
         os._exit(1)
 
-    def handle_task(
+    def log_task_result(
         self,
         task: asyncio.Task,
-        *,
-        _func: Optional[AsyncFunc] = None,
-        f_args: Optional[dict] = None,
-        **params: str,
     ) -> None:
         """
-        Done callback which logs task done result and/or restarts a task on error
+        Done callback which logs task done result
         args:
             task (asyncio.task): Finished task
-            _func (AsyncFunc): Async function to restart
-            f_args (dict): Args to pass to function on restart
         """
-        name = task.get_name()
-        if _func:
-            name = _func.__name__
+        name = task.get_name() + "-" + getattr(task.get_coro(), "__name__", "")
         try:
             result = task.result()
             logging.info("final result of %s was %s", name, result)
@@ -224,21 +216,21 @@ class Signal:
             logging.info("task %s was cancelled", name)
         except Exception:  # pylint: disable=broad-except
             logging.exception("%s errored", name)
+
+    def restart_task_callback(
+        self,
+        _func: AsyncFunc,
+    ) -> Callable:
+        def handler(task: asyncio.Task) -> None:
+            name = task.get_name() + "-" + getattr(task.get_coro(), "__name__", "")
             if self.sigints > 1:
                 return
-            if callable(_func) and asyncio.iscoroutinefunction(_func):
-                if isinstance(f_args, dict):
-                    task = asyncio.create_task(_func(**f_args))
-                else:
-                    task = asyncio.create_task(_func())
-                task.add_done_callback(
-                    functools.partial(
-                        self.handle_task, _func=_func, f_args=f_args, **params
-                    )
-                )
-                if hasattr(self, params.get("attr", "")):
-                    setattr(self, params["attr"], task)
+            if asyncio.iscoroutinefunction(_func):
+                task = asyncio.create_task(_func())
+                task.add_done_callback(self.restart_task_callback(_func))
                 logging.info("%s restarting", name)
+
+        return handler
 
     async def read_signal_stdout(self, stream: StreamReader) -> None:
         """Read auxin-cli/signal-cli output but delegate handling it"""
@@ -580,15 +572,12 @@ class Bot(Signal):
         self.restart_task = asyncio.create_task(
             self.start_process()
         )  # maybe cancel on sigint?
+        self.restart_task.add_done_callback(self.log_task_result)
         self.handle_messages_task = asyncio.create_task(self.handle_messages())
+        self.handle_messages_task.add_done_callback(self.log_task_result)
         self.handle_messages_task.add_done_callback(
-            functools.partial(
-                self.handle_task,
-                _func=self.handle_messages,
-                attr="handle_messages_task",
-            )
+            self.restart_task_callback(self.handle_messages)
         )
-        self.restart_task.add_done_callback(functools.partial(self.handle_task))
 
     async def handle_messages(self) -> None:
         """
@@ -1427,6 +1416,13 @@ async def metrics(request: web.Request) -> web.Response:
     )
 
 
+async def restart(request: web.Request) -> web.Response:
+    bot = request.app["bot"]
+    bot.restart_task = asyncio.create_task(bot.start_process())
+    bot.restart_task.add_done_callback(functools.partial(bot.handle_task))
+    return web.Response(status=200)
+
+
 app = web.Application()
 
 
@@ -1443,6 +1439,7 @@ app.add_routes(
         web.get("/pongs/{pong}", pong_handler),
         web.post("/user/{phonenumber}", send_message_handler),
         web.post("/admin", admin_handler),
+        web.post("/restart", restart),
         web.get("/metrics", aio.web.server_stats),
         web.get("/csv_metrics", metrics),
     ]
