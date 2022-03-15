@@ -475,7 +475,7 @@ class Signal:
         await self.outbox.put(cmd)
 
     backoff = False
-    messages_until_rate_limit = 50.0
+    messages_until_rate_limit = 1000.0
     last_update = time.time()
 
     def update_and_check_rate_limit(self) -> bool:
@@ -564,7 +564,7 @@ class Bot(Signal):
     def __init__(self, bot_number: Optional[str] = None) -> None:
         """Creates AND STARTS a bot that routes commands to do_x handlers"""
         self.client_session = aiohttp.ClientSession()
-        self.mobster = payments_monitor.Mobster()
+        self.mobster = payments_monitor.StatefulMobster()
         self.pongs: dict[str, str] = {}
         self.signal_roundtrip_latency: list[Datapoint] = []
         self.pending_response_tasks: list[asyncio.Task] = []
@@ -775,7 +775,7 @@ class Bot(Signal):
             # pylint: disable=eval-used
             return await eval(f"{fn_name}()", env or globals())
 
-        if msg.full_text and len(msg.tokens) > 1:
+        if msg.full_text and msg.tokens and len(msg.tokens) > 1:
             source_blob = msg.full_text.replace(msg.arg0, "", 1).lstrip("/ ")
             try:
                 return str(await async_exec(source_blob, globals() | locals()))
@@ -877,7 +877,7 @@ class ExtrasBot(Bot):
 class PayBot(ExtrasBot):
     PAYMENTS_HELPTEXT = """Enable Signal Pay:
 
-    1. In Signal, tap “🠔“ & tap on your profile icon in the top left & tap *Settings*
+    1. In Signal, tap “⬅️“ & tap on your profile icon in the top left & tap *Settings*
 
     2. Tap *Payments* & tap *Activate Payments*
 
@@ -1165,6 +1165,9 @@ class PayBot(ExtrasBot):
         return await resp_future
 
 
+# we should just have either a hasable user type or a mapping subtype
+
+
 def get_source_or_uuid_from_dict(
     msg: Message, dict_: dict[str, Any]
 ) -> Tuple[bool, Any]:
@@ -1190,7 +1193,7 @@ class QuestionBot(PayBot):
         self.pending_answers: dict[str, asyncio.Future[Message]] = {}
         self.requires_first_device: dict[str, bool] = {}
         self.failed_user_challenges: dict[str, int] = {}
-        self.TERMINAL_ANSWERS = "stop quit exit break cancel abort".split()
+        self.TERMINAL_ANSWERS = "0 no none stop quit exit break cancel abort".split()
         self.FIRST_DEVICE_PLEASE = "Please answer from your phone or primary device!"
         self.UNEXPECTED_ANSWER = "Did I ask you a question?"
         super().__init__(bot_number)
@@ -1225,6 +1228,8 @@ class QuestionBot(PayBot):
             return self.FIRST_DEVICE_PLEASE
         if question:
             question.set_result(True)
+            self.requires_first_device.pop(msg.uuid, None)
+            self.requires_first_device.pop(msg.source, None)
         return None
 
     @hide
@@ -1240,6 +1245,8 @@ class QuestionBot(PayBot):
             return self.FIRST_DEVICE_PLEASE
         if question:
             question.set_result(False)
+            self.requires_first_device.pop(msg.uuid, None)
+            self.requires_first_device.pop(msg.source, None)
         return None
 
     async def ask_freeform_question(
