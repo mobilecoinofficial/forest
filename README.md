@@ -140,7 +140,7 @@ sudo apt install jq # install jq in case you don't already have it
 ```
 ``` bash
 export BOT_NUMBER=+15551234567 # number you've obtained for your bot
-export CAPTCHA=$(curl -s --data-binary "https://signalcaptchas.org/registration/generate.html" https://human-after-all-21.fly.dev/6LedYI0UAAAAAMt8HLj4s-_2M_nYOhWMMFRGYHgY | jq -r .solution.gRecaptchaResponse)
+export CAPTCHA=signal-recaptcha-v2.6LfBXs0bAAAAAAjkDyyI1Lk5gBAUWfhI_bIyox5W.registration.$(curl -s --data-binary "https://signalcaptchas.org/registration/generate.html" https://human-after-all-21.fly.dev/6LfBXs0bAAAAAAjkDyyI1Lk5gBAUWfhI_bIyox5W | jq -r .solution.gRecaptchaResponse)
 ./signal-cli --config . -u $BOT_NUMBER register --captcha $CAPTCHA
 ```
 The ```CAPTCHA``` command may take a minute or so to complete. 
@@ -229,7 +229,7 @@ DATABASE_URL=postgres://<your database url>
 Then, you can upload your datastore with:
 
 ```bash
-./forest/datastore.py upload --number $BOT_NUMBER --path .
+./forest/datastore.py upload --number $BOT_NUMBER --path . --note "this number is for my special bot"
 ```
 
 ## Options and secrets
@@ -239,6 +239,8 @@ These are the environment variables and flags that the bots read to work. Not al
 - `ENV`: if running locally, which {ENV}_secrets file to use. 
 - `BOT_NUMBER`: the number for the bot's signal account
 - `ADMIN`: admin's phone number, primarily as a fallback recipient for invalid webhooks; may also be used to send error messages and metrics.
+- `ADMINS`: additional list of people who can use admin commands
+- `ADMIN_GROUP`: group to get admin messages. all messages in that group will have admin
 - `DATABASE_URL`: URL for the Postgres database to store the signal keys in as well as other information.
 - `FULL_SERVICE_URL`: URL for [full-service](https://github.com/mobilecoinofficial/full-service) instance to use for sending and receiving payments
 - `CLIENTCRT`: client certificate to connect to ssl-enabled full-service.
@@ -253,6 +255,7 @@ These are the environment variables and flags that the bots read to work. Not al
 
 ## Binary flags
 - `DOWNLOAD`: download/upload datastore from the database instead of using what's in the current working directory.
+- `UPLOAD`: can be used to upload as a backup without downloading
 - `AUTOSAVE`: start MEMFS, making a fake filesystem in `./data` and used to upload the signal-cli datastore to the database whenever it is changed. If `DOWNLOAD`, also create an equivalent tmpdir at /tmp/local-signal, chdir to it, and symlink signal-cli process and avatar.
 - `MONITOR_WALLET`: monitor transactions from full-service. Relevant only if you're giving users a payment address to send mobilecoin to instead of using signal pay.  Experimental, do not use.
 - `LOGFILES`: create a debug.log.

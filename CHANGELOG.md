@@ -1,3 +1,16 @@
+## 1.2.3
+
+- new flags: ADMINS, ADMIN_GROUP, UPLOAD (upload-only).
+- `last_node_name column` in `signal_accounts` table, like `active_node_name` and also they include app name. `list_accounts` uses your timezone
+- refactor command matching and  message text parsing. include `device_id`, reaction, and quote. shouldn't have breaking changes. 
+- move commands from Bot to ExtrasBot (could be renamed), drop invoices, allow using separate ledgers, time postgres queries
+
+## 1.2.2
+
+- fasterpKVStoreClient (#112). probably need to change PAUTH if you're using pdict
+- upload requires note (#147)
+- switch from pipenv to poetry (#148)
+
 ## 1.2.1
 
 - use `SIGNAL_PATH` instead of `SIGNAL_CLI_PATH`; it uses `which signal-cli` or `which auxin-cli` as appropriate as a fallback. (#145)

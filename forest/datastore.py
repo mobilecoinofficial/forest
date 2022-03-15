@@ -11,6 +11,8 @@ import shutil
 import socket
 import sys
 import time
+import datetime
+import zoneinfo
 from io import BytesIO
 from pathlib import Path
 from tarfile import TarFile
@@ -43,19 +45,21 @@ class DatastoreError(Exception):
 AccountPGExpressions = pghelp.PGExpressions(
     table="signal_accounts",
     # rename="ALTAR TABLE IF EXISTS prod_users RENAME TO {self.table}",
-    migrate="ALTER TABLE IF EXISTS {self.table} ADD IF NOT EXISTS datastore BYTEA, ADD IF NOT EXISTS notes TEXT",
+    migrate="""ALTER TABLE IF EXISTS {self.table} ADD IF NOT EXISTS datastore BYTEA, ADD IF NOT EXISTS notes TEXT""",
     create_table="CREATE TABLE IF NOT EXISTS {self.table} \
             (id TEXT PRIMARY KEY, \
             datastore BYTEA, \
             last_update_ms BIGINT, \
             last_claim_ms BIGINT, \
             active_node_name TEXT, \
+            last_node_name TEXT, \
             notes TEXT);",
     is_registered="SELECT datastore is not null as registered FROM {self.table} WHERE id=$1",
     get_datastore=get_datastore,
     get_claim="SELECT active_node_name FROM {self.table} WHERE id=$1",
     mark_account_claimed="UPDATE {self.table} \
         SET active_node_name = $2, \
+        last_node_name = $2, \
         last_claim_ms = (extract(epoch from now()) * 1000) \
         WHERE id=$1;",
     mark_account_freed="UPDATE {self.table} SET last_claim_ms = 0, \
@@ -142,16 +146,6 @@ class SignalDatastore:
                 self.number.removeprefix("+")
             )
         logging.info("got datastore from pg")
-        if json_data := record[0].get("account"):
-            # legacy json-only field
-            loaded_data = json.loads(json_data)
-            if "username" in loaded_data:
-                try:
-                    os.mkdir("data")
-                except FileExistsError:
-                    pass
-                open("data/" + loaded_data["username"], "w").write(json_data)
-                return
         buffer = BytesIO(record[0].get("datastore"))
         tarball = TarFile(fileobj=buffer)
         fnames = [member.name for member in tarball.getmembers()]
@@ -163,8 +157,9 @@ class SignalDatastore:
         )
         tarball.extractall(utils.ROOT_DIR)
         # open("last_downloaded_checksum", "w").write(zlib.crc32(buffer.seek(0).read()))
-        hostname = socket.gethostname()
-        await self.account_interface.mark_account_claimed(self.number, hostname)
+        app_prefix = utils.APP_NAME + "-" if utils.APP_NAME else ""
+        node_name = app_prefix + socket.gethostname()
+        await self.account_interface.mark_account_claimed(self.number, node_name)
         logging.debug("marked account as claimed, asserting that this is the case")
         assert await self.is_claimed()
         return
@@ -300,10 +295,26 @@ def subcommand(
     return decorator
 
 
+def format_field(field: Any) -> str:
+    if isinstance(field, int):
+        return (
+            datetime.datetime.fromtimestamp(field / 1000)
+            .astimezone(zoneinfo.ZoneInfo("localtime"))
+            .isoformat(timespec="seconds")
+        )
+    return str(field)
+
+
 @subcommand()
 async def list_accounts(_args: argparse.Namespace) -> None:
     "list available accounts in table format"
-    cols = ["id", "last_update_ms", "last_claim_ms", "active_node_name"]
+    cols = [
+        "id",
+        "last_update_ms",
+        "last_claim_ms",
+        "active_node_name",
+        "last_node_name",
+    ]
     interface = get_account_interface()
     # sorry
     if "notes" in [
@@ -316,12 +327,14 @@ async def list_accounts(_args: argparse.Namespace) -> None:
         )
     ]:
         cols.append("notes")
-    query = f"select {' ,'.join(cols)} from signal_accounts order by id"
+    query = (
+        f"select {' ,'.join(cols)} from signal_accounts order by last_update_ms desc"
+    )
     accounts = await get_account_interface().execute(query)
     if not isinstance(accounts, list):
         return
     table = [cols] + [
-        [str(value) for value in account.values()] for account in accounts
+        [format_field(value) for value in account.values()] for account in accounts
     ]
     str_widths = [max(len(row[index]) for row in table) for index in range(len(cols))]
     row_format = " ".join("{:<" + str(width) + "}" for width in str_widths)
@@ -336,12 +349,39 @@ async def free(ns: argparse.Namespace) -> None:
     await get_account_interface().mark_account_freed(ns.number)
 
 
+async def _set_note(number: str, note: str) -> None:
+    await get_account_interface().execute(
+        "update signal_accounts set notes=$1 where id=$2",
+        note,
+        number,
+    )
+
+
 @subcommand([argument("--number"), argument("note", help="new note for number")])
 async def set_note(ns: argparse.Namespace) -> None:
     "set the note field for a number"
-    await get_account_interface().execute(
-        f"update signal_accounts set notes='{ns.note}' where id='{ns.number}'"
-    )
+    await _set_note(ns.number, ns.note)
+
+
+@subcommand(
+    [argument("--path"), argument("--number"), argument("note", help="note for number")]
+)
+async def upload(ns: argparse.Namespace) -> None:
+    """
+    upload a datastore
+    --path to a directory that contains data/
+    --number for the account number
+    note: note indicating if this number is free or used for a specific bot
+    """
+    if ns.path:
+        os.chdir(ns.path)
+    if ns.number:
+        num = ns.number
+    else:
+        num = sorted(os.listdir("data"))[0]
+    store = SignalDatastore(num)
+    await store.upload()
+    await _set_note(num, ns.note)
 
 
 @subcommand([argument("--number")])
@@ -361,9 +401,6 @@ async def sync(ns: argparse.Namespace) -> None:
         await datastore.mark_freed()
 
 
-upload_parser = subparser.add_parser("upload")
-upload_parser.add_argument("--path")
-upload_parser.add_argument("--number")
 # download_parser = subparser.add_parser("download")
 # download_parser.add_argument("--number")
 # migrate_parser = subparser.add_parser("migrate")
@@ -374,14 +411,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if hasattr(args, "func"):
         asyncio.run(args.func(args))
-    elif args.subparser == "upload":
-        if args.path:
-            os.chdir(args.path)
-        if args.number:
-            num = args.number
-        else:
-            num = sorted(os.listdir("data"))[0]
-        store = SignalDatastore(num)
-        asyncio.run(store.upload())
     else:
         print("not implemented")

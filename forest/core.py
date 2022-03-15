@@ -199,24 +199,16 @@ class Signal:
         # call C fn _exit() without calling cleanup handlers, flushing stdio buffers, etc.
         os._exit(1)
 
-    def handle_task(
+    def log_task_result(
         self,
         task: asyncio.Task,
-        *,
-        _func: Optional[AsyncFunc] = None,
-        f_args: Optional[dict] = None,
-        **params: str,
     ) -> None:
         """
-        Done callback which logs task done result and/or restarts a task on error
+        Done callback which logs task done result
         args:
             task (asyncio.task): Finished task
-            _func (AsyncFunc): Async function to restart
-            f_args (dict): Args to pass to function on restart
         """
-        name = task.get_name()
-        if _func:
-            name = _func.__name__
+        name = task.get_name() + "-" + getattr(task.get_coro(), "__name__", "")
         try:
             result = task.result()
             logging.info("final result of %s was %s", name, result)
@@ -224,21 +216,21 @@ class Signal:
             logging.info("task %s was cancelled", name)
         except Exception:  # pylint: disable=broad-except
             logging.exception("%s errored", name)
+
+    def restart_task_callback(
+        self,
+        _func: AsyncFunc,
+    ) -> Callable:
+        def handler(task: asyncio.Task) -> None:
+            name = task.get_name() + "-" + getattr(task.get_coro(), "__name__", "")
             if self.sigints > 1:
                 return
-            if callable(_func) and asyncio.iscoroutinefunction(_func):
-                if isinstance(f_args, dict):
-                    task = asyncio.create_task(_func(**f_args))
-                else:
-                    task = asyncio.create_task(_func())
-                task.add_done_callback(
-                    functools.partial(
-                        self.handle_task, _func=_func, f_args=f_args, **params
-                    )
-                )
-                if hasattr(self, params.get("attr", "")):
-                    setattr(self, params["attr"], task)
+            if asyncio.iscoroutinefunction(_func):
+                task = asyncio.create_task(_func())
+                task.add_done_callback(self.restart_task_callback(_func))
                 logging.info("%s restarting", name)
+
+        return handler
 
     async def read_signal_stdout(self, stream: StreamReader) -> None:
         """Read auxin-cli/signal-cli output but delegate handling it"""
@@ -441,9 +433,12 @@ class Signal:
         await self.outbox.put(json_command)
         return rpc_id
 
-    async def admin(self, msg: Response) -> None:
+    async def admin(self, msg: Response, **kwargs: Any) -> None:
         "send a message to admin"
-        await self.send_message(utils.get_secret("ADMIN"), msg)
+        if (group := utils.get_secret("ADMIN_GROUP")) and not utils.AUXIN:
+            await self.send_message(None, msg, group=group, **kwargs)
+        else:
+            await self.send_message(utils.get_secret("ADMIN"), msg, **kwargs)
 
     async def respond(self, target_msg: Message, msg: Response) -> str:
         """Respond to a message depending on whether it's a DM or group"""
@@ -472,7 +467,7 @@ class Signal:
         await self.outbox.put(cmd)
 
     backoff = False
-    messages_until_rate_limit = 50.0
+    messages_until_rate_limit = 1000.0
     last_update = time.time()
 
     def update_and_check_rate_limit(self) -> bool:
@@ -508,6 +503,10 @@ class Signal:
                 logging.error("signal stdin pipe is closed")
             pipe.write(json.dumps(command).encode() + b"\n")
             await pipe.drain()
+
+
+class UserError(Exception):
+    pass
 
 
 def is_admin(msg: Message) -> bool:
@@ -557,7 +556,7 @@ class Bot(Signal):
     def __init__(self, bot_number: Optional[str] = None) -> None:
         """Creates AND STARTS a bot that routes commands to do_x handlers"""
         self.client_session = aiohttp.ClientSession()
-        self.mobster = payments_monitor.Mobster()
+        self.mobster = payments_monitor.StatefulMobster()
         self.pongs: dict[str, str] = {}
         self.signal_roundtrip_latency: list[Datapoint] = []
         self.pending_response_tasks: list[asyncio.Task] = []
@@ -573,15 +572,12 @@ class Bot(Signal):
         self.restart_task = asyncio.create_task(
             self.start_process()
         )  # maybe cancel on sigint?
+        self.restart_task.add_done_callback(self.log_task_result)
         self.handle_messages_task = asyncio.create_task(self.handle_messages())
+        self.handle_messages_task.add_done_callback(self.log_task_result)
         self.handle_messages_task.add_done_callback(
-            functools.partial(
-                self.handle_task,
-                _func=self.handle_messages,
-                attr="handle_messages_task",
-            )
+            self.restart_task_callback(self.handle_messages)
         )
-        self.restart_task.add_done_callback(functools.partial(self.handle_task))
 
     async def handle_messages(self) -> None:
         """
@@ -628,6 +624,8 @@ class Bot(Signal):
             response = await self.handle_message(message)
             if response is not None:
                 rpc_id = await self.respond(message, response)
+        except UserError as e:
+            rpc_id = await self.respond(message, str(e))
         except:  # pylint: disable=bare-except
             exception_traceback = "".join(traceback.format_exception(*sys.exc_info()))
             self.pending_response_tasks.append(
@@ -650,16 +648,21 @@ class Bot(Signal):
                     f"command: {note}. python delta: {python_delta}s. roundtrip delta: {roundtrip_delta}s",
                 )
 
-    def is_command(self, msg: Message) -> bool:
+    def mentions_us(self, msg: Message) -> bool:
         # "mentions":[{"name":"+447927948360","number":"+447927948360","uuid":"fc4457f0-c683-44fe-b887-fe3907d7762e","start":0,"length":1}
-        has_slash = msg.full_text and msg.full_text.startswith("/")
-        return has_slash or any(
-            mention.get("number") == self.bot_number for mention in msg.mentions
-        )
+        return any(mention.get("number") == self.bot_number for mention in msg.mentions)
+
+    def is_command(self, msg: Message) -> bool:
+        if msg.full_text:
+            return msg.full_text.startswith("/") or self.mentions_us(msg)
+        return False
 
     def match_command(self, msg: Message) -> str:
         if not msg.arg0:
             return ""
+        # probably wrong
+        if self.mentions_us(msg) and msg.full_text:
+            msg.parse_text(msg.full_text.lstrip("\N{Object Replacement Character} "))
         # happy part direct match
         if hasattr(self, "do_" + msg.arg0):
             return msg.arg0
@@ -695,6 +698,7 @@ class Bot(Signal):
         return await self.default(message)
 
     def documented_commands(self) -> str:
+        # check for only commands that have docstrings
         commands = ", ".join(
             name.removeprefix("do_")
             for name in dir(self)
@@ -708,7 +712,11 @@ class Bot(Signal):
         "Default response. Override in your class to change this behavior"
         resp = "That didn't look like a valid command!\n" + self.documented_commands()
         # if it messages an echoserver, don't get in a loop (or groups)
-        if message.text and not (message.group or message.text == resp):
+        if message.text and not (
+            message.group
+            or "Documented commands" in message.text
+            or resp == message.text
+        ):
             return resp
         return None
 
@@ -720,10 +728,14 @@ class Bot(Signal):
             return None
         if msg.arg1:
             try:
-                doc = getattr(self, f"do_{msg.arg1}").__doc__
+                cmd = getattr(self, f"do_{msg.arg1}")
+                if hasattr(getattr(self, f"do_{msg.arg1}"), "hide"):
+                    raise AttributeError("Pretend this never happened.")
+                # allow messages to have a different helptext in groups
+                if hasattr(cmd, "__group_doc__") and msg.group:
+                    return dedent(cmd.__group_doc__).strip()
+                doc = cmd.__doc__
                 if doc:
-                    if hasattr(getattr(self, f"do_{msg.arg1}"), "hide"):
-                        raise AttributeError("Pretend this never happened.")
                     return dedent(doc).strip()
                 return f"{msg.arg1} isn't documented, sorry :("
             except AttributeError:
@@ -731,14 +743,6 @@ class Bot(Signal):
         else:
             resp = self.documented_commands()
         return resp
-
-    async def do_printerfact(self, _: Message) -> str:
-        "Learn a fact about printers"
-        async with self.client_session.get(
-            utils.get_secret("FACT_SOURCE") or "https://colbyolson.com/printers"
-        ) as resp:
-            fact = await resp.text()
-        return fact.strip()
 
     @requires_admin
     async def do_eval(self, msg: Message) -> Response:
@@ -758,13 +762,17 @@ class Bot(Signal):
             code = compile(parsed_fn, filename="<ast>", mode="exec")
             exec(code, env or globals())  # pylint: disable=exec-used
             # pylint: disable=eval-used
-            return await eval(f"{fn_name}()", env or locals())
+            return await eval(f"{fn_name}()", env or globals())
 
-        if msg.full_text and len(msg.tokens) > 1:
+        if msg.full_text and msg.tokens and len(msg.tokens) > 1:
             source_blob = msg.full_text.replace(msg.arg0, "", 1).lstrip("/ ")
-            env = globals()
-            env.update(locals())
-            return str(await async_exec(source_blob, env))
+            try:
+                return str(await async_exec(source_blob, globals() | locals()))
+            except:  # pylint: disable=bare-except
+                exception_traceback = "".join(
+                    traceback.format_exception(*sys.exc_info())
+                )
+                return exception_traceback
         return None
 
     def get_recipients(self) -> list[dict[str, str]]:
@@ -797,6 +805,16 @@ class Bot(Signal):
                 return maybe_recipient[0]["number"]
         return None
 
+
+class ExtrasBot(Bot):
+    async def do_printerfact(self, _: Message) -> str:
+        "Learn a fact about printers"
+        async with self.client_session.get(
+            utils.get_secret("FACT_SOURCE") or "https://colbyolson.com/printers"
+        ) as resp:
+            fact = await resp.text()
+        return fact.strip()
+
     async def do_ping(self, message: Message) -> str:
         """replies to /ping with /pong"""
         if message.text:
@@ -813,6 +831,13 @@ class Bot(Signal):
             self.pongs[message.text] = message.text
             return f"OK, stashing {message.text}"
         return "OK"
+
+    @hide
+    async def do_commit_msg(self, _: Message) -> str:
+        try:
+            return f"Commit message: {open('COMMIT_EDITMSG').read()}"
+        except FileNotFoundError:
+            return "No commit message available"
 
     async def do_signalme(self, _: Message) -> Response:
         """signalme
@@ -838,10 +863,10 @@ class Bot(Signal):
         return t
 
 
-class PayBot(Bot):
+class PayBot(ExtrasBot):
     PAYMENTS_HELPTEXT = """Enable Signal Pay:
 
-    1. In Signal, tap “🠔“ & tap on your profile icon in the top left & tap *Settings*
+    1. In Signal, tap “⬅️“ & tap on your profile icon in the top left & tap *Settings*
 
     2. Tap *Payments* & tap *Activate Payments*
 
@@ -1030,11 +1055,9 @@ class PayBot(Bot):
         address = await self.get_signalpay_address(recipient)
         account_id = await self.mobster.get_account()
         if not address:
-            await self.send_message(
-                recipient,
-                "Sorry, couldn't get your MobileCoin address. Please make sure you have payments enabled, and have messaged me from your phone!",
+            raise UserError(
+                "Sorry, couldn't get your MobileCoin address. Please make sure you have payments enabled, and have messaged me from your phone!"
             )
-            return None
         # TODO: add explicit utxo handling
         raw_prop = await self.mob_request(
             "build_transaction",
@@ -1131,6 +1154,9 @@ class PayBot(Bot):
         return await resp_future
 
 
+# we should just have either a hasable user type or a mapping subtype
+
+
 def get_source_or_uuid_from_dict(
     msg: Message, dict_: dict[str, Any]
 ) -> Tuple[bool, Any]:
@@ -1156,7 +1182,7 @@ class QuestionBot(PayBot):
         self.pending_answers: dict[str, asyncio.Future[Message]] = {}
         self.requires_first_device: dict[str, bool] = {}
         self.failed_user_challenges: dict[str, int] = {}
-        self.TERMINAL_ANSWERS = "stop quit exit break cancel abort".split()
+        self.TERMINAL_ANSWERS = "0 no none stop quit exit break cancel abort".split()
         self.FIRST_DEVICE_PLEASE = "Please answer from your phone or primary device!"
         self.UNEXPECTED_ANSWER = "Did I ask you a question?"
         super().__init__(bot_number)
@@ -1175,7 +1201,7 @@ class QuestionBot(PayBot):
             self.requires_first_device.pop(message.uuid, None)
             if probably_future:
                 probably_future.set_result(message)
-            return
+            return None
         return await super().handle_message(message)
 
     @hide
@@ -1191,6 +1217,8 @@ class QuestionBot(PayBot):
             return self.FIRST_DEVICE_PLEASE
         if question:
             question.set_result(True)
+            self.requires_first_device.pop(msg.uuid, None)
+            self.requires_first_device.pop(msg.source, None)
         return None
 
     @hide
@@ -1206,6 +1234,8 @@ class QuestionBot(PayBot):
             return self.FIRST_DEVICE_PLEASE
         if question:
             question.set_result(False)
+            self.requires_first_device.pop(msg.uuid, None)
+            self.requires_first_device.pop(msg.source, None)
         return None
 
     async def ask_freeform_question(
@@ -1386,6 +1416,13 @@ async def metrics(request: web.Request) -> web.Response:
     )
 
 
+async def restart(request: web.Request) -> web.Response:
+    bot = request.app["bot"]
+    bot.restart_task = asyncio.create_task(bot.start_process())
+    bot.restart_task.add_done_callback(functools.partial(bot.handle_task))
+    return web.Response(status=200)
+
+
 app = web.Application()
 
 
@@ -1402,6 +1439,7 @@ app.add_routes(
         web.get("/pongs/{pong}", pong_handler),
         web.post("/user/{phonenumber}", send_message_handler),
         web.post("/admin", admin_handler),
+        web.post("/restart", restart),
         web.get("/metrics", aio.web.server_stats),
         web.get("/csv_metrics", metrics),
     ]
