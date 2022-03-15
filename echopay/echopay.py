@@ -55,8 +55,11 @@ class Echopay(PayBot):
         # and msg.arg1 is the next word after that. In "payme please" please is msg.arg1
 
         if message.arg1 == password:
-            await self.send_payment(message.source, amount_picomob)
-            return f"Of course, here's {str(amount_mob)} MOB"
+            # This check verifies that the payment succeeded.
+            if getattr(payment_status, "status", "") == "tx_status_succeeded":
+                return f"Sent you a payment for {str(amount_mob)} MOB"
+
+            return "There was a problem processing your payment, please ask an admininstrator for help"
 
         if message.arg1 is None:
             return "What's the secret word?"
@@ -81,13 +84,18 @@ class Echopay(PayBot):
             return response
 
         recipient = message.arg1
-        await self.send_payment(
+        payment_status = await self.send_payment(
             recipient,
             amount_picomob,
             confirm_tx_timeout=10,
             receipt_message="Here's some money from your friendly Paymebot",
         )
-        return f"Sent Payment to {recipient} for {amount_mob} MOB"
+
+        # This check verifies that the payment succeeded.
+        if getattr(payment_status, "status", "") == "tx_status_succeeded":
+            return f"Sent Payment to {recipient} for {amount_mob} MOB"
+
+        return "There was a problem processing your payment, please ask an admininstrator for help"
 
     async def payment_response(self, msg: Message, amount_pmob: int) -> Response:
         """Triggers on Succesful payment, overriden from forest.core"""
