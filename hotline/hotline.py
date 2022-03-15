@@ -378,7 +378,7 @@ class ClanGat(TalkBack):
             valid_utxos = [
                 utxo
                 for utxo, upmob in (await self.mobster.get_utxos()).items()
-                if upmob > (1_000_000_000 * amount_mmob)
+                if upmob > (1_000_000_000 * (amount_mmob + 1))
             ]
             if len(valid_utxos) < len(filtered_send_list):
                 await self.send_message(
@@ -392,7 +392,7 @@ class ClanGat(TalkBack):
                 valid_utxos = [
                     utxo
                     for utxo, upmob in (await self.mobster.get_utxos()).items()
-                    if upmob > (1_000_000_000 * amount_mmob)
+                    if upmob > (1_000_000_000 * (amount_mmob + 1))
                 ]
             failed = []
 
