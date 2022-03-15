@@ -526,6 +526,7 @@ class ClanGat(TalkBack):
                 set(
                     await self.event_lists.get(obj.lower(), [])
                     + await self.event_attendees.get(obj.lower(), [])
+                    + await self.event_owners.get(obj.lower(), [])
                 )
             )
             # send preview
