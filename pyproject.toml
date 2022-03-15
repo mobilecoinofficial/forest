@@ -1,0 +1,85 @@
+[tool.poetry]
+name = "forestbot"
+version = "1.2.0.1"
+description = "Enables a Forest of MobileCoin enabled Signal bots"
+#long_description = "Forest is an async framework for running payments-enabled chat and utility bots for Signal Messenger."
+homepage = "https://github.com/mobilecoinofficial/forest"
+authors = ["Forest <forest@mobilecoin.com>"]
+license = "MIT"
+packages = [{include = "forest"}, {include = "mc_util"}]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.9"
+aioprocessing = "*"
+asyncpg = "*"
+base58 = "*"
+phonenumberslite = "*"
+prometheus_async = "*"
+prometheus_client = "*"
+protobuf = "*"
+termcolor = "*"
+ulid2 = "*"
+pycryptodome = "*"
+aiohttp = {extras = ["speedups"], version = "^3.8.1"}
+
+[tool.poetry.dev-dependencies]
+black = "*"
+mypy = "*"
+pylint = "*"
+pytest = "*"
+pytest-cov = "*"
+pytest-asyncio = "*"
+types-protobuf = "^3.19.12"
+types-termcolor = "^1.1.3"
+isort = "*"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.mypy]
+ignore_missing_imports=true
+
+disallow_untyped_calls=true
+disallow_untyped_defs=true
+disallow_untyped_decorators=true # eh
+check_untyped_defs=true
+
+warn_redundant_casts=true
+warn_unused_ignores=true
+warn_unused_configs=true
+
+[tool.pylint.'MESSAGES CONTROL']
+
+disable= [
+    "attribute-defined-outside-init",
+    "invalid-name",
+    "missing-docstring",
+    "protected-access",
+    "too-few-public-methods",
+    "too-many-instance-attributes",
+    "logging-fstring-interpolation",
+    "consider-using-with",
+    "consider-using-from-import",
+    "fixme",
+    "no-self-use",
+    "unspecified-encoding",
+    # handled by black
+    "format",
+    "line-too-long",
+]
+
+[tool.pylint.TYPECHECK]
+ignored-classes="PrintableWrapper"
+
+[tool.pylint.VARIABLES]
+dummy-variables-rgx="(_|dummy|unused|i)"
+
+[tool.pylint.SIMILARITY]
+min-similarity-lines=9
+ignore-imports="yes"
+
+
+[tool.pytest.ini_options]
+asyncio_mode = "strict"

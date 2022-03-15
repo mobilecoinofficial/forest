@@ -28,6 +28,7 @@ if len(AESKEY) == 64:
     AESKEY = AESKEY[:32]
 
 pAUTH = os.getenv("PAUTH", "")
+pURL = os.getenv("PURL", "https://gusc1-charming-parrot-31440.upstash.io")
 
 if not pAUTH:
     raise ValueError("Need to set PAUTH envvar for persistence")
@@ -67,7 +68,57 @@ def get_cleartext_value(value_: str) -> str:
     return gzip.decompress(decrypt(base58.b58decode(value_), AESKEY)).decode()
 
 
-class fastpKVStoreClient:
+class persistentKVStoreClient:
+    async def post(self, key: str, data: str) -> str:
+        raise NotImplementedError
+
+    async def get(self, key: str) -> str:
+        raise NotImplementedError
+
+
+class fasterpKVStoreClient(persistentKVStoreClient):
+    """Strongly consistent, persistent storage.
+    Redis with [strong consistency via Upstash](https://docs.upstash.com/redis/features/consistency)
+    On top of Redis and Webdis.
+    Check out <https://github.com/mobilecoinofficial/forest/blob/main/pdictng_docs/upstash_pauth.png> for setup / pAUTH
+    """
+
+    def __init__(
+        self,
+        base_url: str = pURL,
+        auth_str: str = pAUTH,
+        namespace: str = NAMESPACE,
+    ):
+        self.url = base_url
+        self.conn = aiohttp.ClientSession()
+        self.auth = auth_str
+        self.namespace = get_safe_key(namespace)
+        self.exists: dict[str, bool] = {}
+        self.headers = {
+            "Authorization": f"Bearer {self.auth}",
+        }
+
+    async def post(self, key: str, data: str) -> str:
+        key = get_safe_key(f"{self.namespace}_{key}")
+        data = get_safe_value(data)
+        # try to set
+        async with self.conn.post(
+            f"{self.url}/SET/{key}", headers=self.headers, data=data
+        ) as resp:
+            return await resp.json()
+
+    async def get(self, key: str) -> str:
+        """Get and return value of an object with the specified key and namespace"""
+        key = get_safe_key(f"{self.namespace}_{key}")
+        async with self.conn.get(f"{self.url}/GET/{key}", headers=self.headers) as resp:
+            res = await resp.json()
+            if "result" in res:
+                return get_cleartext_value(res["result"])
+
+        return ""
+
+
+class fastpKVStoreClient(persistentKVStoreClient):
     """Strongly consistent, persistent storage.
     Stores a sneak table mapping keys to their existence to update faster.
     On top of Postgresql and Postgrest.
@@ -91,7 +142,7 @@ class fastpKVStoreClient:
 
     def __init__(
         self,
-        base_url: str = "https://vwaurvyhomqleagryqcc.supabase.co/rest/v1/keyvalue",
+        base_url: str = pURL,
         auth_str: str = pAUTH,
         namespace: str = NAMESPACE,
     ):
@@ -196,7 +247,9 @@ class aPersistDict:
         if "tag" in kwargs:
             self.tag = kwargs.pop("tag")
         self.dict_: dict[str, Any] = {}
-        self.client = fastpKVStoreClient()
+        self.client: persistentKVStoreClient = (
+            fastpKVStoreClient() if "supabase" in pURL else fasterpKVStoreClient()
+        )
         self.rwlock = asyncio.Lock()
         self.loop = asyncio.get_event_loop()
         self.init_task = asyncio.create_task(self.finish_init(**kwargs))
