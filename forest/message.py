@@ -36,6 +36,7 @@ class Message:
 
     timestamp: int
     text: str
+    full_text: str
     attachments: list[dict[str, str]]
     group: Optional[str]
     quoted_text: str
@@ -158,7 +159,8 @@ class StdioMessage(Message):
         result = blob.get("result", {})
         self.envelope = envelope = blob.get("envelope", {})
         # {"envelope":{"source":"+16176088864","sourceNumber":"+16176088864","sourceUuid":"412e180d-c500-4c60-b370-14f6693d8ea7","sourceName":"sylv","sourceDevice":3,"timestamp":1637290589910,"dataMessage":{"timestamp":1637290589910,"message":"/ping","expiresInSeconds":0,"viewOnce":false}},"account":"+447927948360"}
-        self.source: str = envelope.get("source")
+        self.uuid = envelope.get("sourceUuid")
+        self.source: str = envelope.get("source") or self.uuid
         self.name: str = envelope.get("sourceName") or self.source
         self.timestamp = envelope.get("timestamp") or result.get("timestamp")
 

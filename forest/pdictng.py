@@ -8,7 +8,7 @@ import hashlib
 import json
 import os
 import time
-from typing import Union, Any, Optional, cast, List
+from typing import Any, Generic, List, Optional, TypeVar, Union, cast, overload
 
 import aiohttp
 import base58
@@ -224,7 +224,15 @@ class fastpKVStoreClient(persistentKVStoreClient):
             return ""
 
 
-class aPersistDict:
+V = TypeVar("V")
+# V = TypeVar("V", str, int, list, dict[str, str])
+# that would be nice but causes an error with aPersistDictOfLists
+# Value of type variable "V" of "aPersistDict" cannot be "list"
+# possibly related: https://stackoverflow.com/questions/59933946/difference-between-typevart-a-b-and-typevart-bound-uniona-b
+# https://stackoverflow.com/questions/55375362/why-does-mypy-ignore-a-generic-typed-variable-that-contains-a-type-incompatible
+
+
+class aPersistDict(Generic[V]):
     """Async, consistent, persistent storage.
     Does not inherit from dict, but behaves mostly in the same way.
     Care is taken to offer asynchronous methods and strong consistency.
@@ -235,6 +243,8 @@ class aPersistDict:
     in a way that are persisted across reboots.
     No schemas and privacy preserving, but could be faster.
     Each write takes about 70 ms.
+
+    This takes a type parameter for the value
     """
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -261,10 +271,12 @@ class aPersistDict:
     def __str__(self) -> str:
         return f"a{self.dict_}"
 
-    async def __getitem__(self, key: str) -> Any:
-        return await self.get(key)
+    async def __getitem__(self, key: str) -> V:
+        if value := await self.get(key):
+            return value
+        raise KeyError(key)
 
-    def __setitem__(self, key: str, value: Union[float, str]) -> None:
+    def __setitem__(self, key: str, value: V) -> None:
         if self.write_task and not self.write_task.done():
             raise ValueError("Can't set value. write_task incomplete.")
         self.write_task = asyncio.create_task(self.set(key, value))
@@ -278,7 +290,15 @@ class aPersistDict:
                 self.dict_ = json.loads(result)
             self.dict_.update(**kwargs)
 
-    async def get(self, key: str, default: Optional[Any] = None) -> Optional[Any]:
+    @overload
+    async def get(self, key: str, default: V) -> V:
+        ...
+
+    @overload
+    async def get(self, key: str, default: None = None) -> Optional[V]:
+        ...
+
+    async def get(self, key: str, default: Optional[V] = None) -> Optional[V]:
         """Analogous to dict().get() - but async. Waits until writes have completed on the backend before returning results."""
         # always wait for pending writes - where a task has been created but lock not held
         if self.write_task:
@@ -286,7 +306,7 @@ class aPersistDict:
             self.write_task = None
         # then grab the lock
         async with self.rwlock:
-            return self.dict_.get(key, default)
+            return self.dict_.get(key) or default
 
     async def keys(self) -> List[str]:
         async with self.rwlock:
@@ -297,57 +317,84 @@ class aPersistDict:
         await self.set(key, None)
         return None
 
-    async def extend(self, key: str, value: str) -> None:
-        """Since one cannot simply add to a coroutine, this function exists.
-        If the key exists and the value is None, or an empty array, the provided value is added to a(the) list at that value."""
-        value_to_extend = []
-        async with self.rwlock:
-            value_to_extend = self.dict_.get(key, [])
-            value_to_extend.append(value)
-            return await self._set(key, value_to_extend)
+    @overload
+    async def pop(self, key: str, default: V) -> V:
+        ...
 
-    async def increment(self, key: str, value: int) -> None:
-        """Since one cannot simply add to a coroutine, this function exists.
-        If the key exists and the value is None, or an empty array, the provided value is added to a(the) list at that value."""
-        value_to_extend = 0
-        async with self.rwlock:
-            value_to_extend = self.dict_.get(key, 0)
-            return await self._set(key, value_to_extend + value)
+    @overload
+    async def pop(self, key: str, default: None = None) -> Optional[V]:
+        ...
 
-    async def decrement(self, key: str, value: int) -> None:
-        """Since one cannot simply add to a coroutine, this function exists.
-        If the key exists and the value is None, or an empty array, the provided value is added to a(the) list at that value."""
-        value_to_extend = 0
-        async with self.rwlock:
-            value_to_extend = self.dict_.get(key, 0)
-            return await self._set(key, value_to_extend - value)
-
-    async def remove_from(self, key: str, not_value: str) -> None:
-        """Removes a value specified from the list, if present."""
-        async with self.rwlock:
-            values_without_specified = [
-                el for el in self.dict_.get(key, []) if not_value != el
-            ]
-            return await self._set(key, values_without_specified)
-
-    async def pop(self, key: str, default: Any = None) -> Any:
+    async def pop(self, key: str, default: Optional[V] = None) -> Optional[V]:
         """Returns and removes a value if it exists"""
         res = await self.get(key, default)
         await self.set(key, None)
         return res
 
-    async def _set(self, key: str, value: Any) -> Any:
+    async def _set(self, key: str, value: Optional[V]) -> str:
         """Sets a value at a given key, returns metadata.
         This function exists so *OTHER FUNCTIONS* holding the lock can set values."""
         if key is not None and value is not None:
             self.dict_.update({key: value})
         elif key and value is None and key in self.dict_:
             self.dict_.pop(key)
-        key = f"Persist_{self.tag}_{NAMESPACE}"
-        value = json.dumps(self.dict_)
-        return await self.client.post(key, value)
+        client_key = f"Persist_{self.tag}_{NAMESPACE}"
+        client_value = json.dumps(self.dict_)
+        return await self.client.post(client_key, client_value)
 
-    async def set(self, key: str, value: Any) -> Any:
+    async def set(self, key: str, value: Optional[V]) -> str:
         """Sets a value at a given key, returns metadata."""
         async with self.rwlock:
             return await self._set(key, value)
+
+
+class aPersistDictOfInts(aPersistDict[int]):
+    async def increment(self, key: str, value: int) -> str:
+        """Since one cannot simply add to a coroutine, this function exists.
+        If the key exists and the value is None, or an empty array, the provided value is added to a(the) list at that value."""
+        value_to_extend: Any = 0
+        async with self.rwlock:
+            value_to_extend = self.dict_.get(key, 0)
+            if isinstance(value_to_extend, int):
+                return await self._set(key, value_to_extend + value)
+            raise TypeError(f"key {key} is not an int")
+
+    async def decrement(self, key: str, value: int) -> str:
+        """Since one cannot simply add to a coroutine, this function exists.
+        If the key exists and the value is None, or an empty array, the provided value is added to a(the) list at that value."""
+        value_to_extend: Any = 0
+        async with self.rwlock:
+            value_to_extend = self.dict_.get(key, 0)
+            if isinstance(value_to_extend, int):
+                return await self._set(key, value_to_extend - value)
+            raise TypeError(f"key {key} is not an int")
+
+
+I = TypeVar("I")  # inner value
+
+
+class aPersistDictOfLists(aPersistDict[list[I]]):
+    "This takes a type parameter for the values in the *inner* list"
+
+    async def extend(self, key: str, value: I) -> str:
+        """Since one cannot simply add to a coroutine, this function exists.
+        If the key exists and the value is None, or an empty array, the provided value is added to a(the) list at that value."""
+        value_to_extend: Optional[list[I]] = []
+        async with self.rwlock:
+            value_to_extend = self.dict_.get(key, [])
+            if isinstance(value_to_extend, list):
+                value_to_extend.append(value)
+                return await self._set(key, value_to_extend)
+            raise TypeError(f"value {value_to_extend} for key {key} is not a list")
+
+    async def remove_from(self, key: str, not_value: I) -> str:
+        """Removes a value specified from the list, if present.
+        Returns metadata"""
+        async with self.rwlock:
+            values_to_filter = self.dict_.get(key, [])
+            if isinstance(values_to_filter, list):
+                values_without_specified = [
+                    el for el in values_to_filter if not_value != el
+                ]
+                return await self._set(key, values_without_specified)
+            raise TypeError(f"key {key} is not a list")
