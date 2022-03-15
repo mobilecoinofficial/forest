@@ -273,6 +273,8 @@ class Signal:
     async def enqueue_blob_messages(self, blob: JSON) -> None:
         "turn rpc blobs into the appropriate number of Messages and put them in the inbox"
         message_blob: Optional[JSON] = None
+        if blob["id"] == "PONG":
+            return None
         logging.info(json.dumps(blob))
         if "params" in blob:
             if isinstance(blob["params"], list):
