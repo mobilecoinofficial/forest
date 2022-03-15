@@ -107,7 +107,7 @@ class Signal:
         self.activity = pghelp.PGInterface(
             query_strings=ActivityQueries, database=utils.get_secret("DATABASE_URL")
         )
-        self.batched_activity: list[str] = []
+        self.batched_activity: set[str] = set()
         self.proc: Optional[subprocess.Process] = None
         self.inbox: Queue[Message] = Queue()
         self.outbox: Queue[dict] = Queue()
