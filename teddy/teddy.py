@@ -273,12 +273,7 @@ class Teddy(TalkBack):
             await self.send_message(
                 message.uuid, await self.dialog.get("FIRST_GREETING", "FIRST_GREETING")
             )
-        if cmd := self.match_command(message):
-            # invoke the function and return the response
-            return await getattr(self, "do_" + cmd)(message)
-        if message.text == "TERMINATE":
-            return "signal session reset"
-        return await self.default(message)
+        return await super().handle_message(message)
 
     @hide
     async def do_fund(self, msg: Message) -> Response:
