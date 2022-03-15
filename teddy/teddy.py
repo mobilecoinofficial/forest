@@ -222,8 +222,6 @@ class Teddy(TalkBack):
         user = msg.uuid
         code = msg.full_text.lower().strip(string.punctuation).replace(" ", "")
         attempt_count = await self.attempted_claims.get(user, 0)
-        if len(code) != 8:
-            return await self.dialog.get("NOT_8", "NOT_8")
         if user in await self.user_claimed.keys():
             if code == await self.user_claimed.get(user):
                 return await self.dialog.get(
@@ -232,6 +230,8 @@ class Teddy(TalkBack):
             return await self.dialog.get(
                 "USER_ALREADY_CLAIMED_OTHER", "USER_ALREADY_CLAIMED_OTHER"
             )
+        if len(code) != 8:
+            return await self.dialog.get("NOT_8", "NOT_8")
         if attempt_count > 2:
             return await self.dialog.get("TOO_MANY_ATTEMPTS", "TOO_MANY_ATTEMPTS")
         # if the provided code is in the set of valid codes and is unclaimed...
