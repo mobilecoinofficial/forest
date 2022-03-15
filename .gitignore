@@ -1,4 +1,9 @@
-*secrets
-*-cli
-data
 __pycache__
+*secrets
+*.pem
+avatars
+signal-cli*
+auxin-cli
+data
+*log
+.idea
