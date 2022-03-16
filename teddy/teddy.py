@@ -137,6 +137,7 @@ class Teddy(TalkBack):
         self.payout_balance_mmob = aPersistDictOfInts("payout_balance_mmob")
         self.challenging: aPersistDict[bool] = aPersistDict("challenging")
         self.scratch_pad: aPersistDict[str] = aPersistDict("scratch_pad")
+        self.user_sessions = aPersistDictOfLists("user_sessions")
         self.pay_lock: asyncio.Lock = asyncio.Lock()
         # okay, this now maps the tag (restore key) of each of the above to the instance of the PersistDict class
         self.state = {
@@ -150,7 +151,7 @@ class Teddy(TalkBack):
     async def do_dump(self, msg: Message) -> Response:
         """dump
         returns a JSON serialization of current state"""
-        return json.dumps(self.state, indent=2)
+        return json.dumps({k: v.dict_ for (k, v) in self.state.items()}, indent=2)
 
     async def pay_user_from_balance(
         self, user: str, list_: str, amount_mmob: int
@@ -216,6 +217,24 @@ class Teddy(TalkBack):
         #    return "You must be an administrator to overwrite someone else's blurb!"
         return "updated blurb!"
 
+    async def do_dialog(self, msg: Message) -> Response:
+        return "\n\n".join(
+            [f"{k}: {v}\n------\n" for (k, v) in self.dialog.dict_.items()]
+        )
+
+    async def do_reset(self, msg: Message) -> Response:
+        user = msg.uuid
+        await self.attempted_claims.set(user, 0)
+        claimed = await self.user_claimed.get(user)
+        if claimed:
+            await self.send_message(user, f"Found a code you claimed: {claimed}")
+        await self.valid_codes.set(claimed, "unclaimed")
+        await self.user_claimed.remove(user)
+        await self.first_messages.remove(user)
+        return (
+            "Reset your state! The previously used code, if any, may be redeemed again."
+        )
+
     async def maybe_unlock(self, msg: Message) -> Response:
         """Possibly unlocks a payment."""
         # pylint: disable=too-many-return-statements
@@ -223,6 +242,9 @@ class Teddy(TalkBack):
         code = msg.full_text.lower().strip(string.punctuation).replace(" ", "")
         attempt_count = await self.attempted_claims.get(user, 0)
         if user in await self.user_claimed.keys():
+            await self.send_message(
+                user, await self.dialog.get("CHARITIES_INFO", "CHARITIES_INFO")
+            )
             if code == await self.user_claimed.get(user):
                 return await self.dialog.get(
                     "USER_ALREADY_CLAIMED_THIS", "USER_ALREADY_CLAIMED_THIS"
@@ -230,6 +252,9 @@ class Teddy(TalkBack):
             return await self.dialog.get(
                 "USER_ALREADY_CLAIMED_OTHER", "USER_ALREADY_CLAIMED_OTHER"
             )
+        user_address = await self.get_signalpay_address(user)
+        if not user_address:
+            return await self.dialog.get("PLEASE_ACTIVATE", "PLEASE_ACTIVATE")
         if len(code) != 8:
             return await self.dialog.get("NOT_8", "NOT_8")
         if attempt_count > 2:
@@ -242,16 +267,20 @@ class Teddy(TalkBack):
             await self.attempted_claims.increment(user, 1)
             await self.valid_codes.set(code, user)
             await self.user_claimed.set(user, code)
-            user_address = await self.get_signalpay_address(user)
-            if not user_address:
-                self.send_message(
-                    user, await self.dialog.get("PLEASE_ACTIVATE", "PLEASE_ACTIVATE")
-                )
-                # TODO: poll for payments activation / retry
             payment_result = await self.pay_user_from_balance(user, "teddy", 4)
             if payment_result and "error" not in payment_result:
-                await self.send_message(user, payment_result)
-            return await self.dialog.get("JUST_SENT_PAYMENT", "JUST_SENT_PAYMENT")
+                payment_sent = await self.dialog.get(
+                    "JUST_SENT_PAYMENT", "JUST_SENT_PAYMENT"
+                )
+            await self.send_message(
+                user, await self.dialog.get("CHARITIES_INFO", "CHARITIES_INFO")
+            )
+            if await self.ask_yesno_question(
+                user, await self.dialog.get("MAY_WE_DM_U", "MAY_WE_DM_U")
+            ):
+                return await self.dialog.get("OKAY_WE_WILL_DM_U", "OKAY_WE_WILL_DM_U")
+            else:
+                return await self.dialog.get("TY_WE_WONT_DM_U", "TY_WE_WONT_DM_U")
         if (
             code in await self.valid_codes.keys()
             and await self.valid_codes.get(code, "") != "unclaimed"
@@ -273,6 +302,8 @@ class Teddy(TalkBack):
             await self.send_message(
                 message.uuid, await self.dialog.get("FIRST_GREETING", "FIRST_GREETING")
             )
+        if message.full_text:
+            await self.user_sessions.extend(message.uuid, message.full_text)
         return await super().handle_message(message)
 
     @hide
