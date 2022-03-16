@@ -121,13 +121,16 @@ class TalkBack(QuestionBot):
         return None
 
 
-class Teddy(TalkBack):
+class Charity(TalkBack):
     def __init__(self) -> None:
         self.dialog: aPersistDict[str] = aPersistDict("dialog")
         self.easter_eggs: aPersistDict[str] = aPersistDict("easter_eggs")
         self.first_messages = aPersistDictOfInts("first_messages")
         self.donations: aPersistDict[str] = aPersistDict("donations")
         self.user_sessions = aPersistDictOfLists("user_sessions")
+        self.charities_balance_mmob = aPersistDict[int] = aPersistDict(
+            "charities_balance_mmob"
+        )
         # okay, this now maps the tag (restore key) of each of the above to the instance of the PersistDict class
         self.state = {
             self.__getattribute__(attr).tag: self.__getattribute__(attr)
@@ -219,8 +222,6 @@ class Teddy(TalkBack):
             donation_uid, f"{msg.uuid}, {donation_time}, {amount_mob}, {code}"
         )
         await self.charities_balance_mmob.increment(code, amount_mmob)
-        if msg.uuid in self.no_repay:
-            self.no_repay.remove(msg.uuid)
         return await self.dialog.get("THANK_YOU_FOR_DONATION", "THANK_YOU_FOR_DONATION")
 
 
@@ -229,6 +230,6 @@ if __name__ == "__main__":
 
     @app.on_startup.append
     async def start_wrapper(out_app: web.Application) -> None:
-        out_app["bot"] = Teddy()
+        out_app["bot"] = Charity()
 
     web.run_app(app, port=8080, host="0.0.0.0", access_log=None)
