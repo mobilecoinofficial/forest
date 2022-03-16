@@ -125,6 +125,7 @@ class TalkBack(QuestionBot):
 class ClanGat(TalkBack):
     def __init__(self) -> None:
         self.no_repay: list[str] = []
+        self.dialog: aPersistDict[str] = aPersistDict("dialog")
         self.pending_orders: aPersistDict[str] = aPersistDict("pending_orders")
         self.pending_funds: aPersistDict[str] = aPersistDict("pending_funds")
         self.pending_donations: aPersistDict[str] = aPersistDict("pending_donations")
@@ -301,7 +302,7 @@ class ClanGat(TalkBack):
                 )
                 if result and not result.status == "tx_status_failed":
                     await self.payout_balance_mmob.decrement(list_, amount_mmob)
-                    return f"Payed you you {amount_mmob/1000}MOB"
+                    return f"Payed you {amount_mmob/1000}MOB"
                 return None
         if not balance:
             return "Sorry, {list_} has 0mmob balance!"  # thanks y?!
@@ -580,12 +581,7 @@ class ClanGat(TalkBack):
             return self.do_add.__doc__
         if msg.arg1 and msg.arg1.lower() == "setup":
             return self.do_setup.__doc__
-        return "\n\n".join(
-            [
-                "Hi, I'm MOBot! Welcome to my Hotline!",
-                "\nEvents and announcement lists can be unlocked by messaging me the secret code at any time.\n\nAccolades, feature requests, and support questions can be directed to my maintainers at https://signal.group/#CjQKILH5dkoz99TKxwG7T3TaVAuskMq4gybSplYDfTq-vxUrEhBhuy19A4DbvBqm7PfnBn3I .",
-            ]
-        )
+        return await self.dialog.get("WELCOME", "WELCOME")
 
     @hide
     async def do_remove(self, msg: Message) -> Response:
