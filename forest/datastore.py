@@ -380,6 +380,7 @@ async def upload(ns: argparse.Namespace) -> None:
     else:
         num = sorted(os.listdir("data"))[0]
     store = SignalDatastore(num)
+    await store.account_interface.create_table()
     await store.upload()
     await _set_note(num, ns.note)
 
