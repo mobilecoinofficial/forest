@@ -1,4 +1,4 @@
-app = "teddy-mock"
+app = "charity-mock"
 kill_signal = "SIGINT" 
 kill_timeout = 5
 
