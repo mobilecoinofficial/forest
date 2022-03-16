@@ -125,6 +125,7 @@ class Teddy(TalkBack):
     def __init__(self) -> None:
         self.dialog: aPersistDict[str] = aPersistDict("dialog")
         self.easter_eggs: aPersistDict[str] = aPersistDict("easter_eggs")
+        self.first_messages = aPersistDictOfInts("first_messages")
         self.state = {
             self.__getattribute__(attr).tag: self.__getattribute__(attr)
             for attr in dir(self)
@@ -180,19 +181,19 @@ class Teddy(TalkBack):
         )
 
 
-    async def handle_message(self, message: Message) -> Response:
-        """Method dispatch to do_x commands and goodies.
-        Overwrite this to add your own non-command logic,
-        but call super().handle_message(message) at the end"""
-        # try to get a direct match, or a fuzzy match if appropriate
-        if message.full_text and message.uuid not in await self.first_messages.keys():
-            await self.first_messages.set(message.uuid, int(time.time() * 1000))
-            await self.send_message(
-                message.uuid, await self.dialog.get("FIRST_GREETING", "FIRST_GREETING")
-            )
-        if message.full_text:
-            await self.user_sessions.extend(message.uuid, message.full_text)
-        return await super().handle_message(message)
+#    async def handle_message(self, message: Message) -> Response:
+#        """Method dispatch to do_x commands and goodies.
+#        Overwrite this to add your own non-command logic,
+#        but call super().handle_message(message) at the end"""
+#        # try to get a direct match, or a fuzzy match if appropriate
+#        if message.full_text and message.uuid not in await self.first_messages.keys():
+#            await self.first_messages.set(message.uuid, int(time.time() * 1000))
+#            await self.send_message(
+#                message.uuid, await self.dialog.get("FIRST_GREETING", "FIRST_GREETING")
+        #     )
+        # if message.full_text:
+        #     await self.user_sessions.extend(message.uuid, message.full_text)
+        # return await super().handle_message(message)
 
     
     async def default(self, message: Message) -> Response:
