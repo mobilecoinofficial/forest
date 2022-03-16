@@ -126,6 +126,9 @@ class Teddy(TalkBack):
         self.dialog: aPersistDict[str] = aPersistDict("dialog")
         self.easter_eggs: aPersistDict[str] = aPersistDict("easter_eggs")
         self.first_messages = aPersistDictOfInts("first_messages")
+        self.donations: aPersistDict[str] = aPersistDict("donations")
+        self.user_sessions = aPersistDictOfLists("user_sessions")
+        # okay, this now maps the tag (restore key) of each of the above to the instance of the PersistDict class
         self.state = {
             self.__getattribute__(attr).tag: self.__getattribute__(attr)
             for attr in dir(self)
@@ -139,7 +142,6 @@ class Teddy(TalkBack):
         returns a JSON serialization of current state"""
         return json.dumps({k: v.dict_ for (k, v) in self.state.items()}, indent=2)
 
-  
     async def do_set(self, msg: Message) -> Response:
         """Let's do it live.
         Unprivileged editing of dialog blurbs, because lfg."""
@@ -167,52 +169,59 @@ class Teddy(TalkBack):
             [f"{k}: {v}\n------\n" for (k, v) in self.dialog.dict_.items()]
         )
 
-    async def do_reset(self, msg: Message) -> Response:
-        user = msg.uuid
-        await self.attempted_claims.set(user, 0)
-        claimed = await self.user_claimed.get(user)
-        if claimed:
-            await self.send_message(user, f"Found a code you claimed: {claimed}")
-        await self.valid_codes.set(claimed, "unclaimed")
-        await self.user_claimed.remove(user)
-        await self.first_messages.remove(user)
-        return (
-            "Reset your state! The previously used code, if any, may be redeemed again."
-        )
+    async def handle_message(self, message: Message) -> Response:
+        """Method dispatch to do_x commands and goodies.
+        Overwrite this to add your own non-command logic,
+        but call super().handle_message(message) at the end"""
+        # try to get a direct match, or a fuzzy match if appropriate
+        if message.full_text and message.uuid not in await self.first_messages.keys():
+            await self.first_messages.set(message.uuid, int(time.time() * 1000))
+            await self.send_message(
+                message.uuid, await self.dialog.get("FIRST_GREETING", "FIRST_GREETING")
+            )
+        if message.full_text:
+            await self.user_sessions.extend(message.uuid, message.full_text)
+        return await super().handle_message(message)
 
-
-#    async def handle_message(self, message: Message) -> Response:
-#        """Method dispatch to do_x commands and goodies.
-#        Overwrite this to add your own non-command logic,
-#        but call super().handle_message(message) at the end"""
-#        # try to get a direct match, or a fuzzy match if appropriate
-#        if message.full_text and message.uuid not in await self.first_messages.keys():
-#            await self.first_messages.set(message.uuid, int(time.time() * 1000))
-#            await self.send_message(
-#                message.uuid, await self.dialog.get("FIRST_GREETING", "FIRST_GREETING")
-        #     )
-        # if message.full_text:
-        #     await self.user_sessions.extend(message.uuid, message.full_text)
-        # return await super().handle_message(message)
-
-    
     async def default(self, message: Message) -> Response:
-        return "spam"
+        # pylint: disable=too-many-return-statements,too-many-branches
+        msg = message
+        code = msg.arg0
+        if not code:
+            return None
+        if code == "?":
+            return await self.do_help(msg)
+        if code == "y":
+            return await self.do_yes(msg)
+        if code == "n":
+            return await self.do_no(msg)
+        if (
+            code and code.rstrip(string.punctuation).lower() in "yes yeah ye".split()
+        ):  # yes!
+            return await self.do_yes(msg)
+        if msg.full_text and msg.full_text in [
+            key.lower() for key in await self.easter_eggs.keys()
+        ]:
+            return await self.easter_eggs.get(msg.full_text)
+        if code in await self.easter_eggs.keys():
+            return await self.easter_eggs.get(code)
+        await self.talkback(msg)
+        return await self.dialog.get("CHARITY_INFO", "CHARITY_INFO")
+
     @time_(REQUEST_TIME)
     async def payment_response(self, msg: Message, amount_pmob: int) -> Response:
-        # pylint: disable=too-many-return-statements
         amount_mob = float(pmob2mob(amount_pmob).quantize(Decimal("1.0000")))
         amount_mmob = int(amount_mob * 1000)
-        maybe_code = await self.pending_funds.pop(msg.uuid)
-        if maybe_code:
-            code = maybe_code
-            await self.payout_balance_mmob.increment(code, amount_mmob)
-            if msg.uuid in self.no_repay:
-                self.no_repay.remove(msg.uuid)
-            return (
-                f"We have credited charity with {code} {amount_mob}MOB!\n"
-                )
-        return None
+        donation_uid = get_uid()
+        donation_time = time.time()
+        code = await self.dialog.get("CHARITY", "CHARITY")
+        await self.donations.set(
+            donation_uid, f"{msg.uuid}, {donation_time}, {amount_mob}, {code}"
+        )
+        await self.charities_balance_mmob.increment(code, amount_mmob)
+        if msg.uuid in self.no_repay:
+            self.no_repay.remove(msg.uuid)
+        return await self.dialog.get("THANK_YOU_FOR_DONATION", "THANK_YOU_FOR_DONATION")
 
 
 if __name__ == "__main__":
