@@ -7,6 +7,7 @@ The core chatbot framework: Message, Signal, Bot, PayBot, and app
 import ast
 import asyncio
 import asyncio.subprocess as subprocess  # https://github.com/PyCQA/pylint/issues/1469
+import asyncpg
 import base64
 import codecs
 import datetime
