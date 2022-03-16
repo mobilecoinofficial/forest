@@ -128,9 +128,7 @@ class Charity(TalkBack):
         self.first_messages = aPersistDictOfInts("first_messages")
         self.donations: aPersistDict[str] = aPersistDict("donations")
         self.user_sessions = aPersistDictOfLists("user_sessions")
-        self.charities_balance_mmob = aPersistDict[int] = aPersistDict(
-            "charities_balance_mmob"
-        )
+        self.charities_balance_mmob = aPersistDictOfInts("charities_balance_mmob")
         # okay, this now maps the tag (restore key) of each of the above to the instance of the PersistDict class
         self.state = {
             self.__getattribute__(attr).tag: self.__getattribute__(attr)
