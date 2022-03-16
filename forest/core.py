@@ -7,31 +7,30 @@ The core chatbot framework: Message, Signal, Bot, PayBot, and app
 import ast
 import asyncio
 import asyncio.subprocess as subprocess  # https://github.com/PyCQA/pylint/issues/1469
-import asyncpg
 import base64
 import codecs
 import datetime
+import functools
+import glob
 import json
 import logging
 import os
+import secrets
 import signal
 import sys
 import time
 import traceback
 import urllib
 import uuid
-import glob
-import secrets
-import functools
-
 from asyncio import Queue, StreamReader, StreamWriter
 from asyncio.subprocess import PIPE
 from decimal import Decimal
 from functools import wraps
 from textwrap import dedent
-from typing import Any, Callable, Optional, Type, Union, Awaitable, Tuple
+from typing import Any, Awaitable, Callable, Optional, Tuple, Type, Union
 
 import aiohttp
+import asyncpg
 import termcolor
 from aiohttp import web
 from phonenumbers import NumberParseException
@@ -41,7 +40,7 @@ from ulid2 import generate_ulid_as_base32 as get_uid
 
 # framework
 import mc_util
-from forest import autosave, datastore, payments_monitor, pghelp, utils, string_dist
+from forest import autosave, datastore, payments_monitor, pghelp, string_dist, utils
 from forest.message import AuxinMessage, Message, StdioMessage
 
 JSON = dict[str, Any]
