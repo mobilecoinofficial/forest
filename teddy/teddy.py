@@ -174,25 +174,25 @@ class Teddy(TalkBack):
                     input_txo_ids += [txoid]
                     input_pmob_sum += pmob
                     if len(input_txo_ids) > 15:
-                        return "Something went wrong! Please contact your administrator for support. (too many utxos needed)"
+                        return "Error! Please contact your administrator for support. (too many utxos needed)"
                     logging.debug(
                         f"found: {input_pmob_sum} / {amount_mmob*1_000_000_000} across {len(input_txo_ids)}utxos"
                     )
                 if not input_txo_ids:
-                    return "Something went wrong! Please contact your administrator for support. (not enough utxos)"
+                    return "Error! Please contact your administrator for support. (not enough utxos)"
                 result = await self.send_payment(
                     recipient=user,
                     amount_pmob=(amount_mmob * 1_000_000_000),
-                    receipt_message=f'Payment for the "{list_}" event!',
+                    receipt_message=f'{await self.dialog.get("PAY_MEMO", "PAY_MEMO")}',
                     input_txo_ids=input_txo_ids,
                 )
                 if result and not result.status == "tx_status_failed":
                     await self.payout_balance_mmob.decrement(list_, amount_mmob)
                     await self.successful_pays.extend(f"teddy_4", user)
-                    return f"Payed you you {amount_mmob/1000}MOB"
+                    return f"Paid you {amount_mmob/1000}MOB"
                 return None
         if not balance:
-            return f"Sorry, {list_.title()} has 0mmob balance!"  # thanks y?!
+            return f"Error! {list_.title()} has 0mmob balance!"  # thanks y?!
         return "Sorry, can't help you."
 
     async def do_set(self, msg: Message) -> Response:
@@ -268,9 +268,14 @@ class Teddy(TalkBack):
             await self.valid_codes.set(code, user)
             await self.user_claimed.set(user, code)
             payment_result = await self.pay_user_from_balance(user, "teddy", 4)
-            if payment_result and "error" not in payment_result:
-                payment_sent = await self.dialog.get(
-                    "JUST_SENT_PAYMENT", "JUST_SENT_PAYMENT"
+            if payment_result and "Error" not in payment_result:
+                await self.send_message(
+                    user,
+                    await self.dialog.get("JUST_SENT_PAYMENT", "JUST_SENT_PAYMENT"),
+                )
+            else:
+                return await self.send_message(
+                    user, await self.dialog.get("WE_ARE_SO_SORRY", "WE_ARE_SO_SORRY")
                 )
             await self.send_message(
                 user, await self.dialog.get("CHARITIES_INFO", "CHARITIES_INFO")
@@ -328,7 +333,9 @@ class Teddy(TalkBack):
         if code == "n":
             return await self.do_no(msg)
         if (
-            code and code.rstrip(string.punctuation).lower() in "yes yeah ye".split()
+            code
+            and code.rstrip(string.punctuation).lower()
+            in "yes yeah ye sure yah".split()  # thanks gang
         ):  # yes!
             return await self.do_yes(msg)
         if msg.full_text and msg.full_text in [
