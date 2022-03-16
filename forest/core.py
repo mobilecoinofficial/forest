@@ -273,7 +273,7 @@ class Signal:
     async def enqueue_blob_messages(self, blob: JSON) -> None:
         "turn rpc blobs into the appropriate number of Messages and put them in the inbox"
         message_blob: Optional[JSON] = None
-        if blob["id"] is not "PONG":
+        if blob["id"] != "PONG":
             logging.info(json.dumps(blob))
         if "params" in blob:
             if isinstance(blob["params"], list):
@@ -282,13 +282,7 @@ class Signal:
                         await self.inbox.put(MessageParser(msg))
             message_blob = blob["params"]
         if "result" in blob:
-            if isinstance(blob["result"], list):
-                # idt this happens anymore, remove?
-                logging.info("results list code path")
-                for msg in blob["result"]:
-                    if not blob.get("content", {}).get("receipt_message", {}):
-                        await self.inbox.put(MessageParser(msg))
-            elif isinstance(blob["result"], dict):
+            if isinstance(blob["result"], dict):
                 message_blob = blob
             else:
                 logging.warning(blob["result"])
