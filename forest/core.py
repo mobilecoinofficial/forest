@@ -107,7 +107,8 @@ class Signal:
         self.activity = pghelp.PGInterface(
             query_strings=ActivityQueries, database=utils.get_secret("DATABASE_URL")
         )
-        self.batched_activity: set[str] = set()
+        # set of users we've received messages from in the last minute
+        self.seen_users: set[str] = set()
         self.proc: Optional[subprocess.Process] = None
         self.inbox: Queue[Message] = Queue()
         self.outbox: Queue[dict] = Queue()
@@ -599,15 +600,25 @@ class Bot(Signal):
         )
 
     async def log_activity(self) -> None:
+        """
+        every 60s, update the table of user_activity with the new users
+        this is run in the background as batches,
+        so we aren't making a seperate db query for every message
+        """
         while 1:
             await asyncio.sleep(60)
             if self.activity.pool:
                 async with self.activity.pool.acquire() as conn:
-                    conn.executemany(
-                        "INSERT INTO user_activity (user, bot, last_seen) VALUES ($1, $2, now()) ON CONFLICT DO UPDATE SET last_seen=now()",
-                        [(name, utils.APP_NAME) for name in self.batched_activity],
-                    )
-                    self.batched_activity: set[str] = set()
+                    try:
+                        # executemany batches this into a ~single db query
+                        conn.executemany(
+                            "INSERT INTO user_activity (user, bot, last_seen) VALUES ($1, $2, now()) ON CONFLICT DO UPDATE SET last_seen=now()",
+                            [(name, utils.APP_NAME) for name in self.seen_users],
+                        )
+                        self.seen_users: set[str] = set()
+                    except asyncpg.UndefinedTableError:
+                        # slighty cringe to be taking a seperate connection here without giving the first one back
+                        await self.activity.create_table()
 
     async def handle_messages(self) -> None:
         """
@@ -617,7 +628,7 @@ class Bot(Signal):
         """
         while True:
             message = await self.inbox.get()
-            self.batched_activity.add(message.source)
+            self.seen_users.add(message.source)
             if message.id and message.id in self.pending_requests:
                 logging.debug("setting result for future %s: %s", message.id, message)
                 self.pending_requests[message.id].set_result(message)
