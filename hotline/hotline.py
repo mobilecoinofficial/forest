@@ -2,6 +2,7 @@
 # Copyright (c) 2021 MobileCoin Inc.
 # Copyright (c) 2021 The Forest Team
 
+
 import asyncio
 import json
 import string
@@ -522,10 +523,17 @@ class ClanGat(TalkBack):
                     .replace(f"Blast {msg.arg1} ", "", 1)
                 )  # thanks mikey :)
             success = True
+            target_admins = list(
+                set(
+                    await self.event_owners.get(obj.lower(), [])
+                    + await self.list_owners.get(obj.lower(), [])
+                )
+            )
             target_users = list(
                 set(
                     await self.event_lists.get(obj.lower(), [])
                     + await self.event_attendees.get(obj.lower(), [])
+                    + target_admins
                 )
             )
             # send preview
@@ -538,7 +546,13 @@ class ClanGat(TalkBack):
                 return "ok, let's not."
             # do the blast
             for target_user in target_users:
-                await self.send_message(target_user.strip("\u2068\u2069"), param)
+                if target_user in target_admins:
+                    await self.send_message(
+                        target_user.strip("\u2068\u2069"),
+                        param + f"\n - {await self.get_displayname(msg.uuid)}",
+                    )
+                else:
+                    await self.send_message(target_user.strip("\u2068\u2069"), param)
                 sent.append(target_user)
                 await asyncio.sleep(0.01)
         elif user_owns:
