@@ -1321,48 +1321,32 @@ class QuestionBot(PayBot):
         if question_text is None:
             question_text = "Pick one from these options:"
 
-        # Text with the options nicely formatted,
-        # will be filled out differently depending on whether user provided labels or not
         options_text: str = ""
 
         # This is the character that will appear between label and option text
         spacer: str = ") "
 
-        # User can provide labels for the options by passing a dict
-        # Create a question with just labels by having all values be ""
-        if isinstance(options, dict):
-
-            # This will format the options text and check for a just labels question
-            spacer = ""
-            for label, body in options.items():
-                if not body == "":
-                    spacer = ") "  # don't have a spacer if there's no values
-                options_text = options_text + f"{label}{spacer}{body} \n"
-
         # User can pass just a list of options and we generate labels for them
         if isinstance(options, list):
-
-            dict_options: dict[str, str] = {}
-            index: int = 1
-
-            # generate labels that are just ints and organise the options
-            # into a friendly text format to send the user in one loop
-            for item in options:
-                label = str(index)
-                dict_options[label] = item
-                options_text = options_text + f"{label}{spacer}{item} \n"
-                index += 1
-
-            # replace the options list with the new dict
-            options = dict_options
-
+            dict_options: dict[Any, str] = dict(enumerate(options, start=1))
+        else:
+            # User can provide labels for the options by passing a dict
+            # Create a question with just labels by having all values be ""
+            # This will format the options text and check for a just labels question
+            dict_options = options
+        # Text with the options nicely formatted,
+        # will be filled out differently depending on whether user provided labels or not
+        options_text = " \n".join(
+            f"{label}{spacer if body else ''}{body}"
+            for label, body in dict_options.items()
+        )
         await self.send_message(recipient, question_text + "\n" + options_text)
         answer_future = self.pending_answers[recipient] = asyncio.Future()
         answer = await answer_future
         self.pending_answers.pop(recipient)
 
         # if the answer given does not match a label
-        if answer.full_text and not answer.full_text in options.keys():
+        if answer.full_text and not answer.full_text in dict_options.keys():
             # return none and exit if user types cancel, stop, exit, etc...
             if answer.full_text.lower() in self.TERMINAL_ANSWERS:
                 return None
@@ -1372,13 +1356,13 @@ class QuestionBot(PayBot):
                 recipient,
                 "Please reply with just the label exactly as typed \n \n"
                 + question_text,
-                options,
+                dict_options,
                 requires_confirmation,
                 requires_first_device,
             )
 
         # when there is a match
-        if isinstance(answer.full_text, str) and answer.full_text in options.keys():
+        if answer.full_text and answer.full_text in dict_options.keys():
 
             # if confirmation is required ask for it as a yes/no question
             if requires_confirmation:
@@ -1386,7 +1370,7 @@ class QuestionBot(PayBot):
                     "You picked: \n"
                     + answer.full_text
                     + spacer
-                    + options[answer.full_text]
+                    + dict_options[answer.full_text]
                     + "\n \n Is this correct? (yes/no)"
                 )
                 confirmation = await self.ask_yesno_question(
@@ -1398,13 +1382,13 @@ class QuestionBot(PayBot):
                     return await self.ask_multiple_choice_question(
                         recipient,
                         question_text,
-                        options,
+                        dict_options,
                         requires_confirmation,
                         requires_first_device,
                     )
 
             # finally return the option that matches the answer, or if empty the answer itself
-            return options[answer.full_text] or answer.full_text
+            return dict_options[answer.full_text] or answer.full_text
         # TODO if we made it here I think that means something went wrong so maybe it should fail instead of returning None
         return None
 
