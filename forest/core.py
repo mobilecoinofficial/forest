@@ -1333,7 +1333,9 @@ class QuestionBot(PayBot):
         # Create a question with just labels by having all values be ""
         # This will format the options text and check for a just labels question
         if isinstance(options, list):
-            dict_options: dict[Any, str] = {str(i): value for i, value in enumerate(options, start=1)}
+            dict_options: dict[Any, str] = {
+                str(i): value for i, value in enumerate(options, start=1)
+            }
         else:
             dict_options = options
 
@@ -1360,7 +1362,10 @@ class QuestionBot(PayBot):
             # otherwise reminder to type the label exactly as it appears and restate the question
 
             if "Please reply" not in question_text:
-                question_text = "Please reply with just the label exactly as typed \n \n" + question_text
+                question_text = (
+                    "Please reply with just the label exactly as typed \n \n"
+                    + question_text
+                )
 
             return await self.ask_multiple_choice_question(
                 recipient,
