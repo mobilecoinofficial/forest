@@ -33,7 +33,7 @@ jobs:
         run: poetry run mypy sample_bots mc_util forest mobfriend contact imogen hotline
         if: always()
       - name: Pylint
-        run: poetry run pylint --version; poetry run pylint sample_bots mc_util forest mobfriend/mobfriend.py contact imogen/imogen.py hotline
+        run: poetry run pylint --version; poetry run pylint sample_bots mc_util forest mobfriend/mobfriend.py contact imogen/imogen.py hotline/hotline.py
         if: always()
       - name: Pytest
         run: poetry run python -m pytest --cov forest

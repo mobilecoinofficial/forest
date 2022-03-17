@@ -10,27 +10,27 @@ import asyncio.subprocess as subprocess  # https://github.com/PyCQA/pylint/issue
 import base64
 import codecs
 import datetime
+import functools
+import glob
 import json
 import logging
 import os
+import secrets
 import signal
 import sys
 import time
 import traceback
 import urllib
 import uuid
-import glob
-import secrets
-import functools
-
 from asyncio import Queue, StreamReader, StreamWriter
 from asyncio.subprocess import PIPE
 from decimal import Decimal
 from functools import wraps
 from textwrap import dedent
-from typing import Any, Callable, Optional, Type, Union, Awaitable, Tuple
+from typing import Any, Awaitable, Callable, Optional, Tuple, Type, Union
 
 import aiohttp
+import asyncpg
 import termcolor
 from aiohttp import web
 from phonenumbers import NumberParseException
@@ -70,6 +70,20 @@ def rpc(
     }
 
 
+ActivityQueries = pghelp.PGExpressions(
+    table="user_activity",
+    create_table="""CREATE TABLE user_activity (
+        id SERIAL PRIMARY KEY,
+        user TEXT,
+        name TEXT,
+        first_seen TIMESTAMP default now(),
+        last_seen TIMESTAMP default now(),
+        bot TEXT,
+        UNIQUE (user, bot));""",
+    log="INSERT INTO user_activity (user, name, bot, last_seen) VALUES ($1, $2, $3, now()) ON CONFLICT DO UPDATE SET last_seen=now()",
+)
+
+
 class Signal:
     """
     Represents a signal-cli/auxin-cli session.
@@ -90,6 +104,11 @@ class Signal:
         logging.debug("bot number: %s", bot_number)
         self.bot_number = bot_number
         self.datastore = datastore.SignalDatastore(bot_number)
+        self.activity = pghelp.PGInterface(
+            query_strings=ActivityQueries, database=utils.get_secret("DATABASE_URL")
+        )
+        # set of users we've received messages from in the last minute
+        self.seen_users: set[str] = set()
         self.proc: Optional[subprocess.Process] = None
         self.inbox: Queue[Message] = Queue()
         self.outbox: Queue[dict] = Queue()
@@ -597,6 +616,7 @@ class Bot(Signal):
             if not hasattr(getattr(self, f"do_{name}"), "hide")
         ]
         super().__init__(bot_number)
+        self.log_task = asyncio.create_task(self.log_activity())
         self.restart_task = asyncio.create_task(
             self.start_process()
         )  # maybe cancel on sigint?
@@ -607,6 +627,27 @@ class Bot(Signal):
             self.restart_task_callback(self.handle_messages)
         )
 
+    async def log_activity(self) -> None:
+        """
+        every 60s, update the table of user_activity with the new users
+        this is run in the background as batches,
+        so we aren't making a seperate db query for every message
+        """
+        while 1:
+            await asyncio.sleep(60)
+            if self.activity.pool:
+                async with self.activity.pool.acquire() as conn:
+                    try:
+                        # executemany batches this into a ~single db query
+                        conn.executemany(
+                            "INSERT INTO user_activity (user, bot, last_seen) VALUES ($1, $2, now()) ON CONFLICT DO UPDATE SET last_seen=now()",
+                            [(name, utils.APP_NAME) for name in self.seen_users],
+                        )
+                        self.seen_users: set[str] = set()
+                    except asyncpg.UndefinedTableError:
+                        # slighty cringe to be taking a seperate connection here without giving the first one back
+                        await self.activity.create_table()
+
     async def handle_messages(self) -> None:
         """
         Read messages from the queue. If it matches a pending request to auxin-cli/signal-cli,
@@ -615,6 +656,7 @@ class Bot(Signal):
         """
         while True:
             message = await self.inbox.get()
+            self.seen_users.add(message.source)
             if message.id and message.id in self.pending_requests:
                 logging.debug("setting result for future %s: %s", message.id, message)
                 self.pending_requests[message.id].set_result(message)
