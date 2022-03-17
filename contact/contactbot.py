@@ -1,6 +1,6 @@
 #!/usr/bin/python3.9
-# Copyright (c) 2021 MobileCoin Inc.
-# Copyright (c) 2021 The Forest Team
+# Copyright (c) 2022 MobileCoin Inc.
+# Copyright (c) 2022 The Forest Team
 import logging
 from functools import wraps
 from typing import Callable, Union, cast
@@ -11,7 +11,6 @@ from forest_tables import GroupRoutingManager, PaymentsManager, RoutingManager
 from forest import utils
 from forest.core import (
     Message,
-    PayBot,
     Response,
     app,
     requires_admin,
@@ -22,7 +21,7 @@ from forest.core import (
 
 def takes_number(command: Callable) -> Callable:
     @wraps(command)  # keeps original name and docstring for /help
-    async def wrapped_command(self: "PayBot", msg: Message) -> str:
+    async def wrapped_command(self: "QuestionBot", msg: Message) -> str:
         try:
             # todo: parse (123) 456-6789 if it's multiple tokens
             assert msg.arg1
@@ -31,6 +30,7 @@ def takes_number(command: Callable) -> Callable:
             target_number = pn.format_number(parsed, pn.PhoneNumberFormat.E164)
             return await command(self, msg, target_number)
         except (pn.phonenumberutil.NumberParseException, AssertionError):
+            # could *maybe* ask_intable_question for the number but it's kinda tricky
             return (
                 f"{msg.arg1} doesn't look a valid number or user. "
                 "did you include the country code?"
@@ -48,11 +48,18 @@ class Forest(QuestionBot):
         super().__init__(*args)
 
     async def default(self, message: Message) -> Response:
-        if not message.arg1 and message.full_text:
+        if not message.arg1:
+            # so i'm not sure asking a freeform question like this makes sense
+            # people can just say 'order' or 'status' on its own
             maybe_resp = message.arg1 = await self.ask_freeform_question(
                 message.source,
                 'Welcome to MobileCoin Contact! I\'m a bot that can help you buy phone numbers, and use them to send and recieve text messages. Would you like to "buy" a phone number? or check the "status" of your account?',
             )
+            if maybe_resp == "buy":
+                return await self.do_order(message)
+            if maybe_resp == "status":
+                return await self.do_status(message)
+        return await super().default(message)
 
     async def send_sms(
         self, source: str, destination: str, message_text: str
@@ -85,9 +92,7 @@ class Forest(QuestionBot):
 
     async def handle_message(self, message: Message) -> Response:
         """Handle an invidiual Message from Signal.
-        If it's a group creation blob, make a new routing rule from it.
         If it's a group message, route it to the relevant conversation.
-        If it's a payment, deal with that separately.
         Otherwise, use the default Bot do_x method dispatch
         """
         numbers = await self.get_user_numbers(message)
@@ -127,13 +132,14 @@ class Forest(QuestionBot):
             return "Couldn't send that reply"
         return await super().handle_message(message)
 
-    async def do_help(self, _: Message) -> Response:
+    async def do_help(self, msg: Message) -> Response:
         # TODO: https://github.com/forestcontact/forest-draft/issues/14
+        if msg.arg1:
+            return await super().do_help(msg)
         return (
             "Welcome to the Forest.contact Pre-Release!\n"
             "To get started, try /register, or /status! "
             "If you've already registered, try to send a message via /send."
-            ""
         )
 
     @takes_number
@@ -200,10 +206,8 @@ class Forest(QuestionBot):
 
     async def do_status(self, message: Message) -> Union[list[str], str]:
         """List numbers if you have them. Usage: /status"""
-        numbers: list[str] = [
-            registered.get("id")
-            for registered in await self.routing_manager.get_id(message.source)
-        ]
+        numbers = await self.get_user_numbers(message)
+        # should probably note when the numbers expire
         if numbers and len(numbers) == 1:
             # registered, one number
             return f'Hi {message.name}! We found {numbers[0]} registered for your user. Try "/send {message.source} Hello from Forest Contact via {numbers[0]}!".'
@@ -230,10 +234,6 @@ class Forest(QuestionBot):
         """register for a phone number"""
         return f"Please send {await self.mobster.usd2mob(self.usd_price)} MOB via Signal Pay"
 
-    async def get_user_balance(self, account: str) -> float:
-        res = await self.mobster.ledger_manager.get_usd_balance(account)
-        return float(round(res[0].get("balance"), 2))
-
     async def do_balance(self, message: Message) -> str:
         """Check your balance"""
         balance = await self.get_user_balance(message.source)
@@ -249,13 +249,21 @@ class Forest(QuestionBot):
             return "sending attack drones to your location"
         return "no"
 
-    async def do_order(self, msg: Message) -> str:
+    async def do_order(self, msg: Message) -> Response:
         """Usage: /order <area code>"""
+        if not msg.arg1:
+            code = await self.ask_intable_question(
+                msg.source, "Which area code would you like?"
+            )
+            msg.arg1 = str(code)
         if not (msg.arg1 and len(msg.arg1) == 3 and msg.arg1.isnumeric()):
-            return """Usage: /order <area code>"""
+            return "Usage: /order <area code>"
         diff = await self.get_user_balance(msg.source) - self.usd_price
-        if diff < 0:
-            return "Make a payment with Signal Pay or /register first"
+        numbers = await self.get_user_numbers(msg)
+        # one free for everyone, always free in UA
+        # need to note that this is a freebie
+        if diff < 0 and not msg.source.startswith("+380") and numbers:
+            return await self.do_register(msg)
         await self.routing_manager.sweep_expired_destinations()
         available_numbers = [
             num
@@ -280,6 +288,7 @@ class Forest(QuestionBot):
             await self.routing_manager.mark_bought(number)
         await self.api.set_sms_url(number, utils.URL + "/inbound")
         await self.routing_manager.set_destination(number, msg.source)
+        await self.routing_manager.set_expiration_1mo(number)
         if await self.routing_manager.get_destination(number):
             await self.mobster.ledger_manager.put_usd_tx(
                 msg.source, -int(self.usd_price * 100), number
@@ -287,12 +296,12 @@ class Forest(QuestionBot):
             return f"You are now the proud owner of {number}"
         return "Database error?"
 
+    do_buy = do_order
+
     @requires_admin
     async def do_make_rule(self, msg: Message) -> Response:
         """creates or updates a routing rule.
         usage: /make_rule <number> <signal destination number>"""
-        if msg.source != utils.get_secret("ADMIN"):
-            return "Sorry, this command is only for admins"
         api_num, signal_num = msg.text.split(" ")
         _id = api.teli_format(api_num)
         destination = utils.signal_format(signal_num)
@@ -389,5 +398,4 @@ async def inbound_sms_handler(request: web.Request) -> web.Response:
 
 if __name__ == "__main__":
     app.add_routes([web.post("/inbound", inbound_sms_handler)])
-
     run_bot(Forest)
