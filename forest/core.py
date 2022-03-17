@@ -74,13 +74,12 @@ ActivityQueries = pghelp.PGExpressions(
     table="user_activity",
     create_table="""CREATE TABLE user_activity (
         id SERIAL PRIMARY KEY,
-        user TEXT,
-        name TEXT,
+        account TEXT,
         first_seen TIMESTAMP default now(),
         last_seen TIMESTAMP default now(),
         bot TEXT,
         UNIQUE (user, bot));""",
-    log="INSERT INTO user_activity (user, name, bot, last_seen) VALUES ($1, $2, $3, now()) ON CONFLICT DO UPDATE SET last_seen=now()",
+    log="INSERT INTO user_activity (account, bot) VALUES ($1, $2) ON CONFLICT DO UPDATE SET last_seen=now()",
 )
 
 
@@ -608,17 +607,17 @@ class Bot(Signal):
         while 1:
             await asyncio.sleep(60)
             if self.activity.pool:
-                async with self.activity.pool.acquire() as conn:
-                    try:
-                        # executemany batches this into a ~single db query
+                try:
+                    async with self.activity.pool.acquire() as conn:
+                        # executemany batches this into an atomic db query
                         conn.executemany(
-                            "INSERT INTO user_activity (user, bot, last_seen) VALUES ($1, $2, now()) ON CONFLICT DO UPDATE SET last_seen=now()",
+                            "INSERT INTO user_activity (account, bot) VALUES ($1, $2) ON CONFLICT DO UPDATE SET last_seen=now()",
                             [(name, utils.APP_NAME) for name in self.seen_users],
                         )
+                        logging.debug("recorded %s seen users", len(self.seen_users))
                         self.seen_users: set[str] = set()
-                    except asyncpg.UndefinedTableError:
-                        # slighty cringe to be taking a seperate connection here without giving the first one back
-                        await self.activity.create_table()
+                except asyncpg.UndefinedTableError:
+                    await self.activity.create_table()
 
     async def handle_messages(self) -> None:
         """
