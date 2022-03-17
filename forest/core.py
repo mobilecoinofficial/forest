@@ -632,20 +632,21 @@ class Bot(Signal):
         this is run in the background as batches,
         so we aren't making a seperate db query for every message
         """
+        if not self.activity.pool:
+            await self.activity.connect_pg()
         while 1:
             await asyncio.sleep(60)
-            if self.activity.pool:
-                try:
-                    async with self.activity.pool.acquire() as conn:
-                        # executemany batches this into an atomic db query
-                        conn.executemany(
-                            "INSERT INTO user_activity (account, bot) VALUES ($1, $2) ON CONFLICT DO UPDATE SET last_seen=now()",
-                            [(name, utils.APP_NAME) for name in self.seen_users],
-                        )
-                        logging.debug("recorded %s seen users", len(self.seen_users))
-                        self.seen_users: set[str] = set()
-                except asyncpg.UndefinedTableError:
-                    await self.activity.create_table()
+            try:
+                async with self.activity.pool.acquire() as conn:
+                    # executemany batches this into an atomic db query
+                    conn.executemany(
+                        "INSERT INTO user_activity (account, bot) VALUES ($1, $2) ON CONFLICT DO UPDATE SET last_seen=now()",
+                        [(name, utils.APP_NAME) for name in self.seen_users],
+                    )
+                    logging.debug("recorded %s seen users", len(self.seen_users))
+                    self.seen_users: set[str] = set()
+            except asyncpg.UndefinedTableError:
+                await self.activity.create_table()
 
     async def handle_messages(self) -> None:
         """
