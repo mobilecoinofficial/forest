@@ -73,26 +73,26 @@ The maintainers of signal-cli provide precompiled releases you can download and 
 
 Download and extract the latest release tarball from https://github.com/AsamK/signal-cli/releases
 ```bash
-wget https://github.com/AsamK/signal-cli/releases/download/v0.10.0/signal-cli-0.10.0.tar.gz
+wget https://github.com/AsamK/signal-cli/releases/download/v0.10.4.1/signal-cli-0.10.4.1.tar.gz
 
-tar -xvf signal-cli-0.10.0.tar.gz
+tar -xvf signal-cli-0.10.4.1.tar.gz
 ```
 Verify the installation succeeded
 
 ``` bash
-./signal-cli-0.10.0/bin/signal-cli --version
+./signal-cli-0.10.4.1/bin/signal-cli --version
 ---
-signal-cli 0.10.0
+signal-cli 0.10.4.1
 ```
 
 Finally for ease of use, link the executable to your working directory:
 
 ``` bash
-ln -s ./signal-cli-0.10.0/bin/signal-cli .
+ln -s ./signal-cli-0.10.4.1/bin/signal-cli .
 
 ./signal-cli --version
 ---
-signal-cli 0.10.0
+signal-cli 0.10.4.1
 ```
 
 ### Building signal-cli from Source ###
@@ -111,7 +111,7 @@ Verify the installation succeeded:
 ``` bash
 ./build/install/signal-cli/bin/signal-cli --version
 ---
-signal-cli 0.10.0
+signal-cli 0.10.4.1
 ```
 
 Finally for ease of use, link the executable to your working directory (change the path depending on where you cloned the repo):
@@ -122,7 +122,7 @@ ln -s $HOME/signal-cli/build/install/signal-cli/bin/signal-cli .
 
 ./signal-cli --version
 ---
-signal-cli 0.10.0
+signal-cli 0.10.4.1
 ```
 
 For more detailed instructions visit the [signal-cli repository](https://github.com/AsamK/signal-cli).
@@ -140,7 +140,7 @@ sudo apt install jq # install jq in case you don't already have it
 ```
 ``` bash
 export BOT_NUMBER=+15551234567 # number you've obtained for your bot
-export CAPTCHA=$(curl -s --data-binary "https://signalcaptchas.org/registration/generate.html" https://human-after-all-21.fly.dev/6LedYI0UAAAAAMt8HLj4s-_2M_nYOhWMMFRGYHgY | jq -r .solution.gRecaptchaResponse)
+export CAPTCHA=signal-recaptcha-v2.6LfBXs0bAAAAAAjkDyyI1Lk5gBAUWfhI_bIyox5W.registration.$(curl -s --data-binary "https://signalcaptchas.org/registration/generate.html" https://human-after-all-21.fly.dev/6LfBXs0bAAAAAAjkDyyI1Lk5gBAUWfhI_bIyox5W | jq -r .solution.gRecaptchaResponse)
 ./signal-cli --config . -u $BOT_NUMBER register --captcha $CAPTCHA
 ```
 The ```CAPTCHA``` command may take a minute or so to complete. 
@@ -240,6 +240,7 @@ These are the environment variables and flags that the bots read to work. Not al
 - `BOT_NUMBER`: the number for the bot's signal account
 - `ADMIN`: admin's phone number, primarily as a fallback recipient for invalid webhooks; may also be used to send error messages and metrics.
 - `ADMINS`: additional list of people who can use admin commands
+- `ADMIN_GROUP`: group to get admin messages. all messages in that group will have admin
 - `DATABASE_URL`: URL for the Postgres database to store the signal keys in as well as other information.
 - `FULL_SERVICE_URL`: URL for [full-service](https://github.com/mobilecoinofficial/full-service) instance to use for sending and receiving payments
 - `CLIENTCRT`: client certificate to connect to ssl-enabled full-service.
@@ -254,6 +255,7 @@ These are the environment variables and flags that the bots read to work. Not al
 
 ## Binary flags
 - `DOWNLOAD`: download/upload datastore from the database instead of using what's in the current working directory.
+- `UPLOAD`: can be used to upload as a backup without downloading
 - `AUTOSAVE`: start MEMFS, making a fake filesystem in `./data` and used to upload the signal-cli datastore to the database whenever it is changed. If `DOWNLOAD`, also create an equivalent tmpdir at /tmp/local-signal, chdir to it, and symlink signal-cli process and avatar.
 - `MONITOR_WALLET`: monitor transactions from full-service. Relevant only if you're giving users a payment address to send mobilecoin to instead of using signal pay.  Experimental, do not use.
 - `LOGFILES`: create a debug.log.

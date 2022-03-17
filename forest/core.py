@@ -201,24 +201,16 @@ class Signal:
         # call C fn _exit() without calling cleanup handlers, flushing stdio buffers, etc.
         os._exit(1)
 
-    def handle_task(
+    def log_task_result(
         self,
         task: asyncio.Task,
-        *,
-        _func: Optional[AsyncFunc] = None,
-        f_args: Optional[dict] = None,
-        **params: str,
     ) -> None:
         """
-        Done callback which logs task done result and/or restarts a task on error
+        Done callback which logs task done result
         args:
             task (asyncio.task): Finished task
-            _func (AsyncFunc): Async function to restart
-            f_args (dict): Args to pass to function on restart
         """
-        name = task.get_name()
-        if _func:
-            name = _func.__name__
+        name = task.get_name() + "-" + getattr(task.get_coro(), "__name__", "")
         try:
             result = task.result()
             logging.info("final result of %s was %s", name, result)
@@ -226,21 +218,21 @@ class Signal:
             logging.info("task %s was cancelled", name)
         except Exception:  # pylint: disable=broad-except
             logging.exception("%s errored", name)
+
+    def restart_task_callback(
+        self,
+        _func: AsyncFunc,
+    ) -> Callable:
+        def handler(task: asyncio.Task) -> None:
+            name = task.get_name() + "-" + getattr(task.get_coro(), "__name__", "")
             if self.sigints > 1:
                 return
-            if callable(_func) and asyncio.iscoroutinefunction(_func):
-                if isinstance(f_args, dict):
-                    task = asyncio.create_task(_func(**f_args))
-                else:
-                    task = asyncio.create_task(_func())
-                task.add_done_callback(
-                    functools.partial(
-                        self.handle_task, _func=_func, f_args=f_args, **params
-                    )
-                )
-                if hasattr(self, params.get("attr", "")):
-                    setattr(self, params["attr"], task)
+            if asyncio.iscoroutinefunction(_func):
+                task = asyncio.create_task(_func())
+                task.add_done_callback(self.restart_task_callback(_func))
                 logging.info("%s restarting", name)
+
+        return handler
 
     async def read_signal_stdout(self, stream: StreamReader) -> None:
         """Read auxin-cli/signal-cli output but delegate handling it"""
@@ -491,7 +483,7 @@ class Signal:
         await self.outbox.put(cmd)
 
     backoff = False
-    messages_until_rate_limit = 50.0
+    messages_until_rate_limit = 1000.0
     last_update = time.time()
 
     def update_and_check_rate_limit(self) -> bool:
@@ -592,7 +584,7 @@ class Bot(Signal):
     def __init__(self, bot_number: Optional[str] = None) -> None:
         """Creates AND STARTS a bot that routes commands to do_x handlers"""
         self.client_session = aiohttp.ClientSession()
-        self.mobster = payments_monitor.Mobster()
+        self.mobster = payments_monitor.StatefulMobster()
         self.pongs: dict[str, str] = {}
         self.signal_roundtrip_latency: list[Datapoint] = []
         self.pending_response_tasks: list[asyncio.Task] = []
@@ -608,15 +600,12 @@ class Bot(Signal):
         self.restart_task = asyncio.create_task(
             self.start_process()
         )  # maybe cancel on sigint?
+        self.restart_task.add_done_callback(self.log_task_result)
         self.handle_messages_task = asyncio.create_task(self.handle_messages())
+        self.handle_messages_task.add_done_callback(self.log_task_result)
         self.handle_messages_task.add_done_callback(
-            functools.partial(
-                self.handle_task,
-                _func=self.handle_messages,
-                attr="handle_messages_task",
-            )
+            self.restart_task_callback(self.handle_messages)
         )
-        self.restart_task.add_done_callback(functools.partial(self.handle_task))
 
     async def handle_messages(self) -> None:
         """
@@ -822,7 +811,7 @@ class Bot(Signal):
             # pylint: disable=eval-used
             return await eval(f"{fn_name}()", env or globals())
 
-        if msg.full_text and len(msg.tokens) > 1:
+        if msg.full_text and msg.tokens and len(msg.tokens) > 1:
             source_blob = msg.full_text.replace(msg.arg0, "", 1).lstrip("/ ")
             try:
                 return str(await async_exec(source_blob, globals() | locals()))
@@ -924,7 +913,7 @@ class ExtrasBot(Bot):
 class PayBot(ExtrasBot):
     PAYMENTS_HELPTEXT = """Enable Signal Pay:
 
-    1. In Signal, tap “🠔“ & tap on your profile icon in the top left & tap *Settings*
+    1. In Signal, tap “⬅️“ & tap on your profile icon in the top left & tap *Settings*
 
     2. Tap *Payments* & tap *Activate Payments*
 
@@ -1212,6 +1201,9 @@ class PayBot(ExtrasBot):
         return await resp_future
 
 
+# we should just have either a hasable user type or a mapping subtype
+
+
 def get_source_or_uuid_from_dict(
     msg: Message, dict_: dict[str, Any]
 ) -> Tuple[bool, Any]:
@@ -1237,7 +1229,7 @@ class QuestionBot(PayBot):
         self.pending_answers: dict[str, asyncio.Future[Message]] = {}
         self.requires_first_device: dict[str, bool] = {}
         self.failed_user_challenges: dict[str, int] = {}
-        self.TERMINAL_ANSWERS = "stop quit exit break cancel abort".split()
+        self.TERMINAL_ANSWERS = "0 no none stop quit exit break cancel abort".split()
         self.FIRST_DEVICE_PLEASE = "Please answer from your phone or primary device!"
         self.UNEXPECTED_ANSWER = "Did I ask you a question?"
         super().__init__(bot_number)
@@ -1256,7 +1248,7 @@ class QuestionBot(PayBot):
             self.requires_first_device.pop(message.uuid, None)
             if probably_future:
                 probably_future.set_result(message)
-            return
+            return None
         return await super().handle_message(message)
 
     @hide
@@ -1272,6 +1264,8 @@ class QuestionBot(PayBot):
             return self.FIRST_DEVICE_PLEASE
         if question:
             question.set_result(True)
+            self.requires_first_device.pop(msg.uuid, None)
+            self.requires_first_device.pop(msg.source, None)
         return None
 
     @hide
@@ -1287,6 +1281,8 @@ class QuestionBot(PayBot):
             return self.FIRST_DEVICE_PLEASE
         if question:
             question.set_result(False)
+            self.requires_first_device.pop(msg.uuid, None)
+            self.requires_first_device.pop(msg.source, None)
         return None
 
     async def ask_freeform_question(
@@ -1467,6 +1463,13 @@ async def metrics(request: web.Request) -> web.Response:
     )
 
 
+async def restart(request: web.Request) -> web.Response:
+    bot = request.app["bot"]
+    bot.restart_task = asyncio.create_task(bot.start_process())
+    bot.restart_task.add_done_callback(functools.partial(bot.handle_task))
+    return web.Response(status=200)
+
+
 app = web.Application()
 
 
@@ -1489,6 +1492,7 @@ app.add_routes(
         web.get("/pongs/{pong}", pong_handler),
         web.post("/user/{phonenumber}", send_message_handler),
         web.post("/admin", admin_handler),
+        web.post("/restart", restart),
         web.get("/metrics", aio.web.server_stats),
         web.get("/csv_metrics", metrics),
         web.get("/recipients", recipients),
