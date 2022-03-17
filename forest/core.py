@@ -1177,6 +1177,8 @@ def is_first_device(msg: Message) -> bool:
 
 
 class QuestionBot(PayBot):
+    """Class of Bots that have methods for asking questions and awaiting answers"""
+
     def __init__(self, bot_number: Optional[str] = None) -> None:
         self.pending_confirmations: dict[str, asyncio.Future[bool]] = {}
         self.pending_answers: dict[str, asyncio.Future[Message]] = {}
@@ -1320,6 +1322,8 @@ class QuestionBot(PayBot):
         question_text: str = "Are you sure? yes/no",
         require_first_device: bool = False,
     ) -> bool:
+        """Asks a question that expects a yes or no answer. Returns a Boolean:
+        True if Yes False if No."""
         self.pending_confirmations[recipient] = asyncio.Future()
         if require_first_device:
             self.requires_first_device[recipient] = True
@@ -1327,6 +1331,111 @@ class QuestionBot(PayBot):
         result = await self.pending_confirmations[recipient]
         self.pending_confirmations.pop(recipient)
         return result
+
+    async def ask_multiple_choice_question(  # pylint: disable=too-many-arguments
+        self,
+        recipient: str,
+        question_text: Optional[str],
+        options: Union[dict[str, str], list[str]],
+        require_confirmation: bool = True,
+        require_first_device: bool = False,
+    ) -> Optional[str]:
+        """Prompts the user to select from a series of options.
+        Behaviour alters slightly based on options:
+        options as list -> we write labels for you with "1,2,3,...."
+        options as dict -> dict keys are the labels
+        options as dict with all values "" -> the labels are the options,
+        and only labels are printed"""
+        ## TODO: allow fuzzy answers or lowercase answers. Needs design discussion.
+
+        # Check to ensure that user is on their first device as opposed to a linked device
+        # Important for certain questions involving payment addresses
+        if require_first_device:
+            self.requires_first_device[recipient] = True
+
+        if question_text is None:
+            question_text = "Pick one from these options:"
+
+        options_text = ""
+
+        # User can pass just a list of options and we generate labels for them using enumerate
+        # User can provide their own labels for the options by passing a dict
+        # Create a question with just labels by having all values be ""
+        # This will format the options text and check for a just labels question
+        if isinstance(options, list):
+            dict_options: dict[Any, str] = {
+                str(i): value for i, value in enumerate(options, start=1)
+            }
+        else:
+            dict_options = options
+
+        # Put ) between labels and text, if dict is all empty values leave blank
+        spacer = ") " if any(dict_options.values()) else ""
+
+        # We use a generator object to join all the options
+        # into one text that can be sent to the user
+        options_text = " \n".join(
+            f"{label}{spacer}{body}" for label, body in dict_options.items()
+        )
+        # send user the formatted question and await their response
+        await self.send_message(recipient, question_text + "\n" + options_text)
+        answer_future = self.pending_answers[recipient] = asyncio.Future()
+        answer = await answer_future
+        self.pending_answers.pop(recipient)
+
+        # if the answer given does not match a label
+        if answer.full_text and not answer.full_text in dict_options.keys():
+            # return none and exit if user types cancel, stop, exit, etc...
+            if answer.full_text.lower() in self.TERMINAL_ANSWERS:
+                return None
+
+            # otherwise reminder to type the label exactly as it appears and restate the question
+
+            if "Please reply" not in question_text:
+                question_text = (
+                    "Please reply with just the label exactly as typed \n \n"
+                    + question_text
+                )
+
+            return await self.ask_multiple_choice_question(
+                recipient,
+                question_text,
+                dict_options,
+                require_confirmation,
+                require_first_device,
+            )
+
+        # when there is a match
+        if answer.full_text and answer.full_text in dict_options.keys():
+
+            # if confirmation is required ask for it as a yes/no question
+            if require_confirmation:
+                confirmation_text = (
+                    "You picked: \n"
+                    + answer.full_text
+                    + spacer
+                    + dict_options[answer.full_text]
+                    + "\n\nIs this correct? (yes/no)"
+                )
+                confirmation = await self.ask_yesno_question(
+                    recipient, confirmation_text
+                )
+
+                # if no, ask the question again
+                if not confirmation:
+                    return await self.ask_multiple_choice_question(
+                        recipient,
+                        question_text,
+                        dict_options,
+                        require_confirmation,
+                        require_first_device,
+                    )
+
+            # finally return the option that matches the answer, or if empty the answer itself
+            return dict_options[answer.full_text] or answer.full_text
+        # TODO if we made it here I think that means something went wrong
+        # so maybe it should fail instead of returning None
+        return None
 
     async def do_challenge(self, msg: Message) -> Response:
         """Challenges a user to do a simple math problem, optionally provided as an image to increase attacker complexity."""
