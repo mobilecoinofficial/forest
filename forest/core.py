@@ -9,6 +9,7 @@ import asyncio
 import asyncio.subprocess as subprocess  # https://github.com/PyCQA/pylint/issues/1469
 import base64
 import codecs
+from ctypes import util
 import datetime
 import json
 import logging
@@ -1178,6 +1179,7 @@ def is_first_device(msg: Message) -> bool:
 
 class QuestionBot(PayBot):
     """Class of Bots that have methods for asking questions and awaiting answers"""
+
     def __init__(self, bot_number: Optional[str] = None) -> None:
         self.pending_confirmations: dict[str, asyncio.Future[bool]] = {}
         self.pending_answers: dict[str, asyncio.Future[Message]] = {}
@@ -1329,27 +1331,32 @@ class QuestionBot(PayBot):
         self.pending_confirmations.pop(recipient)
         return result
 
-
-    async def ask_address_question(self, msg: Message, api, delay=3) -> Optional[str]:
+    async def ask_address_question(
+        self,
+        recipient: str,
+        question_text: str = "What's your shipping address?",
+        require_first_device: bool = False,
+        get_name: bool = False,
+        delay=3
+    ) -> Optional[str]:
         """Asks user for their address and verifies through the google maps api"""
-        #msg.text = msg
-        address = msg.text
-        base = r"https://maps.googleapis.com/maps/api/geocode/json?"
+        address = await self.ask_freeform_question(recipient, question_text, require_first_device)
+        api = utils.get_secret("GOOGLE_MAPS_API")
+
+        base = r""
         addP = "address=" + urllib.parse.quote_plus(address)
-        GeoUrl = base + addP + "&key=" + api
+        GeoUrl = f"https://maps.googleapis.com/maps/api/geocode/json?address= + addP + "&key=" + api
         response = urllib.request.urlopen(GeoUrl)
         jsonRaw = response.read()
         jsonData = json.loads(jsonRaw)
         print(jsonData)
         resu = jsonData["results"][0]
         post_code = -1
-        finList = [None]*4
+        finList = [None] * 4
         for i in resu["address_components"]:
             print(i)
             if i["types"][0] == "postal_code":
-                post_code = i[
-                    "long_name"
-                ]
+                post_code = i["long_name"]
                 finList = [
                     resu["formatted_address"],
                     resu["geometry"]["location"]["lat"],
