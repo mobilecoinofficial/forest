@@ -3,6 +3,7 @@ __pycache__
 avatars
 signal-cli*
 auxin-cli
+*.pem
 data
 *log
 .idea

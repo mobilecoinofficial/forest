@@ -45,8 +45,7 @@ class DatastoreError(Exception):
 AccountPGExpressions = pghelp.PGExpressions(
     table="signal_accounts",
     # rename="ALTAR TABLE IF EXISTS prod_users RENAME TO {self.table}",
-    migrate="""ALTER TABLE IF EXISTS {self.table} ADD IF NOT EXISTS datastore BYTEA, ADD IF NOT EXISTS notes TEXT,
-        IF NOT EXISTS uuid TEXT""",
+    migrate="""ALTER TABLE IF EXISTS {self.table} ADD IF NOT EXISTS datastore BYTEA, ADD IF NOT EXISTS notes TEXT""",
     create_table="CREATE TABLE IF NOT EXISTS {self.table} \
             (id TEXT PRIMARY KEY, \
             datastore BYTEA, \
@@ -54,8 +53,7 @@ AccountPGExpressions = pghelp.PGExpressions(
             last_claim_ms BIGINT, \
             active_node_name TEXT, \
             last_node_name TEXT, \
-            notes TEXT, \
-            uuid TEXT);",
+            notes TEXT);",
     is_registered="SELECT datastore is not null as registered FROM {self.table} WHERE id=$1",
     get_datastore=get_datastore,
     get_claim="SELECT active_node_name FROM {self.table} WHERE id=$1",
@@ -388,6 +386,7 @@ async def upload(ns: argparse.Namespace) -> None:
     else:
         num = sorted(os.listdir("data"))[0]
     store = SignalDatastore(num)
+    await store.account_interface.create_table()
     await store.upload()
     await _set_note(num, ns.note)
 

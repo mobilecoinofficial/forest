@@ -45,10 +45,16 @@ class Echopay(PayBot):
         """Sends payment to requestee for a certain amount"""
         amount_mob = 0.001  ##payment amount in MOB
         amount_picomob = self.to_picomob(amount_mob)
-        await self.send_payment(
+
+        payment_status = await self.send_payment(
             message.source, amount_picomob, confirm_tx_timeout=10, receipt_message=""
         )
-        return f"Sent you a payment for {str(amount_mob)} MOB"
+
+        # This check verifies that the payment succeeded.
+        if getattr(payment_status, "status", "") == "tx_status_succeeded":
+            return f"Sent you a payment for {str(amount_mob)} MOB"
+
+        return "There was a problem processing your payment, please ask an admininstrator for help"
 
     @requires_admin
     async def do_pay_user(self, message: Message) -> Response:
@@ -68,13 +74,18 @@ class Echopay(PayBot):
             return response
 
         recipient = message.arg1
-        await self.send_payment(
+        payment_status = await self.send_payment(
             recipient,
             amount_picomob,
             confirm_tx_timeout=10,
             receipt_message="Here's some money from your friendly Paymebot",
         )
-        return f"Sent Payment to {recipient} for {amount_mob} MOB"
+
+        # This check verifies that the payment succeeded.
+        if getattr(payment_status, "status", "") == "tx_status_succeeded":
+            return f"Sent Payment to {recipient} for {amount_mob} MOB"
+
+        return "There was a problem processing your payment, please ask an admininstrator for help"
 
     async def payment_response(self, msg: Message, amount_pmob: int) -> Response:
         """Triggers on Succesful payment, overriden from forest.core"""

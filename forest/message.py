@@ -36,6 +36,7 @@ class Message:
 
     timestamp: int
     text: str
+    full_text: str
     attachments: list[dict[str, str]]
     group: Optional[str]
     quoted_text: str
@@ -156,20 +157,27 @@ class AuxinMessage(Message):
         super().__init__(blob)
 
 
+# auxin:
+# {'dataMessage': {'profileKey': 'LZa0kKwD0/L3qs96L+lIORyi3ATqqsOUEowtAic7Y0A=', 'reaction': {'emoji': '❤️', 'remove': False, 'targetAuthorUuid': 'da1fb04c-bf1a-458f-92c7-6f21ad443684', 'targetSentTimestamp': 1647300333914}, 'timestamp': 1647300340210}}}
 class Reaction:
     def __init__(self, reaction: dict) -> None:
         assert reaction
         self.emoji = reaction["emoji"]
-        self.author = reaction["targetAuthorNumber"]
+        self.uuid = reaction.get("targetAuthorUuid")
+        self.author = reaction.get("targetAuthorNumber") or self.uuid or ""
         self.ts = reaction["targetSentTimestamp"]
 
 
 class Quote:
     def __init__(self, quote: dict) -> None:
         assert quote
+        # signal-cli:
         # {"id":1641591686224,"author":"+16176088864","authorNumber":"+16176088864","authorUuid":"412e180d-c500-4c60-b370-14f6693d8ea7","text":"hi","attachments":[]}
+        # auxin:
+        # {'authorUuid': 'da1fb04c-bf1a-458f-92c7-6f21ad443684', 'id': 1647300333914, 'text': '/pong'}
         self.ts = quote["id"]
-        self.author = quote["authorNumber"]
+        self.uuid = quote.get("authorUuid")
+        self.author = quote.get("authorNumber") or self.uuid or ""
         self.text = quote["text"]
 
 
@@ -181,8 +189,9 @@ class StdioMessage(Message):
         result = blob.get("result", {})
         self.envelope = envelope = blob.get("envelope", {})
         # {"envelope":{"source":"+16176088864","sourceNumber":"+16176088864","sourceUuid":"412e180d-c500-4c60-b370-14f6693d8ea7","sourceName":"sylv","sourceDevice":3,"timestamp":1637290589910,"dataMessage":{"timestamp":1637290589910,"message":"/ping","expiresInSeconds":0,"viewOnce":false}},"account":"+447927948360"}
-        self.source: str = envelope.get("source") or envelope.get("sourceUuid")
-        self.name: str = envelope.get("sourceName")
+        self.uuid = envelope.get("sourceUuid")
+        self.source: str = envelope.get("source") or self.uuid
+        self.name: str = envelope.get("sourceName") or self.source
         self.device_id = envelope.get("sourceDevice")
         self.timestamp = envelope.get("timestamp") or result.get("timestamp")
 
