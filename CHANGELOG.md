@@ -1,6 +1,15 @@
+## 1.2.4
+
+- /restart endpoint restarts proc; also refactor asyncio task handlers (#155)
+- `ask_multiple_choice_question` (#156)
+- bump mobot helper to use poetry properly (#158)
+- clean up insecure and evil bots (#159)
+- send event owners blasts from other admins regardless if they're a list member or not (#163)
+- SynonymBot and synonym decorator (#134)
+
 ## 1.2.3
 
-- new flags: ADMINS, ADMIN_GROUP, UPLOAD (upload-only).
+- new flags: ADMINS, ADMIN_GROUP, UPLOAD (upload-only). (#149)
 - `last_node_name column` in `signal_accounts` table, like `active_node_name` and also they include app name. `list_accounts` uses your timezone
 - refactor command matching and  message text parsing. include `device_id`, reaction, and quote. shouldn't have breaking changes. 
 - move commands from Bot to ExtrasBot (could be renamed), drop invoices, allow using separate ledgers, time postgres queries
