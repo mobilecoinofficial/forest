@@ -4,7 +4,7 @@
 
 from typing import Tuple, Protocol, Any
 from forest.core import Bot, Message, Response, requires_admin, is_admin, run_bot
-from forest.pdictng import aPersistDict
+from forest.pdictng import aPersistDictOfLists
 
 
 class SynonymAttributes(Protocol):
@@ -17,7 +17,7 @@ def has_synonyms(func: Any) -> SynonymAttributes:
 
 class SynonymBot(Bot):
     def __init__(self) -> None:
-        self.synonyms = aPersistDict("synonyms")
+        self.synonyms: aPersistDictOfLists[str] = aPersistDictOfLists("synonyms")
         super().__init__()
 
     def get_valid_syns(self, msg: Message) -> Tuple:
@@ -81,8 +81,7 @@ class SynonymBot(Bot):
                     await self.synonyms.extend(str(msg.arg1), msg.arg2)
                 return f"Linked synonym '{msg.arg2}' to command '{msg.arg1}'"
             # No synonym detected
-            else:
-                return f"Need a synonym to link to command '{msg.arg1}', try again"
+            return f"Need a synonym to link to command '{msg.arg1}', try again"
         # No command detected
         return "Not a valid command. Syntax for linking commands is 'link command synonym'. Please try again"
 
