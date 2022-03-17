@@ -102,7 +102,9 @@ class TestBot(QuestionBot):
             return choice
         return "oops, sorry"
 
-    async def do_test_multiple_choice_dict_mostly_emptyval(self, message: Message) -> Response:
+    async def do_test_multiple_choice_dict_mostly_emptyval(
+        self, message: Message
+    ) -> Response:
         """Asks a Sample Multiple Choice question with a dict with mostly empty values"""
 
         question_text = "What is your tshirt size?"
