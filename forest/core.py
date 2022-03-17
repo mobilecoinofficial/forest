@@ -1340,30 +1340,32 @@ class QuestionBot(PayBot):
         delay=3
     ) -> Optional[str]:
         """Asks user for their address and verifies through the google maps api"""
+        
         address = await self.ask_freeform_question(recipient, question_text, require_first_device)
         api = utils.get_secret("GOOGLE_MAPS_API")
-
-        base = r""
-        addP = "address=" + urllib.parse.quote_plus(address)
-        GeoUrl = f"https://maps.googleapis.com/maps/api/geocode/json?address= + addP + "&key=" + api
+        # import pdb;pdb.set_trace()
+        # base = r""
+        # addP = "address=" + urllib.parse.quote_plus(address)
+        GeoUrl = f"https://maps.googleapis.com/maps/api/geocode/json?address={urllib.parse.quote_plus(address)}&key={api}"
         response = urllib.request.urlopen(GeoUrl)
-        jsonRaw = response.read()
-        jsonData = json.loads(jsonRaw)
+        # jsonRaw = response.read()
+        jsonData = json.loads(urllib.request.urlopen(GeoUrl).read())
         print(jsonData)
+        return jsonData["results"][0]["formatted_address"]
         resu = jsonData["results"][0]
         post_code = -1
         finList = [None] * 4
-        for i in resu["address_components"]:
-            print(i)
-            if i["types"][0] == "postal_code":
-                post_code = i["long_name"]
-                finList = [
-                    resu["formatted_address"],
-                    resu["geometry"]["location"]["lat"],
-                    resu["geometry"]["location"]["lng"],
-                    post_code,
-                ]
-                return f"{finList}"
+        # for i in resu["address_components"]:
+        #     print(i)
+        #     if i["types"][0] == "postal_code":
+        #         post_code = i["long_name"]
+        #         finList = [
+        #             resu["formatted_address"],
+        #             resu["geometry"]["location"]["lat"],
+        #             resu["geometry"]["location"]["lng"],
+        #             post_code,
+        #         ]
+        #         return f"{finList}"
         return None
 
     async def do_challenge(self, msg: Message) -> Response:
