@@ -73,26 +73,26 @@ The maintainers of signal-cli provide precompiled releases you can download and 
 
 Download and extract the latest release tarball from https://github.com/AsamK/signal-cli/releases
 ```bash
-wget https://github.com/AsamK/signal-cli/releases/download/v0.10.0/signal-cli-0.10.0.tar.gz
+wget https://github.com/AsamK/signal-cli/releases/download/v0.10.4.1/signal-cli-0.10.4.1.tar.gz
 
-tar -xvf signal-cli-0.10.0.tar.gz
+tar -xvf signal-cli-0.10.4.1.tar.gz
 ```
 Verify the installation succeeded
 
 ``` bash
-./signal-cli-0.10.0/bin/signal-cli --version
+./signal-cli-0.10.4.1/bin/signal-cli --version
 ---
-signal-cli 0.10.0
+signal-cli 0.10.4.1
 ```
 
 Finally for ease of use, link the executable to your working directory:
 
 ``` bash
-ln -s ./signal-cli-0.10.0/bin/signal-cli .
+ln -s ./signal-cli-0.10.4.1/bin/signal-cli .
 
 ./signal-cli --version
 ---
-signal-cli 0.10.0
+signal-cli 0.10.4.1
 ```
 
 ### Building signal-cli from Source ###
@@ -111,7 +111,7 @@ Verify the installation succeeded:
 ``` bash
 ./build/install/signal-cli/bin/signal-cli --version
 ---
-signal-cli 0.10.0
+signal-cli 0.10.4.1
 ```
 
 Finally for ease of use, link the executable to your working directory (change the path depending on where you cloned the repo):
@@ -122,7 +122,7 @@ ln -s $HOME/signal-cli/build/install/signal-cli/bin/signal-cli .
 
 ./signal-cli --version
 ---
-signal-cli 0.10.0
+signal-cli 0.10.4.1
 ```
 
 For more detailed instructions visit the [signal-cli repository](https://github.com/AsamK/signal-cli).
