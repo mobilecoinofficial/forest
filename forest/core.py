@@ -1328,6 +1328,35 @@ class QuestionBot(PayBot):
         self.pending_confirmations.pop(recipient)
         return result
 
+
+    async def ask_address_question(self, msg: Message, api, delay=3) -> str:
+        """Asks user for their address and verifies through the google maps api"""
+        #msg.text = msg
+        address = msg.text
+        base = r"https://maps.googleapis.com/maps/api/geocode/json?"
+        addP = "address=" + urllib.parse.quote_plus(address)
+        GeoUrl = base + addP + "&key=" + api
+        response = urllib.request.urlopen(GeoUrl)
+        jsonRaw = response.read()
+        jsonData = json.loads(jsonRaw)
+        print(jsonData)
+        resu = jsonData["results"][0]
+        post_code = -1
+        finList = [None]*4
+        for i in resu["address_components"]:
+            print(i)
+            if i["types"][0] == "postal_code":
+                post_code = i[
+                    "long_name"
+                ]
+                finList = [
+                    resu["formatted_address"],
+                    resu["geometry"]["location"]["lat"],
+                    resu["geometry"]["location"]["lng"],
+                    post_code,
+                ]
+                return f"{finList}"
+
     async def do_challenge(self, msg: Message) -> Response:
         """Challenges a user to do a simple math problem, optionally provided as an image to increase attacker complexity."""
         # the captcha module delivers graphical challenges of the same format
