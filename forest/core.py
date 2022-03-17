@@ -1351,18 +1351,28 @@ class QuestionBot(PayBot):
             recipient, question_text, require_first_device
         )
 
-        # import pdb;pdb.set_trace()
-        # base = r""
-        # addP = "address=" + urllib.parse.quote_plus(address)
-        GeoUrl = f"https://maps.googleapis.com/maps/api/geocode/json?address={urllib.parse.quote_plus(address)}&key={api}"
-        jsonData = json.loads(urllib.request.urlopen(GeoUrl).read())
+        # we take the answer provided by the user, format it nicely as a request to google maps' api
+        # It returns a JSON object from which we can ascertain if the address is valid
+        # TODO Should I wrap this in a try catch for api error?
+        
+        jsonData = json.loads(
+            urllib.request.urlopen(
+                f"https://maps.googleapis.com/maps/api/geocode/json?address={urllib.parse.quote_plus(address)}&key={api}"
+            ).read()
+        )
 
-        if jsonData["results"][0]["formatted_address"]:
-            maybe_address = jsonData["results"][0]["formatted_address"]
-            maps_url = f"https://www.google.com/maps/place/{urllib.parse.quote_plus(maybe_address)}"
-            return f"is this your address? \n{maps_url}"
+        # a valid address will have a value for jsonData["results"][0]["formatted_address"]
+        if jsonData["results"] and jsonData["results"][0]["formatted_address"]:
 
-            # return jsonData["results"][0]["formatted_address"]
+            if require_confirmation:
+                    
+                maybe_address = jsonData["results"][0]["formatted_address"]
+                maps_url = f"https://www.google.com/maps/place/{urllib.parse.quote_plus(maybe_address)}"
+                confirmation = await self.ask_yesno_question(recipient,f"Got: \n {maybe_address} \nis this your address? \n{maps_url}",require_first_device)
+                if not confirmation:
+                    return await self.ask_address_question(recipient,question_text,require_first_device, require_confirmation,delay)
+        
+            return jsonData["results"][0]["formatted_address"]
 
         return None
 

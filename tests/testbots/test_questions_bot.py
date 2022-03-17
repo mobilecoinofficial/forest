@@ -117,10 +117,17 @@ class TestBot(QuestionBot):
             return choice
         return "oops, sorry"
 
-    async def do_test_address_question(self, message: Message) -> Response:
+    async def do_test_address_question_no_confirmation(self, message: Message) -> Response:
         """Asks a sample address question"""
 
         address = await self.ask_address_question(message.source)
+
+        return address
+
+    async def do_test_address_question_with_confirmation(self, message: Message) -> Response:
+        """Asks a sample address question"""
+
+        address = await self.ask_address_question(message.source,require_confirmation=True)
 
         return address
 
