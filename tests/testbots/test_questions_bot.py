@@ -22,7 +22,7 @@ class TestBot(QuestionBot):
         options = ["Deer", "Foxes", "Faeries", "Crows"]
 
         choice = await self.ask_multiple_choice_question(
-            message.source, question_text, options, requires_confirmation=False
+            message.source, question_text, options, require_confirmation=False
         )
         if choice and choice == "Faeries":
             return "Faeries are my favourite too c:"
@@ -60,7 +60,7 @@ class TestBot(QuestionBot):
         options = {"A": "Deer", "B": "Foxes", "⛧": "Faeries", "D": "Crows"}
 
         choice = await self.ask_multiple_choice_question(
-            message.source, question_text, options, requires_confirmation=True
+            message.source, question_text, options, require_confirmation=True
         )
         if choice and choice == "Faeries":
             return "Faeries are my favourite too c:"
@@ -79,7 +79,7 @@ class TestBot(QuestionBot):
         options = {"A": "Deer", "B": "Foxes", "⛧": "Faeries", "D": "Crows"}
 
         choice = await self.ask_multiple_choice_question(
-            message.source, question_text, options, requires_confirmation=False
+            message.source, question_text, options, require_confirmation=False
         )
         if choice and choice == "Faeries":
             return "Faeries are my favourite too c:"
@@ -96,7 +96,20 @@ class TestBot(QuestionBot):
         options = {"S": "", "M": "", "L": "", "XL": "", "XXL": ""}
 
         choice = await self.ask_multiple_choice_question(
-            message.source, question_text, options, requires_confirmation=True
+            message.source, question_text, options, require_confirmation=True
+        )
+        if choice:
+            return choice
+        return "oops, sorry"
+
+    async def do_test_multiple_choice_dict_mostly_emptyval(self, message: Message) -> Response:
+        """Asks a Sample Multiple Choice question with a dict with mostly empty values"""
+
+        question_text = "What is your tshirt size?"
+        options = {"S": "", "M": "M", "L": "", "XL": "", "XXL": ""}
+
+        choice = await self.ask_multiple_choice_question(
+            message.source, question_text, options, require_confirmation=True
         )
         if choice:
             return choice
