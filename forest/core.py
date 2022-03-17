@@ -1309,7 +1309,7 @@ class QuestionBot(PayBot):
         options: Union[dict[str, str], list[str]],
         require_confirmation: bool = True,
         require_first_device: bool = False,
-    ) -> Optional[str]:
+    ) -> Optional[str]:  # pylint: disable=too-many-arguments
         """Prompts the user to select from a series of options.
         Behaviour alters slightly based on options:
         options as list -> we write labels for you with "1,2,3,...."
@@ -1395,7 +1395,8 @@ class QuestionBot(PayBot):
 
             # finally return the option that matches the answer, or if empty the answer itself
             return dict_options[answer.full_text] or answer.full_text
-        # TODO if we made it here I think that means something went wrong so maybe it should fail instead of returning None
+        # TODO if we made it here I think that means something went wrong
+        # so maybe it should fail instead of returning None
         return None
 
     async def do_challenge(self, msg: Message) -> Response:
