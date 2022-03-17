@@ -78,8 +78,9 @@ ActivityQueries = pghelp.PGExpressions(
         first_seen TIMESTAMP default now(),
         last_seen TIMESTAMP default now(),
         bot TEXT,
-        UNIQUE (user, bot));""",
-    log="INSERT INTO user_activity (account, bot) VALUES ($1, $2) ON CONFLICT DO UPDATE SET last_seen=now()",
+        UNIQUE (account, bot));""",
+    log="""INSERT INTO user_activity (account, bot) VALUES ($1, $2)
+    ON CONFLICT ON CONSTRAINT user_activity_account_bot_key DO UPDATE SET last_seen=now()""",
 )
 
 
@@ -634,18 +635,22 @@ class Bot(Signal):
         """
         if not self.activity.pool:
             await self.activity.connect_pg()
+            assert self.activity.pool
         while 1:
             await asyncio.sleep(60)
+            if not self.seen_users:
+                continue
             try:
                 async with self.activity.pool.acquire() as conn:
                     # executemany batches this into an atomic db query
-                    conn.executemany(
-                        "INSERT INTO user_activity (account, bot) VALUES ($1, $2) ON CONFLICT DO UPDATE SET last_seen=now()",
+                    await conn.executemany(
+                        self.activity.queries["log"],
                         [(name, utils.APP_NAME) for name in self.seen_users],
                     )
                     logging.debug("recorded %s seen users", len(self.seen_users))
                     self.seen_users: set[str] = set()
             except asyncpg.UndefinedTableError:
+                logging.info("creating user_activity table")
                 await self.activity.create_table()
 
     async def handle_messages(self) -> None:
@@ -656,7 +661,8 @@ class Bot(Signal):
         """
         while True:
             message = await self.inbox.get()
-            self.seen_users.add(message.source)
+            if message.source:
+                self.seen_users.add(message.source)
             if message.id and message.id in self.pending_requests:
                 logging.debug("setting result for future %s: %s", message.id, message)
                 self.pending_requests[message.id].set_result(message)
