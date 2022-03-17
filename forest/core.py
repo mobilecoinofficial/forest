@@ -1177,6 +1177,7 @@ def is_first_device(msg: Message) -> bool:
 
 
 class QuestionBot(PayBot):
+    """Class of Bots that have methods for asking questions and awaiting answers"""
     def __init__(self, bot_number: Optional[str] = None) -> None:
         self.pending_confirmations: dict[str, asyncio.Future[bool]] = {}
         self.pending_answers: dict[str, asyncio.Future[Message]] = {}
@@ -1329,7 +1330,7 @@ class QuestionBot(PayBot):
         return result
 
 
-    async def ask_address_question(self, msg: Message, api, delay=3) -> str:
+    async def ask_address_question(self, msg: Message, api, delay=3) -> Optional[str]:
         """Asks user for their address and verifies through the google maps api"""
         #msg.text = msg
         address = msg.text
@@ -1356,6 +1357,7 @@ class QuestionBot(PayBot):
                     post_code,
                 ]
                 return f"{finList}"
+        return None
 
     async def do_challenge(self, msg: Message) -> Response:
         """Challenges a user to do a simple math problem, optionally provided as an image to increase attacker complexity."""
