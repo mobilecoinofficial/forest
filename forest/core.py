@@ -1385,7 +1385,7 @@ class QuestionBot(PayBot):
                     + answer.full_text
                     + spacer
                     + dict_options[answer.full_text]
-                    + "\n \n Is this correct? (yes/no)"
+                    + "\n\nIs this correct? (yes/no)"
                 )
                 confirmation = await self.ask_yesno_question(
                     recipient, confirmation_text
