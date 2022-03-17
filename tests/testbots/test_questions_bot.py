@@ -117,6 +117,13 @@ class TestBot(QuestionBot):
             return choice
         return "oops, sorry"
 
+    async def do_test_address_question(self, message: Message) -> Response:
+        """Asks a sample address question"""
+
+        address = await self.ask_address_question(message.source)
+
+        return address
+
 
 if __name__ == "__main__":
     run_bot(TestBot)

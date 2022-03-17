@@ -1336,36 +1336,34 @@ class QuestionBot(PayBot):
         recipient: str,
         question_text: str = "What's your shipping address?",
         require_first_device: bool = False,
-        get_name: bool = False,
-        delay=3
+        require_confirmation: bool = False,
+        delay=3,
     ) -> Optional[str]:
-        """Asks user for their address and verifies through the google maps api"""
-        
-        address = await self.ask_freeform_question(recipient, question_text, require_first_device)
+        """Asks user for their address and verifies through the google maps api
+        Can ask User for confirmation, returns string with formatted address or none"""
+
         api = utils.get_secret("GOOGLE_MAPS_API")
+        if not api:
+            logging.error("Error, Missing Google Maps API in secrets configuration")
+            return None
+        # ask for the address as a freeform question
+        address = await self.ask_freeform_question(
+            recipient, question_text, require_first_device
+        )
+
         # import pdb;pdb.set_trace()
         # base = r""
         # addP = "address=" + urllib.parse.quote_plus(address)
         GeoUrl = f"https://maps.googleapis.com/maps/api/geocode/json?address={urllib.parse.quote_plus(address)}&key={api}"
-        response = urllib.request.urlopen(GeoUrl)
-        # jsonRaw = response.read()
         jsonData = json.loads(urllib.request.urlopen(GeoUrl).read())
-        print(jsonData)
-        return jsonData["results"][0]["formatted_address"]
-        resu = jsonData["results"][0]
-        post_code = -1
-        finList = [None] * 4
-        # for i in resu["address_components"]:
-        #     print(i)
-        #     if i["types"][0] == "postal_code":
-        #         post_code = i["long_name"]
-        #         finList = [
-        #             resu["formatted_address"],
-        #             resu["geometry"]["location"]["lat"],
-        #             resu["geometry"]["location"]["lng"],
-        #             post_code,
-        #         ]
-        #         return f"{finList}"
+
+        if jsonData["results"][0]["formatted_address"]:
+            maybe_address = jsonData["results"][0]["formatted_address"]
+            maps_url = f"https://www.google.com/maps/place/{urllib.parse.quote_plus(maybe_address)}"
+            return f"is this your address? \n{maps_url}"
+
+            # return jsonData["results"][0]["formatted_address"]
+
         return None
 
     async def do_challenge(self, msg: Message) -> Response:
