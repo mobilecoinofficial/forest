@@ -302,7 +302,7 @@ class ClanGat(TalkBack):
                 )
                 if result and not result.status == "tx_status_failed":
                     await self.payout_balance_mmob.decrement(list_, amount_mmob)
-                    return f"Payed you {amount_mmob/1000}MOB"
+                    return f"Paid you you {amount_mmob/1000}MOB"
                 return None
         if not balance:
             return "Sorry, {list_} has 0mmob balance!"  # thanks y?!
@@ -849,6 +849,8 @@ class ClanGat(TalkBack):
                     f"You may now make one purchase of up to 2 tickets at {await self.event_prices[code]} MOB ea.\nIf you have payments activated, open the conversation on your Signal mobile app, click on the plus (+) sign and choose payment.",
                 ]
             if await self.event_prices.get(code, 0) < 0:
+                if not await self.get_signalpay_address(msg.uuid):
+                    return await self.dialog.get("PLEASE_ACTIVATE", "PLEASE_ACTIVATE")
                 res = await self.pay_user_from_balance(
                     msg.uuid,
                     code,
@@ -856,7 +858,7 @@ class ClanGat(TalkBack):
                 )
                 if res and "wrong" not in res:
                     await self.event_attendees.extend(code, msg.uuid)
-                return res
+                return await self.event_prompts.get(code, res)
             await self.send_message(
                 msg.uuid,
                 f"{await self.event_prompts.get(code) or 'You have unlocked an event!'}",

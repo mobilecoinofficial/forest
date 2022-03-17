@@ -335,7 +335,7 @@ class Teddy(TalkBack):
         if (
             code
             and code.rstrip(string.punctuation).lower()
-            in "yes yeah ye sure yah".split()  # thanks gang
+            in "yes please yeah ye sure yah".split()  # thanks gang
         ):  # yes!
             return await self.do_yes(msg)
         if msg.full_text and msg.full_text in [
