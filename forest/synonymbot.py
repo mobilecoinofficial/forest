@@ -1,18 +1,24 @@
 #!/usr/bin/python3.9
 # Copyright (c) 2021 MobileCoin Inc.
 # Copyright (c) 2021 The Forest Team
-
-from typing import Tuple, Protocol, Any
+from functools import wraps
+from typing import Tuple, Any, Callable, Coroutine
 from forest.core import Bot, Message, Response, requires_admin, is_admin, run_bot
 from forest.pdictng import aPersistDictOfLists
 
-
-class SynonymAttributes(Protocol):
-    syns: list
+Command = Callable[[Bot, Message], Coroutine[Any, Any, Response]]
 
 
-def has_synonyms(func: Any) -> SynonymAttributes:
-    return func
+def synonyms(*syns: str) -> Callable:
+    def decorate(command: Command) -> Command:
+        @wraps(command)
+        async def synonym_command(self: "Bot", msg: Message) -> Response:
+            return await command(self, msg)
+
+        synonym_command.syns = syns  # type: ignore
+        return synonym_command
+
+    return decorate
 
 
 class SynonymBot(Bot):
@@ -125,26 +131,21 @@ class SynonymBot(Bot):
         return super().match_command(msg)
 
     # We can add synonyms in development. give your command the
-    # @has_synonyms decorator and register a .syns attribute
-    @has_synonyms
+    # @synonyms decorator and pass some synonyms
+    @synonyms("hi", "hey", "whatup", "aloha")
     async def do_hello(self, _: Message) -> str:
         return "Hello, world!"
 
-    do_hello.syns = ["hi", "hey", "whatup", "aloha"]
-
-    @has_synonyms
+    @synonyms("bye", "goodby", "later", "aloha")
     async def do_goodbye(self, _: Message) -> str:
         return "Goodbye, cruel world!"
-
-    do_goodbye.syns = ["bye", "goodby", "later", "aloha"]
 
     # We can also add.syns attributes to inherited methods in this manner
     # but doesn't play well with mypy, becuase the signature doesn't match
     # the supertype, so we use type:ignore, as seen below        ↓
+    @synonyms("documentation", "docs", "commands", "man")
     async def do_help(self, msg: Message) -> Response:
         return await super().do_help(msg)
-
-    do_help.syns = ["documentation", "docs", "commands", "man"]  # type:ignore
 
 
 if __name__ == "__main__":
