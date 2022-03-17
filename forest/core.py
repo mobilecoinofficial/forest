@@ -1302,14 +1302,14 @@ class QuestionBot(PayBot):
         self.pending_confirmations.pop(recipient)
         return result
 
-    async def ask_multiple_choice_question(
+    async def ask_multiple_choice_question(  # pylint: disable=too-many-arguments
         self,
         recipient: str,
         question_text: Optional[str],
         options: Union[dict[str, str], list[str]],
         require_confirmation: bool = True,
         require_first_device: bool = False,
-    ) -> Optional[str]:  # pylint: disable=too-many-arguments
+    ) -> Optional[str]:
         """Prompts the user to select from a series of options.
         Behaviour alters slightly based on options:
         options as list -> we write labels for you with "1,2,3,...."
