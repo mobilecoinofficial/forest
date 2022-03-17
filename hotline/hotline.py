@@ -2,6 +2,7 @@
 # Copyright (c) 2021 MobileCoin Inc.
 # Copyright (c) 2021 The Forest Team
 
+
 import asyncio
 import json
 import string
@@ -124,6 +125,7 @@ class TalkBack(QuestionBot):
 class ClanGat(TalkBack):
     def __init__(self) -> None:
         self.no_repay: list[str] = []
+        self.dialog: aPersistDict[str] = aPersistDict("dialog")
         self.pending_orders: aPersistDict[str] = aPersistDict("pending_orders")
         self.pending_funds: aPersistDict[str] = aPersistDict("pending_funds")
         self.pending_donations: aPersistDict[str] = aPersistDict("pending_donations")
@@ -300,7 +302,7 @@ class ClanGat(TalkBack):
                 )
                 if result and not result.status == "tx_status_failed":
                     await self.payout_balance_mmob.decrement(list_, amount_mmob)
-                    return f"Payed you you {amount_mmob/1000}MOB"
+                    return f"Payed you {amount_mmob/1000}MOB"
                 return None
         if not balance:
             return "Sorry, {list_} has 0mmob balance!"  # thanks y?!
@@ -522,10 +524,17 @@ class ClanGat(TalkBack):
                     .replace(f"Blast {msg.arg1} ", "", 1)
                 )  # thanks mikey :)
             success = True
+            target_admins = list(
+                set(
+                    await self.event_owners.get(obj.lower(), [])
+                    + await self.list_owners.get(obj.lower(), [])
+                )
+            )
             target_users = list(
                 set(
                     await self.event_lists.get(obj.lower(), [])
                     + await self.event_attendees.get(obj.lower(), [])
+                    + target_admins
                 )
             )
             # send preview
@@ -538,7 +547,13 @@ class ClanGat(TalkBack):
                 return "ok, let's not."
             # do the blast
             for target_user in target_users:
-                await self.send_message(target_user.strip("\u2068\u2069"), param)
+                if target_user in target_admins:
+                    await self.send_message(
+                        target_user.strip("\u2068\u2069"),
+                        param + f"\n - {await self.get_displayname(msg.uuid)}",
+                    )
+                else:
+                    await self.send_message(target_user.strip("\u2068\u2069"), param)
                 sent.append(target_user)
                 await asyncio.sleep(0.01)
         elif user_owns:
@@ -566,12 +581,7 @@ class ClanGat(TalkBack):
             return self.do_add.__doc__
         if msg.arg1 and msg.arg1.lower() == "setup":
             return self.do_setup.__doc__
-        return "\n\n".join(
-            [
-                "Hi, I'm MOBot! Welcome to my Hotline!",
-                "\nEvents and announcement lists can be unlocked by messaging me the secret code at any time.\n\nAccolades, feature requests, and support questions can be directed to my maintainers at https://signal.group/#CjQKILH5dkoz99TKxwG7T3TaVAuskMq4gybSplYDfTq-vxUrEhBhuy19A4DbvBqm7PfnBn3I .",
-            ]
-        )
+        return await self.dialog.get("WELCOME", "WELCOME")
 
     @hide
     async def do_remove(self, msg: Message) -> Response:
