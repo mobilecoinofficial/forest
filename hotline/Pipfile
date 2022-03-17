@@ -6,14 +6,18 @@ name = "pypi"
 [packages]
 aioprocessing = "*"
 asyncpg = "*"
+mobilecoin = "*"
 base58 = "*"
-phonenumberslite = "*"
-prometheus_async = "*"
-prometheus_client = "*"
-protobuf = "*"
+phonenumbers = "*"
 termcolor = "*"
-ulid2 = "*"
+prometheus-async = "*"
+prometheus-client = "*"
 pycryptodome = "*"
+ulid2 = "*"
+Pillow = "*"
+num2words = "*"
+words2num = "*"
+maya = "*"
 
 [requires]
 python_version = "3.9"
@@ -23,7 +27,13 @@ allow_prereleases = true
 
 [dev-packages]
 mypy = "*"
+pylint = "*"
+types-termcolor = "*"
+types-protobuf = "*"
+isort = "*"
+aiomonitor = "*"
+typing = "*"
 
 [packages.aiohttp]
 extras = [ "speedups",]
-version = "*"
+version = "==3.8.1"

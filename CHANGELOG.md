@@ -1,3 +1,30 @@
+## 1.2.3
+
+- new flags: ADMINS, ADMIN_GROUP, UPLOAD (upload-only).
+- `last_node_name column` in `signal_accounts` table, like `active_node_name` and also they include app name. `list_accounts` uses your timezone
+- refactor command matching and  message text parsing. include `device_id`, reaction, and quote. shouldn't have breaking changes. 
+- move commands from Bot to ExtrasBot (could be renamed), drop invoices, allow using separate ledgers, time postgres queries
+
+## 1.2.2
+
+- fasterpKVStoreClient (#112). probably need to change PAUTH if you're using pdict
+- upload requires note (#147)
+- switch from pipenv to poetry (#148)
+
+## 1.2.1
+
+- use `SIGNAL_PATH` instead of `SIGNAL_CLI_PATH`; it uses `which signal-cli` or `which auxin-cli` as appropriate as a fallback. (#145)
+
+## 1.2.0
+
+- Breaking change! Disambiguate `.get_address(..)` method. (#121)
+- `Mobster.get_my_address()` returns the MOB address associated with the full service account
+- `PayBot.get_pay_address(signal_user_id)` returns the MOB address associated associated with a Signal user
+
+## 1.1.0
+
+- `AUTOSAVE`, `DOWNLOAD` replace `NO_MEMFS`, `NO_DOWNLOAD`. Requires updating secrets for most bots.
+
 ## 1.0.10
 
 - captchas! (#124, #126)
@@ -19,7 +46,7 @@
 ## 1.0.7
 
 - add QuestionBot (#93)
-- Prevent tx receipt delivery on tx failure (#97) 
+- Prevent tx receipt delivery on tx failure (#97)
 - MOBot Helper: Conversational UI, q&a workflow for creation, confirmations for redemption, no slashes, mild rebranding, etc (#98)
 - aPersistDict improvements (#101)
 

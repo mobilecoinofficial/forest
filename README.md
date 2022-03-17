@@ -33,14 +33,14 @@ sudo apt install python3.9 python3.9-dev python3-pip
 
 ### Dependencies ###
 
-We use pipenv to handle dependencies, run:
+We use poetry to handle dependencies, run:
 
 ```bash
-python3.9 -m pip install pipenv
+python3.9 -m pip install poetry
 ```
 then to install the prerequisites:
 ```bash
-pipenv install
+poetry install
 ```
 
 </br>
@@ -73,26 +73,26 @@ The maintainers of signal-cli provide precompiled releases you can download and 
 
 Download and extract the latest release tarball from https://github.com/AsamK/signal-cli/releases
 ```bash
-wget https://github.com/AsamK/signal-cli/releases/download/v0.10.0/signal-cli-0.10.0.tar.gz
+wget https://github.com/AsamK/signal-cli/releases/download/v0.10.4.1/signal-cli-0.10.4.1.tar.gz
 
-tar -xvf signal-cli-0.10.0.tar.gz
+tar -xvf signal-cli-0.10.4.1.tar.gz
 ```
 Verify the installation succeeded
 
 ``` bash
-./signal-cli-0.10.0/bin/signal-cli --version
+./signal-cli-0.10.4.1/bin/signal-cli --version
 ---
-signal-cli 0.10.0
+signal-cli 0.10.4.1
 ```
 
 Finally for ease of use, link the executable to your working directory:
 
 ``` bash
-ln -s ./signal-cli-0.10.0/bin/signal-cli .
+ln -s ./signal-cli-0.10.4.1/bin/signal-cli .
 
 ./signal-cli --version
 ---
-signal-cli 0.10.0
+signal-cli 0.10.4.1
 ```
 
 ### Building signal-cli from Source ###
@@ -111,7 +111,7 @@ Verify the installation succeeded:
 ``` bash
 ./build/install/signal-cli/bin/signal-cli --version
 ---
-signal-cli 0.10.0
+signal-cli 0.10.4.1
 ```
 
 Finally for ease of use, link the executable to your working directory (change the path depending on where you cloned the repo):
@@ -122,7 +122,7 @@ ln -s $HOME/signal-cli/build/install/signal-cli/bin/signal-cli .
 
 ./signal-cli --version
 ---
-signal-cli 0.10.0
+signal-cli 0.10.4.1
 ```
 
 For more detailed instructions visit the [signal-cli repository](https://github.com/AsamK/signal-cli).
@@ -140,7 +140,7 @@ sudo apt install jq # install jq in case you don't already have it
 ```
 ``` bash
 export BOT_NUMBER=+15551234567 # number you've obtained for your bot
-export CAPTCHA=$(curl -s --data-binary "https://signalcaptchas.org/registration/generate.html" https://human-after-all-21.fly.dev/6LedYI0UAAAAAMt8HLj4s-_2M_nYOhWMMFRGYHgY | jq -r .solution.gRecaptchaResponse)
+export CAPTCHA=signal-recaptcha-v2.6LfBXs0bAAAAAAjkDyyI1Lk5gBAUWfhI_bIyox5W.registration.$(curl -s --data-binary "https://signalcaptchas.org/registration/generate.html" https://human-after-all-21.fly.dev/6LfBXs0bAAAAAAjkDyyI1Lk5gBAUWfhI_bIyox5W | jq -r .solution.gRecaptchaResponse)
 ./signal-cli --config . -u $BOT_NUMBER register --captcha $CAPTCHA
 ```
 The ```CAPTCHA``` command may take a minute or so to complete. 
@@ -173,15 +173,12 @@ Hellobot will read environment variables from a secrets file. By default it look
 ```bash
 ADMIN=+15551111111
 BOT_NUMBER=+15551234567
-NO_DOWNLOAD=1
-NO_MEMFS=1
-ROOT_DIR=.
 SIGNAL=signal-cli
 ```
 
 Finally you can run hellobot with
 ```bash
-pipenv run python -m sample_bots.hellobot
+poetry run python -m sample_bots.hellobot
 ```
 
 You should see an output like this:
@@ -232,7 +229,7 @@ DATABASE_URL=postgres://<your database url>
 Then, you can upload your datastore with:
 
 ```bash
-./forest/datastore.py upload --number $BOT_NUMBER --path .
+./forest/datastore.py upload --number $BOT_NUMBER --path . --note "this number is for my special bot"
 ```
 
 ## Options and secrets
@@ -242,20 +239,24 @@ These are the environment variables and flags that the bots read to work. Not al
 - `ENV`: if running locally, which {ENV}_secrets file to use. 
 - `BOT_NUMBER`: the number for the bot's signal account
 - `ADMIN`: admin's phone number, primarily as a fallback recipient for invalid webhooks; may also be used to send error messages and metrics.
+- `ADMINS`: additional list of people who can use admin commands
+- `ADMIN_GROUP`: group to get admin messages. all messages in that group will have admin
 - `DATABASE_URL`: URL for the Postgres database to store the signal keys in as well as other information.
 - `FULL_SERVICE_URL`: URL for [full-service](https://github.com/mobilecoinofficial/full-service) instance to use for sending and receiving payments
 - `CLIENTCRT`: client certificate to connect to ssl-enabled full-service.
 - `ROOTCRT`: certificate to validate full-service.
 - `MNEMONIC`: account to import for full-service. Not Secure.
-- `SIGNAL`: which signal client to use. can be 'signal-cli' for signal-cli or 'auxin' for auxin-cli.
-- `ROOT_DIR`: specify the directory where the data file is stored, as well as where the signal-cli executable is.
-- `SIGNAL_CLI_PATH`: specify where the signal-cli executable is if it is not in ROOT_DIR.
-- `LOGLEVEL`: what log level to use for console logs (DEBUG, INFO, WARNING, ERROR).
+- `SIGNAL`: which signal client to use. can be 'signal-cli' or 'auxin-cli'. Defaults to auxin.
+- `ROOT_DIR`: specify the directory where the data file is stored, as well as where the signal-cli executable is. Defaults to `/tmp/local-signal` if DOWNLOAD, `/app` if running on fly, and `.` otherwise
+- `SIGNAL_PATH`: specify where the signal client executable is if it is not in ROOT_DIR.
+- `LOGLEVEL`: what log level to use for console logs (DEBUG, INFO, WARNING, ERROR). Defaults to DEBUG
 - `TYPO_THRESHOLD`: maximum normalized Levenshtein edit distance for typo correction. 0 is only exact matches, 1 is any match. Default: 0.3
+- `SIGNAL_CLI_PATH`: path to executable to use. useful for running signal-cli with graalvm tracing agent
 
 ## Binary flags
-- `NO_DOWNLOAD`: don't download a signal-cli datastore, instead use what's in the current working directory.
-- `NO_MEMFS`: if this isn't set, MEMFS is started, making a fake filesystem in `./data` and used to upload the signal-cli datastore to the database whenever it is changed. If not `NO_DOWNLOAD`, also create an equivalent tmpdir at /tmp/local-signal, chdir to it, and symlink signal-cli process and avatar.
+- `DOWNLOAD`: download/upload datastore from the database instead of using what's in the current working directory.
+- `UPLOAD`: can be used to upload as a backup without downloading
+- `AUTOSAVE`: start MEMFS, making a fake filesystem in `./data` and used to upload the signal-cli datastore to the database whenever it is changed. If `DOWNLOAD`, also create an equivalent tmpdir at /tmp/local-signal, chdir to it, and symlink signal-cli process and avatar.
 - `MONITOR_WALLET`: monitor transactions from full-service. Relevant only if you're giving users a payment address to send mobilecoin to instead of using signal pay.  Experimental, do not use.
 - `LOGFILES`: create a debug.log.
 - `ADMIN_METRICS`: send python and roundtrip timedeltas for each command to ADMIN.
@@ -269,4 +270,6 @@ Code style: Ensure that `mypy *py` and `pylint *py` do not return errors before 
 
 Use [black](https://github.com/psf/black) to format your python code. Prefer verbose, easier to read names over conciser ones.
 
-Install black pre-commit hook with `ln -s .githooks/* .git/hooks/`. Requires black to be installed.
+`pip install black pylint mypy types-protobuf types-termcolor`
+
+Install black pre-commit hook with `ln -s (readlink -f .githooks/pre-commit) .git/hooks/pre-commit` on fish, or `ln -s $(readlink -f .githooks/pre-commit) .git/hooks/pre-commit` on bash. Requires black to be installed.

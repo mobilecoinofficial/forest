@@ -9,7 +9,7 @@ import logging
 import random
 import ssl
 import time
-from typing import Optional
+from typing import Any, Optional, List
 
 import aiohttp
 import asyncpg
@@ -33,18 +33,19 @@ else:
     ssl_context.verify_mode = ssl.CERT_REQUIRED
     ssl_context.load_cert_chain(certfile="client.full.pem")
 
+MICROMOB_TO_PICOMOB = 1_000_000
+MILLIMOB_TO_PICOMOB = 1_000_000_000
 
 DATABASE_URL = utils.get_secret("DATABASE_URL")
 LedgerPGExpressions = PGExpressions(
-    table="ledger",
-    create_table="CREATE TABLE IF NOT EXISTS {self.table} ( \
-        tx_id SERIAL PRIMARY KEY, \
-        account CHARACTER VARYING(16), \
-        amount_usd_cents BIGINT NOT NULL, \
-        amount_pmob BIGINT, \
-        memo CHARACTER VARYING(32), \
-        invoice CHARACTER VARYING(32), \
-        ts TIMESTAMP);",
+    table=utils.get_secret("LEDGER_NAME") or "ledger",
+    create_table="""CREATE TABLE IF NOT EXISTS {self.table} ( 
+        tx_id SERIAL PRIMARY KEY, 
+        account TEXT,
+        amount_usd_cents BIGINT NOT NULL, 
+        amount_pmob BIGINT, 
+        memo TEXT, 
+        ts TIMESTAMP);""",
     put_usd_tx="INSERT INTO {self.table} (account, amount_usd_cents, memo, ts) \
         VALUES($1, $2, $3, CURRENT_TIMESTAMP);",
     put_pmob_tx="INSERT INTO {self.table} (account, amount_usd_cents, amount_pmob, memo, ts) \
@@ -89,12 +90,11 @@ class Mobster:
     def __init__(self, url: str = "") -> None:
         if not url:
             url = utils.get_secret("FULL_SERVICE_URL") or "http://localhost:9090/wallet"
-        self.ledger_manager = LedgerManager()
-        self.invoice_manager = InvoiceManager()
+        self.account_id: Optional[str] = None
         logging.info("full-service url: %s", url)
         self.url = url
 
-    async def req_(self, method: str, **params: str) -> dict:
+    async def req_(self, method: str, **params: Any) -> dict:
         logging.info("full-service request: %s", method)
         result = await self.req({"method": method, "params": params})
         if "error" in result:
@@ -103,16 +103,82 @@ class Mobster:
 
     async def req(self, data: dict) -> dict:
         better_data = {"jsonrpc": "2.0", "id": 1, **data}
+        logging.debug("url is %s", self.url)
         async with aiohttp.TCPConnector(ssl=ssl_context) as conn:
             async with aiohttp.ClientSession(connector=conn) as sess:
                 # this can hang (forever?) if there's no full-service at that url
-                mob_req = sess.post(
+                async with sess.post(
                     self.url,
                     data=json.dumps(better_data),
                     headers={"Content-Type": "application/json"},
-                )
-                async with mob_req as resp:
+                ) as resp:
                     return await resp.json()
+
+    async def get_all_txos_for_account(self) -> dict[str, dict]:
+        txos = (
+            (
+                (
+                    await self.req_(
+                        "get_all_txos_for_account", account_id=await self.get_account()
+                    )
+                )
+            )
+            .get("result", {})
+            .get("txo_map", {})
+        )
+
+        return txos
+
+    async def get_utxos(self) -> dict[str, int]:
+        txos = await self.get_all_txos_for_account()
+        utxos = {
+            txo: int(status.get("value_pmob", 0))
+            for txo, status in txos.items()
+            if status.get("account_status_map", {})
+            .get(await self.get_account(), {})
+            .get("txo_status")
+            == "txo_status_unspent"
+        }
+        if utxos:
+            sorted_ = dict(sorted(utxos.items(), key=lambda txo: utxos.get(txo[0], 0)))
+            return sorted_
+        return {}
+
+    async def split_txos_slow(
+        self, output_millimob: int = 100, target_quantity: int = 200
+    ) -> str:
+        output_millimob = int(output_millimob)
+        built = 0
+        i = 0
+        utxos: List[str] = []
+        while built < (target_quantity + 3):
+            if len(utxos) < 1:
+                utxos = list(reversed(await self.get_utxos()))
+            split_transaction = await self.req_(
+                "build_split_txo_transaction",
+                **dict(
+                    txo_id=utxos.pop(0),
+                    output_values=[
+                        str(
+                            output_millimob * MILLIMOB_TO_PICOMOB
+                            + 400 * MICROMOB_TO_PICOMOB
+                        )
+                        for _ in range(15)
+                    ],
+                ),
+            )
+            params = split_transaction.get("result", {})
+            # use this maybe
+            if params:
+                results = await self.req_("submit_transaction", **params)
+            else:
+                results = {}
+            if results.get("results"):
+                await asyncio.sleep(2)
+                built += 15
+                i += 1
+        await asyncio.sleep(10)
+        return f"built {built} utxos each containing {output_millimob} mmob/ea"
 
     rate_cache: tuple[int, Optional[float]] = (0, None)
 
@@ -153,17 +219,6 @@ class Mobster:
             return round(mob_amount, 8)
         return round(mob_amount, 3)  # maybe ceil?
 
-    async def create_invoice(self, amount_usd: float, account: str, memo: str) -> float:
-        while 1:
-            try:
-                mob_price_exact = await self.usd2mob(amount_usd, perturb=True)
-                await self.invoice_manager.create_invoice(
-                    account, mc_util.mob2pmob(mob_price_exact), memo
-                )
-                return mob_price_exact
-            except asyncpg.UniqueViolationError:
-                pass
-
     async def import_account(self) -> dict:
         params = {
             "mnemonic": utils.get_secret("MNEMONIC"),
@@ -174,17 +229,53 @@ class Mobster:
         }
         return await self.req({"method": "import_account", "params": params})
 
-    # cache?
-    async def get_address(self) -> str:
+    async def get_my_address(self) -> str:
+        """Returns either the address set, or the address specified by the secret
+        or the first address in the full service instance in that order"""
+        acc_id = await self.get_account()
         res = await self.req({"method": "get_all_accounts"})
-        acc_id = res["result"]["account_ids"][0]
         return res["result"]["account_map"][acc_id]["main_address"]
+
+    async def get_account(self, account_name: Optional[str] = None) -> str:
+        """returns the account id matching account_name in Full Service Wallet"""
+
+        if isinstance(self.account_id, str):
+            return self.account_id
+
+        if account_name is None:
+            account_name = utils.get_secret("FS_ACCOUNT_NAME")
+
+        ## get all account IDs for the Wallet / fullservice instance
+        account_ids = (await self.req({"method": "get_all_accounts"}))["result"][
+            "account_ids"
+        ]
+        maybe_account_id = []
+        if account_name is not None:
+            ## get the account map for the accounts in the wallet
+            account_map = [
+                (await self.req({"method": "get_all_accounts"}))["result"][
+                    "account_map"
+                ][x]
+                for x in account_ids
+            ]
+
+            ## get the account_id that matches the name
+            maybe_account_id = [
+                x["account_id"] for x in account_map if x["name"] == account_name
+            ]
+        if len(maybe_account_id) == 0:
+            account_id = account_ids[0]
+            logging.info("falling back to zeroth account: %s", account_id)
+        else:
+            account_id = maybe_account_id[0]
+        self.account_id = account_id
+        return account_id
 
     async def get_receipt_amount_pmob(self, receipt_str: str) -> Optional[int]:
         full_service_receipt = mc_util.b64_receipt_to_full_service_receipt(receipt_str)
         logging.info("fs receipt: %s", full_service_receipt)
         params = {
-            "address": await self.get_address(),
+            "address": await self.get_my_address(),
             "receiver_receipt": full_service_receipt,
         }
         while 1:
@@ -203,13 +294,6 @@ class Mobster:
             return pmob
 
     account_id: Optional[str] = None
-
-    async def get_account(self) -> str:
-        if not isinstance(self.account_id, str):
-            self.account_id = (await self.req({"method": "get_all_accounts"}))[
-                "result"
-            ]["account_ids"][0]
-        return self.account_id
 
     async def get_balance(self) -> int:
         value = (
@@ -333,36 +417,20 @@ class Mobster:
 
         return pending_transactions
 
-    async def monitor_wallet(self) -> None:
-        last_transactions: dict[str, dict[str, str]] = {}
-        account_id = await self.get_account()
-        while True:
-            latest_transactions = await self.get_transactions(account_id)
-            for transaction in latest_transactions:
-                if transaction not in last_transactions:
-                    unobserved_tx = latest_transactions.get(transaction, {})
-                    short_tx = {}
-                    for k, v in unobserved_tx.items():
-                        if isinstance(v, list) and len(v) == 1:
-                            v = v[0]
-                        if isinstance(v, str) and k != "value_pmob":
-                            v = v[:16]
-                        short_tx[k] = v
-                    logging.info(short_tx)
-                    value_pmob = int(short_tx["value_pmob"])
-                    invoice = await self.invoice_manager.get_invoice_by_amount(
-                        value_pmob
-                    )
-                    if invoice:
-                        credit = await self.pmob2usd(value_pmob)
-                        # (account, amount_usd_cent, amount_pmob, memo)
-                        await self.ledger_manager.put_pmob_tx(
-                            invoice[0].get("account"),
-                            int(credit * 100),
-                            value_pmob,
-                            short_tx["transaction_log_id"],
-                        )
-                    # otherwise check if it's related to signal pay
-                    # otherwise, complain about this unsolicited payment to an admin or something
-            last_transactions = latest_transactions.copy()
-            await asyncio.sleep(10)
+
+class StatefulMobster(Mobster):
+    def __init__(self) -> None:
+        self.ledger_manager = LedgerManager()
+        self.invoice_manager = InvoiceManager()
+        super().__init__()
+
+    async def create_invoice(self, amount_usd: float, account: str, memo: str) -> float:
+        while 1:
+            try:
+                mob_price_exact = await self.usd2mob(amount_usd, perturb=True)
+                await self.invoice_manager.create_invoice(
+                    account, mc_util.mob2pmob(mob_price_exact), memo
+                )
+                return mob_price_exact
+            except asyncpg.UniqueViolationError:
+                pass

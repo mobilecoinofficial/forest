@@ -24,14 +24,12 @@ RUN find /app/auxin_cli
 RUN touch -a -m /app/auxin_cli/src/main.rs
 RUN cargo +nightly build --release
 
-FROM ubuntu:hirsute as libbuilder
+FROM python:3.9 as libbuilder
 WORKDIR /app
-RUN ln --symbolic --force --no-dereference /usr/share/zoneinfo/EST && echo "EST" > /etc/timezone
-RUN apt update
-RUN DEBIAN_FRONTEND="noninteractive" apt install -yy python3.9 python3.9-venv libfuse2 pipenv
-RUN python3.9 -m venv /app/venv
-COPY Pipfile.lock Pipfile /app/
-RUN VIRTUAL_ENV=/app/venv pipenv install 
+RUN pip install poetry
+RUN python3.9 -m venv /app/venv 
+COPY ./pyproject.toml ./poetry.lock /app/
+RUN VIRTUAL_ENV=/app/venv poetry install 
 
 FROM ubuntu:hirsute
 WORKDIR /app
@@ -39,8 +37,6 @@ RUN mkdir -p /app/data
 RUN apt update
 RUN apt install -y python3.9 wget libfuse2 kmod #npm
 RUN apt-get clean autoclean && apt-get autoremove --yes && rm -rf /var/lib/{apt,dpkg,cache,log}/
-
-RUN wget -q -O fuse.ko "https://public.getpost.workers.dev/?key=01F54FQVAX85R1Y98ACCXT2AGT&raw"
 COPY --from=builder /app/target/release/auxin-cli /app/auxin-cli
 COPY --from=libbuilder /app/venv/lib/python3.9/site-packages /app/
 COPY ./forest/ /app/forest/
