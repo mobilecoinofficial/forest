@@ -1378,10 +1378,10 @@ class QuestionBot(PayBot):
                 # Tell user the address we got and ask them to confirm
                 # Give them a google Maps link so they can check
                 maybe_address = address_json["results"][0]["formatted_address"]
-                maps_url = f"https://www.google.com/maps/place/{urllib.parse.quote_plus(maybe_address)}"
+                maps_url = f"https://www.google.com/maps/search/?api=1&query={urllib.parse.quote_plus(maybe_address)}&query_place_id={address_json['results'][0]['place_id']}"
                 confirmation = await self.ask_yesno_question(
                     recipient,
-                    f"Got: \n{maybe_address} \n{maps_url} \nIs this your address? (yes/no)",
+                    f"Got: \n{maybe_address} \n\n{maps_url} \n\nIs this your address? (yes/no)",
                     require_first_device,
                 )
                 # If not, ask again
