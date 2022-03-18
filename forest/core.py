@@ -1367,13 +1367,12 @@ class QuestionBot(PayBot):
             #break out if user replies cancel, exit, stop, etc.
             if address.lower in self.TERMINAL_ANSWERS:
                 return None
+            #Otherwise, apologize and ask again
+            await self.send_message(recipient,"Sorry, I couldn't find that. \n Please try again or reply cancel to cancel \n" )
+            return await self.ask_address_question(recipient,question_text,require_first_device,require_confirmation)
 
-            if "Sorry, I couldn't find that" not in question_text:
-                question_text = "Sorry, I couldn't find that. \n Please try again or reply cancel to cancel \n" + question_text
-                return await self.ask_address_question(recipient,question_text,require_first_device,require_confirmation)
 
-
-        if address_json["results"] and address_json["results"][0]["formatted_address"]:
+        if address_json["results"][0]["formatted_address"]:
 
             if require_confirmation:
                     
@@ -1384,6 +1383,7 @@ class QuestionBot(PayBot):
                     return await self.ask_address_question(recipient,question_text,require_first_device, require_confirmation)
         
             return address_json["results"][0]["formatted_address"]
+        
         return None
 
     async def ask_multiple_choice_question(  # pylint: disable=too-many-arguments
