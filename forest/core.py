@@ -1343,10 +1343,15 @@ class QuestionBot(PayBot):
         """Asks user for their address and verifies through the google maps api
         Can ask User for confirmation, returns string with formatted address or none"""
 
+        # get google maps api key from secrets
         api = utils.get_secret("GOOGLE_MAPS_API")
         if not api:
             logging.error("Error, Missing Google Maps API in secrets configuration")
             return None
+
+        if require_first_device:
+            self.requires_first_device[recipient] = True
+
         # ask for the address as a freeform question
         address = await self.ask_freeform_question(
             recipient, question_text, require_first_device
@@ -1354,36 +1359,54 @@ class QuestionBot(PayBot):
 
         # we take the answer provided by the user, format it nicely as a request to google maps' api
         # It returns a JSON object from which we can ascertain if the address is valid
-        # TODO Should I wrap this in a try catch for api error?
-        
         address_json = json.loads(
             urllib.request.urlopen(
                 f"https://maps.googleapis.com/maps/api/geocode/json?address={urllib.parse.quote_plus(address)}&key={api}"
             ).read()
         )
 
-        # if google can't find the address
+        # if google can't find the address results will be empty
         if not (address_json["results"]):
-            #break out if user replies cancel, exit, stop, etc.
-            if address.lower in self.TERMINAL_ANSWERS:
+
+            # break out if user replied cancel, exit, stop, etc.
+            if address.lower() in self.TERMINAL_ANSWERS:
                 return None
-            #Otherwise, apologize and ask again
-            await self.send_message(recipient,"Sorry, I couldn't find that. \n Please try again or reply cancel to cancel \n" )
-            return await self.ask_address_question(recipient,question_text,require_first_device,require_confirmation)
 
+            # Otherwise, apologize and ask again
+            await self.send_message(
+                recipient,
+                "Sorry, I couldn't find that. \nPlease try again or reply cancel to cancel \n",
+            )
+            return await self.ask_address_question(
+                recipient, question_text, require_first_device, require_confirmation
+            )
 
-        if address_json["results"][0]["formatted_address"]:
+        # if maps does return a formatted address
+        if address_json["results"] and address_json["results"][0]["formatted_address"]:
 
             if require_confirmation:
-                    
+                # Tell user the address we got and ask them to confirm
+                # Give them a google Maps link so they can check
                 maybe_address = address_json["results"][0]["formatted_address"]
                 maps_url = f"https://www.google.com/maps/place/{urllib.parse.quote_plus(maybe_address)}"
-                confirmation = await self.ask_yesno_question(recipient,f"Got: \n {maybe_address} \nis this your address? \n{maps_url}",require_first_device)
+                confirmation = await self.ask_yesno_question(
+                    recipient,
+                    f"Got: \n{maybe_address} \n{maps_url} \nIs this your address? (yes/no)",
+                    require_first_device,
+                )
+                # If not, ask again
                 if not confirmation:
-                    return await self.ask_address_question(recipient,question_text,require_first_device, require_confirmation)
-        
+                    return await self.ask_address_question(
+                        recipient,
+                        question_text,
+                        require_first_device,
+                        require_confirmation,
+                    )
+
             return address_json["results"][0]["formatted_address"]
-        
+
+        # If we made it here something unexpected probably went wrong.
+        # Google returned something but didn't have a formatted address
         return None
 
     async def ask_multiple_choice_question(  # pylint: disable=too-many-arguments
