@@ -621,7 +621,7 @@ class Bot(Signal):
                         [(name, utils.APP_NAME) for name in self.seen_users],
                     )
                     logging.debug("recorded %s seen users", len(self.seen_users))
-                    self.seen_users: set[str] = set()
+                    self.seen_users = set()
             except asyncpg.UndefinedTableError:
                 logging.info("creating user_activity table")
                 await self.activity.create_table()
