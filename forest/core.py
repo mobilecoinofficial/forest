@@ -104,11 +104,6 @@ class Signal:
         logging.debug("bot number: %s", bot_number)
         self.bot_number = bot_number
         self.datastore = datastore.SignalDatastore(bot_number)
-        self.activity = pghelp.PGInterface(
-            query_strings=ActivityQueries, database=utils.get_secret("DATABASE_URL")
-        )
-        # set of users we've received messages from in the last minute
-        self.seen_users: set[str] = set()
         self.proc: Optional[subprocess.Process] = None
         self.inbox: Queue[Message] = Queue()
         self.outbox: Queue[dict] = Queue()
@@ -588,7 +583,12 @@ class Bot(Signal):
             if not hasattr(getattr(self, f"do_{name}"), "hide")
         ]
         super().__init__(bot_number)
-        self.log_task = asyncio.create_task(self.log_activity())
+        self.activity = pghelp.PGInterface(
+            query_strings=ActivityQueries, database=utils.get_secret("DATABASE_URL")
+        )
+        # set of users we've received messages from in the last minute
+        self.seen_users: set[str] = set()
+        self.log_activity_task = asyncio.create_task(self.log_activity())
         self.restart_task = asyncio.create_task(
             self.start_process()
         )  # maybe cancel on sigint?
@@ -601,12 +601,13 @@ class Bot(Signal):
 
     async def log_activity(self) -> None:
         """
-        every 60s, update the table of user_activity with the new users
-        this is run in the background as batches,
-        so we aren't making a seperate db query for every message
+        every 60s, update the user_activity table with users we've seen
+        runs in the bg as batches to avoid a seperate db query for every message
+        used for signup metrics
         """
         if not self.activity.pool:
             await self.activity.connect_pg()
+            # mypy can't infer that connect_pg creates pool
             assert self.activity.pool
         while 1:
             await asyncio.sleep(60)
