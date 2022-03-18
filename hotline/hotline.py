@@ -269,7 +269,7 @@ class ClanGat(TalkBack):
 
     async def pay_user_from_balance(
         self, user: str, list_: str, amount_mmob: int
-    ) -> Response:
+    ) -> Optional[str]:
         """Pays a user a given amount of MOB by manually grabbing UTXOs until a transaction can be made."""
         # pylint: disable=too-many-return-statements
         balance = await self.payout_balance_mmob.get(list_, 0)
