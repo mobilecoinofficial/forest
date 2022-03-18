@@ -1043,7 +1043,7 @@ class PayBot(ExtrasBot):
         recipient: str,
         amount_pmob: int,
         receipt_message: str = "Transaction sent!",
-        confirm_tx_timeout: int = 0,
+        confirm_tx_timeout: int = 5,
         **params: Any,
     ) -> Optional[Message]:
         """
