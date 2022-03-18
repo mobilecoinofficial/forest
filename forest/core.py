@@ -628,6 +628,7 @@ class Bot(Signal):
             rpc_id = await self.respond(message, str(e))
         except:  # pylint: disable=bare-except
             exception_traceback = "".join(traceback.format_exception(*sys.exc_info()))
+            logging.info("error handling message %s %s", message, exception_traceback)
             self.pending_response_tasks.append(
                 asyncio.create_task(self.admin(f"{message}\n{exception_traceback}"))
             )
@@ -658,6 +659,7 @@ class Bot(Signal):
         return False
 
     def match_command(self, msg: Message) -> str:
+        """return the appropriate command a message is calling for"""
         if not msg.arg0:
             return ""
         # probably wrong
@@ -1272,12 +1274,19 @@ class QuestionBot(PayBot):
         answer = await answer_future
         self.pending_answers.pop(recipient)
         answer_text = answer.full_text
+
+        # This checks to see if the answer is a valid candidate for float by replacing
+        # the first comma or decimal point with a number to see if the resulting string .isnumeric()
         if answer_text and not (
             answer_text.replace(".", "1", 1).isnumeric()
             or answer_text.replace(",", "1", 1).isnumeric()
         ):
+            # cancel if user replies with any of the terminal answers "stop, cancel, quit, etc. defined above"
             if answer.full_text.lower() in self.TERMINAL_ANSWERS:
                 return None
+
+            # Check to see if the original question already specified wanting the answer as a decimal.
+            # If not asks the question again and adds "as a decimal" to clarify
             if question_text and "as a decimal" in question_text:
                 return await self.ask_floatable_question(recipient, question_text)
             return await self.ask_floatable_question(
@@ -1304,8 +1313,13 @@ class QuestionBot(PayBot):
         answer = await answer_future
         self.pending_answers.pop(recipient)
         if answer.full_text and not answer.full_text.isnumeric():
+
+            # cancel if user replies with any of the terminal answers "stop, cancel, quit, etc. defined above"
             if answer.full_text.lower() in self.TERMINAL_ANSWERS:
                 return None
+
+            # Check to see if the original question already specified wanting the answer as a decimal.
+            # If not asks the question again and adds "as a whole number, ie '1' or '2000'" to clarify
             if question_text and "as a whole number" in question_text:
                 return await self.ask_intable_question(recipient, question_text)
             return await self.ask_intable_question(
@@ -1503,7 +1517,8 @@ class QuestionBot(PayBot):
         return None
 
     async def do_challenge(self, msg: Message) -> Response:
-        """Challenges a user to do a simple math problem, optionally provided as an image to increase attacker complexity."""
+        """Challenges a user to do a simple math problem,
+        optionally provided as an image to increase attacker complexity."""
         # the captcha module delivers graphical challenges of the same format
         if captcha is not None:
             challenge, answer = captcha.get_challenge_and_answer()
