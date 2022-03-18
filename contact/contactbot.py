@@ -80,6 +80,7 @@ class Forest(QuestionBot):
             for k, v in response_json_all.items()
             if k in ("status", "segment_count")
         }
+        logging.debug(response_json_all)
         # hide how the sausage is made
         return response_json
 
@@ -367,6 +368,7 @@ async def inbound_sms_handler(request: web.Request) -> web.Response:
     maybe_group = await bot.group_routing_manager.get_group_id_for_sms_route(
         msg_data.get("source"), msg_data.get("destination")
     )
+    logging.debug(msg_data)
     if maybe_group:
         # if we can't notice group membership changes,
         # we could check if the person is still in the group
