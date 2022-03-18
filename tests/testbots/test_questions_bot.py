@@ -119,9 +119,10 @@ class TestBot(QuestionBot):
 
     async def do_test_address_question_no_confirmation(self, message: Message) -> Response:
         """Asks a sample address question"""
-
-        address = await self.ask_address_question(message.source)
-
+        try:
+            address = await self.ask_address_question(message.source)
+        except:
+            return "Can't find your address! Try specifying your state or zip code."
         return address
 
     async def do_test_address_question_with_confirmation(self, message: Message) -> Response:
