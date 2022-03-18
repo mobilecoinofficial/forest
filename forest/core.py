@@ -9,7 +9,6 @@ import asyncio
 import asyncio.subprocess as subprocess  # https://github.com/PyCQA/pylint/issues/1469
 import base64
 import codecs
-from ctypes import util
 import datetime
 import json
 import logging
@@ -1342,36 +1341,29 @@ class QuestionBot(PayBot):
     ) -> Optional[str]:
         """Asks user for their address and verifies through the google maps api
         Can ask User for confirmation, returns string with formatted address or none"""
-
         # get google maps api key from secrets
         api = utils.get_secret("GOOGLE_MAPS_API")
         if not api:
-            logging.error("Error, Missing Google Maps API in secrets configuration")
+            logging.error("Error, missing Google Maps API in secrets configuration")
             return None
-
         if require_first_device:
             self.requires_first_device[recipient] = True
-
         # ask for the address as a freeform question
         address = await self.ask_freeform_question(
             recipient, question_text, require_first_device
         )
-
         # we take the answer provided by the user, format it nicely as a request to google maps' api
         # It returns a JSON object from which we can ascertain if the address is valid
-        address_json = json.loads(
-            urllib.request.urlopen(
-                f"https://maps.googleapis.com/maps/api/geocode/json?address={urllib.parse.quote_plus(address)}&key={api}"
-            ).read()
-        )
-
+        async with self.client_session.get(
+            "https://maps.googleapis.com/maps/api/geocode/json",
+            params={"address": address, "key": api},
+        ) as resp:
+            address_json = await resp.json()
         # if google can't find the address results will be empty
         if not (address_json["results"]):
-
             # break out if user replied cancel, exit, stop, etc.
             if address.lower() in self.TERMINAL_ANSWERS:
                 return None
-
             # Otherwise, apologize and ask again
             await self.send_message(
                 recipient,
@@ -1380,10 +1372,8 @@ class QuestionBot(PayBot):
             return await self.ask_address_question(
                 recipient, question_text, require_first_device, require_confirmation
             )
-
         # if maps does return a formatted address
         if address_json["results"] and address_json["results"][0]["formatted_address"]:
-
             if require_confirmation:
                 # Tell user the address we got and ask them to confirm
                 # Give them a google Maps link so they can check
@@ -1402,9 +1392,7 @@ class QuestionBot(PayBot):
                         require_first_device,
                         require_confirmation,
                     )
-
             return address_json["results"][0]["formatted_address"]
-
         # If we made it here something unexpected probably went wrong.
         # Google returned something but didn't have a formatted address
         return None
