@@ -108,6 +108,7 @@ class MockBot(QuestionBot):
 # all the fixtures it uses need to have at least "session" scope
 @pytest.fixture(scope="session")
 def event_loop(request):
+    """special version of the even loop"""
     loop = asyncio.get_event_loop_policy().new_event_loop()
     yield loop
     loop.close()
@@ -115,6 +116,7 @@ def event_loop(request):
 
 @pytest_asyncio.fixture(scope="session")
 async def bot():
+    """special bot"""
     bot = MockBot(BOT_NUMBER)
     yield bot
     bot.sigints += 1
