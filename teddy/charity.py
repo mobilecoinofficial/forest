@@ -177,9 +177,10 @@ class Charity(TalkBack):
         # try to get a direct match, or a fuzzy match if appropriate
         if message.full_text and message.uuid not in await self.first_messages.keys():
             await self.first_messages.set(message.uuid, int(time.time() * 1000))
-            await self.send_message(
-                message.uuid, await self.dialog.get("FIRST_GREETING", "FIRST_GREETING")
-            )
+            if await self.dialog.get("FIRST_GREETING", ""):
+                await self.send_message(
+                    message.uuid, await self.dialog.get("FIRST_GREETING")
+                )
         if message.full_text:
             await self.user_sessions.extend(message.uuid, message.full_text)
         return await super().handle_message(message)
@@ -197,7 +198,9 @@ class Charity(TalkBack):
         if code == "n":
             return await self.do_no(msg)
         if (
-            code and code.rstrip(string.punctuation).lower() in "yes yeah ye".split()
+            code
+            and code.rstrip(string.punctuation).lower()
+            in "yes yeah ye sure yeh".split()
         ):  # yes!
             return await self.do_yes(msg)
         if msg.full_text and msg.full_text in [

@@ -299,8 +299,9 @@ class ClanGat(TalkBack):
                     amount_pmob=(amount_mmob * 1_000_000_000),
                     receipt_message=f'Payment for the "{list_}" event!',
                     input_txo_ids=input_txo_ids,
+                    confirm_tx_timeout=10,
                 )
-                if result and not result.status == "tx_status_failed":
+                if result and result.status == "tx_status_succeeded":
                     await self.payout_balance_mmob.decrement(list_, amount_mmob)
                     return f"Paid you you {amount_mmob/1000}MOB"
                 return None
@@ -412,10 +413,13 @@ class ClanGat(TalkBack):
                         amount_pmob=amount_mmob * 1_000_000_000,
                         receipt_message=message or "",
                         input_txo_ids=input_txo_ids,
+                        confirm_tx_timeout=10,
                     )
                     await asyncio.sleep(0.5)
                     # if we didn't get a result indicating success
-                    if not result or (result and result.status == "tx_status_failed"):
+                    if not result or (
+                        result and result.status != "tx_status_succeeded"
+                    ):
                         # stash as failed
                         return None
                     # persist user as successfully paid
@@ -826,6 +830,35 @@ class ClanGat(TalkBack):
         if success:
             return f"Successfully added '{value}' to event {param}'s {obj}!"
         return f"Failed to add {value} to event {param}'s {obj}!"
+
+    @requires_admin
+    async def do_set_dialog(self, msg: Message) -> Response:
+        """Let's do it live.
+        Privileged editing of dialog blurbs, because."""
+        user = msg.uuid
+        fragment = await self.ask_freeform_question(
+            user, "What fragment would you like to change?"
+        )
+        if fragment in self.TERMINAL_ANSWERS:
+            return "OK, nvm"
+        blurb = await self.ask_freeform_question(
+            user, "What dialog would you like to use?"
+        )
+        if fragment in self.TERMINAL_ANSWERS:
+            return "OK, nvm"
+        if old_blurb := await self.dialog.get(fragment):
+            await self.send_message(user, "overwriting:")
+            await self.send_message(user, old_blurb)
+        await self.dialog.set(fragment, blurb)
+        # elif not self.is_admin(msg):
+        #    return "You must be an administrator to overwrite someone else's blurb!"
+        return "updated blurb!"
+
+    @requires_admin
+    async def do_dialog(self, msg: Message) -> Response:
+        return "\n\n".join(
+            [f"{k}: {v}\n------\n" for (k, v) in self.dialog.dict_.items()]
+        )
 
     async def maybe_unlock(self, msg: Message) -> Response:
         """Possibly unlocks an event."""

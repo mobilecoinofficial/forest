@@ -185,10 +185,11 @@ class Teddy(TalkBack):
                     amount_pmob=(amount_mmob * 1_000_000_000),
                     receipt_message=f'{await self.dialog.get("PAY_MEMO", "PAY_MEMO")}',
                     input_txo_ids=input_txo_ids,
+                    confirm_tx_timeout=10,
                 )
-                if result and not result.status == "tx_status_failed":
+                if result and result.status == "tx_status_succeeded":
                     await self.payout_balance_mmob.decrement(list_, amount_mmob)
-                    await self.successful_pays.extend(f"teddy_4", user)
+                    await self.successful_pays.extend(f"{list_}_{amount_mmob}", user)
                     return f"Paid you {amount_mmob/1000}MOB"
                 return None
         if not balance:
