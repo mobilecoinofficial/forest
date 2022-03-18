@@ -151,7 +151,7 @@ class Forest(QuestionBot):
         response = await self.send_sms(
             source=numbers[0],
             destination=sms_dest,
-            message_text=message.text,
+            message_text=message.text.strip(),
         )
         await self.send_reaction(message, "\N{Outbox Tray}")
         # sms_uuid = response.get("data")
