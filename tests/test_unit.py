@@ -3,7 +3,6 @@ import logging
 import os
 import pathlib
 from importlib import reload
-from typing import Optional
 import pytest
 import pytest_asyncio
 
