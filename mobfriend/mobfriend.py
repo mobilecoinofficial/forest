@@ -36,7 +36,7 @@ class MobFriend(QuestionBot):
     user_images: Dict[str, str] = {}
 
     def __init__(self) -> None:
-        self.notes = aPersistDict("notes")
+        self.notes: aPersistDict[dict[str, str]] = aPersistDict("notes")
         super().__init__()
 
     async def handle_message(self, message: Message) -> Response:
