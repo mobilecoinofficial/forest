@@ -141,9 +141,9 @@ As mentioned above, you will need at least 2 Signal accounts to properly test yo
 
 [Message Forest Contact on Signal](https://signal.me/#p/+12185009004)
 
-[Signal-cli CAPTCHA instructions](https://github.com/AsamK/signal-cli/wiki/Registration-with-captcha)
+To register your phone you need a way to pass Signal's CAPTCHA challenge, and have Signal send you a verification SMS. There are official [Signal-cli CAPTCHA instructions](https://github.com/AsamK/signal-cli/wiki/Registration-with-captcha) on the Signal-cli repo.
 
-We've devised a shortcut to register a Signal data store. Input your phone number with the country code (+1 for the US) and then run these commands to obtain a Signal datastore in a data folder
+We've also devised a shortcut to register a Signal data store. Input your phone number with the country code (+1 for the US) and then run these commands to generate a Signal datastore in your directory.
 
 ``` bash
 sudo apt install jq # install jq in case you don't already have it
