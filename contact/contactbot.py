@@ -47,19 +47,19 @@ class Forest(QuestionBot):
         self.group_routing_manager = GroupRoutingManager()
         super().__init__(*args)
 
-    async def default(self, message: Message) -> Response:
-        if not message.arg1:
-            # so i'm not sure asking a freeform question like this makes sense
-            # people can just say 'order' or 'status' on its own
-            maybe_resp = message.arg1 = await self.ask_freeform_question(
-                message.source,
-                'Welcome to MobileCoin Contact! I\'m a bot that can help you buy phone numbers, and use them to send and recieve text messages. Would you like to "buy" a phone number? or check the "status" of your account?',
-            )
-            if maybe_resp == "buy":
-                return await self.do_order(message)
-            if maybe_resp == "status":
-                return await self.do_status(message)
-        return await super().default(message)
+    # async def default(self, message: Message) -> Response:
+    #     if not message.arg1:
+    #         # so i'm not sure asking a freeform question like this makes sense
+    #         # people can just say 'order' or 'status' on its own
+    #         maybe_resp = message.arg1 = await self.ask_freeform_question(
+    #             message.source,
+    #             'Welcome to MobileCoin Contact! I\'m a bot that can help you buy phone numbers, and use them to send and recieve text messages. Would you like to "buy" a phone number? or check the "status" of your account?',
+    #         )
+    #         if maybe_resp == "buy":
+    #             return await self.do_order(message)
+    #         if maybe_resp == "status":
+    #             return await self.do_status(message)
+    #     return await super().default(message)
 
     async def send_sms(
         self, source: str, destination: str, message_text: str

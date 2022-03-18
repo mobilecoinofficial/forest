@@ -7,7 +7,9 @@ LOGLEVEL="DEBUG"
 BOT_NUMBER="+12185009004"
 ORDER=1
 GROUPS=1
-SIGNAL="signal"
+SIGNAL="signal-cli"
+DOWNLOAD=1
+AUTOSAVE=1
 
 [experimental]
   allowed_public_ports = []
