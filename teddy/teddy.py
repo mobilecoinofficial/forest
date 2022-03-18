@@ -137,7 +137,9 @@ class Teddy(TalkBack):
         self.payout_balance_mmob = aPersistDictOfInts("payout_balance_mmob")
         self.challenging: aPersistDict[bool] = aPersistDict("challenging")
         self.scratch_pad: aPersistDict[str] = aPersistDict("scratch_pad")
-        self.user_sessions = aPersistDictOfLists("user_sessions")
+        self.user_sessions: aPersistDictOfLists[str] = aPersistDictOfLists(
+            "user_sessions"
+        )
         self.pay_lock: asyncio.Lock = asyncio.Lock()
         # okay, this now maps the tag (restore key) of each of the above to the instance of the PersistDict class
         self.state = {
@@ -229,8 +231,8 @@ class Teddy(TalkBack):
         claimed = await self.user_claimed.get(user)
         if claimed:
             await self.send_message(user, f"Found a code you claimed: {claimed}")
-        await self.valid_codes.set(claimed, "unclaimed")
-        await self.user_claimed.remove(user)
+            await self.valid_codes.set(claimed, "unclaimed")
+            await self.user_claimed.remove(user)
         await self.first_messages.remove(user)
         return (
             "Reset your state! The previously used code, if any, may be redeemed again."

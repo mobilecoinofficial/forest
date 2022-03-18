@@ -127,7 +127,9 @@ class Charity(TalkBack):
         self.easter_eggs: aPersistDict[str] = aPersistDict("easter_eggs")
         self.first_messages = aPersistDictOfInts("first_messages")
         self.donations: aPersistDict[str] = aPersistDict("donations")
-        self.user_sessions = aPersistDictOfLists("user_sessions")
+        self.user_sessions: aPersistDictOfLists[str] = aPersistDictOfLists(
+            "user_sessions"
+        )
         self.charities_balance_mmob = aPersistDictOfInts("charities_balance_mmob")
         # okay, this now maps the tag (restore key) of each of the above to the instance of the PersistDict class
         self.state = {
