@@ -13,8 +13,8 @@ from forest.utils import logging
 
 
 def unicode_character_name(i: int) -> str:
-    """Tries to get the unicode character name for any given character.
-    Useful for finding quotations"""
+    """Tries to get the unicode name for a given character ordinal.
+    Useful for finding various quotation marks"""
     try:
         return unicodedata.name(chr(i))
     except ValueError:
@@ -56,33 +56,34 @@ class Message:
 
     def __init__(self, blob: dict) -> None:
         self.blob = blob
-        # What follows is the parsing logic
-
         # list that will hold the separate words of the message if there are any.
-        self.tokens: Optional[list[str]] = None
-
+        self.tokens: list[str] = []
         # if message has no text, don't parse
-        if not self.text:
-            return
+        if self.text:
+            self.parse_text(self.text)
+
+    def parse_text(self, text: str) -> None:
+        "set current self.text and tokenization to text"
         try:
             try:
-                arg0, maybe_json = self.text.split(" ", 1)
-                assert json.loads(self.text)  # ensure the text is valid json
+                # this is if you're expecting json
+                arg0, maybe_json = text.split(" ", 1)
+                assert json.loads(maybe_json)  # ensure the text is valid json
                 self.tokens = maybe_json.split(" ")
             except (json.JSONDecodeError, AssertionError):
                 # replace quotes with single quote so as to not break when parsing
-                clean_quote_text = self.text
+                clean_quote_text = text
                 for quote in unicode_quotes:
                     clean_quote_text.replace(quote, "'")
                 arg0, *self.tokens = shlex.split(clean_quote_text)
         except ValueError:
             arg0, *self.tokens = text.split(" ")
         self.arg0 = arg0.removeprefix("/").lower()
+        # sets the next 3 words to arguments, or sets the argument to empty otherwise
         if self.tokens:
-            self.arg1, self.arg2, self.arg3, *_ = (
-                self.tokens + [""] * 3
-            )  # sets the next 3 words to arguments, or sets the argument to empty otherwise
-        self.text = " ".join(self.tokens)  # reconstitute the text minus arg0
+            self.arg1, self.arg2, self.arg3, *_ = self.tokens + [""] * 3
+        # reconstitute the text minus arg0
+        self.text = " ".join(self.tokens)
 
     def to_dict(self) -> dict:
         """
