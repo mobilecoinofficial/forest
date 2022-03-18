@@ -140,9 +140,6 @@ class SynonymBot(Bot):
     async def do_goodbye(self, _: Message) -> str:
         return "Goodbye, cruel world!"
 
-    # We can also add.syns attributes to inherited methods in this manner
-    # but doesn't play well with mypy, becuase the signature doesn't match
-    # the supertype, so we use type:ignore, as seen below        ↓
     @synonyms("documentation", "docs", "commands", "man")
     async def do_help(self, msg: Message) -> Response:
         return await super().do_help(msg)
