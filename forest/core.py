@@ -1177,6 +1177,8 @@ def is_first_device(msg: Message) -> bool:
 
 
 class QuestionBot(PayBot):
+    """Class of Bots that have methods for asking questions and awaiting answers"""
+
     def __init__(self, bot_number: Optional[str] = None) -> None:
         self.pending_confirmations: dict[str, asyncio.Future[bool]] = {}
         self.pending_answers: dict[str, asyncio.Future[Message]] = {}
@@ -1320,6 +1322,8 @@ class QuestionBot(PayBot):
         question_text: str = "Are you sure? yes/no",
         require_first_device: bool = False,
     ) -> bool:
+        """Asks a question that expects a yes or no answer. Returns a Boolean:
+        True if Yes False if No."""
         self.pending_confirmations[recipient] = asyncio.Future()
         if require_first_device:
             self.requires_first_device[recipient] = True
@@ -1327,6 +1331,176 @@ class QuestionBot(PayBot):
         result = await self.pending_confirmations[recipient]
         self.pending_confirmations.pop(recipient)
         return result
+
+    async def ask_address_question(
+        self,
+        recipient: str,
+        question_text: str = "What's your shipping address?",
+        require_first_device: bool = False,
+        require_confirmation: bool = False,
+    ) -> Optional[str]:
+        """Asks user for their address and verifies through the google maps api
+        Can ask User for confirmation, returns string with formatted address or none"""
+        # get google maps api key from secrets
+        api = utils.get_secret("GOOGLE_MAPS_API")
+        if not api:
+            logging.error("Error, missing Google Maps API in secrets configuration")
+            return None
+        if require_first_device:
+            self.requires_first_device[recipient] = True
+        # ask for the address as a freeform question
+        address = await self.ask_freeform_question(
+            recipient, question_text, require_first_device
+        )
+        # we take the answer provided by the user, format it nicely as a request to google maps' api
+        # It returns a JSON object from which we can ascertain if the address is valid
+        async with self.client_session.get(
+            "https://maps.googleapis.com/maps/api/geocode/json",
+            params={"address": address, "key": api},
+        ) as resp:
+            address_json = await resp.json()
+        # if google can't find the address results will be empty
+        if not (address_json["results"]):
+            # break out if user replied cancel, exit, stop, etc.
+            if address.lower() in self.TERMINAL_ANSWERS:
+                return None
+            # Otherwise, apologize and ask again
+            await self.send_message(
+                recipient,
+                "Sorry, I couldn't find that. \nPlease try again or reply cancel to cancel \n",
+            )
+            return await self.ask_address_question(
+                recipient, question_text, require_first_device, require_confirmation
+            )
+        # if maps does return a formatted address
+        if address_json["results"] and address_json["results"][0]["formatted_address"]:
+            if require_confirmation:
+                # Tell user the address we got and ask them to confirm
+                # Give them a google Maps link so they can check
+                maybe_address = address_json["results"][0]["formatted_address"]
+                maps_url = f"https://www.google.com/maps/search/?api=1&query={urllib.parse.quote_plus(maybe_address)}&query_place_id={address_json['results'][0]['place_id']}"
+                confirmation = await self.ask_yesno_question(
+                    recipient,
+                    f"Got: \n{maybe_address} \n\n{maps_url} \n\nIs this your address? (yes/no)",
+                    require_first_device,
+                )
+                # If not, ask again
+                if not confirmation:
+                    return await self.ask_address_question(
+                        recipient,
+                        question_text,
+                        require_first_device,
+                        require_confirmation,
+                    )
+            return address_json["results"][0]["formatted_address"]
+        # If we made it here something unexpected probably went wrong.
+        # Google returned something but didn't have a formatted address
+        return None
+
+    async def ask_multiple_choice_question(  # pylint: disable=too-many-arguments
+        self,
+        recipient: str,
+        question_text: Optional[str],
+        options: Union[dict[str, str], list[str]],
+        require_confirmation: bool = True,
+        require_first_device: bool = False,
+    ) -> Optional[str]:
+        """Prompts the user to select from a series of options.
+        Behaviour alters slightly based on options:
+        options as list -> we write labels for you with "1,2,3,...."
+        options as dict -> dict keys are the labels
+        options as dict with all values "" -> the labels are the options,
+        and only labels are printed"""
+        ## TODO: allow fuzzy answers or lowercase answers. Needs design discussion.
+
+        # Check to ensure that user is on their first device as opposed to a linked device
+        # Important for certain questions involving payment addresses
+        if require_first_device:
+            self.requires_first_device[recipient] = True
+
+        if question_text is None:
+            question_text = "Pick one from these options:"
+
+        options_text = ""
+
+        # User can pass just a list of options and we generate labels for them using enumerate
+        # User can provide their own labels for the options by passing a dict
+        # Create a question with just labels by having all values be ""
+        # This will format the options text and check for a just labels question
+        if isinstance(options, list):
+            dict_options: dict[Any, str] = {
+                str(i): value for i, value in enumerate(options, start=1)
+            }
+        else:
+            dict_options = options
+
+        # Put ) between labels and text, if dict is all empty values leave blank
+        spacer = ") " if any(dict_options.values()) else ""
+
+        # We use a generator object to join all the options
+        # into one text that can be sent to the user
+        options_text = " \n".join(
+            f"{label}{spacer}{body}" for label, body in dict_options.items()
+        )
+        # send user the formatted question and await their response
+        await self.send_message(recipient, question_text + "\n" + options_text)
+        answer_future = self.pending_answers[recipient] = asyncio.Future()
+        answer = await answer_future
+        self.pending_answers.pop(recipient)
+
+        # if the answer given does not match a label
+        if answer.full_text and not answer.full_text in dict_options.keys():
+            # return none and exit if user types cancel, stop, exit, etc...
+            if answer.full_text.lower() in self.TERMINAL_ANSWERS:
+                return None
+
+            # otherwise reminder to type the label exactly as it appears and restate the question
+
+            if "Please reply" not in question_text:
+                question_text = (
+                    "Please reply with just the label exactly as typed \n \n"
+                    + question_text
+                )
+
+            return await self.ask_multiple_choice_question(
+                recipient,
+                question_text,
+                dict_options,
+                require_confirmation,
+                require_first_device,
+            )
+
+        # when there is a match
+        if answer.full_text and answer.full_text in dict_options.keys():
+
+            # if confirmation is required ask for it as a yes/no question
+            if require_confirmation:
+                confirmation_text = (
+                    "You picked: \n"
+                    + answer.full_text
+                    + spacer
+                    + dict_options[answer.full_text]
+                    + "\n\nIs this correct? (yes/no)"
+                )
+                confirmation = await self.ask_yesno_question(
+                    recipient, confirmation_text
+                )
+
+                # if no, ask the question again
+                if not confirmation:
+                    return await self.ask_multiple_choice_question(
+                        recipient,
+                        question_text,
+                        dict_options,
+                        require_confirmation,
+                        require_first_device,
+                    )
+
+            # finally return the option that matches the answer, or if empty the answer itself
+            return dict_options[answer.full_text] or answer.full_text
+        # TODO if we made it here I think that means something went wrong
+        # so maybe it should fail instead of returning None
+        return None
 
     async def do_challenge(self, msg: Message) -> Response:
         """Challenges a user to do a simple math problem, optionally provided as an image to increase attacker complexity."""
