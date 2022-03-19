@@ -1186,7 +1186,8 @@ class QuestionBot(PayBot):
         self.failed_user_challenges: dict[str, int] = {}
         self.TERMINAL_ANSWERS = "0 no none stop quit exit break cancel abort".split()
         self.FIRST_DEVICE_PLEASE = "Please answer from your phone or primary device!"
-        self.UNEXPECTED_ANSWER = "Did I ask you a question?"
+        self.UNEXPECTED_ANSWER_YES = "Did I ask you a question?"
+        self.UNEXPECTED_ANSWER_NO = "Did I ask you a question?"
         super().__init__(bot_number)
 
     async def handle_message(self, message: Message) -> Response:
@@ -1214,7 +1215,7 @@ class QuestionBot(PayBot):
             msg, self.requires_first_device
         )
         if not question:
-            return self.UNEXPECTED_ANSWER
+            return self.UNEXPECTED_ANSWER_YES
         if requires_first_device and not is_first_device(msg):
             return self.FIRST_DEVICE_PLEASE
         if question:
@@ -1231,7 +1232,7 @@ class QuestionBot(PayBot):
             msg, self.requires_first_device
         )
         if not question:
-            return self.UNEXPECTED_ANSWER
+            return self.UNEXPECTED_ANSWER_NO
         if requires_first_device and not is_first_device(msg):
             return self.FIRST_DEVICE_PLEASE
         if question:
