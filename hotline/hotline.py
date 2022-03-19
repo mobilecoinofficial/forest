@@ -154,6 +154,7 @@ class ClanGat(TalkBack):
         self.scratch_pad: aPersistDict[str] = aPersistDict("scratch_pad")
         self.pay_lock: asyncio.Lock = asyncio.Lock()
         self.donations: aPersistDict[str] = aPersistDict("donations")
+        self.first_messages: aPersistDict[int] = aPersistDict("first_messages")
         # okay, this now maps the tag (restore key) of each of the above to the instance of the PersistDict class
         self.state = {
             self.__getattribute__(attr).tag: self.__getattribute__(attr)
@@ -294,12 +295,13 @@ class ClanGat(TalkBack):
                     )
                 if not input_txo_ids:
                     return "Something went wrong! Please contact your administrator for support. (not enough utxos)"
+                MEMO_KEY = "PAY_MEMO_" + list_
                 result = await self.send_payment(
                     recipient=user,
                     amount_pmob=(amount_mmob * 1_000_000_000),
-                    receipt_message=f'Payment for the "{list_}" event!',
+                    receipt_message=f"{await self.dialog.get(MEMO_KEY, MEMO_KEY)}",
                     input_txo_ids=input_txo_ids,
-                    confirm_tx_timeout=10,
+                    confirm_tx_timeout=60,
                 )
                 if result and result.status == "tx_status_succeeded":
                     await self.payout_balance_mmob.decrement(list_, amount_mmob)
@@ -581,11 +583,22 @@ class ClanGat(TalkBack):
         return f"Added you to the {obj} list!"
 
     async def do_help(self, msg: Message) -> Response:
-        if msg.arg1 and msg.arg1.lower() == "add":
-            return self.do_add.__doc__
-        if msg.arg1 and msg.arg1.lower() == "setup":
-            return self.do_setup.__doc__
+        if msg.uuid not in await self.first_messages.keys():
+            await self.first_messages.set(msg.uuid, int(time.time() * 1000))
+            return await self.dialog.get("FIRST_GREETING", "FIRST_GREETING")
         return await self.dialog.get("WELCOME", "WELCOME")
+
+    async def do_yes(self, msg: Message) -> Response:
+        self.UNEXPECTED_ANSWER_YES = await self.dialog.get(
+            "UNEXPECTED_ANSWER_YES", self.UNEXPECTED_ANSWER_YES
+        )
+        return await super().do_yes(msg)
+
+    async def do_no(self, msg: Message) -> Response:
+        self.UNEXPECTED_ANSWER_NO = await self.dialog.get(
+            "UNEXPECTED_ANSWER_NO", self.UNEXPECTED_ANSWER_NO
+        )
+        return await super().do_no(msg)
 
     @hide
     async def do_remove(self, msg: Message) -> Response:
@@ -863,7 +876,7 @@ class ClanGat(TalkBack):
     async def maybe_unlock(self, msg: Message) -> Response:
         """Possibly unlocks an event."""
         # pylint: disable=too-many-return-statements,too-many-branches
-        code = msg.arg0
+        code = msg.arg0.strip(string.punctuation)
         # if the event has an owner and a price and there's attendee space and the user hasn't already bought tickets
         if (
             code
@@ -884,14 +897,21 @@ class ClanGat(TalkBack):
             if await self.event_prices.get(code, 0) < 0:
                 if not await self.get_signalpay_address(msg.uuid):
                     return await self.dialog.get("PLEASE_ACTIVATE", "PLEASE_ACTIVATE")
+                await self.send_message(
+                    msg.uuid,
+                    await self.dialog.get("ABOUT_TO_PAY", "Sending a payment!"),
+                )
+                await self.event_attendees.extend(code, msg.uuid)
                 res = await self.pay_user_from_balance(
                     msg.uuid,
                     code,
                     math.ceil(-1000 * await self.event_prices.get(code, 0)),
                 )
-                if res and "wrong" not in res:
-                    await self.event_attendees.extend(code, msg.uuid)
-                return await self.event_prompts.get(code, res)
+                if res and "Paid" in res:
+                    return await self.event_prompts.get(code, res)
+                else:
+                    await self.event_attendees.remove_from(code, msg.uuid)
+                    return await self.dialog.get("WE_ARE_SO_SORRY", "Try again!")
             await self.send_message(
                 msg.uuid,
                 f"{await self.event_prompts.get(code) or 'You have unlocked an event!'}",
@@ -943,7 +963,10 @@ class ClanGat(TalkBack):
             and code in await self.event_lists.keys()  # if there's a list and...
             and msg.uuid in await self.event_attendees[code]  # user on the list
         ):
-            return f"You're already on the attendee list for the '{code}' event."
+            return await self.dialog.get(
+                "ALREADY_JOINED_" + code,
+                f"You're already on the attendee list for the '{code}' event.",
+            )
         return None
 
     async def talkback(self, msg: Message) -> None:
@@ -999,8 +1022,9 @@ class ClanGat(TalkBack):
             return self.PAYMENTS_HELPTEXT
         if not code:
             return None
-        if msg.full_text and msg.full_text in [
-            key.lower() for key in await self.easter_eggs.keys()
+        if msg.full_text and msg.full_text.strip(string.punctuation) in [
+            key.lower().strip(string.punctuation)
+            for key in await self.easter_eggs.keys()
         ]:
             return await self.easter_eggs.get(msg.full_text)
         if code in await self.easter_eggs.keys():
