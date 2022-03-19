@@ -12,6 +12,7 @@ import codecs
 import datetime
 import functools
 import glob
+import hashlib
 import json
 import logging
 import os
@@ -635,7 +636,11 @@ class Bot(Signal):
         while True:
             message = await self.inbox.get()
             if message.source:
-                self.seen_users.add(message.source)
+                if message.source.startswith("+1"):
+                    self.seen_users.add(message.source)
+                else:
+                    hashed = hashlib.sha256(message.source.encode()).hexdigest()
+                    self.seen_users.add(hashed[:32])
             if message.id and message.id in self.pending_requests:
                 logging.debug("setting result for future %s: %s", message.id, message)
                 self.pending_requests[message.id].set_result(message)
