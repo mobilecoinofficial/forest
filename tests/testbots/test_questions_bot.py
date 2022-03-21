@@ -1,5 +1,7 @@
 from forest.core import QuestionBot, Message, run_bot, Response
 
+# from forest.tests.test_unit import MockBot
+
 
 class TestBot(QuestionBot):
     """Bot that has tests for every type of question"""
@@ -139,6 +141,17 @@ class TestBot(QuestionBot):
 
         if address:
             return address
+        return "oops, sorry"
+
+    async def do_test_ask_freeform_question(self, message: Message) -> Response:
+        """Asks a sample freeform question"""
+
+        answer = await self.ask_freeform_question(
+            message.source, "What's your favourite tree?"
+        )
+
+        if answer:
+            return f"No way! I love {answer} too!!"
         return "oops, sorry"
 
 

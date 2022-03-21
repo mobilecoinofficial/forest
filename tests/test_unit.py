@@ -53,7 +53,7 @@ class MockMessage(Message):
         self.text = text
         self.source = USER_NUMBER
         self.uuid = "cf3d7d34-2dcd-4fcd-b193-cbc6a666758b"
-        self.mentions = []
+        self.mentions : list[str] = []
         super().__init__({})
 
 
@@ -71,16 +71,16 @@ class MockBot(QuestionBot):
             return "That's cool, me too!"
         return "Aww :c"
 
-    # async def send_message(
-    #     self,
-    #     recipient: Optional[str],
-    #     msg: Response,
-    #     group: Optional[str] = None,
-    #     endsession: bool = False,
-    #     attachments: Optional[list[str]] = None,
-    #     content: str = "",
-    # ) -> str:
-    #     return msg
+    async def do_test_ask_freeform_question(self, message: Message) -> Response:
+        """Asks a sample freeform question"""
+
+        answer = await self.ask_freeform_question(
+            message.source, "What's your favourite tree?"
+        )
+
+        if answer:
+            return f"No way! I love {answer} too!!"
+        return "oops, sorry"
 
     async def send_input(self, text: str) -> None:
         """Puts a MockMessage in the inbox queue"""
@@ -160,6 +160,13 @@ async def test_questions(bot) -> None:
     os.environ["ENABLE_MAGIC"] = "1"
     # the issue here is that we need to send "yes" *after* the question has been asked
     # so we make it as create_task, then send the input, then await the task to get the result
+    
+    # import pdb;pdb.set_trace()
+
     t = asyncio.create_task(bot.ask_yesno_question(USER_NUMBER, "Do you like faeries?"))
     await bot.send_input("yes")
-    assert await t == True
+    assert await t is True
+
+    answer = asyncio.create_task(bot.ask_freeform_question(USER_NUMBER, "What's your favourite tree?"))
+    await bot.send_input("Birch")
+    assert await answer == "Birch"
