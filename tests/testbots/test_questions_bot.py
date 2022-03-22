@@ -10,7 +10,7 @@ class TestBot(QuestionBot):
         """Asks a sample Yes or No question"""
 
         answer = await self.ask_yesno_question(message.source, "Do you like faeries?")
-        
+
         if answer is None:
             return "oops, sorry"
 
