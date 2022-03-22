@@ -8,7 +8,7 @@ from forest import utils
 from forest.core import Bot, Message, Response, run_bot, rpc
 from personate.core.agents import Agent
 
-# from acrossword import Document, DocumentCollection, Ranker
+from acrossword import Ranker
 
 # The bot class imports my new simple Agent class from Personate.
 # It should set up a Frame, Ranker, Filter, knowledge and examples
@@ -23,6 +23,7 @@ class Imposter(Bot):
         # Can be generated at https://ckoshka.github.io/personate/
         config_file = utils.get_secret("CONFIG_FILE")
         self.agent = Agent.from_json(config_file)
+        self.agent.add_ranker(Ranker())
         super().__init__()
 
     def quotes_us(self, msg: Message) -> bool:
