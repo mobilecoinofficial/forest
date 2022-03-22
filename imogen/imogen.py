@@ -432,16 +432,20 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
             .removesuffix(".png")
             .removesuffix("/progress")
         )
-        await self.queue.execute(
-            "INSERT INTO prompt_queue (prompt, author, group_id, signal_ts, url, selector, paid) VALUES ($1, $2, $3, $4, $5, 'ESRGAN', true) ;",
+        ret = await self.queue.execute(
+            """INSERT INTO prompt_queue (prompt, author, group_id, signal_ts, url, selector, paid)
+            VALUES ($1, $2, $3, $4, $5, 'ESRGAN', true)
+            RETURNING (SELECT count(*) + 1 FROM prompt_queue WHERE
+            selector='ESRGAN' AND status='pending' OR status='assigned') as queue_length;""",
             slug,  # f"https://mcltajcadcrkywecsigc.supabase.in/storage/v1/object/public/imoges/{slug}.png",
             msg.source,
             msg.group,
             msg.timestamp,
             utils.URL,
         )
+        ret[0].get("queue_length")
         await self.ensure_unique_worker("esrgan-job.yaml")
-        return "You're in line"
+        return f"you are #{ret[0]['queue_length']} in line"
 
     async def enqueue_prompt(
         self,
