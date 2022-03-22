@@ -27,7 +27,17 @@ from asyncio.subprocess import PIPE
 from decimal import Decimal
 from functools import wraps
 from textwrap import dedent
-from typing import Any, Awaitable, Callable, Optional, Tuple, Type, TypeVar, Union
+from typing import (
+    Any,
+    Awaitable,
+    Callable,
+    Optional,
+    Mapping,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+)
 
 import aiohttp
 import termcolor
@@ -1156,7 +1166,7 @@ V = TypeVar("V")
 
 
 def get_source_or_uuid_from_dict(
-    msg: Message, dict_: dict[str, V]
+    msg: Message, dict_: Mapping[str, V]
 ) -> Tuple[bool, Optional[V]]:
     """A common pattern is to store intermediate state for individual users as a dictionary.
     Users can be referred to by some combination of source (a phone number) or uuid (underlying user ID)
