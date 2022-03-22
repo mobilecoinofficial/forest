@@ -5,7 +5,7 @@
 import json
 from re import template
 from forest import utils
-from forest.core import Bot, Message, Response, run_bot
+from forest.core import Bot, Message, Response, run_bot, rpc
 from personate.core.agents import Agent
 
 # from acrossword import Document, DocumentCollection, Ranker
@@ -41,7 +41,10 @@ class Imposter(Bot):
         return super().match_command(msg)
 
     async def do_respond(self, msg: Message) -> str:
-        return await self.agent.generate_agent_response(msg.full_text)
+        await self.outbox.put(rpc("sendTyping", recipient=[msg.source]))
+        reply = await self.agent.generate_agent_response(msg.full_text)
+        await self.outbox.put(rpc("sendTyping", recipient=[msg.source], stop=True))
+        return reply
 
 
 if __name__ == "__main__":
