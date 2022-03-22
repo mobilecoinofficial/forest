@@ -1,16 +1,15 @@
 #!/usr/bin/python3.9
 # Copyright (c) 2021 MobileCoin Inc.
 # Copyright (c) 2021 The Forest Team
-
-
 import asyncio
+import datetime
 import json
+import logging
+import math
 import string
 import time
-import math
-import logging
 from decimal import Decimal
-from typing import Optional
+from typing import Any, Callable, Coroutine, Optional
 
 from aiohttp import web
 from prometheus_async import aio
@@ -23,10 +22,10 @@ from forest.core import (
     QuestionBot,
     Response,
     app,
-    hide,
-    requires_admin,
-    is_admin,
     get_uid,
+    hide,
+    is_admin,
+    requires_admin,
 )
 from forest.pdictng import aPersistDict, aPersistDictOfInts, aPersistDictOfLists
 from mc_util import pmob2mob
@@ -122,6 +121,17 @@ class TalkBack(QuestionBot):
         return None
 
 
+async def midnight_job(fn: Callable[[], Coroutine[Any, Any, None]]) -> None:
+    while 1:
+        now = datetime.datetime.now()
+        tomorrow = now + datetime.timedelta(days=1)
+        midnight = datetime.time.min
+        seconds_until_midnight = datetime.datetime.combine(tomorrow, midnight) - now
+        logging.info("sleeping %s seconds until midnight report")
+        await asyncio.sleep(seconds_until_midnight.total_seconds())
+        await fn()
+
+
 class ClanGat(TalkBack):
     def __init__(self) -> None:
         self.no_repay: list[str] = []
@@ -161,6 +171,7 @@ class ClanGat(TalkBack):
             for attr in dir(self)
             if isinstance(self.__getattribute__(attr), aPersistDict)
         }
+        asyncio.create_task(midnight_job(self.report))
         super().__init__()
 
     @requires_admin
@@ -509,6 +520,18 @@ class ClanGat(TalkBack):
             msg.arg1 = obj
             return await self.do_give(msg)
         return "Okay, maybe later!"
+
+    async def report(self) -> None:
+        report_timestamp = datetime.datetime.utcnow().isoformat()
+        header = "Donation UID, User UID, Timestamp, Amount MOB, Charity, FTXUSDPriceAtTimestamp"
+        body = [
+            f"{k}, {v}, {await self.mobster.get_historical_rate(v.split(', ')[1])}"
+            for (k, v) in self.donations.dict_.items()
+        ]
+        report_output = "\n".join([header, "\n"] + body)
+        report_filename = f"/tmp/HotlineDonations_{report_timestamp}.csv"
+        open(report_filename, "w").write(report_output)
+        await self.admin("Report Built", attachments=[report_filename])
 
     @hide
     async def do_blast(self, msg: Message) -> Response:
@@ -868,7 +891,7 @@ class ClanGat(TalkBack):
         return "updated blurb!"
 
     @requires_admin
-    async def do_dialog(self, msg: Message) -> Response:
+    async def do_dialog(self, _: Message) -> Response:
         return "\n\n".join(
             [f"{k}: {v}\n------\n" for (k, v) in self.dialog.dict_.items()]
         )
@@ -909,9 +932,8 @@ class ClanGat(TalkBack):
                 )
                 if res and "Paid" in res:
                     return await self.event_prompts.get(code, res)
-                else:
-                    await self.event_attendees.remove_from(code, msg.uuid)
-                    return await self.dialog.get("WE_ARE_SO_SORRY", "Try again!")
+                await self.event_attendees.remove_from(code, msg.uuid)
+                return await self.dialog.get("WE_ARE_SO_SORRY", "Try again!")
             await self.send_message(
                 msg.uuid,
                 f"{await self.event_prompts.get(code) or 'You have unlocked an event!'}",
