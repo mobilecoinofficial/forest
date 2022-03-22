@@ -1511,6 +1511,49 @@ class QuestionBot(PayBot):
         # so maybe it should fail instead of returning None
         return None
 
+    async def ask_email_question(
+        self,
+        recipient: str,
+        question_text: Optional[str] = "Please enter your email address",
+        require_confirmation: bool = True,
+        require_first_device: bool = False,
+    ) -> Optional[str]:
+        """Prompts the user to enter an email address, and validates with the regex from
+        https://emailregex.com."""
+        # Check to ensure that user is on their first device as opposed to a linked device
+        # Important for certain questions involving payment addresses
+        if require_first_device:
+            self.requires_first_device[recipient] = True
+
+        answer = await self.ask_freeform_question(
+            recipient, question_text, require_first_device
+
+
+
+
+        # if the answer given does not match a label
+        if answer and not re.match(r"(^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$)", answer):
+            # return none and exit if user types cancel, stop, exit, etc...
+            if answer.lower() in self.TERMINAL_ANSWERS:
+                return None
+
+            # otherwise reminder to type the label exactly as it appears and restate the question
+            if "Please reply" not in question_text:
+                question_text = (
+                    "Please reply with a valid email address \n \n" + question_text
+                )
+
+            return await self.ask_email_question(
+                recipient,
+                question_text,
+                require_confirmation,
+                require_first_device,
+            )
+
+        # finally return the option that matches the answer, or if empty the answer itself
+        return answer
+    )
+
     async def do_challenge(self, msg: Message) -> Response:
         """Challenges a user to do a simple math problem,
         optionally provided as an image to increase attacker complexity."""
