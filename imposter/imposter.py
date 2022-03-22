@@ -6,7 +6,7 @@ import json
 from re import template
 from forest import utils
 from forest.core import Bot, Message, Response, run_bot, rpc
-from personate.core.agents import Agent
+from personate.core.reader_agent import ReaderAgent
 
 from acrossword import Ranker
 
@@ -22,12 +22,12 @@ class Imposter(Bot):
         # Accept a JSON config file in the same format as Personate.
         # Can be generated at https://ckoshka.github.io/personate/
         config_file = utils.get_secret("CONFIG_FILE")
-        self.agent = Agent.from_json(config_file)
-        self.agent.add_ranker(Ranker())
+        self.agent = ReaderAgent.from_json(config_file)
         super().__init__()
 
     def quotes_us(self, msg: Message) -> bool:
-        return msg.quote.author == self.bot_number or msg.quote.author
+        if msg.quote:
+            return msg.quote.author == self.bot_number or msg.quote.author
 
     def match_command(self, msg: Message) -> str:
         if not msg.arg0:
@@ -46,6 +46,9 @@ class Imposter(Bot):
             return "generate_response"
         # Pass the buck
         return super().match_command(msg)
+
+    async def do_hello(self, _: Message) -> str:
+        return "Hello, world!"
 
     async def do_generate_response(self, msg: Message) -> str:
         # Send a typing indicator in case the generator takes a while
