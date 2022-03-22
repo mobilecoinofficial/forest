@@ -1177,13 +1177,11 @@ class QuestionBot(PayBot):
     """Class of Bots that have methods for asking questions and awaiting answers"""
 
     def __init__(self, bot_number: Optional[str] = None) -> None:
-        self.pending_confirmations: dict[str, asyncio.Future[bool]] = {}
         self.pending_answers: dict[str, asyncio.Future[Message]] = {}
         self.requires_first_device: dict[str, bool] = {}
         self.failed_user_challenges: dict[str, int] = {}
         self.TERMINAL_ANSWERS = "0 no none stop quit exit break cancel abort".split()
         self.FIRST_DEVICE_PLEASE = "Please answer from your phone or primary device!"
-        self.UNEXPECTED_ANSWER = "Did I ask you a question?"
         super().__init__(bot_number)
 
     async def handle_message(self, message: Message) -> Response:
@@ -1202,40 +1200,6 @@ class QuestionBot(PayBot):
                 probably_future.set_result(message)
             return None
         return await super().handle_message(message)
-
-    @hide
-    async def do_yes(self, msg: Message) -> Response:
-        """Handles 'yes' in response to a pending_confirmation."""
-        _, question = get_source_or_uuid_from_dict(msg, self.pending_confirmations)
-        _, requires_first_device = get_source_or_uuid_from_dict(
-            msg, self.requires_first_device
-        )
-        if not question:
-            return self.UNEXPECTED_ANSWER
-        if requires_first_device and not is_first_device(msg):
-            return self.FIRST_DEVICE_PLEASE
-        if question:
-            question.set_result(True)
-            self.requires_first_device.pop(msg.uuid, None)
-            self.requires_first_device.pop(msg.source, None)
-        return None
-
-    @hide
-    async def do_no(self, msg: Message) -> Response:
-        """Handles 'no' in response to a pending_confirmation."""
-        _, question = get_source_or_uuid_from_dict(msg, self.pending_confirmations)
-        _, requires_first_device = get_source_or_uuid_from_dict(
-            msg, self.requires_first_device
-        )
-        if not question:
-            return self.UNEXPECTED_ANSWER
-        if requires_first_device and not is_first_device(msg):
-            return self.FIRST_DEVICE_PLEASE
-        if question:
-            question.set_result(False)
-            self.requires_first_device.pop(msg.uuid, None)
-            self.requires_first_device.pop(msg.source, None)
-        return None
 
     async def ask_freeform_question(
         self,
@@ -1357,14 +1321,6 @@ class QuestionBot(PayBot):
         
         return await self.ask_yesno_question(recipient,question_text,require_first_device)
 
-        
-        # self.pending_confirmations[recipient] = asyncio.Future()
-        # if require_first_device:
-        #     self.requires_first_device[recipient] = True
-        # await self.send_message(recipient, question_text)
-        # result = await self.pending_confirmations[recipient]
-        # self.pending_confirmations.pop(recipient)
-        # return result
 
     async def ask_address_question(
         self,
