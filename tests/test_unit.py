@@ -164,9 +164,9 @@ async def test_questions(bot) -> None:
     
     # import pdb;pdb.set_trace()
 
-    t = asyncio.create_task(bot.ask_yesno_question(USER_NUMBER, "Do you like faeries?"))
+    answer = asyncio.create_task(bot.ask_yesno_question(USER_NUMBER, "Do you like faeries?"))
     await bot.send_input("yes")
-    assert await t is True
+    assert await answer is True
 
     question_text = "What is your tshirt size?"
     options = {"S": "", "M": "", "L": "", "XL": "", "XXL": ""}
