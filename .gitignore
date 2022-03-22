@@ -11,3 +11,6 @@ imposter/forest
 imposter/mc_util
 *.vscode
 imposter/Pipfile.lock
+imposter/personate
+imposter/.env
+imposter/poetry.lock

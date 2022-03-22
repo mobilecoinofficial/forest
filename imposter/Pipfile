@@ -14,7 +14,6 @@ prometheus_client = "*"
 protobuf = "*"
 termcolor = "*"
 ulid2 = "*"
-personate = {git = "https://github.com/deepfates/personate"}
 pycryptodome = "*"
 acrossword = {git = "https://github.com/ckoshka/acrossword"}
 pyai21 = {git = "https://github.com/ckoshka/pyai21"}
