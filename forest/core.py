@@ -1186,8 +1186,7 @@ class QuestionBot(PayBot):
         self.failed_user_challenges: dict[str, int] = {}
         self.TERMINAL_ANSWERS = "0 no none stop quit exit break cancel abort".split()
         self.FIRST_DEVICE_PLEASE = "Please answer from your phone or primary device!"
-        self.UNEXPECTED_ANSWER_YES = "Did I ask you a question?"
-        self.UNEXPECTED_ANSWER_NO = "Did I ask you a question?"
+        self.UNEXPECTED_ANSWER = "Did I ask you a question?"
         super().__init__(bot_number)
 
     async def handle_message(self, message: Message) -> Response:
@@ -1215,7 +1214,7 @@ class QuestionBot(PayBot):
             msg, self.requires_first_device
         )
         if not question:
-            return self.UNEXPECTED_ANSWER_YES
+            return self.UNEXPECTED_ANSWER
         if requires_first_device and not is_first_device(msg):
             return self.FIRST_DEVICE_PLEASE
         if question:
@@ -1232,7 +1231,7 @@ class QuestionBot(PayBot):
             msg, self.requires_first_device
         )
         if not question:
-            return self.UNEXPECTED_ANSWER_NO
+            return self.UNEXPECTED_ANSWER
         if requires_first_device and not is_first_device(msg):
             return self.FIRST_DEVICE_PLEASE
         if question:
@@ -1449,8 +1448,13 @@ class QuestionBot(PayBot):
         answer = await answer_future
         self.pending_answers.pop(recipient)
 
+        maybe_dict_options = {k.lower(): v for (k, v) in dict_options.items()}
+        if len(maybe_dict_options) != len(dict_options):
+            raise ValueError("Need to ensure unique options when lower-cased!")
+        else:
+            dict_options = maybe_dict_options
         # if the answer given does not match a label
-        if answer.full_text and not answer.full_text in dict_options.keys():
+        if answer.full_text and not answer.full_text.lower() in dict_options.keys():
             # return none and exit if user types cancel, stop, exit, etc...
             if answer.full_text.lower() in self.TERMINAL_ANSWERS:
                 return None
