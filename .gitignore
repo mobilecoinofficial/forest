@@ -14,3 +14,4 @@ imposter/Pipfile.lock
 imposter/personate
 imposter/.env
 imposter/poetry.lock
+imposter/.venv
