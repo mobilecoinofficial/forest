@@ -1330,16 +1330,41 @@ class QuestionBot(PayBot):
         recipient: str,
         question_text: str = "Are you sure? yes/no",
         require_first_device: bool = False,
-    ) -> bool:
+    ) -> Optional[bool]:
         """Asks a question that expects a yes or no answer. Returns a Boolean:
-        True if Yes False if No."""
-        self.pending_confirmations[recipient] = asyncio.Future()
-        if require_first_device:
-            self.requires_first_device[recipient] = True
-        await self.send_message(recipient, question_text)
-        result = await self.pending_confirmations[recipient]
-        self.pending_confirmations.pop(recipient)
-        return result
+        True if Yes False if No. None if cancelled"""
+        # First define what we consider negative or affirmative answers
+        AFFIRMATIVE_ANSWERS = ["yes","yeah","y","yup","affirmative"]
+        NEGATIVE_ANSWERS = ["no","nope","n","negatory", "nuh-uh"]
+
+        # ask the question as a freeform question
+        answer = await self.ask_freeform_question(recipient,question_text,require_first_device)
+        
+        #if there is an answer and it is negative or positive
+        if answer and answer.lower() in (AFFIRMATIVE_ANSWERS + NEGATIVE_ANSWERS):
+            #return true if it's in affirmative answers otherwise assume it was negative and return false
+            if answer.lower() in AFFIRMATIVE_ANSWERS:
+                return True
+            return False
+
+        # return none if user answers cancel, etc
+        if answer and answer.lower() in self.TERMINAL_ANSWERS:
+            return None
+
+        #if the answer is not a terminal answer but also not a match, add clarifier and ask again
+        if "Please answer yes or no" not in question_text:
+            question_text = "Please answer yes or no, or cancel:\n \n" + question_text
+        
+        return await self.ask_yesno_question(recipient,question_text,require_first_device)
+
+        
+        # self.pending_confirmations[recipient] = asyncio.Future()
+        # if require_first_device:
+        #     self.requires_first_device[recipient] = True
+        # await self.send_message(recipient, question_text)
+        # result = await self.pending_confirmations[recipient]
+        # self.pending_confirmations.pop(recipient)
+        # return result
 
     async def ask_address_question(
         self,
@@ -1355,8 +1380,6 @@ class QuestionBot(PayBot):
         if not api:
             logging.error("Error, missing Google Maps API in secrets configuration")
             return None
-        if require_first_device:
-            self.requires_first_device[recipient] = True
         # ask for the address as a freeform question
         address = await self.ask_freeform_question(
             recipient, question_text, require_first_device
@@ -1507,8 +1530,9 @@ class QuestionBot(PayBot):
 
             # finally return the option that matches the answer, or if empty the answer itself
             return dict_options[answer.full_text] or answer.full_text
-        # TODO if we made it here I think that means something went wrong
-        # so maybe it should fail instead of returning None
+        # TODO the flow could be refactored so the last thing we do is restate the question
+        # that way it'd only return None on Cancel which is probably already what happens
+        # and this return statement is NEVER reached
         return None
 
     async def do_challenge(self, msg: Message) -> Response:

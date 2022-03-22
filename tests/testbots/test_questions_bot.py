@@ -9,7 +9,12 @@ class TestBot(QuestionBot):
     async def do_test_ask_yesno_question(self, message: Message) -> Response:
         """Asks a sample Yes or No question"""
 
-        if await self.ask_yesno_question(message.source, "Do you like faeries?"):
+        answer = await self.ask_yesno_question(message.source, "Do you like faeries?")
+        
+        if answer is None:
+            return "oops, sorry"
+
+        if answer:
             return "That's cool, me too!"
         return "Aww :c"
 
