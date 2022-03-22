@@ -50,6 +50,13 @@ class Imposter(Bot):
     async def do_hello(self, _: Message) -> str:
         return "Hello, world!"
 
+    async def do_read_url(self, msg: Message) -> str:
+        url = msg.arg1
+        self.agent.add_knowledge(url, is_url=True)
+        queue = self.agent.document_queue
+        await self.agent.assemble_documents()
+        return f"Acquired knowledge from {queue}"
+
     async def do_generate_response(self, msg: Message) -> str:
         # Send a typing indicator in case the generator takes a while
         await self.outbox.put(rpc("sendTyping", recipient=[msg.source]))
