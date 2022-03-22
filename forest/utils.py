@@ -32,7 +32,7 @@ console_handler.setLevel(
 console_handler.setFormatter(fmt)
 console_handler.addFilter(FuckAiohttp)
 logger.addHandler(console_handler)
-
+logging.getLogger("asyncio").setLevel("INFO")
 
 #### Configure Parameters
 
