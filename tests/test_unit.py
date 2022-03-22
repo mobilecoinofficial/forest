@@ -54,6 +54,7 @@ class MockMessage(Message):
         self.source = USER_NUMBER
         self.uuid = "cf3d7d34-2dcd-4fcd-b193-cbc6a666758b"
         self.mentions : list[str] = []
+        self.full_text = text
         super().__init__({})
 
 
@@ -166,6 +167,23 @@ async def test_questions(bot) -> None:
     t = asyncio.create_task(bot.ask_yesno_question(USER_NUMBER, "Do you like faeries?"))
     await bot.send_input("yes")
     assert await t is True
+
+    question_text = "What is your tshirt size?"
+    options = {"S": "", "M": "", "L": "", "XL": "", "XXL": ""}
+
+    choice = asyncio.create_task(bot.ask_multiple_choice_question(
+        USER_NUMBER, question_text, options, require_confirmation=False
+    ))
+    await bot.send_input("M")
+    assert await choice == "M"
+
+    # choice = asyncio.create_task(bot.ask_multiple_choice_question(
+    #     USER_NUMBER, question_text, options, require_confirmation=True
+    # ))
+    # await bot.send_input("XXL")
+    # asyncio.sleep(0)
+    # await bot.send_input("yes")
+    # assert await choice == "XXL"
 
     answer = asyncio.create_task(bot.ask_freeform_question(USER_NUMBER, "What's your favourite tree?"))
     await bot.send_input("Birch")
