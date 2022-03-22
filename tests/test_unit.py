@@ -177,13 +177,13 @@ async def test_questions(bot) -> None:
     await bot.send_input("M")
     assert await choice == "M"
 
-    # choice = asyncio.create_task(bot.ask_multiple_choice_question(
-    #     USER_NUMBER, question_text, options, require_confirmation=True
-    # ))
-    # await bot.send_input("XXL")
-    # asyncio.sleep(0)
-    # await bot.send_input("yes")
-    # assert await choice == "XXL"
+    choice = asyncio.create_task(bot.ask_multiple_choice_question(
+        USER_NUMBER, question_text, options, require_confirmation=True
+    ))
+    await bot.send_input("XXL")
+    await asyncio.sleep(0)
+    await bot.send_input("yes")
+    assert await choice == "XXL"
 
     answer = asyncio.create_task(bot.ask_freeform_question(USER_NUMBER, "What's your favourite tree?"))
     await bot.send_input("Birch")
