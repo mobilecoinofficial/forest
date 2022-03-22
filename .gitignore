@@ -7,3 +7,7 @@ auxin-cli
 data
 *log
 .idea
+imposter/forest
+imposter/mc_util
+*.vscode
+imposter/Pipfile.lock

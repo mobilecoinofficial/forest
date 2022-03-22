@@ -19,10 +19,12 @@ Imposter could also work together with Imogen, supplementing the AI artist by co
 ## How can we adapt it to Signal?
 Personate is designed around the constraints of Discord. This means it has a different object model than Forest bots do, and can make use of different affordances. 
 
+### Hard
 Things Personate does that are not possible (so far as I know) in Signal:
 - Simulate multiple bots from one account with webhooks (only one Face per bot phone #?)
 - Embed a loading image or message, then edit that message to replace with generated text (can simulate with TypingMessage)
 
+### Medium
 Things for which Personate uses Discord-specific APIs, which will require work to convert for Signal:
 - Follow reply chains 
 - Access channel message history
@@ -30,6 +32,7 @@ Things for which Personate uses Discord-specific APIs, which will require work t
 - Store conversation history, etc, in memory
 - Run an improvised adventure scene by scene
 
+### Easy
 Things Personate does which are not Discord-specific, and could be imported or mimicked pretty directly:
 - Wrap each conversational turn in a well-engineered prompt
 - Maintain a personality and conversational context from turn to turn
