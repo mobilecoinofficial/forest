@@ -6,11 +6,9 @@ from forest.core import Bot, Message, Response, run_bot, rpc
 class EvilBot(Bot):
     async def handle_message(self, message: Message) -> Response:
         if message.typing == "STARTED":
-            await self.outbox.put(rpc("sendTyping", recipient=[message.source]))
+            await self.send_typing(message)
         if message.typing == "STOPPED":
-            await self.outbox.put(
-                rpc("sendTyping", recipient=[message.source], stop=True)
-            )
+            await self.send_typing(message, stop=True)
         return await super().handle_message(message)
 
     async def default(self, _: Message) -> None:
