@@ -16,4 +16,4 @@ imposter/.env
 imposter/poetry.lock
 imposter/.venv
 imposter/attachments
-imposter/deeperfates
+**/knowledge

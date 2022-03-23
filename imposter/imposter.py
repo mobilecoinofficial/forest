@@ -2,7 +2,7 @@
 # Copyright (c) 2021 MobileCoin Inc.
 # Copyright (c) 2021 The Forest Team
 
-import json
+from random import randint
 from re import template
 from forest import utils
 from forest.core import Bot, Message, Response, run_bot, rpc
@@ -47,21 +47,35 @@ class Imposter(Bot):
         # Pass the buck
         return super().match_command(msg)
 
+    async def send_typing(self, msg: Message, stop=False):
+        # Send a typing indicator in case the generator takes a while
+        if msg.group:
+            await self.outbox.put(rpc("sendTyping", groupId=[msg.group], stop=stop))
+        else:
+            await self.outbox.put(rpc("sendTyping", recipient=[msg.source], stop=stop))
+
     async def do_hello(self, _: Message) -> str:
         return "Hello, world!"
 
     async def do_read_url(self, msg: Message) -> str:
+        await self.send_typing(msg)
         url = msg.arg1
         self.agent.add_knowledge(url, is_url=True)
         queue = self.agent.document_queue
         await self.agent.assemble_documents()
-        return f"Acquired knowledge from {queue}"
+        await self.send_typing(msg, stop=True)
+        return f"Acquired knowledge from {self.agent.document_collection.documents[-1].title}"
 
     async def do_generate_response(self, msg: Message) -> str:
-        # Send a typing indicator in case the generator takes a while
-        await self.outbox.put(rpc("sendTyping", recipient=[msg.source]))
+        react_emoji = await self.agent.get_emoji(msg.full_text)
+        await self.send_reaction(msg, react_emoji)
+        await self.send_typing(msg)
+        # API call happens here, replace with below for rapid testing
         reply = await self.agent.generate_agent_response(msg.full_text)
-        await self.outbox.put(rpc("sendTyping", recipient=[msg.source], stop=True))
+        # reply = "TEST_REPLY"
+        reply_emoji = await self.agent.get_emoji(reply)
+        reply = f"{reply} {reply_emoji}"
+        await self.send_typing(msg, stop=True)
         return reply
 
 
