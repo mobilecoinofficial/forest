@@ -14,6 +14,7 @@ import json
 import logging
 import os
 import signal
+import string
 import sys
 import time
 import traceback
@@ -1307,14 +1308,14 @@ class QuestionBot(PayBot):
         )
         answer = answer.lower().rstrip(string.punctuation)
         # if there is an answer and it is negative or positive
-        if answer and answer.lower() in (AFFIRMATIVE_ANSWERS + NEGATIVE_ANSWERS):
+        if answer and answer in (AFFIRMATIVE_ANSWERS + NEGATIVE_ANSWERS):
             # return true if it's in affirmative answers otherwise assume it was negative and return false
-            if answer.lower() in AFFIRMATIVE_ANSWERS:
+            if answer in AFFIRMATIVE_ANSWERS:
                 return True
             return False
 
         # return none if user answers cancel, etc
-        if answer and answer.lower() in self.TERMINAL_ANSWERS:
+        if answer and answer in self.TERMINAL_ANSWERS:
             return None
 
         # if the answer is not a terminal answer but also not a match, add clarifier and ask again
