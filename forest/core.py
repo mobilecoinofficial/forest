@@ -13,6 +13,7 @@ import datetime
 import json
 import logging
 import os
+import re
 import signal
 import sys
 import time
@@ -1515,29 +1516,35 @@ class QuestionBot(PayBot):
         self,
         recipient: str,
         question_text: Optional[str] = "Please enter your email address",
-        require_confirmation: bool = True,
         require_first_device: bool = False,
     ) -> Optional[str]:
-        """Prompts the user to enter an email address, and validates with the regex from
-        https://emailregex.com."""
-        # Check to ensure that user is on their first device as opposed to a linked device
-        # Important for certain questions involving payment addresses
-        if require_first_device:
-            self.requires_first_device[recipient] = True
+        """Prompts the user to enter an email address, and validates with a very long regular expression"""
 
+        # ----SETUP----
+        # ask for the email address as a freeform question instead of doing it ourselves
         answer = await self.ask_freeform_question(
             recipient, question_text, require_first_device
+        )
 
-
-
-
-        # if the answer given does not match a label
-        if answer and not re.match(r"(^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$)", answer):
+        # ----VALIDATE---- 
+        # if answer contains a valid email address, add it to maybe_email
+        maybe_email = re.search(
+            r"""(?:[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*|"(?:[\x01-\x08\x0b\x0c\x0e-\x1f\x21\x23-\x5b\x5d-\x7f]|\\[\x01-\x09\x0b\x0c\x0e-\x7f])*")@(?:(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?|\[(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?|[a-z0-9-]*[a-z0-9]:(?:[\x01-\x08\x0b\x0c\x0e-\x1f\x21-\x5a\x53-\x7f]|\\[\x01-\x09\x0b\x0c\x0e-\x7f])+)\])""",
+            answer,
+        )
+        # maybe_email is a re.match object, which returns only if there is a match.
+        if maybe_email:
+            maybe_email = maybe_email.group(0)
+        
+        # ----INVALID?----
+        # If we have an answer, but no matched email
+        if answer and not maybe_email:
             # return none and exit if user types cancel, stop, exit, etc...
             if answer.lower() in self.TERMINAL_ANSWERS:
                 return None
 
-            # otherwise reminder to type the label exactly as it appears and restate the question
+            # ----INVALID REPROMPT----
+            # if the answer is not a valid email address, ask the question again, but don't let it add "Please reply" forever
             if "Please reply" not in question_text:
                 question_text = (
                     "Please reply with a valid email address \n \n" + question_text
@@ -1546,13 +1553,10 @@ class QuestionBot(PayBot):
             return await self.ask_email_question(
                 recipient,
                 question_text,
-                require_confirmation,
                 require_first_device,
             )
-
-        # finally return the option that matches the answer, or if empty the answer itself
-        return answer
-    )
+        # ----RETURN----
+        return maybe_email
 
     async def do_challenge(self, msg: Message) -> Response:
         """Challenges a user to do a simple math problem,
