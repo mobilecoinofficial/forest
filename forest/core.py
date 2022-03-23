@@ -1305,7 +1305,7 @@ class QuestionBot(PayBot):
         answer = await self.ask_freeform_question(
             recipient, question_text, require_first_device
         )
-
+        answer = answer.lower().rstrip(string.punctuation)
         # if there is an answer and it is negative or positive
         if answer and answer.lower() in (AFFIRMATIVE_ANSWERS + NEGATIVE_ANSWERS):
             # return true if it's in affirmative answers otherwise assume it was negative and return false
