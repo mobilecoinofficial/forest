@@ -383,9 +383,7 @@ async def inbound_sms_handler(request: web.Request) -> web.Response:
         if not msg_data:
             msg_data["text"] = await request.text()
         recipient = utils.get_secret("ADMIN")
-        msg_data[
-            "note"
-        ] = "fallback, signal destination not found for this sms destination"
+        msg_data["note"] = "admin fallback"
         if agent := request.headers.get("User-Agent"):
             msg_data["user-agent"] = agent
         # send the admin the full post body, not just the user-friendly part
