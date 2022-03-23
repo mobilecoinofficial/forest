@@ -223,7 +223,7 @@ class Signal:
     ) -> Callable:
         def handler(task: asyncio.Task) -> None:
             name = task.get_name() + "-" + getattr(task.get_coro(), "__name__", "")
-            if self.sigints > 1:
+            if self.sigints > 1 or self.exiting:
                 return
             if asyncio.iscoroutinefunction(_func):
                 task = asyncio.create_task(_func())
