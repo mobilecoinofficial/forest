@@ -252,6 +252,7 @@ These are the environment variables and flags that the bots read to work. Not al
 - `LOGLEVEL`: what log level to use for console logs (DEBUG, INFO, WARNING, ERROR). Defaults to DEBUG
 - `TYPO_THRESHOLD`: maximum normalized Levenshtein edit distance for typo correction. 0 is only exact matches, 1 is any match. Default: 0.3
 - `SIGNAL_CLI_PATH`: path to executable to use. useful for running signal-cli with graalvm tracing agent
+- `GOOGLE_MAPS_API`: google maps api key
 
 ## Binary flags
 - `DOWNLOAD`: download/upload datastore from the database instead of using what's in the current working directory.
