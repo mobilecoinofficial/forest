@@ -461,6 +461,13 @@ class Signal:
         )
         await self.outbox.put(cmd)
 
+    async def send_typing(self, msg: Message, stop: bool = False) -> None:
+        "Send a typing indicator to the person or group the message is from"
+        if msg.group:
+            await self.outbox.put(rpc("sendTyping", group_id=[msg.group], stop=stop))
+        else:
+            await self.outbox.put(rpc("sendTyping", recipient=[msg.source], stop=stop))
+
     backoff = False
     messages_until_rate_limit = 1000.0
     last_update = time.time()
