@@ -19,6 +19,7 @@ ulid2 = "^0.3.0"
 pycryptodome = "^3.14.1"
 personate = { path = "../../personate/", develop = true}
 h11 = "^0.13.0"
+acrossword = {git = "https://github.com/deepfates/acrossword"}
 
 
 [tool.poetry.dev-dependencies]
