@@ -127,7 +127,9 @@ async def midnight_job(fn: Callable[[], Coroutine[Any, Any, None]]) -> None:
         tomorrow = now + datetime.timedelta(days=1)
         midnight = datetime.time.min
         seconds_until_midnight = datetime.datetime.combine(tomorrow, midnight) - now
-        logging.info("sleeping %s seconds until midnight report")
+        logging.info(
+            "sleeping %s seconds until midnight report", seconds_until_midnight
+        )
         await asyncio.sleep(seconds_until_midnight.total_seconds())
         await fn()
 
@@ -532,10 +534,12 @@ class ClanGat(TalkBack):
         report_filename = f"/tmp/HotlineDonations_{report_timestamp}.csv"
         open(report_filename, "w").write(report_output)
         await self.admin("Report Built", attachments=[report_filename])
+
     @requires_admin
     async def do_report(self) -> None:
         """Generate donation report now as opposed to waiting till midnight"""
         await self.report()
+
     @hide
     async def do_blast(self, msg: Message) -> Response:
         """blast  <listname> "message"
