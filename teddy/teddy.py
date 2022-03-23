@@ -242,27 +242,35 @@ class Teddy(TalkBack):
         """Possibly unlocks a payment."""
         # pylint: disable=too-many-return-statements
         user = msg.uuid
-        code = msg.full_text.lower().strip(string.punctuation).replace(" ", "")
+        code = (
+            msg.full_text.lower()
+            .strip(string.punctuation)
+            .replace(" ", "")
+            .replace("-", "")
+        )
+        allowed_claims = 3
         attempt_count = await self.attempted_claims.get(user, 0)
+        claims_left = allowed_claims - attempt_count - 1
         if user in await self.user_claimed.keys():
+            await self.send_message(
+                user,
+                await self.dialog.get(
+                    "USER_ALREADY_CLAIMED_OTHER", "USER_ALREADY_CLAIMED_OTHER"
+                ),
+            )
+            await asyncio.sleep(1)
             await self.send_message(
                 user, await self.dialog.get("CHARITIES_INFO", "CHARITIES_INFO")
             )
-            await asyncio.sleep(1)
-            if code == await self.user_claimed.get(user):
-                return await self.dialog.get(
-                    "USER_ALREADY_CLAIMED_THIS", "USER_ALREADY_CLAIMED_THIS"
-                )
-            return await self.dialog.get(
-                "USER_ALREADY_CLAIMED_OTHER", "USER_ALREADY_CLAIMED_OTHER"
-            )
+            return None
         user_address = await self.get_signalpay_address(user)
         if not user_address:
             return await self.dialog.get("PLEASE_ACTIVATE", "PLEASE_ACTIVATE")
+        # TODO: establish support path
+        if claims_left < 0:
+            return await self.dialog.get("TOO_MANY_ATTEMPTS", "TOO_MANY_ATTEMPTS")
         if len(code) != 8:
             return await self.dialog.get("NOT_8", "NOT_8")
-        if attempt_count > 2:
-            return await self.dialog.get("TOO_MANY_ATTEMPTS", "TOO_MANY_ATTEMPTS")
         # if the provided code is in the set of valid codes and is unclaimed...
         if (
             code in await self.valid_codes.keys()
@@ -271,28 +279,50 @@ class Teddy(TalkBack):
             await self.attempted_claims.increment(user, 1)
             await self.valid_codes.set(code, user)
             await self.user_claimed.set(user, code)
-            payment_result = await self.pay_user_from_balance(user, "teddy", 4)
-            if payment_result and "Error" not in payment_result:
+            await self.send_message(
+                user,
+                await self.dialog.get(
+                    "VALID_CODE_NOW_SENDING", "VALID_CODE_NOW_SENDING"
+                ),
+            )
+            # retry send up to 3x for overkill
+            for _ in range(3):
+                payment_result = await self.pay_user_from_balance(user, "teddy", 4)
+                if payment_result and "Error" not in payment_result:
+                    await self.send_message(
+                        user,
+                        await self.dialog.get("JUST_SENT_PAYMENT", "JUST_SENT_PAYMENT"),
+                    )
+                    break
+                else:
+                    await self.send_message(
+                        user,
+                        await self.dialog.get("TRYING_SEND_AGAIN", "TRYING_SEND_AGAIN"),
+                    )
+            # should never fall through
+            if "Error" in payment_result:
                 await self.send_message(
-                    user,
-                    await self.dialog.get("JUST_SENT_PAYMENT", "JUST_SENT_PAYMENT"),
-                )
-            else:
-                return await self.send_message(
                     user, await self.dialog.get("WE_ARE_SO_SORRY", "WE_ARE_SO_SORRY")
                 )
+                return None
             await asyncio.sleep(1)
-            await self.send_message(
-                user, await self.dialog.get("CHARITIES_INFO", "CHARITIES_INFO")
-            )
-            await asyncio.sleep(1)
+            # TODO: consider removing?
             if await self.ask_yesno_question(
                 user, await self.dialog.get("MAY_WE_DM_U", "MAY_WE_DM_U")
             ):
                 await asyncio.sleep(1)
-                return await self.dialog.get("OKAY_WE_WILL_DM_U", "OKAY_WE_WILL_DM_U")
+                await self.send_message(
+                    user,
+                    await self.dialog.get("OKAY_WE_WILL_DM_U", "OKAY_WE_WILL_DM_U"),
+                )
             else:
-                return await self.dialog.get("TY_WE_WONT_DM_U", "TY_WE_WONT_DM_U")
+                await self.send_message(
+                    user, await self.dialog.get("TY_WE_WONT_DM_U", "TY_WE_WONT_DM_U")
+                )
+            await self.send_message(
+                user, await self.dialog.get("CHARITIES_INFO", "CHARITIES_INFO")
+            )
+            return None
         if (
             code in await self.valid_codes.keys()
             and await self.valid_codes.get(code, "") != "unclaimed"
@@ -300,9 +330,15 @@ class Teddy(TalkBack):
             await self.attempted_claims.increment(user, 1)
             return await self.dialog.get("CODE_ALREADY_CLAIMED", "CODE_ALREADY_CLAIMED")
         await self.attempted_claims.increment(user, 1)
-        return await self.dialog.get(
-            "INVALID_CODE_LIMITED_TRIES", "INVALID_CODE_LIMITED_TRIES"
-        )
+        if claims_left == 0:
+            return await self.dialog.get("YOU_ARE_NOW_LOCKED", "YOU_ARE_NOW_LOCKED")
+        elif claims_left == 1:
+            return await self.dialog.get("LAST_TRY", "LAST_TRY")
+        return (
+            await self.dialog.get(
+                "INVALID_CODE_LIMITED_TRIES", "INVALID_CODE_LIMITED_TRIES"
+            )
+        ).replace("ATTEMPTS_REMAINING", str(claims_left))
 
     async def handle_message(self, message: Message) -> Response:
         """Method dispatch to do_x commands and goodies.
@@ -352,11 +388,9 @@ class Teddy(TalkBack):
         if code in await self.easter_eggs.keys():
             return await self.easter_eggs.get(code)
         await self.talkback(msg)
-        maybe_unlocked = await self.maybe_unlock(msg)
-        if maybe_unlocked:
-            return maybe_unlocked
+        return await self.maybe_unlock(msg)
         # handle default case
-        return await self.do_help(msg)
+        # return await self.do_help(msg)
 
     @time_(REQUEST_TIME)
     async def payment_response(self, msg: Message, amount_pmob: int) -> Response:
