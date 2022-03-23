@@ -447,6 +447,8 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         await self.ensure_unique_worker("esrgan-job.yaml")
         return f"you are #{ret[0]['queue_length']} in line"
 
+    do_enhance = hide(do_upsample)
+
     async def enqueue_prompt(
         self,
         msg: Message,
