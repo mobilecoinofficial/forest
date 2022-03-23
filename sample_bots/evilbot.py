@@ -1,6 +1,6 @@
 # Copyright (c) 2021 MobileCoin Inc.
 # Copyright (c) 2021 The Forest Team
-from forest.core import Bot, Message, Response, run_bot, rpc
+from forest.core import Bot, Message, Response, run_bot
 
 
 class EvilBot(Bot):
