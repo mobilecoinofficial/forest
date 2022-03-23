@@ -1,3 +1,13 @@
+## 1.2.5
+
+- persistent synonyms with pdictng (#134)
+- `ask_address_question` (#164)
+- test refactors and new question tests (#168)
+- better dicts in logs, don't log pongs (#162)
+- `set_confirm_timeout` defaults to 60, preventing a common footgun (#167)
+- fix autosave for auxin-cli (#165)
+- fix is_admin (#174)
+
 ## 1.2.4
 
 - /restart endpoint restarts proc; also refactor asyncio task handlers (#155)
