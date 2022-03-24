@@ -10,10 +10,13 @@ import asyncio.subprocess as subprocess  # https://github.com/PyCQA/pylint/issue
 import base64
 import codecs
 import datetime
+import functools
+import glob
 import json
 import logging
 import os
 import re
+import secrets
 import signal
 import string
 import sys
@@ -21,16 +24,22 @@ import time
 import traceback
 import urllib
 import uuid
-import glob
-import secrets
-import functools
-
 from asyncio import Queue, StreamReader, StreamWriter
 from asyncio.subprocess import PIPE
 from decimal import Decimal
 from functools import wraps
 from textwrap import dedent
-from typing import Any, Callable, Optional, Type, Union, Awaitable, Tuple
+from typing import (
+    Any,
+    Awaitable,
+    Callable,
+    Mapping,
+    Optional,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+)
 
 import aiohttp
 import termcolor
@@ -42,7 +51,7 @@ from ulid2 import generate_ulid_as_base32 as get_uid
 
 # framework
 import mc_util
-from forest import autosave, datastore, payments_monitor, pghelp, utils, string_dist
+from forest import autosave, datastore, payments_monitor, pghelp, string_dist, utils
 from forest.message import AuxinMessage, Message, StdioMessage
 
 JSON = dict[str, Any]
@@ -1150,10 +1159,12 @@ class PayBot(ExtrasBot):
 
 # we should just have either a hasable user type or a mapping subtype
 
+V = TypeVar("V")
+
 
 def get_source_or_uuid_from_dict(
-    msg: Message, dict_: dict[str, Any]
-) -> Tuple[bool, Any]:
+    msg: Message, dict_: Mapping[str, V]
+) -> Tuple[bool, Optional[V]]:
     """A common pattern is to store intermediate state for individual users as a dictionary.
     Users can be referred to by some combination of source (a phone number) or uuid (underlying user ID)
     This abstracts over the possibility space, returning a boolean indicator of whether the sender of a Message
