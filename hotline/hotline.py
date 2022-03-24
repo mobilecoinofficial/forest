@@ -44,6 +44,15 @@ class TalkBack(QuestionBot):
         )
         super().__init__()
 
+    async def handle_message(self, message: Message) -> Response:
+        if message.quoted_text and is_admin(message):
+            maybe_id = await self.displayname_lookup_cache.get(
+                message.quoted_text.split()[0]
+            )
+            if maybe_id:
+                await self.send_message(maybe_id, message.text)
+        return await super().handle_message(message)
+
     @requires_admin
     async def do_send(self, msg: Message) -> Response:
         """Send <recipient> <message>
