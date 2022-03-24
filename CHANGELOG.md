@@ -1,3 +1,29 @@
+## 1.2.5
+
+- persistent synonyms with pdictng (#134)
+- `ask_address_question` (#164)
+- test refactors and new question tests (#168)
+- better dicts in logs, don't log pongs (#162)
+- `set_confirm_timeout` defaults to 60, preventing a common footgun (#167)
+- fix autosave for auxin-cli (#165)
+- fix is_admin (#174)
+
+## 1.2.4
+
+- /restart endpoint restarts proc; also refactor asyncio task handlers (#155)
+- `ask_multiple_choice_question` (#156)
+- bump mobot helper to use poetry properly (#158)
+- clean up insecure and evil bots (#159)
+- send event owners blasts from other admins regardless if they're a list member or not (#163)
+- SynonymBot and synonym decorator (#134)
+
+## 1.2.3
+
+- new flags: ADMINS, ADMIN_GROUP, UPLOAD (upload-only). (#149)
+- `last_node_name column` in `signal_accounts` table, like `active_node_name` and also they include app name. `list_accounts` uses your timezone
+- refactor command matching and  message text parsing. include `device_id`, reaction, and quote. shouldn't have breaking changes. 
+- move commands from Bot to ExtrasBot (could be renamed), drop invoices, allow using separate ledgers, time postgres queries
+
 ## 1.2.2
 
 - fasterpKVStoreClient (#112). probably need to change PAUTH if you're using pdict

@@ -3,11 +3,10 @@
 # Copyright (c) 2021 The Forest Team
 import functools
 import logging
-import os
 import shutil
+import os
 from pathlib import Path
-from typing import Optional, cast
-
+from typing import Optional, cast, Dict
 import phonenumbers as pn
 from phonenumbers import NumberParseException
 
@@ -33,7 +32,7 @@ console_handler.setLevel(
 console_handler.setFormatter(fmt)
 console_handler.addFilter(FuckAiohttp)
 logger.addHandler(console_handler)
-
+logging.getLogger("asyncio").setLevel("INFO")
 
 #### Configure Parameters
 
@@ -69,14 +68,19 @@ def load_secrets(env: Optional[str] = None, overwrite: bool = False) -> None:
         pass
 
 
+secret_cache: Dict[str, str] = {}
+
 # potentially split this into get_flag and get_secret; move all of the flags into fly.toml;
 # maybe keep all the tomls and dockerfiles in a separate dir with a deploy script passing --config and --dockerfile explicitly
 def get_secret(key: str, env: Optional[str] = None) -> str:
+    if key in secret_cache:
+        return secret_cache[key]
     try:
         secret = os.environ[key]
     except KeyError:
         load_secrets(env)
         secret = os.environ.get(key) or ""  # fixme
+        secret_cache[key] = secret
     if secret.lower() in ("0", "false", "no"):
         return ""
     return secret
@@ -87,7 +91,8 @@ def get_secret(key: str, env: Optional[str] = None) -> str:
 APP_NAME = os.getenv("FLY_APP_NAME")
 URL = os.getenv("URL_OVERRIDE", f"https://{APP_NAME}.fly.dev")
 LOCAL = os.getenv("FLY_APP_NAME") is None
-UPLOAD = DOWNLOAD = get_secret("DOWNLOAD")
+DOWNLOAD = get_secret("DOWNLOAD")
+UPLOAD = get_secret("UPLOAD") or DOWNLOAD
 ROOT_DIR = "/app" if not LOCAL else "/tmp/local-signal" if DOWNLOAD else "."
 MEMFS = get_secret("AUTOSAVE")
 SIGNAL = (get_secret("SIGNAL") or "auxin").removesuffix("-cli") + "-cli"
