@@ -125,6 +125,7 @@ class TalkBack(QuestionBot):
 class ClanGat(TalkBack):
     def __init__(self) -> None:
         self.no_repay: list[str] = []
+        self.dialog: aPersistDict[str] = aPersistDict("dialog")
         self.pending_orders: aPersistDict[str] = aPersistDict("pending_orders")
         self.pending_funds: aPersistDict[str] = aPersistDict("pending_funds")
         self.pending_donations: aPersistDict[str] = aPersistDict("pending_donations")
@@ -153,6 +154,7 @@ class ClanGat(TalkBack):
         self.scratch_pad: aPersistDict[str] = aPersistDict("scratch_pad")
         self.pay_lock: asyncio.Lock = asyncio.Lock()
         self.donations: aPersistDict[str] = aPersistDict("donations")
+        self.first_messages: aPersistDict[int] = aPersistDict("first_messages")
         # okay, this now maps the tag (restore key) of each of the above to the instance of the PersistDict class
         self.state = {
             self.__getattribute__(attr).tag: self.__getattribute__(attr)
@@ -263,12 +265,12 @@ class ClanGat(TalkBack):
                 f"Owner of {list_} requests payout of {balance}. Approve?",
             ):
                 return "Sorry, admin rejected your payout."
-            return await self.pay_user_from_balance(user, list_, balance)
+            return await self.pay_user_from_balance(user, list_, balance - 1)
         return "Sorry, no luck"
 
     async def pay_user_from_balance(
         self, user: str, list_: str, amount_mmob: int
-    ) -> Response:
+    ) -> Optional[str]:
         """Pays a user a given amount of MOB by manually grabbing UTXOs until a transaction can be made."""
         # pylint: disable=too-many-return-statements
         balance = await self.payout_balance_mmob.get(list_, 0)
@@ -279,29 +281,74 @@ class ClanGat(TalkBack):
                 utxos = list(reversed((await self.mobster.get_utxos()).items()))
                 input_pmob_sum = 0
                 input_txo_ids = []
+                # dust
+                skipped_utxos = []
+                # acquire utxos
                 while input_pmob_sum < ((amount_mmob + 1) * 1_000_000_000):
-                    txoid, pmob = utxos.pop()
+                    if utxos:
+                        # get a txoid and amount to check
+                        txoid, pmob = utxos.pop()
+                    else:
+                        # no utxos left, we've reviewed all of the available ones.
+                        # release so the recursively instantiated children calls can re-acquire
+                        self.pay_lock.release()
+                        # recurse with smaller amounts
+                        first_half = await self.pay_user_from_balance(
+                            user, list_, amount_mmob // 2
+                        )
+                        # if first leg succeeds..
+                        if first_half and "Paid" in first_half:
+                            # let's do it again
+                            second_half = await self.pay_user_from_balance(
+                                user, list_, amount_mmob // 2
+                            )
+                            # and if we're winning
+                            if second_half and "Paid" in second_half:
+                                # acquire to exit-handler more nicely
+                                await self.pay_lock.acquire()
+                                return f"Paid you you {amount_mmob/1000}MOB"
+                        else:
+                            # sadly acquire lock in defeat
+                            await self.pay_lock.acquire()
+                        return None
                     if pmob < (amount_mmob * 1_000_000_000) // 15:
                         logging.debug(f"skipping UTXO worth {pmob}pmob")
+                        skipped_utxos += [(txoid, pmob)]
                         continue
                     input_txo_ids += [txoid]
                     input_pmob_sum += pmob
                     if len(input_txo_ids) > 15:
                         return "Something went wrong! Please contact your administrator for support. (too many utxos needed)"
+                # how many slots do we have for dust?
+                dust_space = 15 - len(input_txo_ids)
+                # grab dust up to 15 utxos total or up to # dust, whichever is smaller
+                logging.info(
+                    f"Space for {dust_space}, we have {len(skipped_utxos)} presumed dust!"
+                )
+                for _ in range(min(dust_space, len(skipped_utxos))):
+                    # smallest dust = higher priority for cleaning
+                    dust_txoid, dust_val_pmob = skipped_utxos.pop(0)
+                    input_txo_ids.append(dust_txoid)
                     logging.debug(
-                        f"found: {input_pmob_sum} / {amount_mmob*1_000_000_000} across {len(input_txo_ids)}utxos"
+                        f"grabbing dust worth {dust_val_pmob}pmob to fill empty space in transaction inputs"
                     )
+                    input_pmob_sum += dust_val_pmob
+                logging.debug(
+                    f"found: {input_pmob_sum} / {amount_mmob*1_000_000_000} across {len(input_txo_ids)}utxos"
+                )
                 if not input_txo_ids:
                     return "Something went wrong! Please contact your administrator for support. (not enough utxos)"
+                MEMO_KEY = "PAY_MEMO_" + list_
                 result = await self.send_payment(
                     recipient=user,
                     amount_pmob=(amount_mmob * 1_000_000_000),
-                    receipt_message=f'Payment for the "{list_}" event!',
+                    receipt_message=f"{await self.dialog.get(MEMO_KEY, MEMO_KEY)}",
                     input_txo_ids=input_txo_ids,
+                    confirm_tx_timeout=60,
                 )
-                if result and not result.status == "tx_status_failed":
+                if result and result.status == "tx_status_succeeded":
                     await self.payout_balance_mmob.decrement(list_, amount_mmob)
-                    return f"Payed you you {amount_mmob/1000}MOB"
+                    return f"Paid you you {amount_mmob/1000}MOB"
                 return None
         if not balance:
             return "Sorry, {list_} has 0mmob balance!"  # thanks y?!
@@ -387,7 +434,7 @@ class ClanGat(TalkBack):
                     "Please wait! Insufficient number of utxos!\nBuilding more...",
                 )
                 building_msg = await self.mobster.split_txos_slow(
-                    amount_mmob, (len(filtered_send_list) - len(valid_utxos))
+                    amount_mmob + 1, (len(filtered_send_list) - len(valid_utxos))
                 )
                 await self.send_message(msg.uuid, building_msg)
                 valid_utxos = [
@@ -411,10 +458,13 @@ class ClanGat(TalkBack):
                         amount_pmob=amount_mmob * 1_000_000_000,
                         receipt_message=message or "",
                         input_txo_ids=input_txo_ids,
+                        confirm_tx_timeout=60,
                     )
                     await asyncio.sleep(0.5)
                     # if we didn't get a result indicating success
-                    if not result or (result and result.status == "tx_status_failed"):
+                    if not result or (
+                        result and result.status != "tx_status_succeeded"
+                    ):
                         # stash as failed
                         return None
                     # persist user as successfully paid
@@ -576,16 +626,22 @@ class ClanGat(TalkBack):
         return f"Added you to the {obj} list!"
 
     async def do_help(self, msg: Message) -> Response:
-        if msg.arg1 and msg.arg1.lower() == "add":
-            return self.do_add.__doc__
-        if msg.arg1 and msg.arg1.lower() == "setup":
-            return self.do_setup.__doc__
-        return "\n\n".join(
-            [
-                "Hi, I'm MOBot! Welcome to my Hotline!",
-                "\nEvents and announcement lists can be unlocked by messaging me the secret code at any time.\n\nAccolades, feature requests, and support questions can be directed to my maintainers at https://signal.group/#CjQKILH5dkoz99TKxwG7T3TaVAuskMq4gybSplYDfTq-vxUrEhBhuy19A4DbvBqm7PfnBn3I .",
-            ]
+        if msg.uuid not in await self.first_messages.keys():
+            await self.first_messages.set(msg.uuid, int(time.time() * 1000))
+            return await self.dialog.get("FIRST_GREETING", "FIRST_GREETING")
+        return await self.dialog.get("WELCOME", "WELCOME")
+
+    async def do_yes(self, msg: Message) -> Response:
+        self.UNEXPECTED_ANSWER_YES = await self.dialog.get(
+            "UNEXPECTED_ANSWER_YES", self.UNEXPECTED_ANSWER_YES
         )
+        return await super().do_yes(msg)
+
+    async def do_no(self, msg: Message) -> Response:
+        self.UNEXPECTED_ANSWER_NO = await self.dialog.get(
+            "UNEXPECTED_ANSWER_NO", self.UNEXPECTED_ANSWER_NO
+        )
+        return await super().do_no(msg)
 
     @hide
     async def do_remove(self, msg: Message) -> Response:
@@ -831,10 +887,39 @@ class ClanGat(TalkBack):
             return f"Successfully added '{value}' to event {param}'s {obj}!"
         return f"Failed to add {value} to event {param}'s {obj}!"
 
+    @requires_admin
+    async def do_set_dialog(self, msg: Message) -> Response:
+        """Let's do it live.
+        Privileged editing of dialog blurbs, because."""
+        user = msg.uuid
+        fragment = await self.ask_freeform_question(
+            user, "What fragment would you like to change?"
+        )
+        if fragment in self.TERMINAL_ANSWERS:
+            return "OK, nvm"
+        blurb = await self.ask_freeform_question(
+            user, "What dialog would you like to use?"
+        )
+        if fragment in self.TERMINAL_ANSWERS:
+            return "OK, nvm"
+        if old_blurb := await self.dialog.get(fragment):
+            await self.send_message(user, "overwriting:")
+            await self.send_message(user, old_blurb)
+        await self.dialog.set(fragment, blurb)
+        # elif not self.is_admin(msg):
+        #    return "You must be an administrator to overwrite someone else's blurb!"
+        return "updated blurb!"
+
+    @requires_admin
+    async def do_dialog(self, msg: Message) -> Response:
+        return "\n\n".join(
+            [f"{k}: {v}\n------\n" for (k, v) in self.dialog.dict_.items()]
+        )
+
     async def maybe_unlock(self, msg: Message) -> Response:
         """Possibly unlocks an event."""
         # pylint: disable=too-many-return-statements,too-many-branches
-        code = msg.arg0
+        code = msg.arg0.strip(string.punctuation)
         # if the event has an owner and a price and there's attendee space and the user hasn't already bought tickets
         if (
             code
@@ -853,14 +938,23 @@ class ClanGat(TalkBack):
                     f"You may now make one purchase of up to 2 tickets at {await self.event_prices[code]} MOB ea.\nIf you have payments activated, open the conversation on your Signal mobile app, click on the plus (+) sign and choose payment.",
                 ]
             if await self.event_prices.get(code, 0) < 0:
+                if not await self.get_signalpay_address(msg.uuid):
+                    return await self.dialog.get("PLEASE_ACTIVATE", "PLEASE_ACTIVATE")
+                await self.send_message(
+                    msg.uuid,
+                    await self.dialog.get("ABOUT_TO_PAY", "Sending a payment!"),
+                )
+                await self.event_attendees.extend(code, msg.uuid)
                 res = await self.pay_user_from_balance(
                     msg.uuid,
                     code,
                     math.ceil(-1000 * await self.event_prices.get(code, 0)),
                 )
-                if res and "wrong" not in res:
-                    await self.event_attendees.extend(code, msg.uuid)
-                return res
+                if res and "Paid" in res:
+                    return await self.event_prompts.get(code, res)
+                else:
+                    await self.event_attendees.remove_from(code, msg.uuid)
+                    return await self.dialog.get("WE_ARE_SO_SORRY", "Try again!")
             await self.send_message(
                 msg.uuid,
                 f"{await self.event_prompts.get(code) or 'You have unlocked an event!'}",
@@ -912,7 +1006,10 @@ class ClanGat(TalkBack):
             and code in await self.event_lists.keys()  # if there's a list and...
             and msg.uuid in await self.event_attendees[code]  # user on the list
         ):
-            return f"You're already on the attendee list for the '{code}' event."
+            return await self.dialog.get(
+                "ALREADY_JOINED_" + code,
+                f"You're already on the attendee list for the '{code}' event.",
+            )
         return None
 
     async def talkback(self, msg: Message) -> None:
@@ -962,8 +1059,9 @@ class ClanGat(TalkBack):
             return self.PAYMENTS_HELPTEXT
         if not code:
             return None
-        if msg.full_text and msg.full_text in [
-            key.lower() for key in await self.easter_eggs.keys()
+        if msg.full_text and msg.full_text.strip(string.punctuation) in [
+            key.lower().strip(string.punctuation)
+            for key in await self.easter_eggs.keys()
         ]:
             return await self.easter_eggs.get(msg.full_text)
         if code in await self.easter_eggs.keys():

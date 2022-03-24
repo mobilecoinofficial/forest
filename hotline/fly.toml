@@ -1,4 +1,4 @@
-app = "thehotlinev3"
+app = "probably-nothing"
 kill_signal = "SIGINT" 
 kill_timeout = 5
 
