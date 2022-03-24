@@ -210,8 +210,7 @@ async def test_questions(bot) -> None:
 async def test_dialog(bot) -> None:
     """Tests the but by running a dialogue"""
     dialogue=[["test_ask_yesno_question","Do you like faeries?"],["yes","That's cool, me too!"]]
-    # assert await bot.get_cmd_output(dialogue[0][0]) == dialogue[0][1]
-    # assert await bot.get_cmd_output(dialogue[1][0]) == dialogue[1][1]
+
     await bot.send_input(dialogue[0][0])
     assert await bot.get_output() == dialogue[0][1]
     await bot.send_input(dialogue[1][0])
@@ -219,15 +218,14 @@ async def test_dialog(bot) -> None:
     assert await bot.get_output() == dialogue[1][1]
 
 
-    # import pdb;pdb.set_trace()
-    # this_loop = asyncio.get_event_loop()
-    # for line in dialogue:
-    #     assert await bot.get_cmd_output(line[0]) == line[1]
-    #     # await bot.send_input(line[0])
-    #     # assert await bot.get_output() == line[1]
-    #     # await bot.run_once()
-    #     this_loop.stop()
-    #     this_loop.run_forever()
+    this_loop = asyncio.get_event_loop()
+    for line in dialogue:
+        assert await bot.get_cmd_output(line[0]) == line[1]
+        # await bot.send_input(line[0])
+        # assert await bot.get_output() == line[1]
+        # await bot.run_once()
+        this_loop.stop()
+        this_loop.run_forever()
         
         
 
