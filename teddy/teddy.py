@@ -306,19 +306,6 @@ class Teddy(TalkBack):
                 )
                 return None
             await asyncio.sleep(1)
-            # TODO: consider removing?
-            if await self.ask_yesno_question(
-                user, await self.dialog.get("MAY_WE_DM_U", "MAY_WE_DM_U")
-            ):
-                await asyncio.sleep(1)
-                await self.send_message(
-                    user,
-                    await self.dialog.get("OKAY_WE_WILL_DM_U", "OKAY_WE_WILL_DM_U"),
-                )
-            else:
-                await self.send_message(
-                    user, await self.dialog.get("TY_WE_WONT_DM_U", "TY_WE_WONT_DM_U")
-                )
             await self.send_message(
                 user, await self.dialog.get("CHARITIES_INFO", "CHARITIES_INFO")
             )

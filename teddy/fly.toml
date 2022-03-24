@@ -1,4 +1,4 @@
-app = "charity-honeycomb"
+app = "charity-mock3"
 kill_signal = "SIGINT"
 kill_timeout = 5
 
