@@ -967,12 +967,6 @@ class ClanGat(TalkBack):
             return None
         if code == "?":
             return await self.do_help(msg)
-        if code == "y":
-            return await self.do_yes(msg)
-        if code == "n":
-            return await self.do_no(msg)
-        if code and code.rstrip(string.punctuation) == "yes":  # yes!
-            return await self.do_yes(msg)
         if code in "+ buy purchase".split():  # was a function, now helptext
             return self.PAYMENTS_HELPTEXT
         if not code:
