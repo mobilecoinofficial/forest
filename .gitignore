@@ -17,3 +17,4 @@ imposter/poetry.lock
 imposter/.venv
 imposter/attachments
 **/knowledge
+imposter/stickers

@@ -72,9 +72,11 @@ class Imposter(Bot):
         await self.send_typing(msg)
         # API call happens here, replace with below for rapid testing
         reply = await self.agent.generate_agent_response(msg.full_text)
+        reply = reply.strip()
         # reply = "TEST_REPLY"
-        reply_emoji = await self.agent.get_emoji(reply)
-        reply = f"{reply} {reply_emoji}"
+        if len(reply) > 0:
+            reply_emoji = await self.agent.get_emoji(reply)
+            reply = f"{reply} {reply_emoji}"
         await self.send_typing(msg, stop=True)
         return reply
 
