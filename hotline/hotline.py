@@ -631,18 +631,6 @@ class ClanGat(TalkBack):
             return await self.dialog.get("FIRST_GREETING", "FIRST_GREETING")
         return await self.dialog.get("WELCOME", "WELCOME")
 
-    async def do_yes(self, msg: Message) -> Response:
-        self.UNEXPECTED_ANSWER_YES = await self.dialog.get(
-            "UNEXPECTED_ANSWER_YES", self.UNEXPECTED_ANSWER_YES
-        )
-        return await super().do_yes(msg)
-
-    async def do_no(self, msg: Message) -> Response:
-        self.UNEXPECTED_ANSWER_NO = await self.dialog.get(
-            "UNEXPECTED_ANSWER_NO", self.UNEXPECTED_ANSWER_NO
-        )
-        return await super().do_no(msg)
-
     @hide
     async def do_remove(self, msg: Message) -> Response:
         """Removes a given event by code, if the msg.uuid is the owner."""

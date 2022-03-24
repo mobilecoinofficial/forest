@@ -192,7 +192,7 @@ class Charity(TalkBack):
 
     async def fulfillment(
         self, msg: Message, donation_uid: str = get_uid()
-    ) -> Optional[str]:
+    ) -> str:
         user = msg.uuid
         await self.send_message(
             user,
