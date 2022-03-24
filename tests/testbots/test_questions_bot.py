@@ -122,6 +122,22 @@ class TestBot(QuestionBot):
             return choice
         return "oops, sorry"
 
+    async def do_test_multiple_choice_dict_raise(self, message: Message) -> Response:
+        """Asks a Sample Multiple Choice question with duplicate entries when not lowercased"""
+
+        question_text = "What is your tshirt size?"
+        options = {"S": "", "M": "M", "L": "", "XL": "", "xl": ""}
+
+        try:
+            choice = await self.ask_multiple_choice_question(
+                message.source, question_text, options, require_confirmation=True
+            )
+            if choice:
+                return choice
+            return "oops, sorry"
+        except ValueError:
+            return "You know what you did"
+
     async def do_test_address_question_no_confirmation(
         self, message: Message
     ) -> Response:
