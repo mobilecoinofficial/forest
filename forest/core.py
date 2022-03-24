@@ -463,6 +463,8 @@ class Signal:
 
     async def send_typing(self, msg: Message, stop: bool = False) -> None:
         "Send a typing indicator to the person or group the message is from"
+        if utils.AUXIN:
+            raise NotImplementedError("sendTyping isn't implemented for auxin yet")
         if msg.group:
             await self.outbox.put(rpc("sendTyping", group_id=[msg.group], stop=stop))
         else:
