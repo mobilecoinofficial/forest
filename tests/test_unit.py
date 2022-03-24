@@ -190,5 +190,3 @@ async def test_questions(bot) -> None:
     await asyncio.sleep(0)
     await bot.send_input("yes")
     assert await choice == "XXL"
-
-
