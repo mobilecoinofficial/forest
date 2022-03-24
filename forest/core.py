@@ -13,6 +13,7 @@ import datetime
 import json
 import logging
 import os
+import re
 import signal
 import string
 import sys
@@ -1490,6 +1491,45 @@ class QuestionBot(PayBot):
             )
         # finally return the option that matches the answer, or if empty the answer itself
         return lower_dict_options[answer.full_text.lower()] or answer.full_text
+
+    async def ask_email_question(
+        self,
+        recipient: str,
+        question_text: str = "Please enter your email address",
+    ) -> Optional[str]:
+        """Prompts the user to enter an email address, and validates with a very long regular expression"""
+
+        # ----SETUP----
+        # ask for the email address as a freeform question instead of doing it ourselves
+        answer = await self.ask_freeform_question(recipient, question_text)
+
+        # ----VALIDATE----
+        # if answer contains a valid email address, add it to maybe_email
+        maybe_match = re.search(
+            r"""(?:[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*|"(?:[\x01-\x08\x0b\x0c\x0e-\x1f\x21\x23-\x5b\x5d-\x7f]|\\[\x01-\x09\x0b\x0c\x0e-\x7f])*")@(?:(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?|\[(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?|[a-z0-9-]*[a-z0-9]:(?:[\x01-\x08\x0b\x0c\x0e-\x1f\x21-\x5a\x53-\x7f]|\\[\x01-\x09\x0b\x0c\x0e-\x7f])+)\])""",
+            answer,
+        )
+        # maybe_email is a re.match object, which returns only if there is a match.
+        if maybe_match:
+            email = maybe_match.group(0)
+
+        # ----INVALID?----
+        # If we have an answer, but no matched email
+        if answer and not maybe_match:
+            # return none and exit if user types cancel, stop, exit, etc...
+            if answer.lower() in self.TERMINAL_ANSWERS:
+                return None
+
+            # ----INVALID REPROMPT----
+            # if the answer is not a valid email address, ask the question again, but don't let it add "Please reply" forever
+            if "Please reply" not in question_text:
+                question_text = (
+                    "Please reply with a valid email address\n\n" + question_text
+                )
+
+            return await self.ask_email_question(recipient, question_text)
+
+        return email
 
     async def do_challenge(self, msg: Message) -> Response:
         """Challenges a user to do a simple math problem,
