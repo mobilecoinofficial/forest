@@ -50,7 +50,7 @@ class Imposter(Bot):
     async def send_typing(self, msg: Message, stop=False):
         # Send a typing indicator in case the generator takes a while
         if msg.group:
-            await self.outbox.put(rpc("sendTyping", groupId=[msg.group], stop=stop))
+            await self.outbox.put(rpc("sendTyping", group_id=[msg.group], stop=stop))
         else:
             await self.outbox.put(rpc("sendTyping", recipient=[msg.source], stop=stop))
 
