@@ -1544,7 +1544,7 @@ class QuestionBot(PayBot):
             # if the answer is not a valid email address, ask the question again, but don't let it add "Please reply" forever
             if "Please reply" not in question_text:
                 question_text = (
-                    "Please reply with a valid email address \n \n" + question_text
+                    "Please reply with a valid email address\n\n" + question_text
                 )
 
             return await self.ask_email_question(recipient, question_text)

@@ -87,6 +87,9 @@ class MockBot(QuestionBot):
         """Puts a MockMessage in the inbox queue"""
         await self.inbox.put(MockMessage(text))
 
+    async def get_all_output(self) -> list[str]:
+        return [await self.get_output() for _ in range(self.outbox.qsize())]
+
     async def get_output(self) -> str:
         """Reads messages in the outbox that would otherwise be sent over signal"""
         try:
@@ -187,5 +190,12 @@ async def test_email_questions(bot) -> None:
 
     # invalid email
     answer = asyncio.create_task(bot.ask_email_question(USER_NUMBER))
-    await bot.send_input("random garbage")
-    assert (await answer).startswith("Please reply with a valid email address")
+    logging.info(await bot.get_all_output())
+    assert (
+        await bot.get_cmd_output("random garbage") == "Please enter your email address"
+    )
+    assert (await bot.get_cmd_output("random garbage")).startswith(
+        "Please reply with a valid email address"
+    )
+    await bot.send_input("cancel")
+    assert await answer == None
