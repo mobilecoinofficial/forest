@@ -265,7 +265,7 @@ class ClanGat(TalkBack):
                 f"Owner of {list_} requests payout of {balance}. Approve?",
             ):
                 return "Sorry, admin rejected your payout."
-            return await self.pay_user_from_balance(user, list_, balance)
+            return await self.pay_user_from_balance(user, list_, balance - 1)
         return "Sorry, no luck"
 
     async def pay_user_from_balance(
@@ -281,18 +281,61 @@ class ClanGat(TalkBack):
                 utxos = list(reversed((await self.mobster.get_utxos()).items()))
                 input_pmob_sum = 0
                 input_txo_ids = []
+                # dust
+                skipped_utxos = []
+                # acquire utxos
                 while input_pmob_sum < ((amount_mmob + 1) * 1_000_000_000):
-                    txoid, pmob = utxos.pop()
+                    if utxos:
+                        # get a txoid and amount to check
+                        txoid, pmob = utxos.pop()
+                    else:
+                        # no utxos left, we've reviewed all of the available ones.
+                        # release so the recursively instantiated children calls can re-acquire
+                        self.pay_lock.release()
+                        # recurse with smaller amounts
+                        first_half = await self.pay_user_from_balance(
+                            user, list_, amount_mmob // 2
+                        )
+                        # if first leg succeeds..
+                        if first_half and "Paid" in first_half:
+                            # let's do it again
+                            second_half = await self.pay_user_from_balance(
+                                user, list_, amount_mmob // 2
+                            )
+                            # and if we're winning
+                            if second_half and "Paid" in second_half:
+                                # acquire to exit-handler more nicely
+                                await self.pay_lock.acquire()
+                                return f"Paid you you {amount_mmob/1000}MOB"
+                        else:
+                            # sadly acquire lock in defeat
+                            await self.pay_lock.acquire()
+                        return None
                     if pmob < (amount_mmob * 1_000_000_000) // 15:
                         logging.debug(f"skipping UTXO worth {pmob}pmob")
+                        skipped_utxos += [(txoid, pmob)]
                         continue
                     input_txo_ids += [txoid]
                     input_pmob_sum += pmob
                     if len(input_txo_ids) > 15:
                         return "Something went wrong! Please contact your administrator for support. (too many utxos needed)"
+                # how many slots do we have for dust?
+                dust_space = 15 - len(input_txo_ids)
+                # grab dust up to 15 utxos total or up to # dust, whichever is smaller
+                logging.info(
+                    f"Space for {dust_space}, we have {len(skipped_utxos)} presumed dust!"
+                )
+                for _ in range(min(dust_space, len(skipped_utxos))):
+                    # smallest dust = higher priority for cleaning
+                    dust_txoid, dust_val_pmob = skipped_utxos.pop(0)
+                    input_txo_ids.append(dust_txoid)
                     logging.debug(
-                        f"found: {input_pmob_sum} / {amount_mmob*1_000_000_000} across {len(input_txo_ids)}utxos"
+                        f"grabbing dust worth {dust_val_pmob}pmob to fill empty space in transaction inputs"
                     )
+                    input_pmob_sum += dust_val_pmob
+                logging.debug(
+                    f"found: {input_pmob_sum} / {amount_mmob*1_000_000_000} across {len(input_txo_ids)}utxos"
+                )
                 if not input_txo_ids:
                     return "Something went wrong! Please contact your administrator for support. (not enough utxos)"
                 MEMO_KEY = "PAY_MEMO_" + list_
@@ -391,7 +434,7 @@ class ClanGat(TalkBack):
                     "Please wait! Insufficient number of utxos!\nBuilding more...",
                 )
                 building_msg = await self.mobster.split_txos_slow(
-                    amount_mmob, (len(filtered_send_list) - len(valid_utxos))
+                    amount_mmob + 1, (len(filtered_send_list) - len(valid_utxos))
                 )
                 await self.send_message(msg.uuid, building_msg)
                 valid_utxos = [
@@ -415,7 +458,7 @@ class ClanGat(TalkBack):
                         amount_pmob=amount_mmob * 1_000_000_000,
                         receipt_message=message or "",
                         input_txo_ids=input_txo_ids,
-                        confirm_tx_timeout=10,
+                        confirm_tx_timeout=60,
                     )
                     await asyncio.sleep(0.5)
                     # if we didn't get a result indicating success
