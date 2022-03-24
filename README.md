@@ -63,6 +63,12 @@ otherwise install with:
 sudo apt install openjdk-17-jre-headless
 ```
 
+On arch:
+
+```
+sudo archlinux-java set java-17-openjdk
+```
+
 You can then install signal-cli from a pre-built release or build it from source yourself.
 
 <br>
@@ -133,7 +139,11 @@ For more detailed instructions visit the [signal-cli repository](https://github.
 
 As mentioned above, you will need at least 2 Signal accounts to properly test your bot. A Signal account for the bot to run on and your own signal account to talk to the bot. To set up an additional Signal account for your bot you can use a second phone or a VoIP service such as Google Voice, [Forest Contact](/contact), or Twilio. All you need is a phone number that can receive SMS.
 
-We've deviced a shortcut to register a Signal data store. Input your phone number with the country code (+1 for the US) and then run these commands to obtain a Signal datastore in a data folder
+[Message Forest Contact on Signal](https://signal.me/#p/+12185009004)
+
+To register your phone you need a way to pass Signal's CAPTCHA challenge, and have Signal send you a verification SMS. There are official [Signal-cli CAPTCHA instructions](https://github.com/AsamK/signal-cli/wiki/Registration-with-captcha) on the Signal-cli repo.
+
+We've also devised a shortcut to register a Signal data store. Input your phone number with the country code (+1 for the US) and then run these commands to generate a Signal datastore in your directory.
 
 ``` bash
 sudo apt install jq # install jq in case you don't already have it

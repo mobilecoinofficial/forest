@@ -288,7 +288,8 @@ class Signal:
     async def enqueue_blob_messages(self, blob: JSON) -> None:
         "turn rpc blobs into the appropriate number of Messages and put them in the inbox"
         message_blob: Optional[JSON] = None
-        logging.info(blob)
+        if blob.get("id") != "PONG":
+            logging.info(json.dumps(blob))
         if "params" in blob:
             if isinstance(blob["params"], list):
                 for msg in blob["params"]:
@@ -296,13 +297,7 @@ class Signal:
                         await self.inbox.put(MessageParser(msg))
             message_blob = blob["params"]
         if "result" in blob:
-            if isinstance(blob["result"], list):
-                # idt this happens anymore, remove?
-                logging.info("results list code path")
-                for msg in blob["result"]:
-                    if not blob.get("content", {}).get("receipt_message", {}):
-                        await self.inbox.put(MessageParser(msg))
-            elif isinstance(blob["result"], dict):
+            if isinstance(blob["result"], dict):
                 message_blob = blob
             else:
                 logging.warning(blob["result"])
@@ -457,9 +452,9 @@ class Signal:
 
     async def respond(self, target_msg: Message, msg: Response) -> str:
         """Respond to a message depending on whether it's a DM or group"""
-        logging.info(target_msg.source)
+        logging.debug("responding to %s", target_msg.source)
         if not target_msg.source:
-            logging.error(target_msg.blob)
+            logging.error(json.dumps(target_msg.blob))
         if not utils.AUXIN and target_msg.group:
             return await self.send_message(None, msg, group=target_msg.group)
         destination = target_msg.source or target_msg.uuid
@@ -528,14 +523,9 @@ def is_admin(msg: Message) -> bool:
     ADMIN = utils.get_secret("ADMIN") or ""
     ADMIN_GROUP = utils.get_secret("ADMIN_GROUP") or ""
     ADMINS = utils.get_secret("ADMINS") or ""
-    return (
-        (ADMIN and msg.source in ADMIN)
-        or (ADMIN and msg.uuid in ADMIN)
-        or (ADMIN_GROUP and msg.group and msg.group in ADMIN_GROUP)
-        or (ADMINS and msg.source in ADMINS)
-        or (ADMINS and msg.uuid in ADMINS)
-        or False
-    )
+    source_admin = msg.source and msg.source in ADMIN or msg.source in ADMINS
+    source_uuid = msg.uuid and msg.uuid in ADMIN or msg.uuid in ADMINS
+    return source_admin or source_uuid or bool(msg.group and msg.group in ADMIN_GROUP)
 
 
 def requires_admin(command: Callable) -> Callable:
@@ -682,6 +672,7 @@ class Bot(Signal):
             rpc_id = await self.respond(message, str(e))
         except:  # pylint: disable=bare-except
             exception_traceback = "".join(traceback.format_exception(*sys.exc_info()))
+            logging.info("error handling message %s %s", message, exception_traceback)
             self.pending_response_tasks.append(
                 asyncio.create_task(self.admin(f"{message}\n{exception_traceback}"))
             )
@@ -712,6 +703,7 @@ class Bot(Signal):
         return False
 
     def match_command(self, msg: Message) -> str:
+        """return the appropriate command a message is calling for"""
         if not msg.arg0:
             return ""
         # probably wrong
@@ -722,7 +714,7 @@ class Bot(Signal):
             return msg.arg0
         # always match in dms, only match /commands or @bot in groups
         if utils.get_secret("ENABLE_MAGIC") and (not msg.group or self.is_command(msg)):
-            logging.info("running enable magic")
+            logging.debug("running magic")
             # don't leak admin commands
             valid_commands = self.commands if is_admin(msg) else self.visible_commands
             # closest match
@@ -1097,7 +1089,7 @@ class PayBot(ExtrasBot):
         recipient: str,
         amount_pmob: int,
         receipt_message: str = "Transaction sent!",
-        confirm_tx_timeout: int = 0,
+        confirm_tx_timeout: int = 60,
         **params: Any,
     ) -> Optional[Message]:
         """
@@ -1326,12 +1318,19 @@ class QuestionBot(PayBot):
         answer = await answer_future
         self.pending_answers.pop(recipient)
         answer_text = answer.full_text
+
+        # This checks to see if the answer is a valid candidate for float by replacing
+        # the first comma or decimal point with a number to see if the resulting string .isnumeric()
         if answer_text and not (
             answer_text.replace(".", "1", 1).isnumeric()
             or answer_text.replace(",", "1", 1).isnumeric()
         ):
+            # cancel if user replies with any of the terminal answers "stop, cancel, quit, etc. defined above"
             if answer.full_text.lower() in self.TERMINAL_ANSWERS:
                 return None
+
+            # Check to see if the original question already specified wanting the answer as a decimal.
+            # If not asks the question again and adds "as a decimal" to clarify
             if question_text and "as a decimal" in question_text:
                 return await self.ask_floatable_question(recipient, question_text)
             return await self.ask_floatable_question(
@@ -1358,8 +1357,13 @@ class QuestionBot(PayBot):
         answer = await answer_future
         self.pending_answers.pop(recipient)
         if answer.full_text and not answer.full_text.isnumeric():
+
+            # cancel if user replies with any of the terminal answers "stop, cancel, quit, etc. defined above"
             if answer.full_text.lower() in self.TERMINAL_ANSWERS:
                 return None
+
+            # Check to see if the original question already specified wanting the answer as a decimal.
+            # If not asks the question again and adds "as a whole number, ie '1' or '2000'" to clarify
             if question_text and "as a whole number" in question_text:
                 return await self.ask_intable_question(recipient, question_text)
             return await self.ask_intable_question(
@@ -1557,7 +1561,8 @@ class QuestionBot(PayBot):
         return None
 
     async def do_challenge(self, msg: Message) -> Response:
-        """Challenges a user to do a simple math problem, optionally provided as an image to increase attacker complexity."""
+        """Challenges a user to do a simple math problem,
+        optionally provided as an image to increase attacker complexity."""
         # the captcha module delivers graphical challenges of the same format
         if captcha is not None:
             challenge, answer = captcha.get_challenge_and_answer()
