@@ -168,46 +168,23 @@ async def test_questions(bot) -> None:
 @pytest.mark.asyncio
 async def test_email_questions(bot) -> None:
     # normal email
+    answer = asyncio.create_task(bot.ask_email_question(USER_NUMBER))
+    await bot.send_input("example@example.com")
+    assert await answer == "example@example.com"
 
-    for test in [
-        "email@example.com",
-        "firstname.lastname@example.com",
-        "email@subdomain.example.com",
-        "firstname+lastname@example.com",
-        "email@123.123.123.123",
-        "email@[123.123.123.123]",
-        '"email"@example.com',
-        "1234567890@example.com",
-        "email@example-one.com",
-        "_______@example.com",
-        "email@example.name",
-        "email@example.museum",
-        "email@example.co.jp",
-        "firstname-lastname@example.com",
-        "Joe Smith <email@example.com>",
-        "email@example.com (Joe Smith)",
-    ]:
-        answer = asyncio.create_task(bot.ask_email_question(USER_NUMBER))
-        await bot.send_input(test)
-        assert await answer == test
+    # email with special character
+    answer = asyncio.create_task(bot.ask_email_question(USER_NUMBER))
+    await bot.send_input("exam+ple@example.com")
+    assert await answer == "exam+ple@example.com"
 
-    for test in [
-        "plainaddress",
-        "#@%^%#$@#$@#.com",
-        "@example.com",
-        "email.example.com",
-        "email@example@example.com",
-        ".email@example.com",
-        "email.@example.com",
-        "email..email@example.com",
-        "あいうえお@example.com",
-        "email@example",
-        "email@-example.com",
-        "email@example.web",
-        "email@111.222.333.44444",
-        "email@example..com",
-        "Abc..123@example.com",
-    ]:
-        answer = asyncio.create_task(bot.ask_email_question(USER_NUMBER))
-        await bot.send_input(test)
-        assert (await answer).startswith("Please reply with a valid email address")
+    # email with superfluous bits
+    answer = asyncio.create_task(bot.ask_email_question(USER_NUMBER))
+    await bot.send_input(
+        "hello my email is example@example.com and you can call me example"
+    )
+    assert await answer == "example@example.com"
+
+    # invalid email
+    answer = asyncio.create_task(bot.ask_email_question(USER_NUMBER))
+    await bot.send_input("random garbage")
+    assert (await answer).startswith("Please reply with a valid email address")
