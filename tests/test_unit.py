@@ -163,3 +163,51 @@ async def test_questions(bot) -> None:
     t = asyncio.create_task(bot.ask_yesno_question(USER_NUMBER, "Do you like faeries?"))
     await bot.send_input("yes")
     assert await t == True
+
+
+@pytest.mark.asyncio
+async def test_email_questions(bot) -> None:
+    # normal email
+
+    for test in [
+        "email@example.com",
+        "firstname.lastname@example.com",
+        "email@subdomain.example.com",
+        "firstname+lastname@example.com",
+        "email@123.123.123.123",
+        "email@[123.123.123.123]",
+        '"email"@example.com',
+        "1234567890@example.com",
+        "email@example-one.com",
+        "_______@example.com",
+        "email@example.name",
+        "email@example.museum",
+        "email@example.co.jp",
+        "firstname-lastname@example.com",
+        "Joe Smith <email@example.com>",
+        "email@example.com (Joe Smith)",
+    ]:
+        answer = asyncio.create_task(bot.ask_email_question(USER_NUMBER))
+        await bot.send_input(test)
+        assert await answer == test
+
+    for test in [
+        "plainaddress",
+        "#@%^%#$@#$@#.com",
+        "@example.com",
+        "email.example.com",
+        "email@example@example.com",
+        ".email@example.com",
+        "email.@example.com",
+        "email..email@example.com",
+        "あいうえお@example.com",
+        "email@example",
+        "email@-example.com",
+        "email@example.web",
+        "email@111.222.333.44444",
+        "email@example..com",
+        "Abc..123@example.com",
+    ]:
+        answer = asyncio.create_task(bot.ask_email_question(USER_NUMBER))
+        await bot.send_input(test)
+        assert (await answer).startswith("Please reply with a valid email address")

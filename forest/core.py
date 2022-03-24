@@ -1515,30 +1515,29 @@ class QuestionBot(PayBot):
     async def ask_email_question(
         self,
         recipient: str,
-        question_text: Optional[str] = "Please enter your email address",
-        require_first_device: bool = False,
+        question_text: str = "Please enter your email address",
     ) -> Optional[str]:
         """Prompts the user to enter an email address, and validates with a very long regular expression"""
 
         # ----SETUP----
         # ask for the email address as a freeform question instead of doing it ourselves
         answer = await self.ask_freeform_question(
-            recipient, question_text, require_first_device
+            recipient, question_text
         )
 
         # ----VALIDATE---- 
         # if answer contains a valid email address, add it to maybe_email
-        maybe_email = re.search(
+        maybe_match = re.search(
             r"""(?:[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*|"(?:[\x01-\x08\x0b\x0c\x0e-\x1f\x21\x23-\x5b\x5d-\x7f]|\\[\x01-\x09\x0b\x0c\x0e-\x7f])*")@(?:(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?|\[(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?|[a-z0-9-]*[a-z0-9]:(?:[\x01-\x08\x0b\x0c\x0e-\x1f\x21-\x5a\x53-\x7f]|\\[\x01-\x09\x0b\x0c\x0e-\x7f])+)\])""",
             answer,
         )
         # maybe_email is a re.match object, which returns only if there is a match.
-        if maybe_email:
-            maybe_email = maybe_email.group(0)
+        if maybe_match:
+            email = maybe_match.group(0) 
         
         # ----INVALID?----
         # If we have an answer, but no matched email
-        if answer and not maybe_email:
+        if answer and not maybe_match:
             # return none and exit if user types cancel, stop, exit, etc...
             if answer.lower() in self.TERMINAL_ANSWERS:
                 return None
@@ -1552,11 +1551,10 @@ class QuestionBot(PayBot):
 
             return await self.ask_email_question(
                 recipient,
-                question_text,
-                require_first_device,
+                question_text
             )
-        # ----RETURN----
-        return maybe_email
+
+        return email 
 
     async def do_challenge(self, msg: Message) -> Response:
         """Challenges a user to do a simple math problem,
