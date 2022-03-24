@@ -51,6 +51,7 @@ class MockMessage(Message):
 
     def __init__(self, text: str) -> None:
         self.text = text
+        self.full_text = text
         self.source = USER_NUMBER
         self.uuid = "cf3d7d34-2dcd-4fcd-b193-cbc6a666758b"
         self.mentions = []
