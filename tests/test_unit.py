@@ -51,10 +51,10 @@ class MockMessage(Message):
 
     def __init__(self, text: str) -> None:
         self.text = text
+        self.full_text = text
         self.source = USER_NUMBER
         self.uuid = "cf3d7d34-2dcd-4fcd-b193-cbc6a666758b"
         self.mentions : list[str] = []
-        self.full_text = text
         super().__init__({})
 
 
@@ -108,7 +108,7 @@ class MockBot(QuestionBot):
 # all the fixtures it uses need to have at least "session" scope
 @pytest.fixture(scope="session")
 def event_loop(request):
-    """special version of the even loop"""
+    """Fixture version of the event loop"""
     loop = asyncio.get_event_loop_policy().new_event_loop()
     yield loop
     loop.close()
@@ -116,7 +116,7 @@ def event_loop(request):
 
 @pytest_asyncio.fixture(scope="session")
 async def bot():
-    """special bot"""
+    """Bot Fixture allows for exiting gracefully"""
     bot = MockBot(BOT_NUMBER)
     yield bot
     bot.sigints += 1
@@ -168,6 +168,12 @@ async def test_questions(bot) -> None:
     await bot.send_input("yes")
     assert await answer is True
 
+    answer = asyncio.create_task(bot.ask_freeform_question(USER_NUMBER, "What's your favourite tree?"))
+    await bot.send_input("Birch")
+    assert await answer == "Birch"
+
+    answer = asyncio.create_task(bot.ask_freeform_question(USER_NUMBER, "What's your favourite tree?"))
+
     question_text = "What is your tshirt size?"
     options = {"S": "", "M": "", "L": "", "XL": "", "XXL": ""}
 
@@ -185,6 +191,4 @@ async def test_questions(bot) -> None:
     await bot.send_input("yes")
     assert await choice == "XXL"
 
-    answer = asyncio.create_task(bot.ask_freeform_question(USER_NUMBER, "What's your favourite tree?"))
-    await bot.send_input("Birch")
-    assert await answer == "Birch"
+
