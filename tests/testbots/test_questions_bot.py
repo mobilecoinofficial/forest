@@ -141,17 +141,13 @@ class TestBot(QuestionBot):
             return address
         return "oops, sorry"
 
-    async def do_test_email_question(
-        self, message: Message
-    ) -> Response:
+    async def do_test_email_question(self, message: Message) -> Response:
 
         email = await self.ask_email_question(message.source)
 
         if email:
             return email
         return "oops, sorry"
-
-    
 
 
 if __name__ == "__main__":
