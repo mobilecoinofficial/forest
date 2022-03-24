@@ -7,6 +7,7 @@
 - `set_confirm_timeout` defaults to 60, preventing a common footgun (#167)
 - fix autosave for auxin-cli (#165)
 - fix is_admin (#174)
+- new user_activity table holds first seen and last seen per-user per-bot. (#157)
 
 ## 1.2.4
 
@@ -16,7 +17,6 @@
 - clean up insecure and evil bots (#159)
 - send event owners blasts from other admins regardless if they're a list member or not (#163)
 - SynonymBot and synonym decorator (#134)
-- new user_activity table holds first seen and last seen per-user per-bot. (#157)
 
 ## 1.2.3
 
