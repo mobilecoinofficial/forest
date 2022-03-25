@@ -64,11 +64,6 @@ class MockBot(QuestionBot):
     """Makes a bot that bypasses the normal start_process allowing
     us to have an inbox and outbox that doesn't depend on Signal"""
 
-    async def run_once(self) -> None:
-        this_loop = asyncio.get_event_loop()
-        this_loop.call_soon(this_loop.stop)
-        this_loop.run_forever()
-
     async def start_process(self) -> None:
         pass
 
@@ -121,7 +116,7 @@ class MockBot(QuestionBot):
 # all async tests and fixtures implicitly use event_loop, which has scope "function" by default
 # so if we want bot to have scope "session" (so it's not destroyed and created between tests),
 # all the fixtures it uses need to have at least "session" scope
-@pytest.fixture(scope="session")
+@pytest.fixture()
 def event_loop(request):
     """Fixture version of the event loop"""
     loop = asyncio.get_event_loop_policy().new_event_loop()
@@ -129,7 +124,7 @@ def event_loop(request):
     loop.close()
 
 
-@pytest_asyncio.fixture(scope="session")
+@pytest_asyncio.fixture()
 async def bot():
     """Bot Fixture allows for exiting gracefully"""
     bot = MockBot(BOT_NUMBER)
@@ -176,8 +171,6 @@ async def test_questions(bot) -> None:
     os.environ["ENABLE_MAGIC"] = "1"
     # the issue here is that we need to send "yes" *after* the question has been asked
     # so we make it as create_task, then send the input, then await the task to get the result
-    
-    # import pdb;pdb.set_trace()
 
     answer = asyncio.create_task(bot.ask_yesno_question(USER_NUMBER, "Do you like faeries?"))
     await bot.send_input("yes")
@@ -211,22 +204,5 @@ async def test_dialog(bot) -> None:
     """Tests the but by running a dialogue"""
     dialogue=[["test_ask_yesno_question","Do you like faeries?"],["yes","That's cool, me too!"]]
 
-    await bot.send_input(dialogue[0][0])
-    assert await bot.get_output() == dialogue[0][1]
-    await bot.send_input(dialogue[1][0])
-    await asyncio.sleep(0)
-    assert await bot.get_output() == dialogue[1][1]
-
-
-    this_loop = asyncio.get_event_loop()
     for line in dialogue:
         assert await bot.get_cmd_output(line[0]) == line[1]
-        # await bot.send_input(line[0])
-        # assert await bot.get_output() == line[1]
-        # await bot.run_once()
-        this_loop.stop()
-        this_loop.run_forever()
-        
-        
-
-
