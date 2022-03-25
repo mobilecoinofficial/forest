@@ -1,10 +1,8 @@
 import asyncio
-from asyncore import loop
 import logging
 import os
 import pathlib
 from importlib import reload
-from tracemalloc import stop
 import pytest
 import pytest_asyncio
 
