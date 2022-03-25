@@ -101,15 +101,6 @@ class MockBot(QuestionBot):
         await self.send_input(text)
         return await self.get_output()
 
-    async def get_output_now(self) -> str:
-        """Reads messages in the outbox that would otherwise be sent over signal"""
-        try:
-            outgoing_msg = await self.outbox.get_nowait()
-            return outgoing_msg["params"]["message"]
-        except asyncio.queues.QueueEmpty:
-            logging.error("Queue Empty")
-            return "Queue Empty"
-
 # https://github.com/pytest-dev/pytest-asyncio/issues/68
 # all async tests and fixtures implicitly use event_loop, which has scope "function" by default
 # so if we want bot to have scope "session" (so it's not destroyed and created between tests),
@@ -196,11 +187,3 @@ async def test_questions(bot) -> None:
     await asyncio.sleep(0)
     await bot.send_input("yes")
     assert await choice == "XXL"
-
-@pytest.mark.asyncio
-async def test_dialog(bot) -> None:
-    """Tests the but by running a dialogue"""
-    dialogue=[["test_ask_yesno_question","Do you like faeries?"],["yes","That's cool, me too!"]]
-
-    for line in dialogue:
-        assert await bot.get_cmd_output(line[0]) == line[1]

@@ -172,6 +172,47 @@ class TestBot(MockBot):
             return f"No way! I love {answer} too!!"
         return "oops, sorry"
     
+def paths(tree):
+  #Helper function
+  #receives a tree and 
+  #returns all paths that have this node as root and all other paths
+
+  if tree.data is None:
+    return ([], [])
+  else: #tree is a node
+    root = tree.data
+    rooted_paths = [[root]]
+    unrooted_paths = []
+    for subtree in tree.children:
+        (useable, unuseable) = paths(subtree)
+        for path in useable:
+            unrooted_paths.append(path)
+            rooted_paths.append([root]+path)
+        for path in unuseable:
+            unrooted_paths.append(path)
+    return (rooted_paths, unrooted_paths)
+
+def the_function_you_use_in_the_end(tree):
+   a,b = paths(tree)
+   return a+b
+
+class Node(object):
+    def __init__(self, data):
+        self.data = data
+        self.children = []
+
+    def add_child(self, obj):
+        self.children.append(obj)
+
+a = Node("a")
+b= Node("b")
+c = Node("c")
+
+a.add_child(b)
+a.add_child(c)
+
+
+
 
 # https://github.com/pytest-dev/pytest-asyncio/issues/68
 # all async tests and fixtures implicitly use event_loop, which has scope "function" by default
@@ -205,16 +246,17 @@ async def test_dialog(bot) -> None:
     for line in dialogue:
         assert await bot.get_cmd_output(line[0]) == line[1]
 
-# @pytest.mark.asyncio
-# async def test_yesno_tree(bot) -> None:
-#     """Tests the bot by running a tree"""
-#     tree=[["test_ask_yesno_question","Do you like faeries?"],[["yes","That's cool, me too!"],["no","Aww :c"]]]
+@pytest.mark.asyncio
+async def test_yesno_tree(bot) -> None:
+    """Tests the bot by running a tree"""
+    tree=[("test_ask_yesno_question","Do you like faeries?"),[("yes","That's cool, me too!"),("no","Aww :c")]]
 
-#     for node in tree:
-#         if isinstance(node)
+    for node in tree:
+        if isinstance(node)
 
-#         assert await bot.get_cmd_output(line[0]) == line[1]
+        assert await bot.get_cmd_output(line[0]) == line[1]
 
 
 if __name__ == "__main__":
     run_bot(TestBot)
+ 
