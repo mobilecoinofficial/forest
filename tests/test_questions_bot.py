@@ -1,6 +1,5 @@
 from forest.core import QuestionBot, Message, run_bot, Response
-
-# from forest.tests.test_unit import MockBot
+import MockBot
 
 
 class TestBot(QuestionBot):
@@ -154,6 +153,33 @@ class TestBot(QuestionBot):
             return f"No way! I love {answer} too!!"
         return "oops, sorry"
 
+
+# https://github.com/pytest-dev/pytest-asyncio/issues/68
+# all async tests and fixtures implicitly use event_loop, which has scope "function" by default
+# so if we want bot to have scope "session" (so it's not destroyed and created between tests),
+# all the fixtures it uses need to have at least "session" scope
+@pytest.fixture()
+def event_loop(request):
+    """Fixture version of the event loop"""
+    loop = asyncio.get_event_loop_policy().new_event_loop()
+    yield loop
+    loop.close()
+
+
+@pytest_asyncio.fixture()
+async def bot():
+    """Bot Fixture allows for exiting gracefully"""
+    bot = MockBot(BOT_NUMBER)
+    yield bot
+    bot.sigints += 1
+    bot.exiting = True
+    bot.handle_messages_task.cancel()
+    await bot.client_session.close()
+    await core.pghelp.close_pools()
+
+
+@pytest.mark.asyncio
+async def test_commands(bot) -> None:
 
 if __name__ == "__main__":
     run_bot(TestBot)
