@@ -494,8 +494,12 @@ class Signal:
     async def send_typing(self, msg: Message, stop: bool = False) -> None:
         "Send a typing indicator to the person or group the message is from"
         if utils.AUXIN:
-            contnet = await self.typing_message_content(stop, msg.group or "")
-            await self.send_message(recipient, "", content=content)
+            if msg.group:
+                content = await self.typing_message_content(stop, msg.group)
+                await self.send_message(None, "", group=msg.group, content=content)
+            else:
+                content = await self.typing_message_content(stop)
+                await self.send_message(msg.source, "", content=content)
             return
         if msg.group:
             await self.outbox.put(rpc("sendTyping", group_id=[msg.group], stop=stop))
