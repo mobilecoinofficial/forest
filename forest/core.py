@@ -52,8 +52,7 @@ from ulid2 import generate_ulid_as_base32 as get_uid
 # framework
 import mc_util
 from forest import autosave, datastore, payments_monitor, pghelp, string_dist, utils
-from forest.pdictng import aPersistDict
-from forest.message import AuxinMessage, Message, StdioMessage, Reaction
+from forest.message import AuxinMessage, Message, StdioMessage
 
 JSON = dict[str, Any]
 Response = Union[str, list, dict[str, str], None]
@@ -1578,59 +1577,6 @@ class QuestionBot(PayBot):
             )
             return await self.do_challenge(msg)
         return "Thanks for helping protect our community!"
-
-
-class MemoryBot(QuestionBot):
-    def __init__(self, bot_number: Optional[str] = None) -> None:
-        super().__init__(bot_number)
-        self.msgs: aPersistDict[dict] = aPersistDict("msgs")
-
-    async def handle_message(self, message: Message) -> Response:
-        if message.reaction:
-            logging.info("saw a reaction")
-            return await self.handle_reaction(message)
-        blob = message.to_dict()
-        blob["reactions"] = []
-        await self.msgs.set(str(message.timestamp), blob)
-        return await super().handle_message(message)
-
-    async def handle_reaction(self, msg: Message) -> Response:
-        """
-        route a reaction to the original message.
-        """
-        assert isinstance(msg.reaction, Reaction)
-        react = msg.reaction
-        logging.debug("reaction from %s targeting %s", msg.source, react.ts)
-        blob = await self.msgs.get(str(react.ts))
-        if blob:
-            logging.debug("found target message %s", blob)
-            blob["reactions"][react.ts] = react.emoji
-            await self.msgs.set(react.ts, blob)
-        return None
-
-    async def save_sent_message(self, rpc_id: str, params: dict[str, Any]) -> None:
-        result = await self.pending_requests[rpc_id]
-        logging.info("got timestamp %s for blob %s", result.timestamp, params)
-        params["reactions"] = {}
-        await self.msgs.set(str(result.timestamp), params)
-
-    async def quote_chain(self, msg: dict) -> list[dict]:
-        maybe_timestamp = msg.get("quote", {}).get("ts")
-        if maybe_timestamp:
-            maybe_quoted = await self.msgs.get(str(maybe_timestamp))
-            if maybe_quoted:
-                return [msg] + await self.quote_chain(maybe_quoted)
-        return [msg]
-
-    async def do_q(self, msg: Message) -> Response:
-        resp = ", ".join(str(m) for m in await self.quote_chain(msg.to_dict()))
-        quote = {
-            "quote-timestamp": msg.timestamp,
-            "quote-author": msg.source,
-            "quote-message": msg.full_text,
-        }
-        await self.respond(msg, resp, **quote)
-        return None
 
 
 async def no_get(request: web.Request) -> web.Response:
