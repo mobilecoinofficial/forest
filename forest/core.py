@@ -1604,7 +1604,7 @@ class MemoryBot(QuestionBot):
         blob = await self.msgs.get(str(react.ts))
         if blob:
             logging.debug("found target message %s", blob)
-            blob["reactions"][react.ts] = react.emoji
+            blob["reactions"][msg.source] = react.emoji
             await self.msgs.set(react.ts, blob)
         return None
 
