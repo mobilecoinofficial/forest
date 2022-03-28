@@ -52,7 +52,8 @@ from ulid2 import generate_ulid_as_base32 as get_uid
 # framework
 import mc_util
 from forest import autosave, datastore, payments_monitor, pghelp, string_dist, utils
-from forest.message import AuxinMessage, Message, StdioMessage
+from forest.pdictng import aPersistDict
+from forest.message import AuxinMessage, Message, StdioMessage, Reaction
 
 JSON = dict[str, Any]
 Response = Union[str, list, dict[str, str], None]
@@ -1604,18 +1605,16 @@ class MemoryBot(QuestionBot):
             await self.msgs.set(react.ts, blob)
         return None
 
-    async def save_sent_message(self, rpc_id: str, params: dict[str, str]) -> None:
+    async def save_sent_message(self, rpc_id: str, params: dict[str, Any]) -> None:
         result = await self.pending_requests[rpc_id]
         logging.info("got timestamp %s for blob %s", result.timestamp, params)
         params["reactions"] = {}
         await self.msgs.set(str(result.timestamp), params)
-        self.sent_messages[result.timestamp] = params
-        self.sent_messages[result.timestamp]["reactions"] = {}
 
     async def quote_chain(self, msg: dict) -> list[dict]:
         maybe_timestamp = msg.get("quote", {}).get("ts")
         if maybe_timestamp:
-            maybe_quoted = await self.msgs.get(str(msg.quote.ts))
+            maybe_quoted = await self.msgs.get(str(maybe_timestamp))
             if maybe_quoted:
                 return [msg] + await self.quote_chain(maybe_quoted)
         return [msg]
