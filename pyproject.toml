@@ -22,6 +22,7 @@ termcolor = "*"
 ulid2 = "*"
 pycryptodome = "*"
 aiohttp = {extras = ["speedups"], version = "^3.8.1"}
+maya = "^0.6.1"
 
 [tool.poetry.dev-dependencies]
 black = "*"
