@@ -2,10 +2,11 @@
 # Copyright (c) 2021 MobileCoin Inc.
 # Copyright (c) 2021 The Forest Team
 
-
+import ast
 import asyncio
 import json
 import string
+import sys
 import time
 import math
 import logging
@@ -33,6 +34,42 @@ from mc_util import pmob2mob
 
 FEE = int(1e12 * 0.0004)
 REQUEST_TIME = Summary("request_processing_seconds", "Time spent processing request")
+
+
+class GetStr(ast.NodeTransformer):
+    strings = {}
+    source = open(sys.argv[-1]).read()
+    dialogs = []
+
+    def get_source(self, node):
+        return ast.get_source_segment(self.source, node)
+
+    def get_dialog_fragments(self):
+        node = ast.parse(self.source)
+        self.visit(node)
+        return self.dialogs
+
+    def visit_Call(self, node):
+        for child in ast.iter_child_nodes(node):
+            self.visit(child)
+        if isinstance(node.func, ast.Attribute):
+            if (
+                node.func.attr == "get"
+                and not isinstance(node.func.value, ast.Name)
+                and not isinstance(node.func.value, ast.Subscript)
+            ):
+                if node.func.value.attr == "dialog":
+                    vals = [
+                        c.value
+                        if isinstance(c, ast.Constant)
+                        else f"(python) `{self.get_source(c)}`"
+                        for c in node.args
+                    ]
+                    if len(vals) == 2:
+                        vals = {"key": vals[0], "fallback": vals[1]}
+                    else:
+                        vals = {"key": vals[0]}
+                    self.dialogs += [{"line_number": node.lineno, **vals}]
 
 
 class TalkBack(QuestionBot):
@@ -126,6 +163,7 @@ class ClanGat(TalkBack):
     def __init__(self) -> None:
         self.no_repay: list[str] = []
         self.dialog: aPersistDict[str] = aPersistDict("dialog")
+        self.dialog_keys = GetStr().get_dialog_fragments()
         self.pending_orders: aPersistDict[str] = aPersistDict("pending_orders")
         self.pending_funds: aPersistDict[str] = aPersistDict("pending_funds")
         self.pending_donations: aPersistDict[str] = aPersistDict("pending_donations")
@@ -320,7 +358,7 @@ class ClanGat(TalkBack):
                     if len(input_txo_ids) > 15:
                         return "Something went wrong! Please contact your administrator for support. (too many utxos needed)"
                 # how many slots do we have for dust?
-                dust_space = 15 - len(input_txo_ids)
+                dust_space = 16 - len(input_txo_ids)
                 # grab dust up to 15 utxos total or up to # dust, whichever is smaller
                 logging.info(
                     f"Space for {dust_space}, we have {len(skipped_utxos)} presumed dust!"
@@ -339,10 +377,13 @@ class ClanGat(TalkBack):
                 if not input_txo_ids:
                     return "Something went wrong! Please contact your administrator for support. (not enough utxos)"
                 MEMO_KEY = "PAY_MEMO_" + list_
+                memo_dialog = await self.dialog.get(
+                    MEMO_KEY, None
+                ) or await self.dialog.get("DEFAULT_PAY_MEMO", "DEFAULT_PAY_MEMO")
                 result = await self.send_payment(
                     recipient=user,
                     amount_pmob=(amount_mmob * 1_000_000_000),
-                    receipt_message=f"{await self.dialog.get(MEMO_KEY, MEMO_KEY)}",
+                    receipt_message=memo_dialog,
                     input_txo_ids=input_txo_ids,
                     confirm_tx_timeout=60,
                 )
@@ -893,20 +934,20 @@ class ClanGat(TalkBack):
         """Let's do it live.
         Privileged editing of dialog blurbs, because."""
         user = msg.uuid
-        fragment = await self.ask_freeform_question(
+        fragment_to_set = await self.ask_freeform_question(
             user, "What fragment would you like to change?"
         )
-        if fragment in self.TERMINAL_ANSWERS:
+        if fragment_to_set in self.TERMINAL_ANSWERS:
             return "OK, nvm"
         blurb = await self.ask_freeform_question(
             user, "What dialog would you like to use?"
         )
         if fragment in self.TERMINAL_ANSWERS:
             return "OK, nvm"
-        if old_blurb := await self.dialog.get(fragment):
+        if old_blurb := await self.dialog.get(fragment_to_set):
             await self.send_message(user, "overwriting:")
             await self.send_message(user, old_blurb)
-        await self.dialog.set(fragment, blurb)
+        await self.dialog.set(fragment_to_set, blurb)
         # elif not self.is_admin(msg):
         #    return "You must be an administrator to overwrite someone else's blurb!"
         return "updated blurb!"
@@ -915,6 +956,15 @@ class ClanGat(TalkBack):
     async def do_dialog(self, msg: Message) -> Response:
         return "\n\n".join(
             [f"{k}: {v}\n------\n" for (k, v) in self.dialog.dict_.items()]
+        )
+
+    @requires_admin
+    async def do_dialogkeys(self, msg: Message) -> Response:
+        return "\n\n".join(
+            [
+                "\n".join([f"{k}: {v}" for (k, v) in dialogkey.items()])
+                for dialogkey in self.dialog_keys
+            ]
         )
 
     async def maybe_unlock(self, msg: Message) -> Response:
@@ -1009,7 +1059,7 @@ class ClanGat(TalkBack):
         ):
             return await self.dialog.get(
                 "ALREADY_JOINED_" + code,
-                f"You're already on the attendee list for the '{code}' event.",
+                "You're already on the list!",
             )
         return None
 
