@@ -32,6 +32,7 @@ from textwrap import dedent
 from typing import (
     Any,
     Awaitable,
+    Coroutine,
     Callable,
     Mapping,
     Optional,
@@ -57,6 +58,7 @@ from forest.message import AuxinMessage, Message, StdioMessage
 JSON = dict[str, Any]
 Response = Union[str, list, dict[str, str], None]
 AsyncFunc = Callable[..., Awaitable]
+Command = Callable[["Bot", Message], Coroutine[Any, Any, Response]]
 
 roundtrip_histogram = Histogram("roundtrip_h", "Roundtrip message response time")  # type: ignore
 roundtrip_summary = Summary("roundtrip_s", "Roundtrip message response time")
@@ -524,9 +526,12 @@ def is_admin(msg: Message) -> bool:
     return source_admin or source_uuid or bool(msg.group and msg.group in ADMIN_GROUP)
 
 
-def requires_admin(command: Callable) -> Callable:
+B = TypeVar("B", bound="Bot")
+
+
+def requires_admin(command: AsyncFunc) -> AsyncFunc:
     @wraps(command)
-    async def admin_command(self: "Bot", msg: Message) -> Response:
+    async def admin_command(self: B, msg: Message) -> Response:
         if is_admin(msg):
             return await command(self, msg)
         return "you must be an admin to use this command"
@@ -536,9 +541,9 @@ def requires_admin(command: Callable) -> Callable:
     return admin_command
 
 
-def hide(command: Callable) -> Callable:
+def hide(command: AsyncFunc) -> AsyncFunc:
     @wraps(command)
-    async def hidden_command(self: "Bot", msg: Message) -> Response:
+    async def hidden_command(self: B, msg: Message) -> Response:
         return await command(self, msg)
 
     hidden_command.hide = True  # type: ignore
