@@ -51,6 +51,7 @@ class MockMessage(Message):
 
     def __init__(self, text: str) -> None:
         self.text = text
+        self.full_text = text
         self.source = USER_NUMBER
         self.uuid = "cf3d7d34-2dcd-4fcd-b193-cbc6a666758b"
         self.mentions = []
@@ -85,6 +86,9 @@ class MockBot(QuestionBot):
     async def send_input(self, text: str) -> None:
         """Puts a MockMessage in the inbox queue"""
         await self.inbox.put(MockMessage(text))
+
+    async def get_all_output(self) -> list[str]:
+        return [await self.get_output() for _ in range(self.outbox.qsize())]
 
     async def get_output(self) -> str:
         """Reads messages in the outbox that would otherwise be sent over signal"""
@@ -163,3 +167,35 @@ async def test_questions(bot) -> None:
     t = asyncio.create_task(bot.ask_yesno_question(USER_NUMBER, "Do you like faeries?"))
     await bot.send_input("yes")
     assert await t == True
+
+
+@pytest.mark.asyncio
+async def test_email_questions(bot) -> None:
+    # normal email
+    answer = asyncio.create_task(bot.ask_email_question(USER_NUMBER))
+    await bot.send_input("example@example.com")
+    assert await answer == "example@example.com"
+
+    # email with special character
+    answer = asyncio.create_task(bot.ask_email_question(USER_NUMBER))
+    await bot.send_input("exam+ple@example.com")
+    assert await answer == "exam+ple@example.com"
+
+    # email with superfluous bits
+    answer = asyncio.create_task(bot.ask_email_question(USER_NUMBER))
+    await bot.send_input(
+        "hello my email is example@example.com and you can call me example"
+    )
+    assert await answer == "example@example.com"
+
+    # invalid email
+    answer = asyncio.create_task(bot.ask_email_question(USER_NUMBER))
+    logging.info(await bot.get_all_output())
+    assert (
+        await bot.get_cmd_output("random garbage") == "Please enter your email address"
+    )
+    assert (await bot.get_cmd_output("random garbage")).startswith(
+        "Please reply with a valid email address"
+    )
+    await bot.send_input("cancel")
+    assert await answer == None
