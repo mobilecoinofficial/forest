@@ -42,6 +42,7 @@ from ulid2 import generate_ulid_as_base32 as get_uid
 # framework
 import mc_util
 from forest import autosave, datastore, payments_monitor, pghelp, string_dist, utils
+from forest.pdictng import hash_salt
 from forest.message import AuxinMessage, Message, StdioMessage
 
 JSON = dict[str, Any]
@@ -625,13 +626,8 @@ class Bot(Signal):
         """
         while True:
             message = await self.inbox.get()
-            if message.source:
-                self.seen_users.add(message.uuid)
-                if message.source.startswith("+1"):
-                    self.seen_users.add(message.source)
-                else:
-                    hashed = hashlib.sha256(message.uuid.encode()).hexdigest()
-                    self.seen_users.add(hashed[:32])
+            if message.uuid:
+                self.seen_users.add(hash_salt(message.uuid))
             if message.id and message.id in self.pending_requests:
                 logging.debug("setting result for future %s: %s", message.id, message)
                 self.pending_requests[message.id].set_result(message)
