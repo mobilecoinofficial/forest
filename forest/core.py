@@ -366,6 +366,7 @@ class Signal:
         endsession: bool = False,
         attachments: Optional[list[str]] = None,
         content: str = "",
+        **other_params: str,
     ) -> str:
         """
         Builds send command for the specified recipient in jsonrpc format and
@@ -401,13 +402,15 @@ class Signal:
         if isinstance(msg, list):
             # return the last stamp
             return [
-                await self.send_message(recipient, m, group, endsession, attachments)
+                await self.send_message(
+                    recipient, m, group, endsession, attachments, **other_params
+                )
                 for m in msg
             ][-1]
         if isinstance(msg, dict):
             msg = "\n".join((f"{key}:\t{value}" for key, value in msg.items()))
 
-        params: JSON = {"message": msg}
+        params: JSON = {"message": msg, **other_params}
         if endsession:
             params["end_session"] = True
         if attachments:
@@ -453,15 +456,15 @@ class Signal:
         else:
             await self.send_message(utils.get_secret("ADMIN"), msg, **kwargs)
 
-    async def respond(self, target_msg: Message, msg: Response) -> str:
+    async def respond(self, target_msg: Message, msg: Response, **kwargs: Any) -> str:
         """Respond to a message depending on whether it's a DM or group"""
         logging.debug("responding to %s", target_msg.source)
         if not target_msg.source:
             logging.error(json.dumps(target_msg.blob))
         if not utils.AUXIN and target_msg.group:
-            return await self.send_message(None, msg, group=target_msg.group)
+            return await self.send_message(None, msg, group=target_msg.group, **kwargs)
         destination = target_msg.source or target_msg.uuid
-        return await self.send_message(destination, msg)
+        return await self.send_message(destination, msg, **kwargs)
 
     async def send_reaction(self, target_msg: Message, emoji: str) -> None:
         """Send a reaction. Protip: you can use e.g. \N{GRINNING FACE} in python"""
@@ -1619,6 +1622,16 @@ class MemoryBot(QuestionBot):
                 return [msg] + await self.quote_chain(maybe_quoted)
         return [msg]
 
+    async def do_q(self, msg: Message) -> Response:
+        resp = ", ".join(str(m) for m in await self.quote_chain(msg.to_dict()))
+        quote = {
+            "quote-timestamp": msg.timestamp,
+            "quote-author": msg.source,
+            "quote-message": msg.full_text,
+        }
+        await self.respond(msg, resp, **quote)
+        return None
+
 
 async def no_get(request: web.Request) -> web.Response:
     raise web.HTTPFound(location="https://signal.org/")
@@ -1731,4 +1744,4 @@ def run_bot(bot: Type[Bot], local_app: web.Application = app) -> None:
 
 
 if __name__ == "__main__":
-    run_bot(QuestionBot)
+    run_bot(MemoryBot)
