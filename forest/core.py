@@ -351,6 +351,11 @@ class Signal:
         await self.outbox.put(rpc("setProfile", params, rpc_id))
         return rpc_id
 
+    async def save_sent_message(self, rpc_id: str, params: dict[str, str]) -> None:
+        # do something with sent messages after sending them
+        # override in child classes
+        pass
+
     # this should maybe yield a future (eep) and/or use signal_rpc_request
     async def send_message(  # pylint: disable=too-many-arguments
         self,
@@ -437,6 +442,7 @@ class Signal:
         self.pending_messages_sent[rpc_id] = json_command
         self.pending_requests[rpc_id] = asyncio.Future()
         await self.outbox.put(json_command)
+        asyncio.create_task(self.save_sent_message(rpc_id, params))
         return rpc_id
 
     async def admin(self, msg: Response, **kwargs: Any) -> None:
@@ -1568,6 +1574,51 @@ class QuestionBot(PayBot):
             )
             return await self.do_challenge(msg)
         return "Thanks for helping protect our community!"
+
+
+class MemoryBot(QuestionBot):
+    def __init__(self, bot_number: Optional[str] = None) -> None:
+        super().__init__(bot_number)
+        self.msgs: aPersistDict[dict] = aPersistDict("msgs")
+
+    async def handle_message(self, message: Message) -> Response:
+        if message.reaction:
+            logging.info("saw a reaction")
+            return await self.handle_reaction(message)
+        blob = message.to_dict()
+        blob["reactions"] = []
+        await self.msgs.set(str(message.timestamp), blob)
+        return await super().handle_message(message)
+
+    async def handle_reaction(self, msg: Message) -> Response:
+        """
+        route a reaction to the original message.
+        """
+        assert isinstance(msg.reaction, Reaction)
+        react = msg.reaction
+        logging.debug("reaction from %s targeting %s", msg.source, react.ts)
+        blob = await self.msgs.get(str(react.ts))
+        if blob:
+            logging.debug("found target message %s", blob)
+            blob["reactions"][react.ts] = react.emoji
+            await self.msgs.set(react.ts, blob)
+        return None
+
+    async def save_sent_message(self, rpc_id: str, params: dict[str, str]) -> None:
+        result = await self.pending_requests[rpc_id]
+        logging.info("got timestamp %s for blob %s", result.timestamp, params)
+        params["reactions"] = {}
+        await self.msgs.set(str(result.timestamp), params)
+        self.sent_messages[result.timestamp] = params
+        self.sent_messages[result.timestamp]["reactions"] = {}
+
+    async def quote_chain(self, msg: dict) -> list[dict]:
+        maybe_timestamp = msg.get("quote", {}).get("ts")
+        if maybe_timestamp:
+            maybe_quoted = await self.msgs.get(str(msg.quote.ts))
+            if maybe_quoted:
+                return [msg] + await self.quote_chain(maybe_quoted)
+        return [msg]
 
 
 async def no_get(request: web.Request) -> web.Response:
