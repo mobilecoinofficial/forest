@@ -628,7 +628,8 @@ class ClanGat(TalkBack):
     async def do_help(self, msg: Message) -> Response:
         if msg.uuid not in await self.first_messages.keys():
             await self.first_messages.set(msg.uuid, int(time.time() * 1000))
-            return await self.dialog.get("FIRST_GREETING", "FIRST_GREETING")
+            if await self.dialog.get("FIRST_GREETING"):
+                return await self.dialog.get("FIRST_GREETING", "FIRST_GREETING")
         return await self.dialog.get("WELCOME", "WELCOME")
 
     async def do_yes(self, msg: Message) -> Response:
