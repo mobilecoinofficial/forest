@@ -3,6 +3,7 @@ import logging
 import os
 import pathlib
 from importlib import reload
+from queue import Empty
 from subprocess import call
 import pytest
 import pytest_asyncio
@@ -196,7 +197,7 @@ def the_function_you_use_in_the_end(tree):
    a,b = paths(tree)
    return a+b
 
-class Node(object):
+class Tree(object):
     def __init__(self, data):
         self.data = data
         self.children = []
@@ -204,12 +205,25 @@ class Node(object):
     def add_child(self, obj):
         self.children.append(obj)
 
-a = Node("a")
-b= Node("b")
-c = Node("c")
+a = Tree("a")
+b= Tree("b")
+c = Tree("c")
 
 a.add_child(b)
 a.add_child(c)
+
+
+def paths(tree: Tree, list_of_paths: list[str]) -> None:
+    if tree.children == []:
+        list_of_paths.append(tree.data)
+        for node in list_of_paths:
+            print(node)
+        print("/n")
+        return None
+
+    for child in tree.children:
+        paths(child,list_of_paths.append(tree.data))
+
 
 
 
