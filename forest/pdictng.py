@@ -52,7 +52,7 @@ def hash_salt(key_: str) -> str:
     return base58.b58encode(hashlib.sha256(f"{SALT}{key_}".encode()).digest()).decode()
 
 
-def encrypt(value_: Union[str, bytes]) -> str:
+def get_ciphertext_value(value_: Union[str, bytes]) -> str:
     """returns a base58 encoded aes128 AES EAX mode encrypted gzip compressed value"""
     if isinstance(value_, str):
         value_bytes = value_.encode()
@@ -100,7 +100,7 @@ class fasterpKVStoreClient(persistentKVStoreClient):
 
     async def post(self, key: str, data: str) -> str:
         key = hash_salt(f"{self.namespace}_{key}")
-        data = encrypt(data)
+        data = get_ciphertext_value(data)
         # try to set
         async with self.conn.post(
             f"{self.url}/SET/{key}", headers=self.headers, data=data
@@ -160,7 +160,7 @@ class fastpKVStoreClient(persistentKVStoreClient):
 
     async def post(self, key: str, data: str) -> str:
         key = hash_salt(key)
-        data = encrypt(data)
+        data = get_ciphertext_value(data)
         # try to set
         if self.exists.get(key):
             async with self.conn.patch(
