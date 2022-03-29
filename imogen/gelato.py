@@ -3,6 +3,8 @@ import aiohttp
 import requests
 from forest import utils
 
+import logging; logging.getLogger().setLevel("INFO")
+
 # === Define headers ===
 headers = {
     "Content-Type": "application/json",
@@ -56,12 +58,17 @@ orderCreateJson = (
 )
 
 # === Send order create request ===
-response = requests.request(
-    "POST", orderCreateUrl, data=orderCreateJson, headers=headers
-)
-print(response.json())
-
 
 class Gelato:
     def req():
         pass
+
+    def order():
+        response = requests.request(
+            "POST", orderCreateUrl, data=orderCreateJson, headers=headers
+        )
+        print(response.json())
+
+        
+
+    
