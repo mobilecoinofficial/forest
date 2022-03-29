@@ -54,7 +54,7 @@ from ulid2 import generate_ulid_as_base32 as get_uid
 import mc_util
 from forest import autosave, datastore, payments_monitor, pghelp, string_dist, utils
 from forest.message import AuxinMessage, Message, StdioMessage
-from forest.pdictng import hash_salt
+from forest.cryptography import hash_salt
 
 JSON = dict[str, Any]
 Response = Union[str, list, dict[str, str], None]
