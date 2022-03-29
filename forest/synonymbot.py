@@ -2,11 +2,17 @@
 # Copyright (c) 2021 MobileCoin Inc.
 # Copyright (c) 2021 The Forest Team
 from functools import wraps
-from typing import Tuple, Any, Callable, Coroutine
-from forest.core import Bot, Message, Response, requires_admin, is_admin, run_bot
+from typing import Tuple, Callable
+from forest.core import (
+    Bot,
+    Message,
+    Command,
+    Response,
+    requires_admin,
+    is_admin,
+    run_bot,
+)
 from forest.pdictng import aPersistDictOfLists
-
-Command = Callable[[Bot, Message], Coroutine[Any, Any, Response]]
 
 
 def synonyms(*syns: str) -> Callable:

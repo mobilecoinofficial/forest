@@ -1,3 +1,12 @@
+## 1.2.6
+
+- notes on the new captcha and installing on arch (#166)
+- quote messages to reply in TalkBack (#170)
+- improved `ask_yesno_question` (#172)
+- `ask_email_question` (#175)
+- improve type hints (#171)
+- add values() and items() to pdict (#179)
+
 ## 1.2.5
 
 - persistent synonyms with pdictng (#134)

@@ -257,9 +257,17 @@ class aPersistDict(Generic[V]):
         async with self.rwlock:
             return self.dict_.get(key) or default
 
-    async def keys(self) -> List[str]:
+    async def keys(self) -> list[str]:
         async with self.rwlock:
             return list(self.dict_.keys())
+
+    async def values(self) -> list[V]:
+        async with self.rwlock:
+            return list(self.dict_.values())
+
+    async def items(self) -> list[tuple[str, V]]:
+        async with self.rwlock:
+            return list(self.dict_.items())
 
     async def remove(self, key: str) -> None:
         """Removes a value from the map, if it exists."""
