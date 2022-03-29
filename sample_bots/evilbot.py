@@ -14,6 +14,9 @@ class EvilBot(Bot):
     async def do_type(self, message: Message) -> None:
         await self.send_typing(message)
 
+    async def do_sticker(self, message: Message) -> None:
+        await self.send_sticker(message)
+
     async def default(self, _: Message) -> None:
         return None
 
