@@ -3,7 +3,9 @@ import aiohttp
 import requests
 from forest import utils
 
-import logging; logging.getLogger().setLevel("INFO")
+import logging
+
+logging.getLogger().setLevel("INFO")
 
 # === Define headers ===
 headers = {
@@ -13,34 +15,41 @@ headers = {
 
 # === Set-up quote request ===
 quoteUrl = "https://api.gelato.com/v2/quote"
-quoteJson = """{
-"order": {
-    "orderReferenceId": "{{MyOrderId}}",
-    "customerReferenceId": "{{MyCustomerId}}",
-    "currencyIsoCode": "USD"
-},
-"recipient": {
-    "countryIsoCode": "US",
-    "companyName": "Example",
-    "firstName": "Paul",
-    "lastName": "Smith",
-    "addressLine1": "451 Clarkson Ave",
-    "addressLine2": "Brooklyn",
-    "stateCode": "NY",
-    "city": "New York",
-    "postcode": "11203",
-    "email": "apisupport@gelato.com",
-    "phone": "123456789"
-},
-"products": [
-    {
-        "itemReferenceId": "{{MyItemId}}",
-        "productUid": "cards_pf_bx_pt_110-lb-cover-uncoated_cl_4-4_hor",
-        "pdfUrl": "https://s3-eu-west-1.amazonaws.com/developers.gelato.com/product-examples/test_print_job_BX_4-4_hor_none.pdf",
-        "quantity": 100
-    }
-]
-}"""
+quoteJson = {
+    "order": {
+        "orderReferenceId": "{{MyOrderId}}",
+        "customerReferenceId": "{{MyCustomerId}}",
+        "currencyIsoCode": "USD",
+    },
+    "recipient": {
+        "countryIsoCode": "US",
+        "companyName": "Example",
+        "firstName": "Paul",
+        "lastName": "Smith",
+        "addressLine1": "451 Clarkson Ave",
+        "addressLine2": "Brooklyn",
+        "stateCode": "NY",
+        "city": "New York",
+        "postcode": "11203",
+        "email": "apisupport@gelato.com",
+        "phone": "123456789",
+    },
+    "products": [
+        {
+            "itemReferenceId": "{{MyItemId}}",
+            "productUid": "cards_pf_bx_pt_110-lb-cover-uncoated_cl_4-4_hor",
+            "pdfUrl": "https://s3-eu-west-1.amazonaws.com/developers.gelato.com/product-examples/test_print_job_BX_4-4_hor_none.pdf",
+            "quantity": 1,
+        }
+    ],
+}
+
+
+def finagle_json(pdfUrl: str) -> dict:
+    new_quote = dict(quoteJson)
+    quoteJson["products"][0]["pdfUrl"] = pdfUrl
+    return quoteJson
+
 
 session = aiohttp.ClientSession()
 # === Send quote request ===
@@ -59,16 +68,14 @@ orderCreateJson = (
 
 # === Send order create request ===
 
+
 class Gelato:
     def req():
         pass
 
     def order():
+        order_json = json.dumps(finagle_json(pdfUrl="https://example.com"))
         response = requests.request(
             "POST", orderCreateUrl, data=orderCreateJson, headers=headers
         )
         print(response.json())
-
-        
-
-    
