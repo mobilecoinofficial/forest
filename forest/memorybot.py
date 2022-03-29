@@ -63,7 +63,6 @@ class MemoryBot(Bot):
         logging.debug("reaction from %s targeting %s", msg.source, react.ts)
         blob = await self.get_user_message(msg, react.ts)
         if blob:
-            logging.debug("found target message %s", blob)
             user = self.get_user_id(msg)
             user_history = await self.get_user_history(user)
             i = user_history.index(blob)
@@ -74,14 +73,14 @@ class MemoryBot(Bot):
         return None
 
     async def save_sent_message(self, rpc_id: str, params: JSON) -> None:
+        """
+        save own messages for each channel
+        """
         result = await self.pending_requests[rpc_id]
-        logging.debug("SENT: %s, %s", result, params)
-        # Don't know how to find uuid in sent messages!
         if "recipient" in params:
             user = params["recipient"]
         if "group-id" in params:
             user = params["group-id"]
-        logging.info("got user %s for blob %s", user, params)
         params["reactions"] = []
         params["timestamp"] = result.timestamp
         params["source"] = self.bot_number
@@ -95,8 +94,8 @@ class MemoryBot(Bot):
                 return [msg] + await self.quote_chain(maybe_quoted)
         return [msg]
 
+    # Useful for testing but also for getting a little clean dict of content
     def get_message_content(self, msg: JSON) -> JSON:
-        logging.debug("message looks like %s", msg)
         content = {}
         if "message" in msg:
             content["text"] = msg["message"]
@@ -115,6 +114,7 @@ class MemoryBot(Bot):
             content["quote"] = msg["quoted_text"]
         return content
 
+    # For testing recursive quotes
     async def do_q(self, msg: Message) -> Response:
         resp = ", ".join(str(m) for m in await self.quote_chain(msg.to_dict()))
         quote = {
@@ -125,6 +125,7 @@ class MemoryBot(Bot):
         await self.respond(msg, resp, **quote)
         return None
 
+    # This can be annoying, maybe should be behind @requires_admin
     async def do_history(self, msg: Message) -> Response:
         user = self.get_user_id(msg)
         user_history = await self.get_user_history(user)
