@@ -362,6 +362,7 @@ class Signal:
         endsession: bool = False,
         attachments: Optional[list[str]] = None,
         content: str = "",
+        **other_params: str,
     ) -> str:
         """
         Builds send command for the specified recipient in jsonrpc format and
@@ -397,13 +398,15 @@ class Signal:
         if isinstance(msg, list):
             # return the last stamp
             return [
-                await self.send_message(recipient, m, group, endsession, attachments)
+                await self.send_message(
+                    recipient, m, group, endsession, attachments, **other_params
+                )
                 for m in msg
             ][-1]
         if isinstance(msg, dict):
             msg = "\n".join((f"{key}:\t{value}" for key, value in msg.items()))
 
-        params: JSON = {"message": msg}
+        params: JSON = {"message": msg, **other_params}
         if endsession:
             params["end_session"] = True
         if attachments:
@@ -515,26 +518,29 @@ class Signal:
         )
         # simulate gives us a dict corresponding to the protobuf structure
         content_skeletor = json.loads(resp.blob["simulate_output"])
-        # typingMessage excludes having a dataMessage
         content_skeletor["dataMessage"]["body"] = None
         content_skeletor["dataMessage"]["sticker"] = {
             "data": {
                 "attachment_identifier": {"cdnId": 5902557749391454000},
                 "contentType": "image/webp",
-                "digest": "vo2+aWLvbOEYCVUZUocLb0ffORNFo5924nmyH28Pj04=",
+                "digest": u8("vo2+aWLvbOEYCVUZUocLb0ffORNFo5924nmyH28Pj04="),
                 "height": 512,
-                "key": "a5B7fMYxWpn8DILBWfB/tnFSXufcC7C318XC4bXmwEy/NYnKof/oS15JU8sn33whcYwoXDKT12BF04RoDQ4Osg==",
+                "key": u8(
+                    "a5B7fMYxWpn8DILBWfB/tnFSXufcC7C318XC4bXmwEy/NYnKof/oS15JU8sn33whcYwoXDKT12BF04RoDQ4Osg=="
+                ),
                 "size": 17540,
                 "width": 512,
             },
-            "packId": "pPYIEA9J4JkrZ2DyuXG4pw==",
-            "packKey": "R2ZbM8Tz2N49WYY8yEWXPLML4JC/w1tu0naLoj5P1eY=",
+            "packId": u8("pPYIEA9J4JkrZ2DyuXG4pw=="),
+            "packKey": u8("R2ZbM8Tz2N49WYY8yEWXPLML4JC/w1tu0naLoj5P1eY="),
             "stickerId": 0,
         }
         return json.dumps(content_skeletor)
 
-    async def send_sticker(self, msg: Message, stop: bool = False) -> None:
-        "Send a typing indicator to the person or group the message is from"
+    async def send_sticker(
+        self, msg: Message, sticker: str = "a4f608100f49e0992b6760f2b971b8a7:0"
+    ) -> None:
+        "send a sticker to the person or group the message is from"
         if utils.AUXIN:
             content = await self.sticker_message_content()
             if msg.group:
@@ -542,7 +548,7 @@ class Signal:
             else:
                 await self.send_message(msg.source, "", content=content)
             return
-        await self.respond(msg, "", sticker="a4f608100f49e0992b6760f2b971b8a7:0")
+        await self.respond(msg, "", sticker=sticker)
 
     backoff = False
     messages_until_rate_limit = 1000.0
@@ -621,6 +627,11 @@ def hide(command: AsyncFunc) -> AsyncFunc:
 
 
 Datapoint = tuple[int, str, float]  # timestamp in ms, command/info, latency in seconds
+
+
+def u8(b64: str) -> list[int]:
+    "convert a b64 string into the u8[] that serde expects for bytes"
+    return [int(char) for char in base64.b64decode(b64)]
 
 
 class Bot(Signal):
@@ -1076,8 +1087,7 @@ class PayBot(ExtrasBot):
         # this gets us a Receipt protobuf
         b64_receipt = mc_util.full_service_receipt_to_b64_receipt(full_service_receipt)
         # serde expects bytes to be u8[], not b64
-        u8_receipt = [int(char) for char in base64.b64decode(b64_receipt)]
-        tx = {"mobileCoin": {"receipt": u8_receipt}}
+        tx = {"mobileCoin": {"receipt": u8(b64_receipt)}}
         note = note or "check out this java-free payment notification"
         payment = {"Item": {"notification": {"note": note, "Transaction": tx}}}
         # SignalServiceMessageContent protobuf represented as JSON (spicy)
