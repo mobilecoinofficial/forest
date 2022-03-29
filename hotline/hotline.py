@@ -87,7 +87,7 @@ class TalkBack(QuestionBot):
                 message.quoted_text.split()[0]
             )
             if maybe_id:
-                await self.send_message(maybe_id, message.text)
+                await self.send_message(maybe_id, message.full_text)
         return await super().handle_message(message)
 
     @requires_admin
@@ -681,18 +681,6 @@ class ClanGat(TalkBack):
             if await self.dialog.get("FIRST_GREETING"):
                 return await self.dialog.get("FIRST_GREETING", "FIRST_GREETING")
         return await self.dialog.get("WELCOME", "WELCOME")
-
-    async def do_yes(self, msg: Message) -> Response:
-        self.UNEXPECTED_ANSWER_YES = await self.dialog.get(
-            "UNEXPECTED_ANSWER_YES", self.UNEXPECTED_ANSWER_YES
-        )
-        return await super().do_yes(msg)
-
-    async def do_no(self, msg: Message) -> Response:
-        self.UNEXPECTED_ANSWER_NO = await self.dialog.get(
-            "UNEXPECTED_ANSWER_NO", self.UNEXPECTED_ANSWER_NO
-        )
-        return await super().do_no(msg)
 
     @hide
     async def do_remove(self, msg: Message) -> Response:
