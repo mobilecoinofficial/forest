@@ -32,8 +32,8 @@ from textwrap import dedent
 from typing import (
     Any,
     Awaitable,
-    Coroutine,
     Callable,
+    Coroutine,
     Mapping,
     Optional,
     Tuple,
@@ -54,8 +54,8 @@ from ulid2 import generate_ulid_as_base32 as get_uid
 # framework
 import mc_util
 from forest import autosave, datastore, payments_monitor, pghelp, string_dist, utils
-from forest.message import AuxinMessage, Message, StdioMessage
 from forest.cryptography import hash_salt
+from forest.message import AuxinMessage, Message, StdioMessage
 
 JSON = dict[str, Any]
 Response = Union[str, list, dict[str, str], None]

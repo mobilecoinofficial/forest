@@ -9,8 +9,7 @@ import logging
 import random
 import ssl
 import time
-from typing import Any, Optional, List
-
+from typing import Any, Optional
 import aiohttp
 import asyncpg
 
@@ -150,7 +149,7 @@ class Mobster:
         output_millimob = int(output_millimob)
         built = 0
         i = 0
-        utxos: List[str] = []
+        utxos: list[str] = []
         while built < (target_quantity + 3):
             if len(utxos) < 1:
                 utxos = list(reversed(await self.get_utxos()))

@@ -5,9 +5,9 @@ import asyncio
 import json
 import os
 import time
-from typing import Any, Generic, List, Optional, TypeVar, overload
+from typing import Any, Generic, Optional, TypeVar, overload
 import aiohttp
-from forest.cryptography import hash_salt, get_ciphertext_value, get_cleartext_value
+from forest.cryptography import get_ciphertext_value, get_cleartext_value, hash_salt
 
 NAMESPACE = os.getenv("FLY_APP_NAME") or open("/etc/hostname").read().strip()
 pAUTH = os.getenv("PAUTH", "")

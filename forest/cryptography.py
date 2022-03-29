@@ -1,7 +1,7 @@
 import gzip
 import hashlib
-import os
 import logging
+import os
 from typing import Union, cast
 
 import base58
