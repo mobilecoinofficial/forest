@@ -70,14 +70,14 @@ class ScheduleBot(QuestionBot):
                 recipient,
                 "Sorry. I couldn't parse that as a time. Let's try again, or say \"cancel\" to cancel.",
             )
-            return self.get_outgoing_time(recipient)
+            return await self.get_outgoing_time(recipient)
 
         time_until = outgoing_time - maya.now()
         if time_until.total_seconds() < 0:
             await self.send_message(
                 recipient, "You must select a time in the future. Please try again"
             )
-            return self.get_outgoing_time(recipient)
+            return await self.get_outgoing_time(recipient)
 
         return outgoing_time
 
@@ -86,14 +86,6 @@ class ScheduleBot(QuestionBot):
         Schedule a message to be sent at a specific later date. Format:
         Schedule "yyyy-mm-dd HH:MM TZ" "message"
         """
-
-        # prompt = "I'm going to ask you some questions to determine how to best schedule your message. For starters, what message do you want to send?"
-        # outgoing_message = self.ask_freeform_question(message.source, prompt)
-        # if not (self.ask_yesno_question(message.source,f"You want me to send: \n {outgoing_message} is that correct? y/n")):
-        #     return "oh ok, start over then"
-
-        # prompt = "ok now let's figure out WHEN to send your message. Please provide a future time in the form of yyyy/mm/dd HH:MM Timezone"
-        # outgoing_message = message.arg1
 
         outgoing_time, outgoing_message = self.parse_schedule(message)
         cancel_message = "Ok, cancelling. Please try again"
