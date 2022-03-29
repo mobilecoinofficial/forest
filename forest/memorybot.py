@@ -1,6 +1,6 @@
 import logging
-from typing import Optional, Any
-from forest.core import Bot, Message, Response, run_bot
+from typing import Optional, Union
+from forest.core import JSON, Bot, Message, Response, run_bot
 from forest.pdictng import aPersistDictOfLists
 from forest.message import Reaction
 
@@ -23,8 +23,8 @@ class MemoryBot(Bot):
             await self.msgs.extend(user, blob)
         return await super().handle_message(message)
 
-    def get_user_id(self, msg: Message) -> Response:
-        if type(msg) is dict:
+    def get_user_id(self, msg: Union[Message, JSON]) -> str:
+        if isinstance(msg, dict):
             if "source" in msg:
                 if "group-id" in msg:
                     user = msg["group-id"]
@@ -35,21 +35,67 @@ class MemoryBot(Bot):
                 user = str(msg.group)
         return user
 
-    async def get_user_history(self, msg: Message) -> Response:
-        user = self.get_user_id(msg)
+    async def get_user_history(self, user: str) -> Union[list[JSON], None]:
         user_history = await self.msgs.get(user)
         if user_history:
-            return [blob for blob in user_history]
+            return user_history
         return None
 
-    async def get_user_message(self, msg: Message, timestamp: int) -> Response:
-        user_history = await self.get_user_history(msg)
+    async def get_user_message(self, msg: JSON, timestamp: str) -> Union[JSON, None]:
+        user = self.get_user_id(msg)
+        user_history = await self.get_user_history(user)
         if user_history:
-            blob = next((o for o in user_history if o["timestamp"] == timestamp), None)
-            return blob
+            blob = next(
+                (o for o in user_history if o["timestamp"] == timestamp),
+                None,
+            )
+            if blob:
+                return blob
         return None
 
-    def get_message_content(self, msg: Message):
+    # This maybe doesn't work with auxin?
+    async def handle_reaction(self, msg: Message) -> Response:
+        """
+        route a reaction to the original message.
+        """
+        assert isinstance(msg.reaction, Reaction)
+        react = msg.reaction
+        logging.debug("reaction from %s targeting %s", msg.source, react.ts)
+        blob = await self.get_user_message(msg, react.ts)
+        if blob:
+            logging.debug("found target message %s", blob)
+            user = self.get_user_id(msg)
+            user_history = await self.get_user_history(user)
+            i = user_history.index(blob)
+            blob["reactions"].append(react.emoji)
+            user_history[i] = blob
+            user_id = self.get_user_id(msg)
+            await self.msgs.set(user_id, user_history)
+        return None
+
+    async def save_sent_message(self, rpc_id: str, params: JSON) -> None:
+        result = await self.pending_requests[rpc_id]
+        logging.debug("SENT: %s, %s", result, params)
+        # Don't know how to find uuid in sent messages!
+        if "recipient" in params:
+            user = params["recipient"]
+        if "group-id" in params:
+            user = params["group-id"]
+        logging.info("got user %s for blob %s", user, params)
+        params["reactions"] = []
+        params["timestamp"] = result.timestamp
+        params["source"] = self.bot_number
+        await self.msgs.extend(str(user), params)
+
+    async def quote_chain(self, msg: JSON) -> list[JSON]:
+        maybe_timestamp = msg.get("quote", {}).get("ts")
+        if maybe_timestamp:
+            maybe_quoted = await self.get_user_message(msg, maybe_timestamp)
+            if maybe_quoted:
+                return [msg] + await self.quote_chain(maybe_quoted)
+        return [msg]
+
+    def get_message_content(self, msg: JSON) -> JSON:
         logging.debug("message looks like %s", msg)
         content = {}
         if "message" in msg:
@@ -66,48 +112,8 @@ class MemoryBot(Bot):
         if "name" in msg:
             content["name"] = msg["name"]
         if "quote" in msg:
-            content["quote"] = msg["quote"]
+            content["quote"] = msg["quoted_text"]
         return content
-
-    async def handle_reaction(self, msg: Message) -> Response:
-        """
-        route a reaction to the original message.
-        """
-        assert isinstance(msg.reaction, Reaction)
-        react = msg.reaction
-        logging.debug("reaction from %s targeting %s", msg.source, react.ts)
-        blob = await self.get_user_message(msg, react.ts)
-        if blob:
-            logging.debug("found target message %s", blob)
-            user_history = await self.get_user_history(msg)
-            i = user_history.index(blob)
-            blob["reactions"].append(react.emoji)
-            user_history[i] = blob
-            user_id = self.get_user_id(msg)
-            await self.msgs.set(user_id, user_history)
-        return None
-
-    async def save_sent_message(self, rpc_id: str, params: dict[str, Any]) -> None:
-        result = await self.pending_requests[rpc_id]
-        logging.debug("SENT: %s, %s", result, params)
-        # Don't know how to find uuid in sent messages!
-        if "recipient" in params:
-            user = params["recipient"]
-        if "group-id" in params:
-            user = params["group-id"]
-        logging.info("got user %s for blob %s", user, params)
-        params["reactions"] = []
-        params["timestamp"] = result.timestamp
-        params["source"] = self.bot_number
-        await self.msgs.extend(str(user), params)
-
-    async def quote_chain(self, msg: dict) -> list[dict]:
-        maybe_timestamp = msg.get("quote", {}).get("ts")
-        if maybe_timestamp:
-            maybe_quoted = await self.get_user_message(msg, maybe_timestamp)
-            if maybe_quoted:
-                return [msg] + await self.quote_chain(maybe_quoted)
-        return [msg]
 
     async def do_q(self, msg: Message) -> Response:
         resp = ", ".join(str(m) for m in await self.quote_chain(msg.to_dict()))
@@ -120,10 +126,13 @@ class MemoryBot(Bot):
         return None
 
     async def do_history(self, msg: Message) -> Response:
-        user_history = await self.get_user_history(msg)
-        return [self.get_message_content(blob) for blob in user_history]
+        user = self.get_user_id(msg)
+        user_history = await self.get_user_history(user)
+        if user_history:
+            return [self.get_message_content(blob) for blob in user_history]
+        return None
 
-    async def do_delete_history(self, msg: Message) -> Response:
+    async def do_clear_history(self, msg: Message) -> Response:
         user = self.get_user_id(msg)
         await self.msgs.remove(user)
         return f"Deleted message history for user ID {user}"
