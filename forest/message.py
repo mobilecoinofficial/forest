@@ -152,7 +152,9 @@ class AuxinMessage(Message):
         if self.text and not self.source:
             logging.error(outer_blob)
         # {"end_session":false,"source":{"typingMessage":{"action":"STOPPED","timestamp":1648512301846}}}
-        self.typing = msg.get("source", {}).get("typingMessage", {}).get("action", "")
+        self.typing = (
+            content.get("source", {}).get("typingMessage", {}).get("action", "")
+        )
         payment_notif = (
             (msg.get("payment") or {}).get("Item", {}).get("notification", {})
         )
