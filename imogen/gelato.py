@@ -2,7 +2,7 @@ import aiohttp
 
 import requests
 from forest import utils
-
+from forest.core import QuestionBot, Message, Response
 import logging
 
 logging.getLogger().setLevel("INFO")
@@ -37,7 +37,7 @@ quoteJson = {
     "products": [
         {
             "itemReferenceId": "{{MyItemId}}",
-            "productUid": "cards_pf_bx_pt_110-lb-cover-uncoated_cl_4-4_hor",
+            "productUid": "metallic_200x300-mm-8x12-inch_3-mm_4-0_hor",
             "pdfUrl": "https://s3-eu-west-1.amazonaws.com/developers.gelato.com/product-examples/test_print_job_BX_4-4_hor_none.pdf",
             "quantity": 1,
         }
@@ -79,3 +79,9 @@ class Gelato:
             "POST", orderCreateUrl, data=orderCreateJson, headers=headers
         )
         print(response.json())
+
+
+class GelatoBot(QuestionBot):
+    async def do_order(self, msg: Message) -> Response:
+        addr = await self.ask_address_question("What's your address")
+        return f"your address is {addr}"
