@@ -2,10 +2,11 @@
 # Copyright (c) 2021 MobileCoin Inc.
 # Copyright (c) 2021 The Forest Team
 
-from typing import Optional
+import logging
+from typing import Union
 from forest import utils
-from forest.core import Bot, Message, Response, run_bot, rpc
-from forest.pdictng import aPersistDictOfLists
+from forest.core import JSON, Message, Response, run_bot, rpc
+from forest.memorybot import MemoryBot
 from personate.core.reader_agent import ReaderAgent
 
 # from acrossword import Ranker # For ranking facts & examples with plain Agent
@@ -17,7 +18,7 @@ from personate.core.reader_agent import ReaderAgent
 # Can we build a Memory here? from pdictng?
 
 
-class Imposter(Bot):
+class Imposter(MemoryBot):
     def __init__(self) -> None:
         # Accept a JSON config file in the same format as Personate.
         # Can be generated at https://ckoshka.github.io/personate/
@@ -29,6 +30,7 @@ class Imposter(Bot):
     def quotes_us(self, msg: Message) -> bool:
         if msg.quote:
             return msg.quote.author == self.bot_number or msg.quote.author
+        return False
 
     def match_command(self, msg: Message) -> str:
         if not msg.arg0:
@@ -62,10 +64,54 @@ class Imposter(Bot):
         else:
             await self.outbox.put(rpc("sendTyping", recipient=[msg.source], stop=stop))
 
+    async def get_templated_message(self, blob: Union[JSON, str]) -> str:
+        content = self.get_message_content(blob)
+        username = content["source"]
+        if username == self.bot_number:
+            username = self.agent.name
+        if "quote" in content:
+            quotes = await self.quote_chain(blob)
+            quoted_msg = (
+                "\n\n".join(
+                    [
+                        f"<{msg['quote']['author']}>: {msg['quote']['text']}"
+                        for msg in quotes
+                        if "quote" in msg
+                    ]
+                )
+                + "\n\n"
+            )
+        else:
+            quoted_msg = ""
+        if "reactions" in content:
+            reactions = f"\n{content['reactions']}"
+        else:
+            reactions = ""
+        msg = f"{quoted_msg}<{username}>: {content['text']}{reactions}"
+        return msg
+
+    async def get_conversation(self, msg: Message, mem_length: int = 5) -> Response:
+        user = self.get_user_id(msg)
+        user_history = await self.get_user_history(user)
+        if user_history:
+            conversation = [
+                await self.get_templated_message(blob)
+                for blob in user_history[-mem_length:]
+            ]
+            logging.debug("################### %s", conversation)
+            return conversation
+        return []
+
+    async def do_context(self, msg: Message) -> Response:
+        return await self.get_conversation(msg)
+
     async def do_hello(self, _: Message) -> str:
         return "Hello, world!"
 
     async def do_read_url(self, msg: Message) -> str:
+        """
+        Download and parse a URL, adding it to the knowledge base
+        """
         await self.send_typing(msg)
         url = msg.arg1
         self.agent.add_knowledge(url, is_url=True)
@@ -75,11 +121,17 @@ class Imposter(Bot):
         return f"Acquired knowledge from {self.agent.document_collection.documents[-1].title}"
 
     async def do_generate_response(self, msg: Message) -> str:
-        react_emoji = await self.agent.get_emoji(msg.full_text)
+        """
+        Respond in character, using the Jurassic-1 API
+        """
+        conversation = "\n\n".join(await self.get_conversation(msg))
+
+        react_emoji = await self.agent.get_emoji(conversation)
         await self.send_reaction(msg, react_emoji)
         await self.send_typing(msg)
+        conversation = "\n\n".join(await self.get_conversation(msg))
         # API call happens here, replace with below for rapid testing
-        reply = await self.agent.generate_agent_response(msg.full_text)
+        reply = await self.agent.generate_agent_response(conversation)
         reply = reply.strip()
         # reply = "TEST_REPLY"
         if len(reply) > 0:

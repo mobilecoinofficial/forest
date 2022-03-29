@@ -106,7 +106,8 @@ class MemoryBot(Bot):
                 content["text"] = msg["arg0"]
         else:
             content["text"] = "None"
-        content["reactions"] = " ".join(msg["reactions"])
+        if "reactions" in content:
+            content["reactions"] = " ".join(msg["reactions"])
         content["source"] = msg["source"]
         if "name" in msg:
             content["name"] = msg["name"]
