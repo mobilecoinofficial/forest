@@ -448,15 +448,15 @@ class Signal:
         else:
             await self.send_message(utils.get_secret("ADMIN"), msg, **kwargs)
 
-    async def respond(self, target_msg: Message, msg: Response) -> str:
+    async def respond(self, target_msg: Message, msg: Response, **kwargs: Any) -> str:
         """Respond to a message depending on whether it's a DM or group"""
         logging.debug("responding to %s", target_msg.source)
-        if not target_msg.source:
+        if not target_msg.source or target_msg.uuid:
             logging.error(json.dumps(target_msg.blob))
-        if not utils.AUXIN and target_msg.group:
-            return await self.send_message(None, msg, group=target_msg.group)
+        if target_msg.group:
+            return await self.send_message(None, msg, group=target_msg.group, **kwargs)
         destination = target_msg.source or target_msg.uuid
-        return await self.send_message(destination, msg)
+        return await self.send_message(destination, msg, **kwargs)
 
     async def send_reaction(self, target_msg: Message, emoji: str) -> None:
         """Send a reaction. Protip: you can use e.g. \N{GRINNING FACE} in python"""
@@ -507,6 +507,42 @@ class Signal:
             await self.outbox.put(rpc("sendTyping", group_id=[msg.group], stop=stop))
         else:
             await self.outbox.put(rpc("sendTyping", recipient=[msg.source], stop=stop))
+
+    async def sticker_message_content(self) -> str:
+        "serialized sticker message content to pass to auxin --content for turning into protobufs"
+        resp = await self.signal_rpc_request(
+            "send", simulate=True, message="", destination="+15555555555"
+        )
+        # simulate gives us a dict corresponding to the protobuf structure
+        content_skeletor = json.loads(resp.blob["simulate_output"])
+        # typingMessage excludes having a dataMessage
+        content_skeletor["dataMessage"]["body"] = None
+        content_skeletor["dataMessage"]["sticker"] = {
+            "data": {
+                "attachment_identifier": {"cdnId": 5902557749391454000},
+                "contentType": "image/webp",
+                "digest": "vo2+aWLvbOEYCVUZUocLb0ffORNFo5924nmyH28Pj04=",
+                "height": 512,
+                "key": "a5B7fMYxWpn8DILBWfB/tnFSXufcC7C318XC4bXmwEy/NYnKof/oS15JU8sn33whcYwoXDKT12BF04RoDQ4Osg==",
+                "size": 17540,
+                "width": 512,
+            },
+            "packId": "pPYIEA9J4JkrZ2DyuXG4pw==",
+            "packKey": "R2ZbM8Tz2N49WYY8yEWXPLML4JC/w1tu0naLoj5P1eY=",
+            "stickerId": 0,
+        }
+        return json.dumps(content_skeletor)
+
+    async def send_sticker(self, msg: Message, stop: bool = False) -> None:
+        "Send a typing indicator to the person or group the message is from"
+        if utils.AUXIN:
+            content = await self.sticker_message_content()
+            if msg.group:
+                await self.send_message(None, "", group=msg.group, content=content)
+            else:
+                await self.send_message(msg.source, "", content=content)
+            return
+        await self.respond(msg, "", sticker="a4f608100f49e0992b6760f2b971b8a7:0")
 
     backoff = False
     messages_until_rate_limit = 1000.0
