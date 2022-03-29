@@ -507,6 +507,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         """
         /imagine [prompt]
         Generates an image based on your prompt.
+        You can attach image prompts that will be used in addition to text prompts
         Request is handled in the free queue, every free request is addressed and generated sequentially.
         """
         return await self.enqueue_prompt(msg, {}, attachments="target")
