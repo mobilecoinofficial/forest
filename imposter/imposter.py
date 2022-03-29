@@ -2,13 +2,13 @@
 # Copyright (c) 2021 MobileCoin Inc.
 # Copyright (c) 2021 The Forest Team
 
-from random import randint
-from re import template
+from typing import Optional
 from forest import utils
 from forest.core import Bot, Message, Response, run_bot, rpc
+from forest.pdictng import aPersistDictOfLists
 from personate.core.reader_agent import ReaderAgent
 
-from acrossword import Ranker
+# from acrossword import Ranker # For ranking facts & examples with plain Agent
 
 # The bot class imports my new simple Agent class from Personate.
 # It should set up a Frame, Ranker, Filter, knowledge and examples
@@ -23,6 +23,7 @@ class Imposter(Bot):
         # Can be generated at https://ckoshka.github.io/personate/
         config_file = utils.get_secret("CONFIG_FILE")
         self.agent = ReaderAgent.from_json(config_file)
+        # self.agent.ranker = Ranker() # Uncomment if using plain Agent with facts & examples
         super().__init__()
 
     def quotes_us(self, msg: Message) -> bool:
@@ -50,7 +51,14 @@ class Imposter(Bot):
     async def send_typing(self, msg: Message, stop=False):
         # Send a typing indicator in case the generator takes a while
         if msg.group:
-            await self.outbox.put(rpc("sendTyping", group_id=[msg.group], stop=stop))
+            await self.outbox.put(
+                rpc(
+                    "sendTyping",
+                    recipient=[msg.source],
+                    group_id=[msg.group],
+                    stop=stop,
+                )
+            )
         else:
             await self.outbox.put(rpc("sendTyping", recipient=[msg.source], stop=stop))
 
@@ -77,6 +85,8 @@ class Imposter(Bot):
         if len(reply) > 0:
             reply_emoji = await self.agent.get_emoji(reply)
             reply = f"{reply} {reply_emoji}"
+        else:
+            reply = "..."
         await self.send_typing(msg, stop=True)
         return reply
 
