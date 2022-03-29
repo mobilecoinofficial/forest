@@ -11,6 +11,9 @@ class EvilBot(Bot):
             await self.send_typing(message, stop=True)
         return await super().handle_message(message)
 
+    async def do_t(self, message: Message) -> None:
+        await self.send_typing(message)
+
     async def default(self, _: Message) -> None:
         return None
 

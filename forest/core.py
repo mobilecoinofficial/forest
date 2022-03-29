@@ -481,6 +481,7 @@ class Signal:
         resp = await self.signal_rpc_request(
             "send", simulate=True, message="", destination="+15555555555"
         )
+        logging.info("got skeleton")
         # simulate gives us a dict corresponding to the protobuf structure
         content_skeletor = json.loads(resp.blob["simulate_output"])
         # typingMessages exclude dataMessage
@@ -496,11 +497,13 @@ class Signal:
     async def send_typing(self, msg: Message, stop: bool = False) -> None:
         "Send a typing indicator to the person or group the message is from"
         if utils.AUXIN:
+            logging.info("typ")
             if msg.group:
                 content = await self.typing_message_content(stop, msg.group)
                 await self.send_message(None, "", group=msg.group, content=content)
             else:
                 content = await self.typing_message_content(stop)
+                logging.info(content)
                 await self.send_message(msg.source, "", content=content)
             return
         if msg.group:
