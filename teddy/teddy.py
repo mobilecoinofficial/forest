@@ -124,23 +124,39 @@ class TalkBack(QuestionBot):
 class Teddy(TalkBack):
     def __init__(self) -> None:
         self.no_repay: list[str] = []
-        self.valid_codes: aPersistDict[str] = aPersistDict("valid_codes")
-        self.first_messages = aPersistDictOfInts("first_messages")
-        self.dialog: aPersistDict[str] = aPersistDict("dialog")
-        self.user_claimed: aPersistDict[str] = aPersistDict("user_claimed")
-        self.pending_funds: aPersistDict[str] = aPersistDict("pending_funds")
-        self.easter_eggs: aPersistDict[str] = aPersistDict("easter_eggs")
+        self.valid_codes: aPersistDict[str] = aPersistDict(
+            "valid_codes"
+        )  # set of valid codes -> "unclaimed" or uuid
+        self.first_messages = aPersistDictOfInts(
+            "first_messages"
+        )  # timestamp in millis
+        self.dialog: aPersistDict[str] = aPersistDict("dialog")  # configurable dialog
+        self.user_claimed: aPersistDict[str] = aPersistDict(
+            "user_claimed"
+        )  # set of codes users have claimed
+        self.pending_funds: aPersistDict[str] = aPersistDict(
+            "pending_funds"
+        )  # set of users from whom we are expecting payments
+        self.easter_eggs: aPersistDict[str] = aPersistDict(
+            "easter_eggs"
+        )  # configurable map of input - outputs
+        # record of people we have successfully paid
         self.successful_pays: aPersistDictOfLists[str] = aPersistDictOfLists(
             "successful_pays"
         )
+        # count of user -> number of eight letter codes entered
         self.attempted_claims = aPersistDictOfInts("attempted_claims")
+        # map of balance to distribute
         self.payout_balance_mmob = aPersistDictOfInts("payout_balance_mmob")
-        self.challenging: aPersistDict[bool] = aPersistDict("challenging")
+        # unused scratchpad for persisting notes and intermediate values
         self.scratch_pad: aPersistDict[str] = aPersistDict("scratch_pad")
+        # map users -> sequence of input messages
         self.user_sessions: aPersistDictOfLists[str] = aPersistDictOfLists(
             "user_sessions"
         )
+        # global payout lock
         self.pay_lock: asyncio.Lock = asyncio.Lock()
+        self.user_state: aPersistDict[str] = aPersistDict("user_state")
         # okay, this now maps the tag (restore key) of each of the above to the instance of the PersistDict class
         self.state = {
             self.__getattribute__(attr).tag: self.__getattribute__(attr)
@@ -238,7 +254,7 @@ class Teddy(TalkBack):
             "Reset your state! The previously used code, if any, may be redeemed again."
         )
 
-    async def maybe_unlock(self, msg: Message) -> Response:
+    async def maybe_claim(self, msg: Message) -> Response:
         """Possibly unlocks a payment."""
         # pylint: disable=too-many-return-statements
         user = msg.uuid
@@ -349,8 +365,16 @@ class Teddy(TalkBack):
         self.no_repay += [user]
         return "Okay, waiting for your funds."
 
+    @hide
+    async def do_help(self, message: Message) -> Response:
+        """Reminds the user of what we're expecting, then returns a link to the support channel."""
+        user = message.uuid
+        user_state = await self.user_state.get(user, "USER_STATE")
+        dialog_for_state = await self.dialog.get(user_state)
+        help_dialog = await self.dialog.get("HELP", "HELP")
+        return help_dialog.replace("USER_STATE", dialog_for_state, 1)
+
     async def default(self, message: Message) -> Response:
-        # pylint: disable=too-many-return-statements,too-many-branches
         msg = message
         code = msg.arg0
         if not code:
@@ -360,11 +384,11 @@ class Teddy(TalkBack):
         if msg.full_text and msg.full_text in [
             key.lower() for key in await self.easter_eggs.keys()
         ]:
-            return await self.easter_eggs.get(msg.full_text)
+            return await self.easter_eggs.get(msg.full_text.lower())
         if code in await self.easter_eggs.keys():
             return await self.easter_eggs.get(code)
         await self.talkback(msg)
-        return await self.maybe_unlock(msg)
+        return await self.maybe_claim(msg)
         # handle default case
         # return await self.do_help(msg)
 
