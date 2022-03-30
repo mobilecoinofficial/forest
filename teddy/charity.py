@@ -278,10 +278,7 @@ class Charity(TalkBack):
             return None
         elif amount_mmob > await self.reward_levels.get(f"{code}_download", 10_000):
             return await self.dialog.get("THANK_YOU_PLEASE_DL", "THANK_YOU_PLEASE_DL")
-        else:
-            return await self.dialog.get(
-                "THANK_YOU_FOR_DONATION", "THANK_YOU_FOR_DONATION"
-            )
+        return await self.dialog.get("THANK_YOU_FOR_DONATION", "THANK_YOU_FOR_DONATION")
 
 
 if __name__ == "__main__":
