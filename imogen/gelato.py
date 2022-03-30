@@ -2,10 +2,8 @@ import aiohttp
 
 import requests
 from forest import utils
-from forest.core import QuestionBot, Message, Response
+from forest.core import QuestionBot, Message, Response, run_bot
 import logging
-
-logging.getLogger().setLevel("INFO")
 
 # === Define headers ===
 headers = {
@@ -23,7 +21,6 @@ quoteJson = {
     },
     "recipient": {
         "countryIsoCode": "US",
-        "companyName": "Example",
         "firstName": "Paul",
         "lastName": "Smith",
         "addressLine1": "451 Clarkson Ave",
@@ -51,37 +48,76 @@ def finagle_json(pdfUrl: str) -> dict:
     return quoteJson
 
 
-session = aiohttp.ClientSession()
-# === Send quote request ===
-response = requests.request("POST", quoteUrl, data=quoteJson, headers=headers)
-quoteData = response.json()
-
-# === Set-up order create request ===
 promiseUid = quoteData["production"]["shipments"][0]["promiseUid"]
 orderCreateUrl = "https://api.gelato.com/v2/order/create"
-orderCreateJson = (
-    """{
-    "promiseUid": "%s"
-}"""
-    % promiseUid
-)
-
-# === Send order create request ===
 
 
 class Gelato:
-    def req():
-        pass
+    def __init__(self) -> None:
+        self.session = aiohttp.ClientSession()
 
     def order():
-        order_json = json.dumps(finagle_json(pdfUrl="https://example.com"))
-        response = requests.request(
-            "POST", orderCreateUrl, data=orderCreateJson, headers=headers
-        )
-        print(response.json())
+        # === Send quote request ===
+        async with self.session.post(
+            quoteUrl, data=finagle_json(pdfUrl="https://example.com"), headers=headers
+        ) as r:
+            quote_data = await r.json()
+        # === Send order create request ===
+        async with self.session.post(
+            orderCreateUrl,
+            data={"promiseUid": quote_data["production"]["shipments"][0]["promiseUid"]},
+        ) as r:
+            logging.info(await r.json())
 
 
 class GelatoBot(QuestionBot):
     async def do_order(self, msg: Message) -> Response:
-        addr = await self.ask_address_question("What's your address")
-        return f"your address is {addr}"
+        addr = await self.ask_address_question_(
+            "What's your address", require_confirmation=True
+        )
+        bits = {
+            typ: component["long_name"]
+            for component in addr["address_components"]
+            for typ in component["types"]
+        }
+        return {
+            "addressLine1": bits["street_number"] + " " + bits["route"],
+            "addressLine2": bits["locality"],
+            "stateCode": bits["administrative_area_level_1"],
+            "city": bits["locality"],
+            "postcode": bits["postal_code"],
+        }
+
+    async def fulfillment(self, msg: Message, donation_uid: str = get_uid()):
+        user = msg.uuid
+        delivery_name = (await self.get_displayname(msg.uuid)).split("_")[0]
+        if not await self.ask_yesno_question(
+            user,
+            f"Should we address your package to {delivery_name}?",
+        ):
+            delivery_name = await self.ask_freeform_question(
+                user, "To what name should we address your package?"
+            )
+        delivery = await self.do_order(msg)
+        user_email = await self.ask_email_question(
+            user, "What's your email?"
+        )  # could stub this out with forest email
+        # sorry https://www.kalzumeus.com/2010/06/17/falsehoods-programmers-believe-about-names/
+        first, last = delivery_name.split() + ["", ""]
+        recipient = delivery | {
+            "countryIsoCode": "US",
+            "firstName": first,
+            "lastName": last,
+            "email": user_email,
+            "phone": msg.source,
+        }
+        # await self.donation_rewards.set(
+        #     donation_uid,
+        #     f'{delivery_name}, "{delivery_address}", {merchandise_size}, {user_email}, {user_phone}',
+        # )
+        # await self.send_message(user, await self.dialog.get("GOT_IT", "GOT_IT"))
+        # return donation_uid
+
+
+if __name__ == "__main__":
+    run_bot(GelatoBot)
