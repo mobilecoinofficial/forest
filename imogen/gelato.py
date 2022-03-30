@@ -52,29 +52,27 @@ quoteJson = {
 orderCreateUrl = "https://api.gelato.com/v2/order/create"
 
 
-class Gelato:
-    def __init__(self) -> None:
-        self.session = aiohttp.ClientSession()
-
-    async def order(self, quote_data: dict) -> None:
+class GelatoBot(TalkBack):
+    async def post_order(self, quote_data: dict) -> None:
         # === Send quote request ===
-        async with self.session.post(quoteUrl, data=quote_data, headers=headers) as r:
+        async with self.client_session.post(
+            quoteUrl, data=quote_data, headers=headers
+        ) as r:
             quote_data = await r.json()
+        logging.info(quote_data)
         # === Send order create request ===
-        async with self.session.post(
+        async with self.client_session.post(
             orderCreateUrl,
             data={"promiseUid": quote_data["production"]["shipments"][0]["promiseUid"]},
         ) as r:
             logging.info(await r.json())
 
-
-class GelatoBot(QuestionBot):
-    gelato = Gelato()
-
-    async def do_order(self, msg: Message) -> dict:
+    async def get_address_dict(self, msg: Message) -> dict:
         addr_data = await self.ask_address_question_(
-            "What's your address", require_confirmation=True
+            msg.source, "What's your address"  # , require_confirmation=True
         )
+        if not addr_data:
+            return {}
         bits = {
             field: component["long_name"]
             for component in addr_data["address_components"]
@@ -88,27 +86,27 @@ class GelatoBot(QuestionBot):
             "postcode": bits["postal_code"],
         }
 
-    async def fulfillment(self, msg: Message) -> None:
+    async def do_fulfillment(self, msg: Message) -> None:
         user = msg.uuid
-        delivery_name = (await self.get_displayname(msg.uuid)).split("_")[0]
-        if not await self.ask_yesno_question(
-            user,
-            f"Should we address your package to {delivery_name}?",
-        ):
-            delivery_name = await self.ask_freeform_question(
-                user, "To what name should we address your package?"
-            )
-        delivery = await self.do_order(msg)
-        user_email = await self.ask_email_question(
-            user, "What's your email?"
-        )  # could stub this out with forest email
+        # delivery_name = (await self.get_displayname(msg.uuid)).split("_")[0]
+        # if not await self.ask_yesno_question(
+        #     user,
+        #     f"Should we address your package to {delivery_name}?",
+        # ):
+        delivery_name = await self.ask_freeform_question(
+            user, "To what name should we address your package?"
+        )
+        delivery = await self.get_address_dict(msg)
+        # user_email = await self.ask_email_question(
+        #     user, "What's your email?"
+        # )  # could stub this out with forest email
         # sorry https://www.kalzumeus.com/2010/06/17/falsehoods-programmers-believe-about-names/
-        first, last = delivery_name.split() + ["", ""]
+        first, last, *unused = delivery_name.split() + ["", ""]
         recipient = delivery | {
             "countryIsoCode": "US",
             "firstName": first,
             "lastName": last,
-            "email": user_email,
+            "email": "a@b.c",  # user_email,
             "phone": msg.source,
         }
         current_quote_data: dict = dict(quoteJson)
@@ -116,7 +114,7 @@ class GelatoBot(QuestionBot):
         current_quote_data["products"][0][
             "pdfUrl"
         ] = "https://mcltajcadcrkywecsigc.supabase.in/storage/v1/object/public/imoges/life_on_a_new_planetc8e3_upsampled.png"
-        await self.gelato.order(current_quote_data)
+        await self.post_order(current_quote_data)
         # await self.donation_rewards.set
         #     donation_uid,
         #     f'{delivery_name}, "{delivery_address}", {merchandise_size}, {user_email}, {user_phone}',
