@@ -168,7 +168,7 @@ class TalkBack(QuestionBot):
         return None
 
 
-class ClanGat(TalkBack):
+class Hotline(TalkBack):  # pylint: disable=too-many-public-methods
     def __init__(self) -> None:
         self.no_repay: list[str] = []
         self.dialog: aPersistDict[str] = aPersistDict("dialog")
@@ -1195,6 +1195,6 @@ if __name__ == "__main__":
 
     @app.on_startup.append
     async def start_wrapper(out_app: web.Application) -> None:
-        out_app["bot"] = ClanGat()
+        out_app["bot"] = Hotline()
 
     web.run_app(app, port=8080, host="0.0.0.0", access_log=None)
