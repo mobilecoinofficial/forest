@@ -190,10 +190,10 @@ class Charity(TalkBack):
         return await super().handle_message(message)
 
     @hide
-    async def do_fulfillment(self, msg):
+    async def do_fulfillment(self, msg: Message) -> Response:
         return await self.donation_rewards.get(await self.fulfillment(msg))
 
-    async def fulfillment(self, msg: Message, donation_uid: str = get_uid()):
+    async def fulfillment(self, msg: Message, donation_uid: str = get_uid()) -> str:
         user = msg.uuid
         await self.send_message(
             user,
@@ -252,16 +252,6 @@ class Charity(TalkBack):
             return None
         if code == "?":
             return await self.do_help(msg)
-        if code == "y":
-            return await self.do_yes(msg)
-        if code == "n":
-            return await self.do_no(msg)
-        if (
-            code
-            and code.rstrip(string.punctuation).lower()
-            in "yes yeah ye sure yeh".split()
-        ):  # yes!
-            return await self.do_yes(msg)
         if msg.full_text and msg.full_text in [
             key.lower() for key in await self.easter_eggs.keys()
         ]:

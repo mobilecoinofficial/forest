@@ -358,16 +358,6 @@ class Teddy(TalkBack):
             return None
         if code == "?":
             return await self.do_help(msg)
-        if code == "y":
-            return await self.do_yes(msg)
-        if code == "n":
-            return await self.do_no(msg)
-        if (
-            code
-            and code.rstrip(string.punctuation).lower()
-            in "yes please yeah ye sure yah".split()  # thanks gang
-        ):  # yes!
-            return await self.do_yes(msg)
         if msg.full_text and msg.full_text in [
             key.lower() for key in await self.easter_eggs.keys()
         ]:

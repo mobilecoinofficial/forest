@@ -1,7 +1,6 @@
 #!/usr/bin/python3.9
 # Copyright (c) 2021 MobileCoin Inc.
 # Copyright (c) 2021 The Forest Team
-
 import ast
 import asyncio
 import json
@@ -11,7 +10,7 @@ import time
 import math
 import logging
 from decimal import Decimal
-from typing import Optional
+from typing import Any, Optional
 
 from aiohttp import web
 from prometheus_async import aio
@@ -37,39 +36,46 @@ REQUEST_TIME = Summary("request_processing_seconds", "Time spent processing requ
 
 
 class GetStr(ast.NodeTransformer):
-    strings = {}
     source = open(sys.argv[-1]).read()
-    dialogs = []
+    dialogs: list[dict[str, Any]] = []
 
-    def get_source(self, node):
+    def get_source(self, node: ast.AST) -> Optional[str]:
         return ast.get_source_segment(self.source, node)
 
-    def get_dialog_fragments(self):
+    def get_dialog_fragments(self) -> list[dict[str, Any]]:
         node = ast.parse(self.source)
         self.visit(node)
         return self.dialogs
 
-    def visit_Call(self, node):
+    def visit_Call(self, node: ast.Call) -> None:
         for child in ast.iter_child_nodes(node):
             self.visit(child)
         if isinstance(node.func, ast.Attribute):
             if (
-                node.func.attr == "get"
+                hasattr(node.func, "attr")
+                and node.func.attr == "get"
                 and not isinstance(node.func.value, ast.Name)
                 and not isinstance(node.func.value, ast.Subscript)
             ):
-                if node.func.value.attr == "dialog":
+                my_thang = node.func.value
+                my_thang_is_dialog = (
+                    "attr" in my_thang._fields
+                    and my_thang.attr
+                    and my_thang.attr == "dialog"
+                )
+                if my_thang_is_dialog:
                     vals = [
                         c.value
                         if isinstance(c, ast.Constant)
                         else f"(python) `{self.get_source(c)}`"
                         for c in node.args
+                        if c
                     ]
                     if len(vals) == 2:
-                        vals = {"key": vals[0], "fallback": vals[1]}
+                        output_vals = {"key": vals[0], "fallback": vals[1]}
                     else:
-                        vals = {"key": vals[0]}
-                    self.dialogs += [{"line_number": node.lineno, **vals}]
+                        output_vals = {"key": vals[0]}
+                    self.dialogs += [{"line_number": node.lineno, **output_vals}]
 
 
 class TalkBack(QuestionBot):
@@ -319,7 +325,7 @@ class ClanGat(TalkBack):
         self, user: str, list_: str, amount_mmob: int
     ) -> Optional[str]:
         """Pays a user a given amount of MOB by manually grabbing UTXOs until a transaction can be made."""
-        # pylint: disable=too-many-return-statements
+        # pylint: disable=too-many-return-statements,too-many-locals
         balance = await self.payout_balance_mmob.get(list_, 0)
         # pad fees
         logging.debug(f"PAYING {amount_mmob}mmob from {balance} of {list_}")
@@ -939,7 +945,7 @@ class ClanGat(TalkBack):
         blurb = await self.ask_freeform_question(
             user, "What dialog would you like to use?"
         )
-        if fragment in self.TERMINAL_ANSWERS:
+        if fragment_to_set in self.TERMINAL_ANSWERS:
             return "OK, nvm"
         if old_blurb := await self.dialog.get(fragment_to_set):
             await self.send_message(user, "overwriting:")
@@ -950,13 +956,13 @@ class ClanGat(TalkBack):
         return "updated blurb!"
 
     @requires_admin
-    async def do_dialog(self, msg: Message) -> Response:
+    async def do_dialog(self, _: Message) -> Response:
         return "\n\n".join(
             [f"{k}: {v}\n------\n" for (k, v) in self.dialog.dict_.items()]
         )
 
     @requires_admin
-    async def do_dialogkeys(self, msg: Message) -> Response:
+    async def do_dialogkeys(self, _: Message) -> Response:
         return "\n\n".join(
             [
                 "\n".join([f"{k}: {v}" for (k, v) in dialogkey.items()])
@@ -1000,9 +1006,8 @@ class ClanGat(TalkBack):
                 )
                 if res and "Paid" in res:
                     return await self.event_prompts.get(code, res)
-                else:
-                    await self.event_attendees.remove_from(code, msg.uuid)
-                    return await self.dialog.get("WE_ARE_SO_SORRY", "Try again!")
+                await self.event_attendees.remove_from(code, msg.uuid)
+                return await self.dialog.get("WE_ARE_SO_SORRY", "Try again!")
             await self.send_message(
                 msg.uuid,
                 f"{await self.event_prompts.get(code) or 'You have unlocked an event!'}",
