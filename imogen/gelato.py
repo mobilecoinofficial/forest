@@ -42,13 +42,12 @@ quoteJson = {
 }
 
 
-def finagle_json(pdfUrl: str) -> dict:
-    new_quote = dict(quoteJson)
-    quoteJson["products"][0]["pdfUrl"] = pdfUrl
-    return quoteJson
+# def finagle_json(pdfUrl: str) -> dict:
+#     new_quote = dict(quoteJson)
+#     new_quote["products"][0]["pdfUrl"] = pdfUrl
+#     return quoteJson
 
 
-promiseUid = quoteData["production"]["shipments"][0]["promiseUid"]
 orderCreateUrl = "https://api.gelato.com/v2/order/create"
 
 
@@ -56,11 +55,9 @@ class Gelato:
     def __init__(self) -> None:
         self.session = aiohttp.ClientSession()
 
-    def order():
+    async def order(self, quote_data: dict) -> None:
         # === Send quote request ===
-        async with self.session.post(
-            quoteUrl, data=finagle_json(pdfUrl="https://example.com"), headers=headers
-        ) as r:
+        async with self.session.post(quoteUrl, data=quote_data, headers=headers) as r:
             quote_data = await r.json()
         # === Send order create request ===
         async with self.session.post(
@@ -71,7 +68,9 @@ class Gelato:
 
 
 class GelatoBot(QuestionBot):
-    async def do_order(self, msg: Message) -> Response:
+    gelato = Gelato()
+
+    async def do_order(self, msg: Message) -> dict:
         addr = await self.ask_address_question_(
             "What's your address", require_confirmation=True
         )
@@ -88,7 +87,7 @@ class GelatoBot(QuestionBot):
             "postcode": bits["postal_code"],
         }
 
-    async def fulfillment(self, msg: Message, donation_uid: str = get_uid()):
+    async def fulfillment(self, msg: Message) -> None:
         user = msg.uuid
         delivery_name = (await self.get_displayname(msg.uuid)).split("_")[0]
         if not await self.ask_yesno_question(
@@ -111,7 +110,13 @@ class GelatoBot(QuestionBot):
             "email": user_email,
             "phone": msg.source,
         }
-        # await self.donation_rewards.set(
+        current_quote_data = dict(quoteJson)
+        current_quote_data["recipient"] = recipient
+        current_quote_data["products"][0][
+            "pdfUrl"
+        ] = "https://mcltajcadcrkywecsigc.supabase.in/storage/v1/object/public/imoges/life_on_a_new_planetc8e3_upsampled.png"
+        await self.gelato.order(current_quote_data)
+        # await self.donation_rewards.set
         #     donation_uid,
         #     f'{delivery_name}, "{delivery_address}", {merchandise_size}, {user_email}, {user_phone}',
         # )
