@@ -1466,7 +1466,7 @@ class QuestionBot(PayBot):
                 recipient,
                 "Sorry, I couldn't find that. \nPlease try again or reply cancel to cancel \n",
             )
-            return await self.ask_address_question(
+            return await self.ask_address_question_(
                 recipient, question_text, require_confirmation
             )
         # if maps does return a formatted address
@@ -1482,7 +1482,7 @@ class QuestionBot(PayBot):
                 )
                 # If not, ask again
                 if not confirmation:
-                    return await self.ask_address_question(
+                    return await self.ask_address_question_(
                         recipient,
                         question_text,
                         require_confirmation,
@@ -1492,7 +1492,7 @@ class QuestionBot(PayBot):
         # Google returned something but didn't have a formatted address
         return None
 
-    async def ask_address_question_(
+    async def ask_address_question(
         self,
         recipient: str,
         question_text: str = "What's your shipping address?",
