@@ -1,14 +1,7 @@
 import asyncio
-from asyncore import loop
 import logging
 import os
-import pathlib
-from importlib import reload
-from tracemalloc import stop
-import pytest
-import pytest_asyncio
-from forest import utils, core
-from forest.core import Message, QuestionBot, Response
+from forest.core import Message, QuestionBot
 
 # Sample bot number alice
 BOT_NUMBER = "+11111111111"
@@ -58,21 +51,21 @@ class MockBot(QuestionBot):
 class Tree:
     """general purpose tree implementation"""
 
-    def __init__(self, data, children=None):
+    def __init__(self, data: list[str], children: list = None) -> None:
         if children is None:
             children = []
         self.data = data
         self.children = children
 
-    def __str__(self):
+    def __str__(self) -> str:
         return str(self.data)
 
     __repr__ = __str__
 
-    def __getitem__(self, item):
+    def __getitem__(self, item: int) -> str:
         return self.data[item]
 
-    def get_all_paths(self, path=None):
+    def get_all_paths(self, path: list = None) -> list:
         """returns all paths"""
         paths = []
         if path is None:

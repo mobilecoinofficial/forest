@@ -10,7 +10,8 @@ import pytest_asyncio
 os.environ["ENV"] = "test"
 
 from forest import utils, core
-from forest.core import Message, QuestionBot, Response
+from forest.core import Message, Response
+from forest.mockbot import MockBot
 
 # Sample bot number alice
 BOT_NUMBER = "+11111111111"
@@ -44,62 +45,6 @@ def test_root(tmp_path: pathlib.Path) -> None:
     # the Root Dir is /app
     os.environ["FLY_APP_NAME"] = "A"
     assert reload(utils).ROOT_DIR == "/app"
-
-
-class MockMessage(Message):
-    """Makes a Mock Message that has a predefined source and uuid"""
-
-    def __init__(self, text: str) -> None:
-        self.text = text
-        self.full_text = text
-        self.source = USER_NUMBER
-        self.uuid = "cf3d7d34-2dcd-4fcd-b193-cbc6a666758b"
-        self.mentions: list[str] = []
-        super().__init__({})
-
-
-class MockBot(QuestionBot):
-    """Makes a bot that bypasses the normal start_process allowing
-    us to have an inbox and outbox that doesn't depend on Signal"""
-
-    async def start_process(self) -> None:
-        pass
-
-    async def do_test_ask_yesno_question(self, message: Message) -> Response:
-        """Asks a sample Yes or No question"""
-
-        if await self.ask_yesno_question(message.source, "Do you like faeries?"):
-            return "That's cool, me too!"
-        return "Aww :c"
-
-    async def do_test_ask_freeform_question(self, message: Message) -> Response:
-        """Asks a sample freeform question"""
-
-        answer = await self.ask_freeform_question(
-            message.source, "What's your favourite tree?"
-        )
-
-        if answer:
-            return f"No way! I love {answer} too!!"
-        return "oops, sorry"
-
-    async def send_input(self, text: str) -> None:
-        """Puts a MockMessage in the inbox queue"""
-        await self.inbox.put(MockMessage(text))
-
-    async def get_output(self) -> str:
-        """Reads messages in the outbox that would otherwise be sent over signal"""
-        try:
-            outgoing_msg = await asyncio.wait_for(self.outbox.get(), timeout=1)
-            return outgoing_msg["params"]["message"]
-        except asyncio.TimeoutError:
-            logging.error("timed out waiting for output")
-            return ""
-
-    async def get_cmd_output(self, text: str) -> str:
-        """Runs commands as normal but intercepts the output instead of passing it onto signal"""
-        await self.send_input(text)
-        return await self.get_output()
 
 
 # https://github.com/pytest-dev/pytest-asyncio/issues/68
