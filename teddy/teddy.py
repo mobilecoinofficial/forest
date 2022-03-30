@@ -365,14 +365,13 @@ class Teddy(TalkBack):
         self.no_repay += [user]
         return "Okay, waiting for your funds."
 
-    @hide
-    async def do_help(self, message: Message) -> Response:
+    async def do_help(self, message: Message) -> str:
         """Reminds the user of what we're expecting, then returns a link to the support channel."""
         user = message.uuid
         user_state = await self.user_state.get(user, "USER_STATE")
         dialog_for_state = await self.dialog.get(user_state)
         help_dialog = await self.dialog.get("HELP", "HELP")
-        return help_dialog.replace("USER_STATE", dialog_for_state, 1)
+        return help_dialog.replace("USER_STATE", dialog_for_state or "", 1)
 
     async def default(self, message: Message) -> Response:
         msg = message
