@@ -85,7 +85,7 @@ class GelatoBot(TalkBack):
             "postcode": bits["postal_code"],
         }
 
-    async def do_fulfillment(self, msg: Message) -> None:
+    async def do_fulfillment(self, msg: Message) -> str:
         user = msg.uuid
         # delivery_name = (await self.get_displayname(msg.uuid)).split("_")[0]
         # if not await self.ask_yesno_question(
@@ -95,7 +95,10 @@ class GelatoBot(TalkBack):
         delivery_name = await self.ask_freeform_question(
             user, "To what name should we address your package?"
         )
-        delivery = await self.get_address_dict(msg)
+        try:
+            delivery = await self.get_address_dict(msg)
+        except KeyError:
+            return "Sorry, couldn't get that"
         user_email = await self.ask_email_question(
             user, "What's your email?"
         )  # could stub this out with forest email
