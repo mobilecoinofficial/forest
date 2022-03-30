@@ -56,26 +56,20 @@ class GetStr(ast.NodeTransformer):
                 and node.func.attr == "get"
                 and not isinstance(node.func.value, ast.Name)
                 and not isinstance(node.func.value, ast.Subscript)
+                and getattr(node.func.value, "attr", "") == "dialog"
             ):
-                my_thang = node.func.value
-                my_thang_is_dialog = (
-                    "attr" in my_thang._fields
-                    and my_thang.attr
-                    and my_thang.attr == "dialog"
-                )
-                if my_thang_is_dialog:
-                    vals = [
-                        c.value
-                        if isinstance(c, ast.Constant)
-                        else f"(python) `{self.get_source(c)}`"
-                        for c in node.args
-                        if c
-                    ]
-                    if len(vals) == 2:
-                        output_vals = {"key": vals[0], "fallback": vals[1]}
-                    else:
-                        output_vals = {"key": vals[0]}
-                    self.dialogs += [{"line_number": node.lineno, **output_vals}]
+                vals = [
+                    c.value
+                    if isinstance(c, ast.Constant)
+                    else f"(python) `{self.get_source(c)}`"
+                    for c in node.args
+                    if c
+                ]
+                if len(vals) == 2:
+                    output_vals = {"key": vals[0], "fallback": vals[1]}
+                else:
+                    output_vals = {"key": vals[0]}
+                self.dialogs += [{"line_number": node.lineno, **output_vals}]
 
 
 class TalkBack(QuestionBot):
