@@ -1,9 +1,28 @@
-from forest.core import QuestionBot, Message, run_bot, Response
+import asyncio
+import logging
+import os
+import pathlib
+from importlib import reload
+from queue import Empty
+from subprocess import call
+import pytest
+import pytest_asyncio
 
-# from forest.tests.test_unit import MockBot
+
+# Prevent Utils from importing dev_secrets by default
+os.environ["ENV"] = "test"
 
 
-class TestBot(QuestionBot):
+from forest.core import Message, run_bot, Response
+from forest import core
+from forest.mockbot import MockBot, Tree
+
+# Sample bot number alice
+BOT_NUMBER = "+11111111111"
+USER_NUMBER = "+22222222222"
+
+
+class TestBot(MockBot):
     """Bot that has tests for every type of question"""
 
     # async def do_test_ask_multiple(self, message:Message) -> None:
@@ -153,6 +172,52 @@ class TestBot(QuestionBot):
         if answer:
             return f"No way! I love {answer} too!!"
         return "oops, sorry"
+
+
+@pytest.fixture()
+def event_loop(request):
+    """Fixture version of the event loop"""
+    loop = asyncio.get_event_loop_policy().new_event_loop()
+    yield loop
+    loop.close()
+
+
+@pytest_asyncio.fixture()
+async def bot():
+    """Bot Fixture allows for exiting gracefully"""
+    bot = TestBot(BOT_NUMBER)
+    yield bot
+    bot.sigints += 1
+    bot.exiting = True
+    bot.handle_messages_task.cancel()
+    await bot.client_session.close()
+    await core.pghelp.close_pools()
+
+
+@pytest.mark.asyncio
+async def test_dialog(bot) -> None:
+    """Tests the bot by running a dialogue"""
+    dialogue = [
+        ["test_ask_yesno_question", "Do you like faeries?"],
+        ["yes", "That's cool, me too!"],
+    ]
+
+    for line in dialogue:
+        assert await bot.get_cmd_output(line[0]) == line[1]
+
+
+@pytest.mark.asyncio
+async def test_yesno_tree(bot) -> None:
+    """Tests the bot by running a tree"""
+    tree = Tree(
+        ["test_ask_yesno_question", "Do you like faeries?"],
+        [Tree(["yes", "That's cool, me too!"]), Tree(["no", "Aww :c"])],
+    )
+    tests = tree.get_all_paths()
+
+    for test in tests:
+        for subtest in test:
+            assert await bot.get_cmd_output(subtest[0]) == subtest[1]
 
 
 if __name__ == "__main__":
