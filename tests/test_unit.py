@@ -54,7 +54,7 @@ class MockMessage(Message):
         self.full_text = text
         self.source = USER_NUMBER
         self.uuid = "cf3d7d34-2dcd-4fcd-b193-cbc6a666758b"
-        self.mentions : list[str] = []
+        self.mentions: list[str] = []
         super().__init__({})
 
 
@@ -100,6 +100,7 @@ class MockBot(QuestionBot):
         """Runs commands as normal but intercepts the output instead of passing it onto signal"""
         await self.send_input(text)
         return await self.get_output()
+
 
 # https://github.com/pytest-dev/pytest-asyncio/issues/68
 # all async tests and fixtures implicitly use event_loop, which has scope "function" by default
@@ -161,28 +162,38 @@ async def test_questions(bot) -> None:
     # the issue here is that we need to send "yes" *after* the question has been asked
     # so we make it as create_task, then send the input, then await the task to get the result
 
-    answer = asyncio.create_task(bot.ask_yesno_question(USER_NUMBER, "Do you like faeries?"))
+    answer = asyncio.create_task(
+        bot.ask_yesno_question(USER_NUMBER, "Do you like faeries?")
+    )
     await bot.send_input("yes")
     assert await answer is True
 
-    answer = asyncio.create_task(bot.ask_freeform_question(USER_NUMBER, "What's your favourite tree?"))
+    answer = asyncio.create_task(
+        bot.ask_freeform_question(USER_NUMBER, "What's your favourite tree?")
+    )
     await bot.send_input("Birch")
     assert await answer == "Birch"
 
-    answer = asyncio.create_task(bot.ask_freeform_question(USER_NUMBER, "What's your favourite tree?"))
+    answer = asyncio.create_task(
+        bot.ask_freeform_question(USER_NUMBER, "What's your favourite tree?")
+    )
 
     question_text = "What is your tshirt size?"
     options = {"S": "", "M": "", "L": "", "XL": "", "XXL": ""}
 
-    choice = asyncio.create_task(bot.ask_multiple_choice_question(
-        USER_NUMBER, question_text, options, require_confirmation=False
-    ))
+    choice = asyncio.create_task(
+        bot.ask_multiple_choice_question(
+            USER_NUMBER, question_text, options, require_confirmation=False
+        )
+    )
     await bot.send_input("M")
     assert await choice == "M"
 
-    choice = asyncio.create_task(bot.ask_multiple_choice_question(
-        USER_NUMBER, question_text, options, require_confirmation=True
-    ))
+    choice = asyncio.create_task(
+        bot.ask_multiple_choice_question(
+            USER_NUMBER, question_text, options, require_confirmation=True
+        )
+    )
     await bot.send_input("XXL")
     await asyncio.sleep(0)
     await bot.send_input("yes")

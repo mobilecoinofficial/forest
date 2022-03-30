@@ -49,19 +49,6 @@
 #     a.add_child(b)
 #     a.add_child(c)
 #     paths(a,mylist)
-class Tree:
-    """general tree"""
-
-    def __init__(self, data, children=None):
-        if children is None:
-            children = []
-        self.data = data
-        self.children = children
-
-    def __str__(self):
-        return str(self.data)
-
-    __repr__ = __str__
 
 
 def get_all_paths(tree: Tree, path=None):

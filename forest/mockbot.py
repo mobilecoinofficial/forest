@@ -25,7 +25,7 @@ class MockMessage(Message):
         self.full_text = text
         self.source = USER_NUMBER
         self.uuid = "cf3d7d34-2dcd-4fcd-b193-cbc6a666758b"
-        self.mentions : list[dict[str,str]] = []
+        self.mentions: list[dict[str, str]] = []
         super().__init__({})
 
 
@@ -54,6 +54,38 @@ class MockBot(QuestionBot):
         await self.send_input(text)
         return await self.get_output()
 
+
+class Tree:
+    """general purpose tree implementation"""
+
+    def __init__(self, data, children=None):
+        if children is None:
+            children = []
+        self.data = data
+        self.children = children
+
+    def __str__(self):
+        return str(self.data)
+
+    __repr__ = __str__
+
+    def __getitem__(self, item):
+        return self.data[item]
+
+    def get_all_paths(self, path=None):
+        """returns all paths"""
+        paths = []
+        if path is None:
+            path = []
+        path.append(self)
+        if self.children:
+            for child in self.children:
+                paths.extend(child.get_all_paths(path[:]))
+        else:
+            paths.append(path)
+        return paths
+
+
 # class CallAndResponse():
 #     def __init__(self,call:str,response:str) -> None:
-#         call = 
+#         call =

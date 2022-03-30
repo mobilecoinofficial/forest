@@ -15,7 +15,7 @@ os.environ["ENV"] = "test"
 
 from forest.core import Message, run_bot, Response
 from forest import core
-from forest.mockbot import MockBot
+from forest.mockbot import MockBot, Tree
 
 # Sample bot number alice
 BOT_NUMBER = "+11111111111"
@@ -172,66 +172,8 @@ class TestBot(MockBot):
         if answer:
             return f"No way! I love {answer} too!!"
         return "oops, sorry"
-    
-def paths(tree):
-  #Helper function
-  #receives a tree and 
-  #returns all paths that have this node as root and all other paths
-
-  if tree.data is None:
-    return ([], [])
-  else: #tree is a node
-    root = tree.data
-    rooted_paths = [[root]]
-    unrooted_paths = []
-    for subtree in tree.children:
-        (useable, unuseable) = paths(subtree)
-        for path in useable:
-            unrooted_paths.append(path)
-            rooted_paths.append([root]+path)
-        for path in unuseable:
-            unrooted_paths.append(path)
-    return (rooted_paths, unrooted_paths)
-
-def the_function_you_use_in_the_end(tree):
-   a,b = paths(tree)
-   return a+b
-
-class Tree(object):
-    def __init__(self, data):
-        self.data = data
-        self.children = []
-
-    def add_child(self, obj):
-        self.children.append(obj)
-
-a = Tree("a")
-b= Tree("b")
-c = Tree("c")
-
-a.add_child(b)
-a.add_child(c)
 
 
-def paths(tree: Tree, list_of_paths: list[str]) -> None:
-    if tree.children == []:
-        list_of_paths.append(tree.data)
-        for node in list_of_paths:
-            print(node)
-        print("/n")
-        return None
-
-    for child in tree.children:
-        paths(child,list_of_paths.append(tree.data))
-
-
-
-
-
-# https://github.com/pytest-dev/pytest-asyncio/issues/68
-# all async tests and fixtures implicitly use event_loop, which has scope "function" by default
-# so if we want bot to have scope "session" (so it's not destroyed and created between tests),
-# all the fixtures it uses need to have at least "session" scope
 @pytest.fixture()
 def event_loop(request):
     """Fixture version of the event loop"""
@@ -255,22 +197,28 @@ async def bot():
 @pytest.mark.asyncio
 async def test_dialog(bot) -> None:
     """Tests the bot by running a dialogue"""
-    dialogue=[["test_ask_yesno_question","Do you like faeries?"],["yes","That's cool, me too!"]]
+    dialogue = [
+        ["test_ask_yesno_question", "Do you like faeries?"],
+        ["yes", "That's cool, me too!"],
+    ]
 
     for line in dialogue:
         assert await bot.get_cmd_output(line[0]) == line[1]
 
+
 @pytest.mark.asyncio
 async def test_yesno_tree(bot) -> None:
     """Tests the bot by running a tree"""
-    tree=[("test_ask_yesno_question","Do you like faeries?"),[("yes","That's cool, me too!"),("no","Aww :c")]]
+    tree = Tree(
+        ["test_ask_yesno_question", "Do you like faeries?"],
+        [Tree(["yes", "That's cool, me too!"]), Tree(["no", "Aww :c"])],
+    )
+    tests = tree.get_all_paths()
 
-    for node in tree:
-        if isinstance(node)
-
-        assert await bot.get_cmd_output(line[0]) == line[1]
+    for test in tests:
+        for subtest in test:
+            assert await bot.get_cmd_output(subtest[0]) == subtest[1]
 
 
 if __name__ == "__main__":
     run_bot(TestBot)
- 
