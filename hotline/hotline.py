@@ -319,7 +319,7 @@ class ClanGat(TalkBack):
         self, user: str, list_: str, amount_mmob: int
     ) -> Optional[str]:
         """Pays a user a given amount of MOB by manually grabbing UTXOs until a transaction can be made."""
-        # pylint: disable=too-many-return-statements,too-many-locals
+        # pylint: disable=too-many-return-statements,too-many-locals,too-many-branches
         balance = await self.payout_balance_mmob.get(list_, 0)
         # pad fees
         logging.debug(f"PAYING {amount_mmob}mmob from {balance} of {list_}")
@@ -385,7 +385,9 @@ class ClanGat(TalkBack):
                 )
                 if not input_txo_ids:
                     return "Something went wrong! Please contact your administrator for support. (not enough utxos)"
+                # build a memo lookup key for the relevant list
                 MEMO_KEY = "PAY_MEMO_" + list_
+                # attempt to fetch PAY_MEMO_list_ falling back to DEFAULT_PAY_MEMO
                 memo_dialog = await self.dialog.get(
                     MEMO_KEY, None
                 ) or await self.dialog.get("DEFAULT_PAY_MEMO", "DEFAULT_PAY_MEMO")
