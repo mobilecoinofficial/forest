@@ -1,10 +1,8 @@
-import aiohttp
 import json
-import requests
-from forest import utils
-from forest.core import QuestionBot, Message, Response, run_bot
-from forest.talkback import TalkBack
 import logging
+from forest import utils
+from forest.core import Message, run_bot
+from forest.talkback import TalkBack
 
 # === Define headers ===
 headers = {
@@ -14,8 +12,8 @@ headers = {
 logging.info(headers)
 
 # === Set-up quote request ===
-quoteUrl = "https://api.gelato.com/v2/quote"
-quoteJson = {
+quote_url = "https://api.gelato.com/v2/quote"
+quote_json = {
     "order": {
         "orderReferenceId": "{{MyOrderId}}",
         "customerReferenceId": "{{MyCustomerId}}",
@@ -44,37 +42,33 @@ quoteJson = {
 }
 
 
-# def finagle_json(pdfUrl: str) -> dict:
-#     new_quote = dict(quoteJson)
-#     new_quote["products"][0]["pdfUrl"] = pdfUrl
-#     return quoteJson
-
-
-orderCreateUrl = "https://api.gelato.com/v2/order/create"
+order_create_url = "https://api.gelato.com/v2/order/create"
 
 
 class GelatoBot(TalkBack):
     async def post_order(self, quote_data: dict) -> None:
         # === Send quote request ===
         async with self.client_session.post(
-            quoteUrl, data=json.dumps(quote_data), headers=headers
+            quote_url, data=json.dumps(quote_data), headers=headers
         ) as r:
-            quote_data = await r.json()
-        logging.info(quote_data)
+            quote_response = await r.json()
+        logging.info(quote_response)
         # === Send order create request ===
         create_data = {
-            "promiseUid": quote_data["production"]["shipments"][0]["promiseUid"]
+            "promiseUid": quote_response["production"]["shipments"][0]["promiseUid"]
         }
         async with self.client_session.post(
-            orderCreateUrl,
+            order_create_url,
             data=json.dumps(create_data),
             headers=headers,
         ) as r:
-            logging.info(await r.json())
+            create_response = await r.json()
+            logging.info(create_response)
+        return create_response.get("message", "Order submitted")
 
     async def get_address_dict(self, msg: Message) -> dict:
         addr_data = await self.ask_address_question_(
-            msg.source, "What's your address"  # , require_confirmation=True
+            msg.source, require_confirmation=True
         )
         if not addr_data:
             return {}
@@ -102,30 +96,24 @@ class GelatoBot(TalkBack):
             user, "To what name should we address your package?"
         )
         delivery = await self.get_address_dict(msg)
-        # user_email = await self.ask_email_question(
-        #     user, "What's your email?"
-        # )  # could stub this out with forest email
+        user_email = await self.ask_email_question(
+            user, "What's your email?"
+        )  # could stub this out with forest email
         # sorry https://www.kalzumeus.com/2010/06/17/falsehoods-programmers-believe-about-names/
         first, last, *unused = delivery_name.split() + ["", ""]
         recipient = delivery | {
             "countryIsoCode": "US",
             "firstName": first,
             "lastName": last,
-            "email": "a@b.c",  # user_email,
+            "email": user_email,
             "phone": msg.source,
         }
-        current_quote_data: dict = dict(quoteJson)
+        current_quote_data: dict = dict(quote_json)
         current_quote_data["recipient"] = recipient
         current_quote_data["products"][0][
             "pdfUrl"
         ] = "https://mcltajcadcrkywecsigc.supabase.in/storage/v1/object/public/imoges/life_on_a_new_planetc8e3_upsampled.png"
-        await self.post_order(current_quote_data)
-        # await self.donation_rewards.set
-        #     donation_uid,
-        #     f'{delivery_name}, "{delivery_address}", {merchandise_size}, {user_email}, {user_phone}',
-        # )
-        # await self.send_message(user, await self.dialog.get("GOT_IT", "GOT_IT"))
-        # return donation_uid
+        return await self.post_order(current_quote_data)
 
 
 if __name__ == "__main__":
