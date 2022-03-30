@@ -13,7 +13,6 @@ from typing import Optional
 
 from aiohttp import web
 from prometheus_async import aio
-from prometheus_async.aio import time as time_
 from prometheus_client import Summary
 
 from forest import utils
@@ -32,7 +31,6 @@ from forest.pdictng import aPersistDict, aPersistDictOfInts, aPersistDictOfLists
 from mc_util import pmob2mob
 
 FEE = int(1e12 * 0.0004)
-REQUEST_TIME = Summary("request_processing_seconds", "Time spent processing request")
 
 
 class TalkBack(QuestionBot):
@@ -347,7 +345,6 @@ class Teddy(TalkBack):
         """Method dispatch to do_x commands and goodies.
         Overwrite this to add your own non-command logic,
         but call super().handle_message(message) at the end"""
-        # try to get a direct match, or a fuzzy match if appropriate
         if message.full_text and message.uuid not in await self.first_messages.keys():
             await self.first_messages.set(message.uuid, int(time.time() * 1000))
             await self.send_message(
@@ -392,7 +389,6 @@ class Teddy(TalkBack):
         # handle default case
         # return await self.do_help(msg)
 
-    @time_(REQUEST_TIME)
     async def payment_response(self, msg: Message, amount_pmob: int) -> Response:
         # pylint: disable=too-many-return-statements
         amount_mob = float(pmob2mob(amount_pmob).quantize(Decimal("1.0000")))
