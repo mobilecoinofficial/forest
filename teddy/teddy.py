@@ -299,7 +299,7 @@ class Teddy(TalkBack):
                     await self.dialog.get("TRYING_SEND_AGAIN", "TRYING_SEND_AGAIN"),
                 )
             # should never fall through
-            if "Error" in payment_result:
+            if not payment_result or payment_result and "Error" in payment_result:
                 await self.send_message(
                     user, await self.dialog.get("WE_ARE_SO_SORRY", "WE_ARE_SO_SORRY")
                 )
