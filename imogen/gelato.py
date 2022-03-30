@@ -1,5 +1,5 @@
 import aiohttp
-
+import json
 import requests
 from forest import utils
 from forest.core import QuestionBot, Message, Response, run_bot
@@ -11,6 +11,7 @@ headers = {
     "Content-Type": "application/json",
     "X-API-KEY": utils.get_secret("GELATO_API_KEY"),
 }
+logging.info(headers)
 
 # === Set-up quote request ===
 quoteUrl = "https://api.gelato.com/v2/quote"
@@ -56,14 +57,18 @@ class GelatoBot(TalkBack):
     async def post_order(self, quote_data: dict) -> None:
         # === Send quote request ===
         async with self.client_session.post(
-            quoteUrl, data=quote_data, headers=headers
+            quoteUrl, data=json.dumps(quote_data), headers=headers
         ) as r:
             quote_data = await r.json()
         logging.info(quote_data)
         # === Send order create request ===
+        create_data = {
+            "promiseUid": quote_data["production"]["shipments"][0]["promiseUid"]
+        }
         async with self.client_session.post(
             orderCreateUrl,
-            data={"promiseUid": quote_data["production"]["shipments"][0]["promiseUid"]},
+            data=json.dumps(create_data),
+            headers=headers,
         ) as r:
             logging.info(await r.json())
 
@@ -74,7 +79,7 @@ class GelatoBot(TalkBack):
         if not addr_data:
             return {}
         bits = {
-            field: component["long_name"]
+            field: component["short_name"]
             for component in addr_data["address_components"]
             for field in component["types"]
         }
