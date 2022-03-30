@@ -425,7 +425,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         ret = await self.queue.execute(
             "SELECT filepath FROM prompt_queue WHERE sent_ts=$1", msg.quote.ts
         )
-        if not (filepath := ret[0].get("filepath")):
+        if not ret or (filepath := ret[0].get("filepath")):
             return "Sorry, I don't have that image saved for upsampling right now"
         slug = (
             filepath.removeprefix("output/")
