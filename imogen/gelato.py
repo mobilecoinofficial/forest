@@ -3,6 +3,7 @@ import aiohttp
 import requests
 from forest import utils
 from forest.core import QuestionBot, Message, Response, run_bot
+from forest.talkback import TalkBack
 import logging
 
 # === Define headers ===
@@ -71,13 +72,13 @@ class GelatoBot(QuestionBot):
     gelato = Gelato()
 
     async def do_order(self, msg: Message) -> dict:
-        addr = await self.ask_address_question_(
+        addr_data = await self.ask_address_question_(
             "What's your address", require_confirmation=True
         )
         bits = {
-            typ: component["long_name"]
-            for component in addr["address_components"]
-            for typ in component["types"]
+            field: component["long_name"]
+            for component in addr_data["address_components"]
+            for field in component["types"]
         }
         return {
             "addressLine1": bits["street_number"] + " " + bits["route"],
@@ -110,7 +111,7 @@ class GelatoBot(QuestionBot):
             "email": user_email,
             "phone": msg.source,
         }
-        current_quote_data = dict(quoteJson)
+        current_quote_data: dict = dict(quoteJson)
         current_quote_data["recipient"] = recipient
         current_quote_data["products"][0][
             "pdfUrl"
