@@ -1,3 +1,22 @@
+## 1.2.6
+
+- notes on the new captcha and installing on arch (#166)
+- quote messages to reply in TalkBack (#170)
+- improved `ask_yesno_question` (#172)
+- `ask_email_question` (#175)
+- improve type hints (#171)
+- add values() and items() to pdict (#179)
+
+## 1.2.5
+
+- persistent synonyms with pdictng (#134)
+- `ask_address_question` (#164)
+- test refactors and new question tests (#168)
+- better dicts in logs, don't log pongs (#162)
+- `set_confirm_timeout` defaults to 60, preventing a common footgun (#167)
+- fix autosave for auxin-cli (#165)
+- fix is_admin (#174)
+
 ## 1.2.4
 
 - /restart endpoint restarts proc; also refactor asyncio task handlers (#155)
@@ -15,7 +34,7 @@
 - move commands from Bot to ExtrasBot (could be renamed), drop invoices, allow using separate ledgers, time postgres queries
 
 ## 1.2.2
-
+.
 - fasterpKVStoreClient (#112). probably need to change PAUTH if you're using pdict
 - upload requires note (#147)
 - switch from pipenv to poetry (#148)

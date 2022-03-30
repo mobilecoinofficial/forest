@@ -1,9 +1,9 @@
 __pycache__
 *secrets
-*.pem
 avatars
 signal-cli*
 auxin-cli
+*.pem
 data
 *log
 .idea
