@@ -12,9 +12,6 @@ from decimal import Decimal
 from typing import Optional
 
 from aiohttp import web
-from prometheus_async import aio
-from prometheus_async.aio import time as time_
-from prometheus_client import Summary
 
 from forest import utils
 from forest.core import (
@@ -26,12 +23,13 @@ from forest.core import (
     requires_admin,
     is_admin,
     get_uid,
+    run_bot,
 )
 from forest.pdictng import aPersistDict, aPersistDictOfInts, aPersistDictOfLists
+from forest.extra import Dialog, DialogBot
 from mc_util import pmob2mob
 
 FEE = int(1e12 * 0.0004)
-REQUEST_TIME = Summary("request_processing_seconds", "Time spent processing request")
 
 
 class TalkBack(QuestionBot):
@@ -282,10 +280,5 @@ class Charity(TalkBack):
 
 
 if __name__ == "__main__":
-    app.add_routes([web.get("/metrics", aio.web.server_stats)])
 
-    @app.on_startup.append
-    async def start_wrapper(out_app: web.Application) -> None:
-        out_app["bot"] = Charity()
-
-    web.run_app(app, port=8080, host="0.0.0.0", access_log=None)
+    run_bot(Charity)

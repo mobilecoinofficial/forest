@@ -12,8 +12,6 @@ from decimal import Decimal
 from typing import Optional
 
 from aiohttp import web
-from prometheus_async import aio
-from prometheus_client import Summary
 
 from forest import utils
 from forest.core import (
@@ -27,118 +25,26 @@ from forest.core import (
     get_uid,
     run_bot,
 )
+from forest.extra import Dialog, DialogBot
 from forest.pdictng import aPersistDict, aPersistDictOfInts, aPersistDictOfLists
 from mc_util import pmob2mob
 
 FEE = int(1e12 * 0.0004)
 
 
-class TalkBack(QuestionBot):
-    def __init__(self) -> None:
-        self.profile_cache: aPersistDict[dict[str, str]] = aPersistDict("profile_cache")
-        self.displayname_cache: aPersistDict[str] = aPersistDict("displayname_cache")
-        self.displayname_lookup_cache: aPersistDict[str] = aPersistDict(
-            "displayname_lookup_cache"
-        )
-        super().__init__()
-
-    @requires_admin
-    async def do_send(self, msg: Message) -> Response:
-        """Send <recipient> <message>
-        Sends a message as MOBot."""
-        obj = msg.arg1
-        param = msg.arg2
-        if not is_admin(msg):
-            await self.send_message(
-                utils.get_secret("ADMIN"), f"Someone just used send:\n {msg}"
-            )
-        if obj and param:
-            if obj in await self.displayname_lookup_cache.keys():
-                obj = await self.displayname_lookup_cache.get(obj)
-            try:
-                result = await self.send_message(obj, param)
-                return result
-            except Exception as err:  # pylint: disable=broad-except
-                return str(err)
-        if not obj:
-            msg.arg1 = await self.ask_freeform_question(
-                msg.uuid, "Who would you like to message?"
-            )
-        if param and param.strip(string.punctuation).isalnum():
-            param = (
-                (msg.full_text or "")
-                .lstrip("/")
-                .replace(f"send {msg.arg1} ", "", 1)
-                .replace(f"Send {msg.arg1} ", "", 1)
-            )  # thanks mikey :)
-        if not param:
-            msg.arg2 = await self.ask_freeform_question(
-                msg.uuid, "What would you like to say?"
-            )
-        return await self.do_send(msg)
-
-    async def get_displayname(self, uuid: str) -> str:
-        """Retrieves a display name from a UUID, stores in the cache, handles error conditions."""
-        uuid = uuid.strip("\u2068\u2069")
-        # displayname provided, not uuid or phone
-        if uuid.count("-") != 4 and not uuid.startswith("+"):
-            uuid = await self.displayname_lookup_cache.get(uuid, uuid)
-        # phone number, not uuid provided
-        if uuid.startswith("+"):
-            uuid = self.get_uuid_by_phone(uuid) or uuid
-        maybe_displayname = await self.displayname_cache.get(uuid)
-        if maybe_displayname:
-            return maybe_displayname
-        maybe_user_profile = await self.profile_cache.get(uuid)
-        # if no luck, but we have a valid uuid
-        user_given = ""
-        if not maybe_user_profile and uuid.count("-") == 4:
-            try:
-                maybe_user_profile = (
-                    await self.signal_rpc_request("getprofile", peer_name=uuid)
-                ).blob or {}
-                user_given = maybe_user_profile.get("givenName", "")
-                await self.profile_cache.set(uuid, maybe_user_profile)
-            except AttributeError:
-                # this returns a Dict containing an error key
-                user_given = "[error]"
-        elif maybe_user_profile and "givenName" in maybe_user_profile:
-            user_given = maybe_user_profile["givenName"]
-        if not user_given:
-            user_given = "givenName"
-        if uuid and ("+" not in uuid and "-" in uuid):
-            user_short = f"{user_given}_{uuid.split('-')[1]}"
-        else:
-            user_short = user_given + uuid
-        await self.displayname_cache.set(uuid, user_short)
-        await self.displayname_lookup_cache.set(user_short, uuid)
-        return user_short
-
-    async def talkback(self, msg: Message) -> Response:
-        source = msg.uuid or msg.source
-        await self.admin(f"{await self.get_displayname(source)} says: {msg.full_text}")
-        return None
-
-
-class Teddy(TalkBack):
+class Teddy(DialogBot):
     def __init__(self) -> None:
         self.no_repay: list[str] = []
-        self.valid_codes: aPersistDict[str] = aPersistDict(
-            "valid_codes"
-        )  # set of valid codes -> "unclaimed" or uuid
-        self.first_messages = aPersistDictOfInts(
-            "first_messages"
-        )  # user -> timestamp in millis of first message
-        self.dialog: aPersistDict[str] = aPersistDict("dialog")  # configurable dialog
-        self.user_claimed: aPersistDict[str] = aPersistDict(
-            "user_claimed"
-        )  # set of codes users have claimed
-        self.pending_funds: aPersistDict[str] = aPersistDict(
-            "pending_funds"
-        )  # set of users from whom we are expecting payments
-        self.easter_eggs: aPersistDict[str] = aPersistDict(
-            "easter_eggs"
-        )  # configurable map of input - outputs
+        # set of valid codes -> "unclaimed" or uuid
+        self.valid_codes: aPersistDict[str] = aPersistDict("valid_codes")
+        # user -> timestamp in millis of first message
+        self.first_messages = aPersistDictOfInts("first_messages")
+        # set of codes users have claimed; user -> code claimed
+        self.user_claimed: aPersistDict[str] = aPersistDict("user_claimed")
+        # set of users from whom we are expecting payments
+        self.pending_funds: aPersistDict[str] = aPersistDict("pending_funds")
+        # configurable map of input - outputs
+        self.easter_eggs: aPersistDict[str] = aPersistDict("easter_eggs")
         # record of people we have successfully paid
         self.successful_pays: aPersistDictOfLists[str] = aPersistDictOfLists(
             "successful_pays"
@@ -212,33 +118,6 @@ class Teddy(TalkBack):
         if not balance:
             return f"Error! {list_.title()} has 0mmob balance!"  # thanks y?!
         return "Sorry, can't help you."
-
-    async def do_set(self, msg: Message) -> Response:
-        """Let's do it live.
-        Unprivileged editing of dialog blurbs, because lfg."""
-        user = msg.uuid
-        fragment = await self.ask_freeform_question(
-            user, "What fragment would you like to change?"
-        )
-        if fragment in self.TERMINAL_ANSWERS:
-            return "OK, nvm"
-        blurb = await self.ask_freeform_question(
-            user, "What dialog would you like to use?"
-        )
-        if fragment in self.TERMINAL_ANSWERS:
-            return "OK, nvm"
-        if old_blurb := await self.dialog.get(fragment):
-            await self.send_message(user, "overwriting:")
-            await self.send_message(user, old_blurb)
-        await self.dialog.set(fragment, blurb)
-        # elif not self.is_admin(msg):
-        #    return "You must be an administrator to overwrite someone else's blurb!"
-        return "updated blurb!"
-
-    async def do_dialog(self, msg: Message) -> Response:
-        return "\n\n".join(
-            [f"{k}: {v}\n------\n" for (k, v) in self.dialog.dict_.items()]
-        )
 
     async def do_reset(self, msg: Message) -> Response:
         user = msg.uuid
@@ -411,10 +290,7 @@ class Teddy(TalkBack):
             await self.payout_balance_mmob.increment(code, amount_mmob)
             if msg.uuid in self.no_repay:
                 self.no_repay.remove(msg.uuid)
-            return (
-                f"We have credited your event {code} {amount_mob}MOB!\n"
-                + "You may sweep your balance with 'payout' or distrbute specific amounts of millimobb to attendees and individuals with 'pay <user_or_group> <amount> <memo>'."
-            )
+            return f"We have credited your event {code} {amount_mob}MOB!\n"
         return None
 
 
