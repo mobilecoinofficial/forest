@@ -21,6 +21,7 @@ from forest.core import (
     requires_admin,
     is_admin,
     get_uid,
+    run_bot,
 )
 
 from forest.extra import DialogBot
@@ -1013,10 +1014,4 @@ class Hotline(DialogBot):  # pylint: disable=too-many-public-methods
 
 
 if __name__ == "__main__":
-    app.add_routes([web.get("/metrics", aio.web.server_stats)])
-
-    @app.on_startup.append
-    async def start_wrapper(out_app: web.Application) -> None:
-        out_app["bot"] = Hotline()
-
-    web.run_app(app, port=8080, host="0.0.0.0", access_log=None)
+    run_bot(Hotline)
