@@ -2,26 +2,15 @@
 # Copyright (c) 2021 MobileCoin Inc.
 # Copyright (c) 2021 The Forest Team
 
-import asyncio
 import json
-import string
 import time
-import math
-import logging
 from decimal import Decimal
-from typing import Optional
 
-from aiohttp import web
-
-from forest import utils
 from forest.core import (
     Message,
-    QuestionBot,
     Response,
-    app,
     hide,
     requires_admin,
-    is_admin,
     get_uid,
     run_bot,
 )
@@ -52,37 +41,10 @@ class Charity(DialogBot):
         super().__init__()
 
     @requires_admin
-    async def do_dump(self, msg: Message) -> Response:
+    async def do_dump(self, _: Message) -> Response:
         """dump
         returns a JSON serialization of current state"""
         return json.dumps({k: v.dict_ for (k, v) in self.state.items()}, indent=2)
-
-    async def do_set(self, msg: Message) -> Response:
-        """Let's do it live.
-        Unprivileged editing of dialog blurbs, because lfg."""
-        user = msg.uuid
-        fragment = await self.ask_freeform_question(
-            user, "What fragment would you like to change?"
-        )
-        if fragment in self.TERMINAL_ANSWERS:
-            return "OK, nvm"
-        blurb = await self.ask_freeform_question(
-            user, "What dialog would you like to use?"
-        )
-        if fragment in self.TERMINAL_ANSWERS:
-            return "OK, nvm"
-        if old_blurb := await self.dialog.get(fragment):
-            await self.send_message(user, "overwriting:")
-            await self.send_message(user, old_blurb)
-        await self.dialog.set(fragment, blurb)
-        # elif not self.is_admin(msg):
-        #    return "You must be an administrator to overwrite someone else's blurb!"
-        return "updated blurb!"
-
-    async def do_dialog(self, msg: Message) -> Response:
-        return "\n\n".join(
-            [f"{k}: {v}\n------\n" for (k, v) in self.dialog.dict_.items()]
-        )
 
     async def handle_message(self, message: Message) -> Response:
         """Method dispatch to do_x commands and goodies.
@@ -185,7 +147,7 @@ class Charity(DialogBot):
         if amount_mmob > await self.reward_levels.get(f"{code}_ship", 10_000):
             await self.fulfillment(msg, donation_uid)
             return None
-        elif amount_mmob > await self.reward_levels.get(f"{code}_download", 10_000):
+        if amount_mmob > await self.reward_levels.get(f"{code}_download", 10_000):
             return await self.dialog.get("THANK_YOU_PLEASE_DL", "THANK_YOU_PLEASE_DL")
         return await self.dialog.get("THANK_YOU_FOR_DONATION", "THANK_YOU_FOR_DONATION")
 

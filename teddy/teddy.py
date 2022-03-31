@@ -8,7 +8,6 @@ import string
 import time
 import logging
 from decimal import Decimal
-from typing import Optional
 
 from forest.core import (
     Message,
@@ -247,7 +246,7 @@ class Teddy(DialogBot):
 
     async def do_help(self, msg: Message) -> str:
         """Reminds the user of what we're expecting, then returns a link to the support channel."""
-        user = message.uuid
+        user = msg.uuid
         user_state = await self.user_state.get(user, "USER_STATE")
         dialog_for_state = await self.dialog.get(user_state)
         help_dialog = await self.dialog.get("HELP", "HELP")
