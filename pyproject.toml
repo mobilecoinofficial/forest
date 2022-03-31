@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "forestbot"
-version = "1.2.0.1"
+version = "1.2.6"
 description = "Enables a Forest of MobileCoin enabled Signal bots"
 #long_description = "Forest is an async framework for running payments-enabled chat and utility bots for Signal Messenger."
 homepage = "https://github.com/mobilecoinofficial/forest"
@@ -22,7 +22,6 @@ termcolor = "*"
 ulid2 = "*"
 pycryptodome = "*"
 aiohttp = {extras = ["speedups"], version = "^3.8.1"}
-google-cloud-dialogflow = "*"
 
 [tool.poetry.dev-dependencies]
 black = "*"
