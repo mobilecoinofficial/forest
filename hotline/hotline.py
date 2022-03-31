@@ -10,13 +10,10 @@ import logging
 from decimal import Decimal
 from typing import Optional
 
-from aiohttp import web
-
 from forest import utils
 from forest.core import (
     Message,
     Response,
-    app,
     hide,
     requires_admin,
     is_admin,
