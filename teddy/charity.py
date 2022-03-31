@@ -259,7 +259,6 @@ class Charity(TalkBack):
         await self.talkback(msg)
         return await self.dialog.get("CHARITY_INFO", "CHARITY_INFO")
 
-    @time_(REQUEST_TIME)
     async def payment_response(self, msg: Message, amount_pmob: int) -> Response:
         user = msg.uuid
         amount_mob = float(pmob2mob(amount_pmob).quantize(Decimal("1.0000")))
