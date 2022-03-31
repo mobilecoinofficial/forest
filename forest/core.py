@@ -493,20 +493,28 @@ class Signal:
             content_skeletor["typingMessage"]["groupId"] = group_id
         return json.dumps(content_skeletor)
 
-    async def send_typing(self, msg: Message, stop: bool = False) -> None:
+    async def send_typing(
+        self,
+        msg: Optional[Message] = None,
+        stop: bool = False,
+        recipient: str = "",
+        group: str = "",
+    ) -> None:
         "Send a typing indicator to the person or group the message is from"
+        group = group or (msg and msg.group)
+        recipient = recipient or (msg and msg.source)
         if utils.AUXIN:
-            if msg.group:
-                content = await self.typing_message_content(stop, msg.group)
-                await self.send_message(None, "", group=msg.group, content=content)
+            if group:
+                content = await self.typing_message_content(stop, group)
+                await self.send_message(None, "", group=group, content=content)
             else:
                 content = await self.typing_message_content(stop)
-                await self.send_message(msg.source, "", content=content)
+                await self.send_message(recipient, "", content=content)
             return
-        if msg.group:
-            await self.outbox.put(rpc("sendTyping", group_id=[msg.group], stop=stop))
+        if group:
+            await self.outbox.put(rpc("sendTyping", group_id=[group], stop=stop))
         else:
-            await self.outbox.put(rpc("sendTyping", recipient=[msg.source], stop=stop))
+            await self.outbox.put(rpc("sendTyping", recipient=[recipient], stop=stop))
 
     backoff = False
     messages_until_rate_limit = 1000.0

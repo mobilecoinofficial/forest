@@ -180,6 +180,7 @@ class Hotline(DialogBot):  # pylint: disable=too-many-public-methods
         Assumptions made:"""
         # pylint: disable=too-many-return-statements,too-many-locals,too-many-branches
         balance = await self.payout_balance_mmob.get(list_, 0)
+        await self.send_typing(user)
         # pad fees
         logging.debug(f"PAYING {amount_mmob}mmob from {balance} of {list_}")
         if amount_mmob < balance:
@@ -257,6 +258,7 @@ class Hotline(DialogBot):  # pylint: disable=too-many-public-methods
                     input_txo_ids=input_txo_ids,
                     confirm_tx_timeout=60,
                 )
+                await self.send_typing(user, stop=True)
                 if result and result.status == "tx_status_succeeded":
                     await self.payout_balance_mmob.decrement(list_, amount_mmob)
                     return f"Paid you you {amount_mmob/1000}MOB"
@@ -364,6 +366,7 @@ class Hotline(DialogBot):  # pylint: disable=too-many-public-methods
                 if not input_txo_ids:
                     input_txo_ids = []
                 try:
+                    await self.send_typing(recipient=target)
                     result = await self.send_payment(
                         recipient=target,
                         amount_pmob=amount_mmob * 1_000_000_000,
@@ -372,6 +375,7 @@ class Hotline(DialogBot):  # pylint: disable=too-many-public-methods
                         confirm_tx_timeout=60,
                     )
                     await asyncio.sleep(0.5)
+                    await self.send_typing(recipient=target, stop=True)
                     # if we didn't get a result indicating success
                     if not result or (
                         result and result.status != "tx_status_succeeded"
@@ -996,7 +1000,9 @@ class Hotline(DialogBot):  # pylint: disable=too-many-public-methods
                 f"Approve refund request? {msg.source} sent payment of {amount_mob} when unexpected.",
             ):
                 return None
+            await self.send_typing(msg)
             payment_notif = await self.send_payment(msg.uuid, amount_pmob - FEE)
+            await self.send_typing(msg, stop=True)
             if (
                 not payment_notif
                 or payment_notif
