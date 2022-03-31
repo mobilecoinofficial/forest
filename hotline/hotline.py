@@ -180,7 +180,7 @@ class Hotline(DialogBot):  # pylint: disable=too-many-public-methods
         Assumptions made:"""
         # pylint: disable=too-many-return-statements,too-many-locals,too-many-branches
         balance = await self.payout_balance_mmob.get(list_, 0)
-        await self.send_typing(user)
+        await self.send_typing(recipient=user)
         # pad fees
         logging.debug(f"PAYING {amount_mmob}mmob from {balance} of {list_}")
         if amount_mmob < balance:
@@ -258,7 +258,7 @@ class Hotline(DialogBot):  # pylint: disable=too-many-public-methods
                     input_txo_ids=input_txo_ids,
                     confirm_tx_timeout=60,
                 )
-                await self.send_typing(user, stop=True)
+                await self.send_typing(recipient=user, stop=True)
                 if result and result.status == "tx_status_succeeded":
                     await self.payout_balance_mmob.decrement(list_, amount_mmob)
                     return f"Paid you you {amount_mmob/1000}MOB"
@@ -270,9 +270,7 @@ class Hotline(DialogBot):  # pylint: disable=too-many-public-methods
     @hide
     async def do_pay(self, msg: Message) -> Response:
         """Allows an event/list owner to distribute available funds across those on a list."""
-        # pylint: disable=too-many-return-statements,too-many-branches,too-many-locals
         user = msg.uuid
-        to_send: list[str] = []
         if not msg.arg2 or not msg.arg2.isnumeric():
             msg.arg2 = await self.ask_freeform_question(
                 msg.uuid,
@@ -280,11 +278,11 @@ class Hotline(DialogBot):  # pylint: disable=too-many-public-methods
             )
             if msg.arg2 == "0":
                 return "OK, cancelling."
-        amount_mmob = 0
+        amount_mmob = 0  # excuse me?
         list_, amount, message = (
             (msg.arg1 or "").lower(),
             (msg.arg2 or "0"),
-            msg.arg3 or msg.arg1,
+            msg.arg3 or msg.arg1 or "",
         )
         if not amount.isnumeric() or not amount:
             msg.arg2 = await self.ask_freeform_question(
@@ -302,17 +300,25 @@ class Hotline(DialogBot):  # pylint: disable=too-many-public-methods
         user_owns = await self.check_user_owns(user, list_)
         if not is_admin(msg) and not user_owns:
             return "Sorry, you are not authorized."
-        # when would to_send not be [] here?
-        if len(to_send) == 0 and not (
+        return await self.pay_list(msg, amount_mmob, list_, message)
+
+    async def pay_list(
+        self,
+        msg: Message,
+        amount_mmob: int,
+        list_: str,
+        message: str,
+    ) -> Response:
+        "Actually distribute funds across those on a list." ""
+        if not (
             list_ in await self.event_lists.keys()
             or list_ in await self.event_attendees.keys()
         ):
             return "Sorry, that's not a valid list or number!"
-        if len(to_send) == 0:
-            to_send = await self.event_lists.get(
-                list_, []
-            ) or await self.event_attendees.get(list_, [])
-        save_key = f"{list_}_{amount}_{message}"
+        to_send = await self.event_lists.get(
+            list_, []
+        ) or await self.event_attendees.get(list_, [])
+        save_key = f"{list_}_{amount_mmob}_{message}"
         filtered_send_list = [
             user
             for user in to_send
@@ -360,7 +366,7 @@ class Hotline(DialogBot):  # pylint: disable=too-many-public-methods
             async def pay_logging_success(
                 target: str,
                 amount_mmob: int,
-                message: Optional[str] = "",
+                message: str = "",
                 input_txo_ids: Optional[list[str]] = None,
             ) -> Optional[Message]:
                 if not input_txo_ids:
@@ -370,7 +376,7 @@ class Hotline(DialogBot):  # pylint: disable=too-many-public-methods
                     result = await self.send_payment(
                         recipient=target,
                         amount_pmob=amount_mmob * 1_000_000_000,
-                        receipt_message=message or "",
+                        receipt_message=message,
                         input_txo_ids=input_txo_ids,
                         confirm_tx_timeout=60,
                     )
