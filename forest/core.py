@@ -10,27 +10,40 @@ import asyncio.subprocess as subprocess  # https://github.com/PyCQA/pylint/issue
 import base64
 import codecs
 import datetime
+import functools
+import glob
 import json
 import logging
 import os
+import re
+import secrets
 import signal
+import string
 import sys
 import time
 import traceback
 import urllib
 import uuid
-import glob
-import secrets
-import functools
-
 from asyncio import Queue, StreamReader, StreamWriter
 from asyncio.subprocess import PIPE
 from decimal import Decimal
 from functools import wraps
 from textwrap import dedent
-from typing import Any, Callable, Optional, Type, Union, Awaitable, Tuple
+from typing import (
+    Any,
+    Awaitable,
+    Callable,
+    Coroutine,
+    Mapping,
+    Optional,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+)
 
 import aiohttp
+import asyncpg
 import termcolor
 from aiohttp import web
 from phonenumbers import NumberParseException
@@ -40,12 +53,14 @@ from ulid2 import generate_ulid_as_base32 as get_uid
 
 # framework
 import mc_util
-from forest import autosave, datastore, payments_monitor, pghelp, utils, string_dist
+from forest import autosave, datastore, payments_monitor, pghelp, string_dist, utils
+from forest.cryptography import hash_salt
 from forest.message import AuxinMessage, Message, StdioMessage
 
 JSON = dict[str, Any]
 Response = Union[str, list, dict[str, str], None]
 AsyncFunc = Callable[..., Awaitable]
+Command = Callable[["Bot", Message], Coroutine[Any, Any, Response]]
 
 roundtrip_histogram = Histogram("roundtrip_h", "Roundtrip message response time")  # type: ignore
 roundtrip_summary = Summary("roundtrip_s", "Roundtrip message response time")
@@ -56,7 +71,7 @@ fee_pmob = int(1e12 * 0.0004)
 try:
     import captcha
 except ImportError:
-    captcha = None  # type:ignore
+    captcha = None  # type: ignore
 
 
 def rpc(
@@ -68,6 +83,20 @@ def rpc(
         "id": _id,
         "params": (param_dict or {}) | params,
     }
+
+
+ActivityQueries = pghelp.PGExpressions(
+    table="user_activity",
+    create_table="""CREATE TABLE user_activity (
+        id SERIAL PRIMARY KEY,
+        account TEXT,
+        first_seen TIMESTAMP default now(),
+        last_seen TIMESTAMP default now(),
+        bot TEXT,
+        UNIQUE (account, bot));""",
+    log="""INSERT INTO user_activity (account, bot) VALUES ($1, $2)
+    ON CONFLICT ON CONSTRAINT user_activity_account_bot_key1 DO UPDATE SET last_seen=now()""",
+)
 
 
 class Signal:
@@ -513,9 +542,12 @@ def is_admin(msg: Message) -> bool:
     return source_admin or source_uuid or bool(msg.group and msg.group in ADMIN_GROUP)
 
 
-def requires_admin(command: Callable) -> Callable:
+B = TypeVar("B", bound="Bot")
+
+
+def requires_admin(command: AsyncFunc) -> AsyncFunc:
     @wraps(command)
-    async def admin_command(self: "Bot", msg: Message) -> Response:
+    async def admin_command(self: B, msg: Message) -> Response:
         if is_admin(msg):
             return await command(self, msg)
         return "you must be an admin to use this command"
@@ -525,9 +557,9 @@ def requires_admin(command: Callable) -> Callable:
     return admin_command
 
 
-def hide(command: Callable) -> Callable:
+def hide(command: AsyncFunc) -> AsyncFunc:
     @wraps(command)
-    async def hidden_command(self: "Bot", msg: Message) -> Response:
+    async def hidden_command(self: B, msg: Message) -> Response:
         return await command(self, msg)
 
     hidden_command.hide = True  # type: ignore
@@ -559,6 +591,12 @@ class Bot(Signal):
             if not hasattr(getattr(self, f"do_{name}"), "hide")
         ]
         super().__init__(bot_number)
+        self.activity = pghelp.PGInterface(
+            query_strings=ActivityQueries, database=utils.get_secret("DATABASE_URL")
+        )
+        # set of users we've received messages from in the last minute
+        self.seen_users: set[str] = set()
+        self.log_activity_task = asyncio.create_task(self.log_activity())
         self.restart_task = asyncio.create_task(
             self.start_process()
         )  # maybe cancel on sigint?
@@ -569,14 +607,44 @@ class Bot(Signal):
             self.restart_task_callback(self.handle_messages)
         )
 
+    async def log_activity(self) -> None:
+        """
+        every 60s, update the user_activity table with users we've seen
+        runs in the bg as batches to avoid a seperate db query for every message
+        used for signup metrics
+        """
+        if not self.activity.pool:
+            await self.activity.connect_pg()
+            # mypy can't infer that connect_pg creates pool
+            assert self.activity.pool
+        while 1:
+            await asyncio.sleep(60)
+            if not self.seen_users:
+                continue
+            try:
+                async with self.activity.pool.acquire() as conn:
+                    # executemany batches this into an atomic db query
+                    await conn.executemany(
+                        self.activity.queries["log"],
+                        [(name, utils.APP_NAME) for name in self.seen_users],
+                    )
+                    logging.debug("recorded %s seen users", len(self.seen_users))
+                    self.seen_users = set()
+            except asyncpg.UndefinedTableError:
+                logging.info("creating user_activity table")
+                await self.activity.create_table()
+
     async def handle_messages(self) -> None:
         """
         Read messages from the queue. If it matches a pending request to auxin-cli/signal-cli,
         set the result for that request. If said result is being rate limited, retry sending it
         after pausing. Otherwise, concurrently respond to each message.
         """
+        metrics_salt = utils.get_secret("METRICS_SALT")
         while True:
             message = await self.inbox.get()
+            if metrics_salt and message.uuid:
+                self.seen_users.add(hash_salt(message.uuid, metrics_salt))
             if message.id and message.id in self.pending_requests:
                 logging.debug("setting result for future %s: %s", message.id, message)
                 self.pending_requests[message.id].set_result(message)
@@ -1148,10 +1216,12 @@ class PayBot(ExtrasBot):
 
 # we should just have either a hasable user type or a mapping subtype
 
+V = TypeVar("V")
+
 
 def get_source_or_uuid_from_dict(
-    msg: Message, dict_: dict[str, Any]
-) -> Tuple[bool, Any]:
+    msg: Message, dict_: Mapping[str, V]
+) -> Tuple[bool, Optional[V]]:
     """A common pattern is to store intermediate state for individual users as a dictionary.
     Users can be referred to by some combination of source (a phone number) or uuid (underlying user ID)
     This abstracts over the possibility space, returning a boolean indicator of whether the sender of a Message
@@ -1172,13 +1242,15 @@ class QuestionBot(PayBot):
     """Class of Bots that have methods for asking questions and awaiting answers"""
 
     def __init__(self, bot_number: Optional[str] = None) -> None:
-        self.pending_confirmations: dict[str, asyncio.Future[bool]] = {}
         self.pending_answers: dict[str, asyncio.Future[Message]] = {}
         self.requires_first_device: dict[str, bool] = {}
         self.failed_user_challenges: dict[str, int] = {}
         self.TERMINAL_ANSWERS = "0 no none stop quit exit break cancel abort".split()
+        self.AFFIRMATIVE_ANSWERS = (
+            "yes yeah y yup affirmative ye sure yeh please".split()
+        )
+        self.NEGATIVE_ANSWERS = "no nope n negatory nuh-uh nah".split()
         self.FIRST_DEVICE_PLEASE = "Please answer from your phone or primary device!"
-        self.UNEXPECTED_ANSWER = "Did I ask you a question?"
         super().__init__(bot_number)
 
     async def handle_message(self, message: Message) -> Response:
@@ -1197,40 +1269,6 @@ class QuestionBot(PayBot):
                 probably_future.set_result(message)
             return None
         return await super().handle_message(message)
-
-    @hide
-    async def do_yes(self, msg: Message) -> Response:
-        """Handles 'yes' in response to a pending_confirmation."""
-        _, question = get_source_or_uuid_from_dict(msg, self.pending_confirmations)
-        _, requires_first_device = get_source_or_uuid_from_dict(
-            msg, self.requires_first_device
-        )
-        if not question:
-            return self.UNEXPECTED_ANSWER
-        if requires_first_device and not is_first_device(msg):
-            return self.FIRST_DEVICE_PLEASE
-        if question:
-            question.set_result(True)
-            self.requires_first_device.pop(msg.uuid, None)
-            self.requires_first_device.pop(msg.source, None)
-        return None
-
-    @hide
-    async def do_no(self, msg: Message) -> Response:
-        """Handles 'no' in response to a pending_confirmation."""
-        _, question = get_source_or_uuid_from_dict(msg, self.pending_confirmations)
-        _, requires_first_device = get_source_or_uuid_from_dict(
-            msg, self.requires_first_device
-        )
-        if not question:
-            return self.UNEXPECTED_ANSWER
-        if requires_first_device and not is_first_device(msg):
-            return self.FIRST_DEVICE_PLEASE
-        if question:
-            question.set_result(False)
-            self.requires_first_device.pop(msg.uuid, None)
-            self.requires_first_device.pop(msg.source, None)
-        return None
 
     async def ask_freeform_question(
         self,
@@ -1325,16 +1363,33 @@ class QuestionBot(PayBot):
         recipient: str,
         question_text: str = "Are you sure? yes/no",
         require_first_device: bool = False,
-    ) -> bool:
+    ) -> Optional[bool]:
         """Asks a question that expects a yes or no answer. Returns a Boolean:
-        True if Yes False if No."""
-        self.pending_confirmations[recipient] = asyncio.Future()
-        if require_first_device:
-            self.requires_first_device[recipient] = True
-        await self.send_message(recipient, question_text)
-        result = await self.pending_confirmations[recipient]
-        self.pending_confirmations.pop(recipient)
-        return result
+        True if Yes False if No. None if cancelled"""
+
+        # ask the question as a freeform question
+        answer = await self.ask_freeform_question(
+            recipient, question_text, require_first_device
+        )
+        answer = answer.lower().rstrip(string.punctuation)
+        # if there is an answer and it is negative or positive
+        if answer and answer in (self.AFFIRMATIVE_ANSWERS + self.NEGATIVE_ANSWERS):
+            # return true if it's in affirmative answers otherwise assume it was negative and return false
+            if answer in self.AFFIRMATIVE_ANSWERS:
+                return True
+            return False
+
+        # return none if user answers cancel, etc
+        if answer and answer in self.TERMINAL_ANSWERS:
+            return None
+
+        # if the answer is not a terminal answer but also not a match, add clarifier and ask again
+        if "Please answer yes or no" not in question_text:
+            question_text = "Please answer yes or no, or cancel:\n \n" + question_text
+
+        return await self.ask_yesno_question(
+            recipient, question_text, require_first_device
+        )
 
     async def ask_address_question(
         self,
@@ -1350,8 +1405,6 @@ class QuestionBot(PayBot):
         if not api:
             logging.error("Error, missing Google Maps API in secrets configuration")
             return None
-        if require_first_device:
-            self.requires_first_device[recipient] = True
         # ask for the address as a freeform question
         address = await self.ask_freeform_question(
             recipient, question_text, require_first_device
@@ -1446,36 +1499,20 @@ class QuestionBot(PayBot):
         options_text = " \n".join(
             f"{label}{spacer}{body}" for label, body in dict_options.items()
         )
+
+        # for the purposes of making it case insensitive, make sure no options are the same when lowercased
+        lower_dict_options = {k.lower(): v for (k, v) in dict_options.items()}
+        if len(lower_dict_options) != len(dict_options):
+            raise ValueError("Need to ensure unique options when lower-cased!")
+
         # send user the formatted question and await their response
         await self.send_message(recipient, question_text + "\n" + options_text)
         answer_future = self.pending_answers[recipient] = asyncio.Future()
         answer = await answer_future
         self.pending_answers.pop(recipient)
 
-        # if the answer given does not match a label
-        if answer.full_text and not answer.full_text in dict_options.keys():
-            # return none and exit if user types cancel, stop, exit, etc...
-            if answer.full_text.lower() in self.TERMINAL_ANSWERS:
-                return None
-
-            # otherwise reminder to type the label exactly as it appears and restate the question
-
-            if "Please reply" not in question_text:
-                question_text = (
-                    "Please reply with just the label exactly as typed \n \n"
-                    + question_text
-                )
-
-            return await self.ask_multiple_choice_question(
-                recipient,
-                question_text,
-                dict_options,
-                require_confirmation,
-                require_first_device,
-            )
-
         # when there is a match
-        if answer.full_text and answer.full_text in dict_options.keys():
+        if answer.full_text and answer.full_text.lower() in lower_dict_options.keys():
 
             # if confirmation is required ask for it as a yes/no question
             if require_confirmation:
@@ -1483,7 +1520,7 @@ class QuestionBot(PayBot):
                     "You picked: \n"
                     + answer.full_text
                     + spacer
-                    + dict_options[answer.full_text]
+                    + lower_dict_options[answer.full_text.lower()]
                     + "\n\nIs this correct? (yes/no)"
                 )
                 confirmation = await self.ask_yesno_question(
@@ -1499,12 +1536,68 @@ class QuestionBot(PayBot):
                         require_confirmation,
                         require_first_device,
                     )
+        # if the answer given does not match a label
+        if (
+            answer.full_text
+            and not answer.full_text.lower() in lower_dict_options.keys()
+        ):
+            # return none and exit if user types cancel, stop, exit, etc...
+            if answer.full_text.lower() in self.TERMINAL_ANSWERS:
+                return None
+            # otherwise reminder to type the label exactly as it appears and restate the question
+            if "Please reply" not in question_text:
+                question_text = (
+                    "Please reply with just the label exactly as typed \n \n"
+                    + question_text
+                )
+            return await self.ask_multiple_choice_question(
+                recipient,
+                question_text,
+                dict_options,
+                require_confirmation,
+                require_first_device,
+            )
+        # finally return the option that matches the answer, or if empty the answer itself
+        return lower_dict_options[answer.full_text.lower()] or answer.full_text
 
-            # finally return the option that matches the answer, or if empty the answer itself
-            return dict_options[answer.full_text] or answer.full_text
-        # TODO if we made it here I think that means something went wrong
-        # so maybe it should fail instead of returning None
-        return None
+    async def ask_email_question(
+        self,
+        recipient: str,
+        question_text: str = "Please enter your email address",
+    ) -> Optional[str]:
+        """Prompts the user to enter an email address, and validates with a very long regular expression"""
+
+        # ----SETUP----
+        # ask for the email address as a freeform question instead of doing it ourselves
+        answer = await self.ask_freeform_question(recipient, question_text)
+
+        # ----VALIDATE----
+        # if answer contains a valid email address, add it to maybe_email
+        maybe_match = re.search(
+            r"""(?:[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*|"(?:[\x01-\x08\x0b\x0c\x0e-\x1f\x21\x23-\x5b\x5d-\x7f]|\\[\x01-\x09\x0b\x0c\x0e-\x7f])*")@(?:(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?|\[(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?|[a-z0-9-]*[a-z0-9]:(?:[\x01-\x08\x0b\x0c\x0e-\x1f\x21-\x5a\x53-\x7f]|\\[\x01-\x09\x0b\x0c\x0e-\x7f])+)\])""",
+            answer,
+        )
+        # maybe_email is a re.match object, which returns only if there is a match.
+        if maybe_match:
+            email = maybe_match.group(0)
+
+        # ----INVALID?----
+        # If we have an answer, but no matched email
+        if answer and not maybe_match:
+            # return none and exit if user types cancel, stop, exit, etc...
+            if answer.lower() in self.TERMINAL_ANSWERS:
+                return None
+
+            # ----INVALID REPROMPT----
+            # if the answer is not a valid email address, ask the question again, but don't let it add "Please reply" forever
+            if "Please reply" not in question_text:
+                question_text = (
+                    "Please reply with a valid email address\n\n" + question_text
+                )
+
+            return await self.ask_email_question(recipient, question_text)
+
+        return email
 
     async def do_challenge(self, msg: Message) -> Response:
         """Challenges a user to do a simple math problem,

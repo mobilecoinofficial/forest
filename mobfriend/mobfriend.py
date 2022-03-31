@@ -501,10 +501,6 @@ https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
             return await self.do_payments(msg)
         if code == "?":
             code = msg.arg0 = "help"
-        elif code == "y":
-            return await self.do_yes(msg)
-        elif code == "n":
-            return await self.do_no(msg)
         elif code == "help" and msg.arg1:
             try:
                 doc = getattr(self, f"do_{msg.arg1}").__doc__
