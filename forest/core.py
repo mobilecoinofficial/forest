@@ -94,7 +94,7 @@ ActivityQueries = pghelp.PGExpressions(
         bot TEXT,
         UNIQUE (account, bot));""",
     log="""INSERT INTO user_activity (account, bot) VALUES ($1, $2)
-    ON CONFLICT ON CONSTRAINT user_activity_account_bot_key DO UPDATE SET last_seen=now()""",
+    ON CONFLICT ON CONSTRAINT user_activity_account_bot_key1 DO UPDATE SET last_seen=now()""",
 )
 
 
