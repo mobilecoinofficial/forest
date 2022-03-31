@@ -124,16 +124,22 @@ class Imposter(MemoryBot):
         """
         Respond in character, using the Jurassic-1 API
         """
+        # Get recent conversational context
         conversation = "\n\n".join(await self.get_conversation(msg))
+        # Or use just the last message for testing
+        # conversation = msg.full_text
 
+        # React with emoji and send typing indicator
         react_emoji = await self.agent.get_emoji(conversation)
         await self.send_reaction(msg, react_emoji)
         await self.send_typing(msg)
-        conversation = "\n\n".join(await self.get_conversation(msg))
+
         # API call happens here, replace with below for rapid testing
         reply = await self.agent.generate_agent_response(conversation)
         reply = reply.strip()
         # reply = "TEST_REPLY"
+
+        # Add an emoji at the end of message and stop typing indicator
         if len(reply) > 0:
             reply_emoji = await self.agent.get_emoji(reply)
             reply = f"{reply} {reply_emoji}"
