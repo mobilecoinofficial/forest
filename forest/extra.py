@@ -55,7 +55,7 @@ class Dialog(aPersistDict[str]):
     dialog_keys = GetStr().get_dialog_fragments()
 
     def __init__(self) -> None:
-        super().__init__(self, "dialog")
+        super().__init__(self, tag="dialog")
 
 
 class TalkBack(QuestionBot):
