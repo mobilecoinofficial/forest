@@ -6,17 +6,16 @@ import asyncio
 import logging
 from typing import Any, Callable, Coroutine, Optional
 import maya
-
+from forest.pdictng import aPersistDict
 from forest.core import QuestionBot, Message, Response, run_bot
 
 
 class ScheduleBot(QuestionBot):
     """A bot that lets you schedule when to send a message"""
 
-    # async def __init__(self, bot_number: Optional[str] = None) -> None:
-
-    #     asyncio.create_task(self.midnight_job(self.report))
-    #     super().__init__(bot_number)
+    def __init__(self, bot_number: Optional[str] = None) -> None:
+        self.scheduled_tasks = {}
+        super().__init__(bot_number)
 
     async def handle_message(self, message: Message) -> Response:
 
@@ -35,6 +34,7 @@ class ScheduleBot(QuestionBot):
         logging.info("sleeping %s seconds until message sends", seconds_until_send)
         await asyncio.sleep(seconds_until_send.seconds)
         await self.send_message(recipient, outgoing_message)
+
 
     def parse_schedule(self, message: Message) -> tuple[maya.MayaDT, Optional[str]]:
         """Parse a message of the form schedule "yyyy-mm-dd HH:MM" "message" """
@@ -127,10 +127,30 @@ class ScheduleBot(QuestionBot):
         if not confirmation:
             return cancel_message
 
-        asyncio.create_task(
+        if message.source not in self.scheduled_tasks:
+            self.scheduled_tasks[message.source] = []
+        self.scheduled_tasks[message.source].append(asyncio.create_task(
             self.schedule_send_message(message.source, outgoing_message, outgoing_time)
-        )
+        ))
         return "Your message has been scheduled"
+
+    async def do_get_scheduled_messages(self, message: Message) -> str:
+        """
+        Get a list of all scheduled messages for a user
+        """
+        if not self.scheduled_tasks[message.source]:
+            return "You have no scheduled messages."
+
+        return "Your scheduled messages:\n" + "\n".join(
+            [
+                f'{i + 1}. {task}'
+                for i, task in enumerate(self.scheduled_tasks[message.source])
+            ]
+        )
+
+
+
+
 
         # if not isinstance(message.arg1, str):
         #     time_info = await self.ask_freeform_question(
