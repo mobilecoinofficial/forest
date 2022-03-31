@@ -10,14 +10,12 @@ RUN git pull origin forest-v2.10.5
 RUN git log -1 --pretty=%B | tee commit-msg
 RUN ./gradlew nativeCompile
 
-FROM ubuntu:hirsute as libbuilder
+FROM python:3.9 as libbuilder
 WORKDIR /app
-RUN ln --symbolic --force --no-dereference /usr/share/zoneinfo/EST && echo "EST" > /etc/timezone
-RUN apt update
-RUN DEBIAN_FRONTEND="noninteractive" apt install -yy python3.9 python3.9-venv pipenv
-RUN python3.9 -m venv /app/venv
-COPY Pipfile.lock Pipfile /app/
-RUN VIRTUAL_ENV=/app/venv pipenv install 
+RUN pip install poetry
+RUN python3.9 -m venv /app/venv 
+COPY ./pyproject.toml ./poetry.lock /app/
+RUN VIRTUAL_ENV=/app/venv poetry install 
 
 FROM bitnami/kubectl:1.21.8 as kubectl
 
