@@ -9,6 +9,16 @@ import maya
 from forest.pdictng import aPersistDict
 from forest.core import QuestionBot, Message, Response, run_bot
 
+class ScheduledMessage():
+    def __init__(self, outgoing_message, outgoing_time, outgoing_task) -> None:
+        self.message = outgoing_message
+        self.time = outgoing_time
+        self.task = outgoing_task
+
+    def time_until(self):
+        return self.time.slang_time()
+
+
 
 class ScheduleBot(QuestionBot):
     """A bot that lets you schedule when to send a message"""
@@ -127,11 +137,13 @@ class ScheduleBot(QuestionBot):
         if not confirmation:
             return cancel_message
 
+        outgoing_task = asyncio.create_task(
+            self.schedule_send_message(message.source, outgoing_message, outgoing_time)
+        )
+        scheduled_message = ScheduledMessage(outgoing_message, outgoing_time, outgoing_task)
         if message.source not in self.scheduled_tasks:
             self.scheduled_tasks[message.source] = []
-        self.scheduled_tasks[message.source].append(asyncio.create_task(
-            self.schedule_send_message(message.source, outgoing_message, outgoing_time)
-        ))
+        self.scheduled_tasks[message.source].append(scheduled_message)
         return "Your message has been scheduled"
 
     async def do_get_scheduled_messages(self, message: Message) -> str:
@@ -143,7 +155,7 @@ class ScheduleBot(QuestionBot):
 
         return "Your scheduled messages:\n" + "\n".join(
             [
-                f'{i + 1}. {task}'
+                f'{i + 1}. {task.time_until()}'
                 for i, task in enumerate(self.scheduled_tasks[message.source])
             ]
         )
