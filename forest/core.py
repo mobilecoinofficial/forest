@@ -501,6 +501,8 @@ class Signal:
         group: str = "",
     ) -> None:
         "Send a typing indicator to the person or group the message is from"
+        # typing indicators last 15s on their own
+        # https://github.com/signalapp/Signal-Android/blob/master/app/src/main/java/org/thoughtcrime/securesms/components/TypingStatusRepository.java#L32
         group = group or (msg and msg.group)
         recipient = recipient or (msg and msg.source)
         if utils.AUXIN:
