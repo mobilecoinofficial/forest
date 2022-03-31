@@ -57,6 +57,12 @@ class GelatoBot(TalkBack):
         }
 
     async def do_fulfillment(self, msg: Message) -> str:
+        if not msg.quote:
+            return "Quote a url to use this command"
+        image = (
+            msg.quoted_text.split(" ")[0]
+            or "https://mcltajcadcrkywecsigc.supabase.in/storage/v1/object/public/imoges/life_on_a_new_planetc8e3_upsampled.png"
+        )
         user = msg.uuid
         # delivery_name = (await self.get_displayname(msg.uuid)).split("_")[0]
         # if not await self.ask_yesno_question(
@@ -82,8 +88,6 @@ class GelatoBot(TalkBack):
             "email": user_email,
             "phone": msg.source,
         }
-        image = "https://mcltajcadcrkywecsigc.supabase.in/storage/v1/object/public/imoges/life_on_a_new_planetc8e3_upsampled.png"
-        # msg.quoted_text?
         current_quote_data = {
             "order": {
                 "orderReferenceId": f"{{MyOrderId}}",  # maybe user-promptid-date?
@@ -98,8 +102,8 @@ class GelatoBot(TalkBack):
                     "quantity": 1,
                 }
             ],
+            "recipient": recipient,
         }
-        current_quote_data["recipient"] = recipient
         return await self.post_order(current_quote_data)
 
 
