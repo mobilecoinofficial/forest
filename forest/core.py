@@ -640,10 +640,11 @@ class Bot(Signal):
         set the result for that request. If said result is being rate limited, retry sending it
         after pausing. Otherwise, concurrently respond to each message.
         """
+        metrics_salt = utils.get_secret("METRICS_SALT")
         while True:
             message = await self.inbox.get()
-            if message.uuid:
-                self.seen_users.add(hash_salt(message.uuid))
+            if metrics_salt and message.uuid:
+                self.seen_users.add(hash_salt(message.uuid, metrics_salt))
             if message.id and message.id in self.pending_requests:
                 logging.debug("setting result for future %s: %s", message.id, message)
                 self.pending_requests[message.id].set_result(message)

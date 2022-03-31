@@ -33,9 +33,9 @@ def decrypt(data: bytes, key: bytes) -> bytes:
     return cipher.decrypt_and_verify(data[32:], data[16:32])  # pylint: disable
 
 
-def hash_salt(key_: str) -> str:
+def hash_salt(key_: str, salt: str = SALT) -> str:
     """returns a base58 encoded sha256sum of a salted key"""
-    return base58.b58encode(hashlib.sha256(f"{SALT}{key_}".encode()).digest()).decode()
+    return base58.b58encode(hashlib.sha256(f"{salt}{key_}".encode()).digest()).decode()
 
 
 def get_ciphertext_value(value_: Union[str, bytes]) -> str:
