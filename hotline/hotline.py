@@ -20,7 +20,6 @@ from prometheus_client import Summary
 from forest import utils
 from forest.core import (
     Message,
-    QuestionBot,
     Response,
     app,
     hide,
@@ -28,151 +27,17 @@ from forest.core import (
     is_admin,
     get_uid,
 )
+
+from forest.extra import Dialog, DialogBot
 from forest.pdictng import aPersistDict, aPersistDictOfInts, aPersistDictOfLists
 from mc_util import pmob2mob
 
 FEE = int(1e12 * 0.0004)
-REQUEST_TIME = Summary("request_processing_seconds", "Time spent processing request")
 
 
-class GetStr(ast.NodeTransformer):
-    source = open(sys.argv[-1]).read()
-    dialogs: list[dict[str, Any]] = []
-
-    def get_source(self, node: ast.AST) -> Optional[str]:
-        return ast.get_source_segment(self.source, node)
-
-    def get_dialog_fragments(self) -> list[dict[str, Any]]:
-        node = ast.parse(self.source)
-        self.visit(node)
-        return self.dialogs
-
-    def visit_Call(self, node: ast.Call) -> None:
-        for child in ast.iter_child_nodes(node):
-            self.visit(child)
-        if isinstance(node.func, ast.Attribute):
-            if (
-                hasattr(node.func, "attr")
-                and node.func.attr == "get"
-                and not isinstance(node.func.value, ast.Name)
-                and not isinstance(node.func.value, ast.Subscript)
-                and getattr(node.func.value, "attr", "") == "dialog"
-            ):
-                vals = [
-                    c.value
-                    if isinstance(c, ast.Constant)
-                    else f"(python) `{self.get_source(c)}`"
-                    for c in node.args
-                    if c
-                ]
-                if len(vals) == 2:
-                    output_vals = {"key": vals[0], "fallback": vals[1]}
-                else:
-                    output_vals = {"key": vals[0]}
-                self.dialogs += [{"line_number": node.lineno, **output_vals}]
-
-
-class TalkBack(QuestionBot):
-    def __init__(self) -> None:
-        self.profile_cache: aPersistDict[dict[str, str]] = aPersistDict("profile_cache")
-        self.displayname_cache: aPersistDict[str] = aPersistDict("displayname_cache")
-        self.displayname_lookup_cache: aPersistDict[str] = aPersistDict(
-            "displayname_lookup_cache"
-        )
-        super().__init__()
-
-    async def handle_message(self, message: Message) -> Response:
-        if message.quoted_text and is_admin(message):
-            maybe_id = await self.displayname_lookup_cache.get(
-                message.quoted_text.split()[0]
-            )
-            if maybe_id:
-                await self.send_message(maybe_id, message.full_text)
-        return await super().handle_message(message)
-
-    @requires_admin
-    async def do_send(self, msg: Message) -> Response:
-        """Send <recipient> <message>
-        Sends a message as MOBot."""
-        obj = msg.arg1
-        param = msg.arg2
-        if not is_admin(msg):
-            await self.send_message(
-                utils.get_secret("ADMIN"), f"Someone just used send:\n {msg}"
-            )
-        if obj and param:
-            if obj in await self.displayname_lookup_cache.keys():
-                obj = await self.displayname_lookup_cache.get(obj)
-            try:
-                result = await self.send_message(obj, param)
-                return result
-            except Exception as err:  # pylint: disable=broad-except
-                return str(err)
-        if not obj:
-            msg.arg1 = await self.ask_freeform_question(
-                msg.uuid, "Who would you like to message?"
-            )
-        if param and param.strip(string.punctuation).isalnum():
-            param = (
-                (msg.full_text or "")
-                .lstrip("/")
-                .replace(f"send {msg.arg1} ", "", 1)
-                .replace(f"Send {msg.arg1} ", "", 1)
-            )  # thanks mikey :)
-        if not param:
-            msg.arg2 = await self.ask_freeform_question(
-                msg.uuid, "What would you like to say?"
-            )
-        return await self.do_send(msg)
-
-    async def get_displayname(self, uuid: str) -> str:
-        """Retrieves a display name from a UUID, stores in the cache, handles error conditions."""
-        uuid = uuid.strip("\u2068\u2069")
-        # displayname provided, not uuid or phone
-        if uuid.count("-") != 4 and not uuid.startswith("+"):
-            uuid = await self.displayname_lookup_cache.get(uuid, uuid)
-        # phone number, not uuid provided
-        if uuid.startswith("+"):
-            uuid = self.get_uuid_by_phone(uuid) or uuid
-        maybe_displayname = await self.displayname_cache.get(uuid)
-        if maybe_displayname:
-            return maybe_displayname
-        maybe_user_profile = await self.profile_cache.get(uuid)
-        # if no luck, but we have a valid uuid
-        user_given = ""
-        if not maybe_user_profile and uuid.count("-") == 4:
-            try:
-                maybe_user_profile = (
-                    await self.signal_rpc_request("getprofile", peer_name=uuid)
-                ).blob or {}
-                user_given = maybe_user_profile.get("givenName", "")
-                await self.profile_cache.set(uuid, maybe_user_profile)
-            except AttributeError:
-                # this returns a Dict containing an error key
-                user_given = "[error]"
-        elif maybe_user_profile and "givenName" in maybe_user_profile:
-            user_given = maybe_user_profile["givenName"]
-        if not user_given:
-            user_given = "givenName"
-        if uuid and ("+" not in uuid and "-" in uuid):
-            user_short = f"{user_given}_{uuid.split('-')[1]}"
-        else:
-            user_short = user_given + uuid
-        await self.displayname_cache.set(uuid, user_short)
-        await self.displayname_lookup_cache.set(user_short, uuid)
-        return user_short
-
-    async def talkback(self, msg: Message) -> Response:
-        source = msg.uuid or msg.source
-        await self.admin(f"{await self.get_displayname(source)} says: {msg.full_text}")
-        return None
-
-
-class Hotline(TalkBack):  # pylint: disable=too-many-public-methods
+class Hotline(DialogBot):  # pylint: disable=too-many-public-methods
     def __init__(self) -> None:
         self.no_repay: list[str] = []
-        self.dialog: aPersistDict[str] = aPersistDict("dialog")
-        self.dialog_keys = GetStr().get_dialog_fragments()
         self.pending_orders: aPersistDict[str] = aPersistDict("pending_orders")
         self.pending_funds: aPersistDict[str] = aPersistDict("pending_funds")
         self.pending_donations: aPersistDict[str] = aPersistDict("pending_donations")
@@ -318,7 +183,8 @@ class Hotline(TalkBack):  # pylint: disable=too-many-public-methods
     async def pay_user_from_balance(
         self, user: str, list_: str, amount_mmob: int
     ) -> Optional[str]:
-        """Pays a user a given amount of MOB by manually grabbing UTXOs until a transaction can be made."""
+        """Pays a user a given amount of MOB by manually grabbing UTXOs until a transaction can be made.
+        Assumptions made:"""
         # pylint: disable=too-many-return-statements,too-many-locals,too-many-branches
         balance = await self.payout_balance_mmob.get(list_, 0)
         # pad fees
@@ -368,7 +234,7 @@ class Hotline(TalkBack):  # pylint: disable=too-many-public-methods
                         return "Something went wrong! Please contact your administrator for support. (too many utxos needed)"
                 # how many slots do we have for dust?
                 dust_space = 16 - len(input_txo_ids)
-                # grab dust up to 15 utxos total or up to # dust, whichever is smaller
+                # grab dust up to 16 utxos total or up to # dust, whichever is smaller
                 logging.info(
                     f"Space for {dust_space}, we have {len(skipped_utxos)} presumed dust!"
                 )
@@ -928,44 +794,6 @@ class Hotline(TalkBack):  # pylint: disable=too-many-public-methods
             return f"Successfully added '{value}' to event {param}'s {obj}!"
         return f"Failed to add {value} to event {param}'s {obj}!"
 
-    @requires_admin
-    async def do_set_dialog(self, msg: Message) -> Response:
-        """Let's do it live.
-        Privileged editing of dialog blurbs, because."""
-        user = msg.uuid
-        fragment_to_set = await self.ask_freeform_question(
-            user, "What fragment would you like to change?"
-        )
-        if fragment_to_set in self.TERMINAL_ANSWERS:
-            return "OK, nvm"
-        blurb = await self.ask_freeform_question(
-            user, "What dialog would you like to use?"
-        )
-        if fragment_to_set in self.TERMINAL_ANSWERS:
-            return "OK, nvm"
-        if old_blurb := await self.dialog.get(fragment_to_set):
-            await self.send_message(user, "overwriting:")
-            await self.send_message(user, old_blurb)
-        await self.dialog.set(fragment_to_set, blurb)
-        # elif not self.is_admin(msg):
-        #    return "You must be an administrator to overwrite someone else's blurb!"
-        return "updated blurb!"
-
-    @requires_admin
-    async def do_dialog(self, _: Message) -> Response:
-        return "\n\n".join(
-            [f"{k}: {v}\n------\n" for (k, v) in self.dialog.dict_.items()]
-        )
-
-    @requires_admin
-    async def do_dialogkeys(self, _: Message) -> Response:
-        return "\n\n".join(
-            [
-                "\n".join([f"{k}: {v}" for (k, v) in dialogkey.items()])
-                for dialogkey in self.dialog_keys
-            ]
-        )
-
     async def maybe_unlock(self, msg: Message) -> Response:
         """Possibly unlocks an event."""
         # pylint: disable=too-many-return-statements,too-many-branches
@@ -1122,7 +950,6 @@ class Hotline(TalkBack):  # pylint: disable=too-many-public-methods
         # handle default case
         return await self.do_help(msg)
 
-    @time_(REQUEST_TIME)
     async def payment_response(self, msg: Message, amount_pmob: int) -> Response:
         # pylint: disable=too-many-return-statements
         amount_mob = float(pmob2mob(amount_pmob).quantize(Decimal("1.0000")))

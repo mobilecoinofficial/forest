@@ -14,10 +14,6 @@ prometheus-async = "*"
 prometheus-client = "*"
 pycryptodome = "*"
 ulid2 = "*"
-Pillow = "*"
-num2words = "*"
-words2num = "*"
-maya = "*"
 
 [requires]
 python_version = "3.9"
