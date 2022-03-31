@@ -13,35 +13,6 @@ logging.info(headers)
 
 # === Set-up quote request ===
 quote_url = "https://api.gelato.com/v2/quote"
-quote_json = {
-    "order": {
-        "orderReferenceId": "{{MyOrderId}}",
-        "customerReferenceId": "{{MyCustomerId}}",
-        "currencyIsoCode": "USD",
-    },
-    "recipient": {
-        "countryIsoCode": "US",
-        "firstName": "Paul",
-        "lastName": "Smith",
-        "addressLine1": "451 Clarkson Ave",
-        "addressLine2": "Brooklyn",
-        "stateCode": "NY",
-        "city": "New York",
-        "postcode": "11203",
-        "email": "apisupport@gelato.com",
-        "phone": "123456789",
-    },
-    "products": [
-        {
-            "itemReferenceId": "{{MyItemId}}",
-            "productUid": "metallic_200x300-mm-8x12-inch_3-mm_4-0_hor",
-            "pdfUrl": "https://s3-eu-west-1.amazonaws.com/developers.gelato.com/product-examples/test_print_job_BX_4-4_hor_none.pdf",
-            "quantity": 1,
-        }
-    ],
-}
-
-
 order_create_url = "https://api.gelato.com/v2/order/create"
 
 
@@ -111,11 +82,24 @@ class GelatoBot(TalkBack):
             "email": user_email,
             "phone": msg.source,
         }
-        current_quote_data: dict = dict(quote_json)
+        image = "https://mcltajcadcrkywecsigc.supabase.in/storage/v1/object/public/imoges/life_on_a_new_planetc8e3_upsampled.png"
+        # msg.quoted_text?
+        current_quote_data = {
+            "order": {
+                "orderReferenceId": f"{{MyOrderId}}",  # maybe user-promptid-date?
+                "customerReferenceId": "{{MyCustomerId}}",  # uuid
+                "currencyIsoCode": "USD",
+            },
+            "products": [
+                {
+                    "itemReferenceId": "{{MyItemId}}",  # maybe prompt id
+                    "productUid": "metallic_200x300-mm-8x12-inch_3-mm_4-0_hor",
+                    "pdfUrl": image,
+                    "quantity": 1,
+                }
+            ],
+        }
         current_quote_data["recipient"] = recipient
-        current_quote_data["products"][0][
-            "pdfUrl"
-        ] = "https://mcltajcadcrkywecsigc.supabase.in/storage/v1/object/public/imoges/life_on_a_new_planetc8e3_upsampled.png"
         return await self.post_order(current_quote_data)
 
 
