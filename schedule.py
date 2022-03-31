@@ -6,33 +6,43 @@ import asyncio
 import logging
 from typing import Any, Callable, Coroutine, Optional
 import maya
-from forest.pdictng import aPersistDict
+
+# from forest.pdictng import aPersistDict
 from forest.core import QuestionBot, Message, Response, run_bot
 
-class ScheduledMessage():
-    def __init__(self, outgoing_message, outgoing_time, outgoing_task) -> None:
+
+class ScheduledMessage:
+    """Scheduled Message Object"""
+
+    def __init__(
+        self,
+        outgoing_message: str,
+        outgoing_time: maya.MayaDT,
+        outgoing_task: asyncio.Task,
+    ) -> None:
         self.message = outgoing_message
         self.time = outgoing_time
         self.task = outgoing_task
 
     def time_until(self):
+        """returns time until event in human readable format"""
         return self.time.slang_time()
 
     def __str__(self) -> str:
-        return f"{self.time}\n{self.message}"
+        return f"{self.message}"
+
+    def timestamp(self):
+        """returns timestamp for the event"""
+        return self.time.datetime().timestamp()
 
     __repr__ = __str__
-        
-
-
-
 
 
 class ScheduleBot(QuestionBot):
     """A bot that lets you schedule when to send a message"""
 
     def __init__(self, bot_number: Optional[str] = None) -> None:
-        self.scheduled_tasks = {}
+        self.scheduled_tasks: dict[str, list[ScheduledMessage]] = {}
         super().__init__(bot_number)
 
     # async def handle_message(self, message: Message) -> Response:
@@ -47,12 +57,13 @@ class ScheduleBot(QuestionBot):
         self, recipient, outgoing_message, outgoing_time
     ) -> None:
         """Function that schedules a message to send at a specific time"""
+        ## TODO: it'd be neat if it could clean up after itself (delete task from self.scheduledmessages)
+        #  but I can't figure out how to do it
 
         seconds_until_send = outgoing_time - maya.now()
         logging.info("sleeping %s seconds until message sends", seconds_until_send)
         await asyncio.sleep(seconds_until_send.seconds)
         await self.send_message(recipient, outgoing_message)
-
 
     def parse_schedule(self, message: Message) -> tuple[maya.MayaDT, Optional[str]]:
         """Parse a message of the form schedule "yyyy-mm-dd HH:MM" "message" """
@@ -148,9 +159,13 @@ class ScheduleBot(QuestionBot):
         outgoing_task = asyncio.create_task(
             self.schedule_send_message(message.source, outgoing_message, outgoing_time)
         )
-        scheduled_message = ScheduledMessage(outgoing_message, outgoing_time, outgoing_task)
+        scheduled_message = ScheduledMessage(
+            str(outgoing_message), outgoing_time, outgoing_task
+        )
+
         if message.source not in self.scheduled_tasks:
             self.scheduled_tasks[message.source] = []
+
         self.scheduled_tasks[message.source].append(scheduled_message)
         return "Your message has been scheduled"
 
@@ -163,52 +178,30 @@ class ScheduleBot(QuestionBot):
 
         return "Your scheduled messages:\n" + "\n".join(
             [
-                f'{i + 1}. {task.time_until()}'
+                f'{i + 1}) "{task.message}" \n{task.time_until()}'
                 for i, task in enumerate(self.scheduled_tasks[message.source])
             ]
         )
 
     async def do_delete(self, message: Message) -> str:
+        """delete a scheduled message"""
+
+        options = [
+            f"{x.message} <{x.timestamp()}>"
+            for x in self.scheduled_tasks[message.source]
+        ]
         choice = await self.ask_multiple_choice_question(
             message.source,
             "Which of these scheduled messages do you want to delete?",
-            [str(l) for l in self.scheduled_tasks[message.source]])
+            options,
+        )
         for task in self.scheduled_tasks[message.source]:
-            import pdb; pdb.set_trace()
-            if f"{task.time}" == choice.split('\n')[0]:
+            if f"{task.message} <{task.timestamp()}>" == choice:
                 task.task.cancel()
                 self.scheduled_tasks[message.source].remove(task)
+                return f"{choice} deleted"
 
-        
-        return choice
-
-
-
-
-
-        # if not isinstance(message.arg1, str):
-        #     time_info = await self.ask_freeform_question(
-        #         message.source, "When do you want me to send your message?"
-        #     )
-        # else:
-        #     time_info = message.text
-        # try:
-        #     outgoing_time = maya.when(time_info)
-        # except ValueError:
-        #     return "Couldn't understand that time. Try yyyy-mm-dd HH:MM TZ"
-
-        # outgoing_message = await self.ask_freeform_question(
-        #     message.source, "What do you want your message to say?"
-        # )
-
-        # time_until = outgoing_time - maya.now()
-
-        # asyncio.create_task(
-        #     self.schedule_send_message(message.source, outgoing_message, outgoing_time)
-        # )
-
-        # return f'Ok, we\'ll send \n"{outgoing_message}" \n for you in {time_until.seconds} seconds at {outgoing_time.datetime()}'
-        # # timestamp.datetime().strftime("%m/%d/%Y, %H:%M:%S %Z")
+        return "there was a problem deleting your message"
 
 
 if __name__ == "__main__":
