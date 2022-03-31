@@ -128,7 +128,7 @@ class Teddy(TalkBack):
         )  # set of valid codes -> "unclaimed" or uuid
         self.first_messages = aPersistDictOfInts(
             "first_messages"
-        )  # timestamp in millis
+        )  # user -> timestamp in millis of first message
         self.dialog: aPersistDict[str] = aPersistDict("dialog")  # configurable dialog
         self.user_claimed: aPersistDict[str] = aPersistDict(
             "user_claimed"
@@ -253,6 +253,18 @@ class Teddy(TalkBack):
             "Reset your state! The previously used code, if any, may be redeemed again."
         )
 
+    async def wait_then_followup(
+        self, msg: Message, timeout_seconds: int = 300
+    ) -> Response:
+        user = msg.uuid
+        await asyncio.sleep(timeout_seconds)
+        if await self.ask_yesno_question(
+            user, await self.dialog.get("MAY_WE_DM_U", "MAY_WE_DM_U")
+        ):
+            return await self.dialog.get("OKAY_WE_WILL_DM_U", "OKAY_WE_WILL_DM_U")
+        else:
+            return await self.dialog.get("TY_WE_WONT_DM_U", "TY_WE_WONT_DM_U")
+
     async def maybe_claim(self, msg: Message) -> Response:
         """Possibly unlocks a payment."""
         # pylint: disable=too-many-return-statements
@@ -323,7 +335,7 @@ class Teddy(TalkBack):
             await self.send_message(
                 user, await self.dialog.get("CHARITIES_INFO", "CHARITIES_INFO")
             )
-            return None
+            return await self.wait_then_followup(msg)
         if (
             code in await self.valid_codes.keys()
             and await self.valid_codes.get(code, "") != "unclaimed"
