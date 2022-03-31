@@ -6,26 +6,18 @@ import asyncio
 import json
 import string
 import time
-import math
 import logging
 from decimal import Decimal
 from typing import Optional
 
-from aiohttp import web
-
-from forest import utils
 from forest.core import (
     Message,
-    QuestionBot,
     Response,
-    app,
     hide,
     requires_admin,
-    is_admin,
-    get_uid,
     run_bot,
 )
-from forest.extra import Dialog, DialogBot
+from forest.extra import DialogBot
 from forest.pdictng import aPersistDict, aPersistDictOfInts, aPersistDictOfLists
 from mc_util import pmob2mob
 
@@ -71,7 +63,7 @@ class Teddy(DialogBot):
         super().__init__()
 
     @requires_admin
-    async def do_dump(self, msg: Message) -> Response:
+    async def do_dump(self, _: Message) -> Response:
         """dump
         returns a JSON serialization of current state"""
         return json.dumps({k: v.dict_ for (k, v) in self.state.items()}, indent=2)
@@ -141,8 +133,7 @@ class Teddy(DialogBot):
             user, await self.dialog.get("MAY_WE_DM_U", "MAY_WE_DM_U")
         ):
             return await self.dialog.get("OKAY_WE_WILL_DM_U", "OKAY_WE_WILL_DM_U")
-        else:
-            return await self.dialog.get("TY_WE_WONT_DM_U", "TY_WE_WONT_DM_U")
+        return await self.dialog.get("TY_WE_WONT_DM_U", "TY_WE_WONT_DM_U")
 
     async def maybe_claim(self, msg: Message) -> Response:
         """Possibly unlocks a payment."""
@@ -224,7 +215,7 @@ class Teddy(DialogBot):
         await self.attempted_claims.increment(user, 1)
         if claims_left == 0:
             return await self.dialog.get("YOU_ARE_NOW_LOCKED", "YOU_ARE_NOW_LOCKED")
-        elif claims_left == 1:
+        if claims_left == 1:
             return await self.dialog.get("LAST_TRY", "LAST_TRY")
         return (
             await self.dialog.get(
@@ -254,7 +245,7 @@ class Teddy(DialogBot):
         self.no_repay += [user]
         return "Okay, waiting for your funds."
 
-    async def do_help(self, message: Message) -> str:
+    async def do_help(self, msg: Message) -> str:
         """Reminds the user of what we're expecting, then returns a link to the support channel."""
         user = message.uuid
         user_state = await self.user_state.get(user, "USER_STATE")
