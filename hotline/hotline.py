@@ -1,21 +1,16 @@
 #!/usr/bin/python3.9
 # Copyright (c) 2021 MobileCoin Inc.
 # Copyright (c) 2021 The Forest Team
-import ast
 import asyncio
 import json
 import string
-import sys
 import time
 import math
 import logging
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Optional
 
 from aiohttp import web
-from prometheus_async import aio
-from prometheus_async.aio import time as time_
-from prometheus_client import Summary
 
 from forest import utils
 from forest.core import (
@@ -28,7 +23,7 @@ from forest.core import (
     get_uid,
 )
 
-from forest.extra import Dialog, DialogBot
+from forest.extra import DialogBot
 from forest.pdictng import aPersistDict, aPersistDictOfInts, aPersistDictOfLists
 from mc_util import pmob2mob
 

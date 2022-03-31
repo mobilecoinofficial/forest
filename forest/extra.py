@@ -6,7 +6,7 @@ import string
 from typing import Optional, Any
 from forest import utils
 from forest.core import QuestionBot, is_admin, Message, Response, requires_admin
-from forest.pdictng import aPersistDict, aPersistDictOfInts, aPersistDictOfLists
+from forest.pdictng import aPersistDict
 
 
 class GetStr(ast.NodeTransformer):
