@@ -474,6 +474,40 @@ class Signal:
         )
         await self.outbox.put(cmd)
 
+    async def typing_message_content(
+        self, stop: bool = False, group_id: str = ""
+    ) -> str:
+        "serialized typing message content to pass to auxin --content for turning into protobufs"
+        resp = await self.signal_rpc_request(
+            "send", simulate=True, message="", destination="+15555555555"
+        )
+        # simulate gives us a dict corresponding to the protobuf structure
+        content_skeletor = json.loads(resp.blob["simulate_output"])
+        # typingMessage excludes having a dataMessage
+        content_skeletor["dataMessage"] = None
+        content_skeletor["typingMessage"] = {
+            "action": "STOPPED" if stop else "STARTED",
+            "timestamp": int(time.time() * 1000),
+        }
+        if group_id:
+            content_skeletor["typingMessage"]["groupId"] = group_id
+        return json.dumps(content_skeletor)
+
+    async def send_typing(self, msg: Message, stop: bool = False) -> None:
+        "Send a typing indicator to the person or group the message is from"
+        if utils.AUXIN:
+            if msg.group:
+                content = await self.typing_message_content(stop, msg.group)
+                await self.send_message(None, "", group=msg.group, content=content)
+            else:
+                content = await self.typing_message_content(stop)
+                await self.send_message(msg.source, "", content=content)
+            return
+        if msg.group:
+            await self.outbox.put(rpc("sendTyping", group_id=[msg.group], stop=stop))
+        else:
+            await self.outbox.put(rpc("sendTyping", recipient=[msg.source], stop=stop))
+
     backoff = False
     messages_until_rate_limit = 1000.0
     last_update = time.time()
