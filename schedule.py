@@ -18,6 +18,14 @@ class ScheduledMessage():
     def time_until(self):
         return self.time.slang_time()
 
+    def __str__(self) -> str:
+        return f"{self.time}\n{self.message}"
+
+    __repr__ = __str__
+        
+
+
+
 
 
 class ScheduleBot(QuestionBot):
@@ -27,13 +35,13 @@ class ScheduleBot(QuestionBot):
         self.scheduled_tasks = {}
         super().__init__(bot_number)
 
-    async def handle_message(self, message: Message) -> Response:
+    # async def handle_message(self, message: Message) -> Response:
 
-        # reset flow if user tries schedule again even if they're in the middle of a question
-        if message.arg0 and message.arg0 == "schedule":
-            return await self.do_schedule(message)
+    #     # reset flow if user tries schedule again even if they're in the middle of a question
+    #     if message.arg0 and message.arg0 == "schedule":
+    #         return await self.do_schedule(message)
 
-        return await super().handle_message(message)
+    #     return await super().handle_message(message)
 
     async def schedule_send_message(
         self, recipient, outgoing_message, outgoing_time
@@ -159,6 +167,20 @@ class ScheduleBot(QuestionBot):
                 for i, task in enumerate(self.scheduled_tasks[message.source])
             ]
         )
+
+    async def do_delete(self, message: Message) -> str:
+        choice = await self.ask_multiple_choice_question(
+            message.source,
+            "Which of these scheduled messages do you want to delete?",
+            [str(l) for l in self.scheduled_tasks[message.source]])
+        for task in self.scheduled_tasks[message.source]:
+            import pdb; pdb.set_trace()
+            if f"{task.time}" == choice.split('\n')[0]:
+                task.task.cancel()
+                self.scheduled_tasks[message.source].remove(task)
+
+        
+        return choice
 
 
 
