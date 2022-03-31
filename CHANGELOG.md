@@ -6,6 +6,7 @@
 - `ask_email_question` (#175)
 - improve type hints (#171)
 - add values() and items() to pdict (#179)
+- new user_activity table holds first seen and last seen per-user per-bot. (#157)
 
 ## 1.2.5
 
