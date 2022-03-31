@@ -183,14 +183,14 @@ class Teddy(DialogBot):
             )
             # retry send up to 3x for overkill
             for _ in range(3):
-                await self.send_typing(message)
+                await self.send_typing(msg)
                 payment_result = await self.pay_user_from_balance(user, "teddy", 4)
                 if payment_result and "Error" not in payment_result:
                     await self.send_message(
                         user,
                         await self.dialog.get("JUST_SENT_PAYMENT", "JUST_SENT_PAYMENT"),
                     )
-                    await self.send_typing(message, stop=True)
+                    await self.send_typing(msg, stop=True)
                     break
                 await self.send_message(
                     user,
