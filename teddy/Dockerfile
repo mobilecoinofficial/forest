@@ -33,6 +33,6 @@ COPY --from=signal /lib/x86_64-linux-gnu/libz.so.1 /lib64/
 
 COPY ./forest/ /app/forest/
 COPY ./mc_util/ /app/mc_util/
-COPY ./captcha/ /app/captcha/
-COPY ./charity.py /app/
-ENTRYPOINT ["/usr/bin/python3.9", "/app/charity.py"]
+COPY ./how-to-activate.gif ./how-to-donate.gif /app/
+COPY ./teddy.py /app/
+ENTRYPOINT ["/usr/bin/python3.9", "/app/teddy.py"]

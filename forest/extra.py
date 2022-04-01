@@ -202,9 +202,7 @@ class DialogBot(TalkBack):
     async def do_dialogload(self, msg: Message) -> Response:
         dialog = json.loads(msg.full_text.lstrip("dialogload "))
         unresolved = []
-        valid_keys = set(
-            [dk.get("key") for dk in self.dialog.dialog_keys if "key" in dk]
-        )
+        valid_keys = {dk.get("key") for dk in self.dialog.dialog_keys if "key" in dk}
         for key, value in dialog.items():
             await self.dialog.set(key, value)
             if key not in valid_keys:
