@@ -107,7 +107,7 @@ elif (Path(ROOT_DIR) / SIGNAL).exists():
     SIGNAL_PATH = str((Path(ROOT_DIR) / SIGNAL).absolute())
 elif which := shutil.which(SIGNAL):
     SIGNAL_PATH = which
-elif os.getenv("ENV") == "TEST":
+elif os.getenv("ENV") == "test":
     SIGNAL_PATH = SIGNAL  # doesn't matter, just use something
 else:
     raise FileNotFoundError(
