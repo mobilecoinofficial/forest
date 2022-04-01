@@ -490,6 +490,51 @@ class Signal:
         )
         await self.outbox.put(cmd)
 
+    async def typing_message_content(
+        self, stop: bool = False, group_id: str = ""
+    ) -> str:
+        "serialized typing message content to pass to auxin --content for turning into protobufs"
+        resp = await self.signal_rpc_request(
+            "send", simulate=True, message="", destination="+15555555555"
+        )
+        # simulate gives us a dict corresponding to the protobuf structure
+        content_skeletor = json.loads(resp.blob["simulate_output"])
+        # typingMessage excludes having a dataMessage
+        content_skeletor["dataMessage"] = None
+        content_skeletor["typingMessage"] = {
+            "action": "STOPPED" if stop else "STARTED",
+            "timestamp": int(time.time() * 1000),
+        }
+        if group_id:
+            content_skeletor["typingMessage"]["groupId"] = group_id
+        return json.dumps(content_skeletor)
+
+    async def send_typing(
+        self,
+        msg: Optional[Message] = None,
+        stop: bool = False,
+        recipient: str = "",
+        group: str = "",
+    ) -> None:
+        "Send a typing indicator to the person or group the message is from"
+        # typing indicators last 15s on their own
+        # https://github.com/signalapp/Signal-Android/blob/master/app/src/main/java/org/thoughtcrime/securesms/components/TypingStatusRepository.java#L32
+        if msg:
+            group = msg.group or ""
+            recipient = msg.source
+        if utils.AUXIN:
+            if group:
+                content = await self.typing_message_content(stop, group)
+                await self.send_message(None, "", group=group, content=content)
+            else:
+                content = await self.typing_message_content(stop)
+                await self.send_message(recipient, "", content=content)
+            return
+        if group:
+            await self.outbox.put(rpc("sendTyping", group_id=[group], stop=stop))
+        else:
+            await self.outbox.put(rpc("sendTyping", recipient=[recipient], stop=stop))
+
     backoff = False
     messages_until_rate_limit = 1000.0
     last_update = time.time()

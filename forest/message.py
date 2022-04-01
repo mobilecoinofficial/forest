@@ -46,6 +46,7 @@ class Message:
     source: str
     uuid: str
     payment: dict
+    typing: str
     arg0: str
     arg1: Optional[str]
     arg2: Optional[str]
@@ -150,6 +151,10 @@ class AuxinMessage(Message):
                 logging.error("text message has no remote address: %s", outer_blob)
         if self.text and not self.source:
             logging.error(outer_blob)
+        # {"end_session":false,"source":{"typingMessage":{"action":"STOPPED","timestamp":1648512301846}}}
+        self.typing = (
+            content.get("source", {}).get("typingMessage", {}).get("action", "")
+        )
         payment_notif = (
             (msg.get("payment") or {}).get("Item", {}).get("notification", {})
         )
@@ -215,6 +220,7 @@ class StdioMessage(Message):
             "groupId"
         ) or result.get("groupId")
         self.quoted_text = msg.get("quote", {}).get("text")
+        self.typing = envelope.get("typingMessage", {}).get("action")
         self.payment = msg.get("payment")
         try:
             self.quote: Optional[Quote] = Quote(msg.get("quote"))
