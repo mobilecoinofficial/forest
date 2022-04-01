@@ -484,15 +484,15 @@ class Signal:
         else:
             await self.send_message(utils.get_secret("ADMIN"), msg, **kwargs)
 
-    async def respond(self, target_msg: Message, msg: Response) -> str:
+    async def respond(self, target_msg: Message, msg: Response, **kwargs: Any) -> str:
         """Respond to a message depending on whether it's a DM or group"""
         logging.debug("responding to %s", target_msg.source)
         if not target_msg.source:
             logging.error(json.dumps(target_msg.blob))
         if not utils.AUXIN and target_msg.group:
-            return await self.send_message(None, msg, group=target_msg.group)
+            return await self.send_message(None, msg, group=target_msg.group, **kwargs)
         destination = target_msg.source or target_msg.uuid
-        return await self.send_message(destination, msg)
+        return await self.send_message(destination, msg, **kwargs)
 
     async def send_reaction(self, target_msg: Message, emoji: str) -> None:
         """Send a reaction. Protip: you can use e.g. \N{GRINNING FACE} in python"""
