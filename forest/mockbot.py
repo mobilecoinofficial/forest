@@ -44,41 +44,35 @@ class MockBot(QuestionBot):
 
     async def get_cmd_output(self, text: str) -> str:
         """Runs commands as normal but intercepts the output instead of passing it onto signal"""
+        ## TODO This currently does not guarantee that the output from get output will
+        # indeed be the output expected of what's just been put in input for now it mostly works,
+        # but will need to be addressed
         await self.send_input(text)
         return await self.get_output()
 
 
 class Tree:
-    """general purpose tree implementation"""
+    """tree implementation for test dialog trees"""
 
-    def __init__(self, data: list[str], children: list = None) -> None:
+    def __init__(self, dialog: list[str], children: list = None) -> None:
         if children is None:
             children = []
-        self.data = data
+        self.dialog = dialog
         self.children = children
 
     def __str__(self) -> str:
-        return str(self.data)
+        return str(self.dialog)
 
     __repr__ = __str__
 
     def __getitem__(self, item: int) -> str:
-        return self.data[item]
+        return self.dialog[item]
 
     def get_all_paths(self, path: list = None) -> list:
         """returns all paths"""
-        paths = []
         if path is None:
             path = []
         path.append(self)
         if self.children:
-            for child in self.children:
-                paths.extend(child.get_all_paths(path[:]))
-        else:
-            paths.append(path)
-        return paths
-
-
-# class CallAndResponse():
-#     def __init__(self,call:str,response:str) -> None:
-#         call =
+            return [child.get_all_paths(path[:]) for child in self.children]
+        return path

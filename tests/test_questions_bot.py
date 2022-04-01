@@ -169,14 +169,6 @@ class TestBot(MockBot):
         return "oops, sorry"
 
 
-@pytest.fixture()
-def event_loop(request):
-    """Fixture version of the event loop"""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
-
-
 @pytest_asyncio.fixture()
 async def bot():
     """Bot Fixture allows for exiting gracefully"""
