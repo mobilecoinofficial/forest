@@ -1,71 +1,20 @@
 # Copyright (c) 2022 MobileCoin Inc.
 # Copyright (c) 2022 Ilia Daniher <i@mobilecoin.com>
 # MIT LICENSE
-
 import asyncio
-import gzip
-import hashlib
 import json
 import os
 import time
-from typing import Any, Generic, List, Optional, TypeVar, Union, cast, overload
-
+from typing import Any, Generic, Optional, TypeVar, overload
 import aiohttp
-import base58
-from Crypto.Cipher import AES, _mode_eax
+from forest.cryptography import get_ciphertext_value, get_cleartext_value, hash_salt
 
 NAMESPACE = os.getenv("FLY_APP_NAME") or open("/etc/hostname").read().strip()
-SALT = os.getenv("SALT", "ECmG8HtNNMWb4o2bzyMqCmPA6KTYJPCkd")
-# build your AESKEY envvar with this: cat /dev/urandom | head -c 32 | base58
-AESKEY = base58.b58decode(os.getenv("AESKEY", "kWKuomB9Ty3GcJ9yA1yED").encode()) * 2
-
-if not AESKEY or len(AESKEY) not in [16, 32, 64]:
-    raise ValueError(
-        "Need to set 128b or 256b (16 or 32 byte) AESKEY envvar for persistence. It should be base58 encoded."
-    )
-
-if len(AESKEY) == 64:
-    AESKEY = AESKEY[:32]
-
 pAUTH = os.getenv("PAUTH", "")
 pURL = os.getenv("PURL", "https://gusc1-charming-parrot-31440.upstash.io")
 
 if not pAUTH:
     raise ValueError("Need to set PAUTH envvar for persistence")
-
-
-def encrypt(data: bytes, key: bytes) -> bytes:
-    """Accepts data (as arbitrary length bytearray) and key (as 16B or 32B bytearray) and returns authenticated and encrypted blob (as bytearray)"""
-    cipher = cast(_mode_eax.EaxMode, AES.new(key, AES.MODE_EAX))
-    ciphertext, authtag = cipher.encrypt_and_digest(data)  # pylint: disable
-    return cipher.nonce + authtag + ciphertext
-
-
-def decrypt(data: bytes, key: bytes) -> bytes:
-    """Accepts ciphertext (as arbitrary length bytearray) and key (as 16B or 32B bytearray) and returns decrypted (plaintext) blob (as bytearray)"""
-    cipher = cast(_mode_eax.EaxMode, AES.new(key, AES.MODE_EAX, data[:16]))
-    return cipher.decrypt_and_verify(data[32:], data[16:32])  # pylint: disable
-
-
-def get_safe_key(key_: str) -> str:
-    """returns a base58 encoded sha256sum of a salted key"""
-    return base58.b58encode(hashlib.sha256(f"{SALT}{key_}".encode()).digest()).decode()
-
-
-def get_safe_value(value_: Union[str, bytes]) -> str:
-    """returns a base58 encoded aes128 AES EAX mode encrypted gzip compressed value"""
-    if isinstance(value_, str):
-        value_bytes = value_.encode()
-    elif isinstance(value_, bytes):
-        value_bytes = value_
-    else:
-        raise ValueError
-    return base58.b58encode(encrypt(gzip.compress(value_bytes), AESKEY)).decode()
-
-
-def get_cleartext_value(value_: str) -> str:
-    """decrypts, decodes, decompresses a b58 blob returning cleartext"""
-    return gzip.decompress(decrypt(base58.b58decode(value_), AESKEY)).decode()
 
 
 class persistentKVStoreClient:
@@ -92,15 +41,15 @@ class fasterpKVStoreClient(persistentKVStoreClient):
         self.url = base_url
         self.conn = aiohttp.ClientSession()
         self.auth = auth_str
-        self.namespace = get_safe_key(namespace)
+        self.namespace = hash_salt(namespace)
         self.exists: dict[str, bool] = {}
         self.headers = {
             "Authorization": f"Bearer {self.auth}",
         }
 
     async def post(self, key: str, data: str) -> str:
-        key = get_safe_key(f"{self.namespace}_{key}")
-        data = get_safe_value(data)
+        key = hash_salt(f"{self.namespace}_{key}")
+        data = get_ciphertext_value(data)
         # try to set
         async with self.conn.post(
             f"{self.url}/SET/{key}", headers=self.headers, data=data
@@ -109,7 +58,7 @@ class fasterpKVStoreClient(persistentKVStoreClient):
 
     async def get(self, key: str) -> str:
         """Get and return value of an object with the specified key and namespace"""
-        key = get_safe_key(f"{self.namespace}_{key}")
+        key = hash_salt(f"{self.namespace}_{key}")
         async with self.conn.get(f"{self.url}/GET/{key}", headers=self.headers) as resp:
             res = await resp.json()
             if "result" in res:
@@ -149,7 +98,7 @@ class fastpKVStoreClient(persistentKVStoreClient):
         self.url = base_url
         self.conn = aiohttp.ClientSession()
         self.auth = auth_str
-        self.namespace = get_safe_key(namespace)
+        self.namespace = hash_salt(namespace)
         self.exists: dict[str, bool] = {}
         self.headers = {
             "Content-Type": "application/json",
@@ -159,8 +108,8 @@ class fastpKVStoreClient(persistentKVStoreClient):
         }
 
     async def post(self, key: str, data: str) -> str:
-        key = get_safe_key(key)
-        data = get_safe_value(data)
+        key = hash_salt(key)
+        data = get_ciphertext_value(data)
         # try to set
         if self.exists.get(key):
             async with self.conn.patch(
@@ -208,7 +157,7 @@ class fastpKVStoreClient(persistentKVStoreClient):
 
     async def get(self, key: str) -> str:
         """Get and return value of an object with the specified key and namespace"""
-        key = get_safe_key(key)
+        key = hash_salt(key)
         async with self.conn.get(
             f"{self.url}?select=value&key_=eq.{key}&namespace=eq.{self.namespace}",
             headers={
@@ -308,9 +257,17 @@ class aPersistDict(Generic[V]):
         async with self.rwlock:
             return self.dict_.get(key) or default
 
-    async def keys(self) -> List[str]:
+    async def keys(self) -> list[str]:
         async with self.rwlock:
             return list(self.dict_.keys())
+
+    async def values(self) -> list[V]:
+        async with self.rwlock:
+            return list(self.dict_.values())
+
+    async def items(self) -> list[tuple[str, V]]:
+        async with self.rwlock:
+            return list(self.dict_.items())
 
     async def remove(self, key: str) -> None:
         """Removes a value from the map, if it exists."""

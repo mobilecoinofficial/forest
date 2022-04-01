@@ -9,8 +9,7 @@ import logging
 import random
 import ssl
 import time
-from typing import Any, Optional, List
-
+from typing import Any, Optional
 import aiohttp
 import asyncpg
 
@@ -33,8 +32,9 @@ else:
     ssl_context.verify_mode = ssl.CERT_REQUIRED
     ssl_context.load_cert_chain(certfile="client.full.pem")
 
-MICROMOB_TO_PICOMOB = 1_000_000
-MILLIMOB_TO_PICOMOB = 1_000_000_000
+MICROMOB_TO_PICOMOB = 1_000_000  # that's 1e12/1e6
+MILLIMOB_TO_PICOMOB = 1_000_000_000  # that's 1e12/1e3
+FEE_PMOB = int(1e12 * 0.0004)  # mobilecoin transaction fee in picomob.
 
 DATABASE_URL = utils.get_secret("DATABASE_URL")
 LedgerPGExpressions = PGExpressions(
@@ -147,23 +147,26 @@ class Mobster:
     async def split_txos_slow(
         self, output_millimob: int = 100, target_quantity: int = 200
     ) -> str:
-        output_millimob = int(output_millimob)
+        output_pmob = output_millimob * MILLIMOB_TO_PICOMOB + FEE_PMOB
         built = 0
         i = 0
-        utxos: List[str] = []
+        utxos: list[tuple[str, int]] = []
         while built < (target_quantity + 3):
             if len(utxos) < 1:
-                utxos = list(reversed(await self.get_utxos()))
+                # if we have few big txos, we can have a lot of change we don't see yet
+                # so if we've run out of txos we check for change from previous iterations
+                utxos = list(reversed((await self.get_utxos()).items()))
+            txo_id, value = utxos.pop(0)
+            if value / output_pmob < 2:
+                continue
             split_transaction = await self.req_(
                 "build_split_txo_transaction",
                 **dict(
-                    txo_id=utxos.pop(0),
+                    txo_id=txo_id,
                     output_values=[
-                        str(
-                            output_millimob * MILLIMOB_TO_PICOMOB
-                            + 400 * MICROMOB_TO_PICOMOB
-                        )
-                        for _ in range(15)
+                        # if we can't split into 15, split into however much possible
+                        str(output_pmob)
+                        for _ in range(min(value // output_pmob, 15))
                     ],
                 ),
             )
@@ -173,6 +176,7 @@ class Mobster:
                 results = await self.req_("submit_transaction", **params)
             else:
                 results = {}
+            # not only did we have params, submitting also had a result
             if results.get("results"):
                 await asyncio.sleep(2)
                 built += 15
