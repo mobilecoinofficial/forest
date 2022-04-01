@@ -498,38 +498,28 @@ class Signal:
         else:
             await self.outbox.put(rpc("sendTyping", recipient=[msg.source], stop=stop))
 
-    async def sticker_message_content(self) -> str:
-        "serialized sticker message content to pass to auxin --content for turning into protobufs"
-        resp = await self.signal_rpc_request(
-            "send", simulate=True, message="", destination="+15555555555"
-        )
-        # simulate gives us a dict corresponding to the protobuf structure
-        content_skeletor = json.loads(resp.blob["simulate_output"])
-        content_skeletor["dataMessage"]["body"] = None
-        content_skeletor["dataMessage"]["sticker"] = {
-            "data": {
-                "attachment_identifier": {"cdnId": 5902557749391454000},
-                "contentType": "image/webp",
-                "digest": u8("vo2+aWLvbOEYCVUZUocLb0ffORNFo5924nmyH28Pj04="),
-                "height": 512,
-                "key": u8(
-                    "a5B7fMYxWpn8DILBWfB/tnFSXufcC7C318XC4bXmwEy/NYnKof/oS15JU8sn33whcYwoXDKT12BF04RoDQ4Osg=="
-                ),
-                "size": 17540,
-                "width": 512,
-            },
-            "packId": u8("pPYIEA9J4JkrZ2DyuXG4pw=="),
-            "packKey": u8("R2ZbM8Tz2N49WYY8yEWXPLML4JC/w1tu0naLoj5P1eY="),
-            "stickerId": 0,
-        }
-        return json.dumps(content_skeletor)
-
     async def send_sticker(
         self, msg: Message, sticker: str = "a4f608100f49e0992b6760f2b971b8a7:0"
     ) -> None:
         "send a sticker to the person or group the message is from"
         if utils.AUXIN:
-            content = await self.sticker_message_content()
+            stick = {
+                "data": {
+                    "attachment_identifier": {"cdnId": 5902557749391454000},
+                    "contentType": "image/webp",
+                    "digest": u8("vo2+aWLvbOEYCVUZUocLb0ffORNFo5924nmyH28Pj04="),
+                    "height": 512,
+                    "key": u8(
+                        "a5B7fMYxWpn8DILBWfB/tnFSXufcC7C318XC4bXmwEy/NYnKof/oS15JU8sn33whcYwoXDKT12BF04RoDQ4Osg=="
+                    ),
+                    "size": 17540,
+                    "width": 512,
+                },
+                "packId": u8("pPYIEA9J4JkrZ2DyuXG4pw=="),
+                "packKey": u8("R2ZbM8Tz2N49WYY8yEWXPLML4JC/w1tu0naLoj5P1eY="),
+                "stickerId": 0,
+            }
+            content = {"dataMessage": {"body": None, "sticker": stick}}
             if msg.group:
                 await self.send_message(None, "", group=msg.group, content=content)
             else:
@@ -1080,13 +1070,7 @@ class PayBot(ExtrasBot):
         # SignalServiceMessageContent protobuf represented as JSON (spicy)
         # destination is outside the content so it doesn't matter,
         # but it does contain the bot's profileKey
-        resp = await self.signal_rpc_request(
-            "send", simulate=True, message="", destination="+15555555555"
-        )
-        content_skeletor = json.loads(resp.blob["simulate_output"])
-        content_skeletor["dataMessage"]["body"] = None
-        content_skeletor["dataMessage"]["payment"] = payment
-        return json.dumps(content_skeletor)
+        return {"dataMessage": {"body": None, "payment": payment}}
 
     async def build_gift_code(self, amount_pmob: int) -> list[str]:
         """Builds a gift code and returns a list of messages to send, given an amount in pMOB."""
@@ -1185,7 +1169,7 @@ class PayBot(ExtrasBot):
         content = await self.fs_receipt_to_payment_message_content(
             receipt_resp, receipt_message
         )
-        # pass our beautifully composed spicy JSON content to auxin.
+        # pass our beautifully composed JSON content to auxin.
         # message body is ignored in this case.
         payment_notif = await self.send_message(recipient, "", content=content)
         resp_future = asyncio.create_task(self.wait_for_response(rpc_id=payment_notif))
