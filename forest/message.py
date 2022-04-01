@@ -113,7 +113,7 @@ class Message(Dictable):
         return None
 
     def __repr__(self) -> str:
-        return f"Message: {self.to_dict()}"
+        return f"Message: {json.dumps(self.to_dict())}"
 
 
 class AuxinMessage(Message):
