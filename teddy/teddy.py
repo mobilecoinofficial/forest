@@ -53,6 +53,10 @@ class Teddy(DialogBot):
         # global payout lock
         self.pay_lock: asyncio.Lock = asyncio.Lock()
         self.user_state: aPersistDict[str] = aPersistDict("user_state")
+        # set of users who opted into followup; user -> timestamp millis
+        self.followup_confirmed: aPersistDictOfInts = aPersistDictOfInts(
+            "followup_confirmed"
+        )
         # okay, this now maps the tag (restore key) of each of the above to the instance of the PersistDict class
         self.state = {
             self.__getattribute__(attr).tag: self.__getattribute__(attr)
@@ -131,6 +135,7 @@ class Teddy(DialogBot):
         if await self.ask_yesno_question(
             user, await self.dialog.get("MAY_WE_DM_U", "MAY_WE_DM_U")
         ):
+            await self.followup_confirmed.set(user, int(time.time() * 1000))
             return await self.dialog.get("OKAY_WE_WILL_DM_U", "OKAY_WE_WILL_DM_U")
         return await self.dialog.get("TY_WE_WONT_DM_U", "TY_WE_WONT_DM_U")
 
@@ -161,7 +166,11 @@ class Teddy(DialogBot):
             return None
         user_address = await self.get_signalpay_address(user)
         if not user_address:
-            return await self.dialog.get("PLEASE_ACTIVATE", "PLEASE_ACTIVATE")
+            text_message = await self.dialog.get("PLEASE_ACTIVATE", "PLEASE_ACTIVATE")
+            await self.send_message(
+                user, text_message, attachments=["./how-to-activate.gif"]
+            )
+            return None
         # TODO: establish support path
         if claims_left < 0:
             return await self.dialog.get("TOO_MANY_ATTEMPTS", "TOO_MANY_ATTEMPTS")
@@ -175,6 +184,7 @@ class Teddy(DialogBot):
             await self.attempted_claims.increment(user, 1)
             await self.valid_codes.set(code, user)
             await self.user_claimed.set(user, code)
+            await self.user_state.set(user, "VALID_CODE_NOW_SENDING")
             await self.send_message(
                 user,
                 await self.dialog.get(
@@ -191,6 +201,7 @@ class Teddy(DialogBot):
                         await self.dialog.get("JUST_SENT_PAYMENT", "JUST_SENT_PAYMENT"),
                     )
                     await self.send_typing(msg, stop=True)
+                    await self.user_state.set(user, "JUST_SENT_PAYMENT")
                     break
                 await self.send_message(
                     user,
@@ -201,11 +212,13 @@ class Teddy(DialogBot):
                 await self.send_message(
                     user, await self.dialog.get("WE_ARE_SO_SORRY", "WE_ARE_SO_SORRY")
                 )
+                await self.user_state.set(user, "WE_ARE_SO_SORRY")
                 return None
             await asyncio.sleep(1)
             await self.send_message(
                 user, await self.dialog.get("CHARITIES_INFO", "CHARITIES_INFO")
             )
+            await self.user_state.set(user, "CHARITIES_INFO")
             return await self.wait_then_followup(msg)
         if (
             code in await self.valid_codes.keys()
@@ -215,6 +228,7 @@ class Teddy(DialogBot):
             return await self.dialog.get("CODE_ALREADY_CLAIMED", "CODE_ALREADY_CLAIMED")
         await self.attempted_claims.increment(user, 1)
         if claims_left == 0:
+            await self.user_state.set(user, "YOU_ARE_NOW_LOCKED")
             return await self.dialog.get("YOU_ARE_NOW_LOCKED", "YOU_ARE_NOW_LOCKED")
         if claims_left == 1:
             return await self.dialog.get("LAST_TRY", "LAST_TRY")

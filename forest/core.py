@@ -32,8 +32,8 @@ from textwrap import dedent
 from typing import (
     Any,
     Awaitable,
-    Coroutine,
     Callable,
+    Coroutine,
     Mapping,
     Optional,
     Tuple,
@@ -43,6 +43,7 @@ from typing import (
 )
 
 import aiohttp
+import asyncpg
 import termcolor
 from aiohttp import web
 from phonenumbers import NumberParseException
@@ -53,6 +54,7 @@ from ulid2 import generate_ulid_as_base32 as get_uid
 # framework
 import mc_util
 from forest import autosave, datastore, payments_monitor, pghelp, string_dist, utils
+from forest.cryptography import hash_salt
 from forest.message import AuxinMessage, Message, StdioMessage
 
 JSON = dict[str, Any]
@@ -69,7 +71,7 @@ fee_pmob = int(1e12 * 0.0004)
 try:
     import captcha
 except ImportError:
-    captcha = None  # type:ignore
+    captcha = None  # type: ignore
 
 
 def rpc(
@@ -81,6 +83,20 @@ def rpc(
         "id": _id,
         "params": (param_dict or {}) | params,
     }
+
+
+ActivityQueries = pghelp.PGExpressions(
+    table="user_activity",
+    create_table="""CREATE TABLE user_activity (
+        id SERIAL PRIMARY KEY,
+        account TEXT,
+        first_seen TIMESTAMP default now(),
+        last_seen TIMESTAMP default now(),
+        bot TEXT,
+        UNIQUE (account, bot));""",
+    log="""INSERT INTO user_activity (account, bot) VALUES ($1, $2)
+    ON CONFLICT ON CONSTRAINT user_activity_account_bot_key1 DO UPDATE SET last_seen=now()""",
+)
 
 
 class Signal:
@@ -620,6 +636,12 @@ class Bot(Signal):
             if not hasattr(getattr(self, f"do_{name}"), "hide")
         ]
         super().__init__(bot_number)
+        self.activity = pghelp.PGInterface(
+            query_strings=ActivityQueries, database=utils.get_secret("DATABASE_URL")
+        )
+        # set of users we've received messages from in the last minute
+        self.seen_users: set[str] = set()
+        self.log_activity_task = asyncio.create_task(self.log_activity())
         self.restart_task = asyncio.create_task(
             self.start_process()
         )  # maybe cancel on sigint?
@@ -630,14 +652,44 @@ class Bot(Signal):
             self.restart_task_callback(self.handle_messages)
         )
 
+    async def log_activity(self) -> None:
+        """
+        every 60s, update the user_activity table with users we've seen
+        runs in the bg as batches to avoid a seperate db query for every message
+        used for signup metrics
+        """
+        if not self.activity.pool:
+            await self.activity.connect_pg()
+            # mypy can't infer that connect_pg creates pool
+            assert self.activity.pool
+        while 1:
+            await asyncio.sleep(60)
+            if not self.seen_users:
+                continue
+            try:
+                async with self.activity.pool.acquire() as conn:
+                    # executemany batches this into an atomic db query
+                    await conn.executemany(
+                        self.activity.queries["log"],
+                        [(name, utils.APP_NAME) for name in self.seen_users],
+                    )
+                    logging.debug("recorded %s seen users", len(self.seen_users))
+                    self.seen_users = set()
+            except asyncpg.UndefinedTableError:
+                logging.info("creating user_activity table")
+                await self.activity.create_table()
+
     async def handle_messages(self) -> None:
         """
         Read messages from the queue. If it matches a pending request to auxin-cli/signal-cli,
         set the result for that request. If said result is being rate limited, retry sending it
         after pausing. Otherwise, concurrently respond to each message.
         """
+        metrics_salt = utils.get_secret("METRICS_SALT")
         while True:
             message = await self.inbox.get()
+            if metrics_salt and message.uuid:
+                self.seen_users.add(hash_salt(message.uuid, metrics_salt))
             if message.id and message.id in self.pending_requests:
                 logging.debug("setting result for future %s: %s", message.id, message)
                 self.pending_requests[message.id].set_result(message)
