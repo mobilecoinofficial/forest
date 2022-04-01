@@ -1,11 +1,19 @@
 # the alternative strategy is like, invent an intermediate representation and notation (and visual frontend), or parse Python and hope folks don't use layers of abstraction that one needs runtime introspection to destructure
 import ast
 import sys
+import json
 import string
 
 from typing import Optional, Any
 from forest import utils
-from forest.core import QuestionBot, is_admin, Message, Response, requires_admin
+from forest.core import (
+    QuestionBot,
+    is_admin,
+    Message,
+    Response,
+    requires_admin,
+    get_uid,
+)
 from forest.pdictng import aPersistDict
 
 
@@ -160,7 +168,7 @@ class DialogBot(TalkBack):
         super().__init__()
 
     @requires_admin
-    async def do_set_dialog(self, msg: Message) -> Response:
+    async def do_dialogset(self, msg: Message) -> Response:
         """Let's do it live.
         Privileged editing of dialog blurbs, because."""
         user = msg.uuid
@@ -181,6 +189,29 @@ class DialogBot(TalkBack):
         # elif not self.is_admin(msg):
         #    return "You must be an administrator to overwrite someone else's blurb!"
         return "updated blurb!"
+
+    @requires_admin
+    async def do_dialogdump(self, msg: Message) -> Response:
+        dialog_json = json.dumps(self.dialog.dict_, indent=2)
+        sendfilepath = f"/tmp/Dialog_{get_uid()}.json"
+        open(sendfilepath, "w").write(dialog_json)
+        await self.send_message(msg.uuid, dialog_json, attachments=[sendfilepath])
+        return None
+
+    @requires_admin
+    async def do_dialogload(self, msg: Message) -> Response:
+        dialog = json.loads(msg.full_text.lstrip("dialogload "))
+        unresolved = []
+        valid_keys = set(
+            [dk.get("key") for dk in self.dialog.dialog_keys if "key" in dk]
+        )
+        for key, value in dialog.items():
+            await self.dialog.set(key, value)
+            if key not in valid_keys:
+                unresolved += [key]
+        if unresolved:
+            return f"Found some unresolved keys in this load: {unresolved}"
+        return "All good!"
 
     @requires_admin
     async def do_dialog(self, _: Message) -> Response:
