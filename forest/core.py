@@ -458,7 +458,6 @@ class Signal:
         self.pending_messages_sent[rpc_id] = json_command
         self.pending_requests[rpc_id] = asyncio.Future()
         await self.outbox.put(json_command)
-        asyncio.create_task(self.save_sent_message(rpc_id, params))
         return rpc_id
 
     async def admin(self, msg: Response, **kwargs: Any) -> None:
