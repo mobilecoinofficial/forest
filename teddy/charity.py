@@ -122,8 +122,8 @@ class Charity(DialogBot):
         code = msg.arg0
         if not code:
             return None
-        if code == "?":
-            return await self.do_help(msg)
+        # if code == "?":
+        #    return await self.do_help(msg)
         if msg.full_text and msg.full_text in [
             key.lower() for key in await self.easter_eggs.keys()
         ]:
@@ -131,7 +131,12 @@ class Charity(DialogBot):
         if code in await self.easter_eggs.keys():
             return await self.easter_eggs.get(code)
         await self.talkback(msg)
-        return await self.dialog.get("CHARITY_INFO", "CHARITY_INFO")
+        await self.send_message(
+            msg.uuid,
+            await self.dialog.get("CHARITY_INFO", "CHARITY_INFO"),
+            attachments=["./how-to-donate.gif"],
+        )
+        return None
 
     async def payment_response(self, msg: Message, amount_pmob: int) -> Response:
         user = msg.uuid
@@ -144,11 +149,14 @@ class Charity(DialogBot):
             donation_uid, f"{user}, {donation_time}, {amount_mob}, {code}"
         )
         await self.charities_balance_mmob.increment(code, amount_mmob)
-        if amount_mmob > await self.reward_levels.get(f"{code}_ship", 10_000):
-            await self.fulfillment(msg, donation_uid)
-            return None
-        if amount_mmob > await self.reward_levels.get(f"{code}_download", 10_000):
-            return await self.dialog.get("THANK_YOU_PLEASE_DL", "THANK_YOU_PLEASE_DL")
+        if await self.dialog.get("REWARDS"):
+            if amount_mmob > await self.reward_levels.get(f"{code}_ship", 10_000):
+                await self.fulfillment(msg, donation_uid)
+                return None
+            if amount_mmob > await self.reward_levels.get(f"{code}_download", 10_000):
+                return await self.dialog.get(
+                    "THANK_YOU_PLEASE_DL", "THANK_YOU_PLEASE_DL"
+                )
         return await self.dialog.get("THANK_YOU_FOR_DONATION", "THANK_YOU_FOR_DONATION")
 
 

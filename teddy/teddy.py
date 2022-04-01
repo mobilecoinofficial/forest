@@ -54,7 +54,9 @@ class Teddy(DialogBot):
         self.pay_lock: asyncio.Lock = asyncio.Lock()
         self.user_state: aPersistDict[str] = aPersistDict("user_state")
         # set of users who opted into followup; user -> timestamp millis
-        self.followup_confirmed: aPersistDictOfInts = aPersistDict("followup_confirmed")
+        self.followup_confirmed: aPersistDictOfInts = aPersistDictOfInts(
+            "followup_confirmed"
+        )
         # okay, this now maps the tag (restore key) of each of the above to the instance of the PersistDict class
         self.state = {
             self.__getattribute__(attr).tag: self.__getattribute__(attr)
@@ -164,7 +166,11 @@ class Teddy(DialogBot):
             return None
         user_address = await self.get_signalpay_address(user)
         if not user_address:
-            return await self.dialog.get("PLEASE_ACTIVATE", "PLEASE_ACTIVATE")
+            text_message = await self.dialog.get("PLEASE_ACTIVATE", "PLEASE_ACTIVATE")
+            await self.send_message(
+                user, text_message, attachments=["./how-to-activate.gif"]
+            )
+            return None
         # TODO: establish support path
         if claims_left < 0:
             return await self.dialog.get("TOO_MANY_ATTEMPTS", "TOO_MANY_ATTEMPTS")
