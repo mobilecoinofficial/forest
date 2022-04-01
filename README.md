@@ -265,6 +265,7 @@ These are the environment variables and flags that the bots read to work. Not al
 - `GOOGLE_MAPS_API`: google maps api key
 - `PAUTH`: used for PersistDict; see </pdictng_docs/README.md>
 - `SALT`: used for PersistDict
+- `METRICS_SALT`: used for logging when users were first and last seen. Must be set to log 
 
 ## Binary flags
 - `DOWNLOAD`: download/upload datastore from the database instead of using what's in the current working directory.
