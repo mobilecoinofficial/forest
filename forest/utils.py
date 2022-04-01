@@ -103,7 +103,7 @@ if maybe_path and Path(maybe_path).exists():
     SIGNAL_PATH = str(Path(maybe_path).absolute())
 elif Path(SIGNAL).exists():
     SIGNAL_PATH = str(Path(SIGNAL).absolute())
-elif Path(ROOT_DIR) / SIGNAL:
+elif (Path(ROOT_DIR) / SIGNAL).exists():
     SIGNAL_PATH = str((Path(ROOT_DIR) / SIGNAL).absolute())
 elif which := shutil.which(SIGNAL):
     SIGNAL_PATH = which
@@ -112,20 +112,6 @@ else:
         f"Couldn't find a {SIGNAL} executable in the working directory, {ROOT_DIR}, or as an executable. "
         f"Install {SIGNAL} or try symlinking {SIGNAL} to the working directory"
     )
-
-
-if Path(SIGNAL).exists():
-    SIGNAL_PATH = str(Path(SIGNAL).absolute())
-elif Path(ROOT_DIR) / SIGNAL:
-    SIGNAL_PATH = str(Path(ROOT_DIR) / SIGNAL)
-elif which := shutil.which(SIGNAL):
-    SIGNAL_PATH = which
-else:
-    raise FileNotFoundError(
-        f"Couldn't find a {SIGNAL} executable in the working directory, {ROOT_DIR}, or as an executable. "
-        f"Install {SIGNAL} or try symlinking {SIGNAL} to the working directory"
-    )
-
 
 #### Configure logging to file
 
