@@ -86,7 +86,6 @@ class TestMessage:
       group (Optional[str]): target group of the TestMessage
       endsession (bool): send command to reset session/keystate
       attachments (Optional[list[str]]): attachment list
-      content (str): used for payments
       sender (Optional[str]): sender of the message
       payment (Optional[tuple[str, Optional[int]]]): payment recipient and
       amount of Mobilecoin to send to recipient
@@ -97,7 +96,6 @@ class TestMessage:
     group: Optional[str] = None
     endsession: bool = False
     attachments: Optional[Union[list[dict[str, str]], list[str]]] = None
-    content: str = ""
     sender: Optional[str] = None
     payment: Optional[tuple[str, Optional[int]]] = None
 
@@ -766,7 +764,6 @@ class Tiamat(PayBot):
                     group=step.message.group,
                     endsession=step.message.endsession,
                     attachments=step.message.attachments,  # type: ignore
-                    content=step.message.content,
                 )
                 send_receipt = await self.pending_requests[rpc_id]
 
@@ -949,7 +946,6 @@ class Tiamat(PayBot):
                 group=response.group,
                 endsession=False,
                 attachments=response.attachments,
-                content="",
                 sender=response.source,
             )
 
