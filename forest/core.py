@@ -378,6 +378,7 @@ class Signal:
         endsession: bool = False,
         attachments: Optional[list[str]] = None,
         content: str = "",
+        **other_params: Any,
     ) -> str:
         """
         Builds send command for the specified recipient in jsonrpc format and
@@ -413,24 +414,24 @@ class Signal:
         if isinstance(msg, list):
             # return the last stamp
             return [
-                await self.send_message(recipient, m, group, endsession, attachments)
+                await self.send_message(
+                    recipient, m, group, endsession, attachments, **other_params
+                )
                 for m in msg
             ][-1]
         if isinstance(msg, dict):
             msg = "\n".join((f"{key}:\t{value}" for key, value in msg.items()))
 
-        params: JSON = {"message": msg}
+        params: JSON = {"message": msg, **other_params}
         if endsession:
             params["end_session"] = True
         if attachments:
             params["attachments"] = attachments
         if content:
             params["content"] = content
-        if group:
-            if utils.AUXIN:
-                logging.error("setting a group message, but auxin doesn't support this")
+        if group and not utils.AUXIN:
             params["group-id"] = group
-        elif recipient:
+        if recipient and not utils.AUXIN:
             try:
                 assert recipient == utils.signal_format(recipient)
             except (AssertionError, NumberParseException):
@@ -443,7 +444,11 @@ class Signal:
                         e,
                     )
                     return ""
-            params["destination" if utils.AUXIN else "recipient"] = str(recipient)
+            params["recipient"] = str(recipient)
+        if recipient and utils.AUXIN:
+            params["destination"] = str(recipient)
+        if group and utils.AUXIN:
+            params["group"] = group
         # maybe use rpc() instead
         rpc_id = f"send-{get_uid()}"
         json_command: JSON = {
@@ -457,22 +462,26 @@ class Signal:
         await self.outbox.put(json_command)
         return rpc_id
 
-    async def admin(self, msg: Response, **kwargs: Any) -> None:
+    async def admin(self, msg: Response, **other_params: Any) -> None:
         "send a message to admin"
-        if (group := utils.get_secret("ADMIN_GROUP")) and not utils.AUXIN:
-            await self.send_message(None, msg, group=group, **kwargs)
+        if group := utils.get_secret("ADMIN_GROUP"):
+            await self.send_message(None, msg, group=group, **other_params)
         else:
-            await self.send_message(utils.get_secret("ADMIN"), msg, **kwargs)
+            await self.send_message(utils.get_secret("ADMIN"), msg, **other_params)
 
-    async def respond(self, target_msg: Message, msg: Response) -> str:
+    async def respond(
+        self, target_msg: Message, msg: Response, **other_params: Any
+    ) -> str:
         """Respond to a message depending on whether it's a DM or group"""
         logging.debug("responding to %s", target_msg.source)
         if not target_msg.source:
             logging.error(json.dumps(target_msg.blob))
-        if not utils.AUXIN and target_msg.group:
-            return await self.send_message(None, msg, group=target_msg.group)
+        if target_msg.group:
+            return await self.send_message(
+                None, msg, group=target_msg.group, **other_params
+            )
         destination = target_msg.source or target_msg.uuid
-        return await self.send_message(destination, msg)
+        return await self.send_message(destination, msg, **other_params)
 
     async def send_reaction(self, target_msg: Message, emoji: str) -> None:
         """Send a reaction. Protip: you can use e.g. \N{GRINNING FACE} in python"""
