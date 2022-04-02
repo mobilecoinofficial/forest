@@ -8,7 +8,7 @@ import pytest_asyncio
 
 # Prevent Utils from importing dev_secrets by default
 os.environ["ENV"] = "test"
-
+logging.info(os.getenv("ENV"))
 from forest import utils, core
 from forest.core import Message, QuestionBot, Response
 

@@ -26,7 +26,29 @@ unicode_quotes = [
 ]
 
 
-class Message:
+class Dictable:
+    def to_dict(self) -> dict:
+        """
+        Returns a dictionary of message instance
+        variables except for the blob
+        """
+        properties = {}
+        for attr in dir(self):
+            if not (attr.startswith("_") or attr in ("blob", "full_text", "envelope")):
+                val = getattr(self, attr)
+                if val and not callable(val):
+                    # if attr == "text":
+                    #    val = termcolor.colored(val, attrs=["bold"])
+                    #    # gets mangled by repr
+                    if isinstance(val, Dictable):
+                        properties[attr] = val.to_dict()
+                    else:
+                        properties[attr] = val
+
+        return properties
+
+
+class Message(Dictable):
     """
     Base message type
 
@@ -86,29 +108,12 @@ class Message:
         # reconstitute the text minus arg0
         self.text = " ".join(self.tokens)
 
-    def to_dict(self) -> dict:
-        """
-        Returns a dictionary of message instance
-        variables except for the blob
-        """
-        properties = {}
-        for attr in dir(self):
-            if not (attr.startswith("_") or attr in ("blob", "full_text", "envelope")):
-                val = getattr(self, attr)
-                if val and not callable(val):
-                    # if attr == "text":
-                    #    val = termcolor.colored(val, attrs=["bold"])
-                    #    # gets mangled by repr
-                    properties[attr] = val
-
-        return properties
-
     def __getattr__(self, attr: str) -> None:
         # return falsy string back if not found
         return None
 
     def __repr__(self) -> str:
-        return f"Message: {self.to_dict()}"
+        return f"Message: {json.dumps(self.to_dict())}"
 
 
 class AuxinMessage(Message):
@@ -132,7 +137,7 @@ class AuxinMessage(Message):
         self.attachments: list[dict[str, str]] = msg.get("attachments", [])
         # "bodyRanges":[{"associatedValue":{"mentionUuid":"fc4457f0-c683-44fe-b887-fe3907d7762e"},"length":1,"start":0}] ... no groups anyway
         self.mentions = []
-        self.group = msg.get("group") or msg.get("groupV2") or ""
+        self.group = blob.get("group_id") or ""
         maybe_quote = msg.get("quote")
         self.address = blob.get("Address", {})
         self.quoted_text = "" if not maybe_quote else maybe_quote.get("text")
@@ -173,7 +178,7 @@ class AuxinMessage(Message):
 
 # auxin:
 # {'dataMessage': {'profileKey': 'LZa0kKwD0/L3qs96L+lIORyi3ATqqsOUEowtAic7Y0A=', 'reaction': {'emoji': '❤️', 'remove': False, 'targetAuthorUuid': 'da1fb04c-bf1a-458f-92c7-6f21ad443684', 'targetSentTimestamp': 1647300333914}, 'timestamp': 1647300340210}}}
-class Reaction:
+class Reaction(Dictable):
     def __init__(self, reaction: dict) -> None:
         assert reaction
         self.emoji = reaction["emoji"]
@@ -182,7 +187,7 @@ class Reaction:
         self.ts = reaction["targetSentTimestamp"]
 
 
-class Quote:
+class Quote(Dictable):
     def __init__(self, quote: dict) -> None:
         assert quote
         # signal-cli:
