@@ -1,3 +1,8 @@
+## 1.2.7
+
+- new user_activity table holds first seen and last seen per-user per-bot. requires `METRICS_SALT` (#157)
+- if there isn't a txo big enough to split into 15, split into however many we can (#182)
+
 ## 1.2.6
 
 - notes on the new captcha and installing on arch (#166)
