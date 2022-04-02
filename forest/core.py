@@ -463,6 +463,18 @@ class Signal:
 
     async def send_reaction(self, target_msg: Message, emoji: str) -> None:
         """Send a reaction. Protip: you can use e.g. \N{GRINNING FACE} in python"""
+        if utils.AUXIN:
+            react = {
+                "emoji": emoji,
+                "targetAuthorUuid": target_msg.uuid,
+                "targetSentTimestamp": target_msg.timestamp,
+            }
+            await self.respond(
+                target_msg,
+                "",
+                content={"dataMessage": {"body": None, "reaction": react}},
+            )
+            return
         react = {
             "target-author": target_msg.source,
             "target-timestamp": target_msg.timestamp,
@@ -473,7 +485,7 @@ class Signal:
             "sendReaction",
             param_dict=react,
             emoji=emoji,
-            recipient=target_msg.source,
+            recipient=None if target_msg.group else target_msg.source,
         )
         await self.outbox.put(cmd)
 
