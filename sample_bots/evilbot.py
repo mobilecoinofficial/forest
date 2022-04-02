@@ -20,6 +20,9 @@ class EvilBot(Bot):
     async def default(self, _: Message) -> None:
         return None
 
+    async def do_lol(self, msg: Message) -> None:
+        await self.send_reaction(msg, "\N{Face With Tears Of Joy}")
+
 
 if __name__ == "__main__":
     run_bot(EvilBot)
