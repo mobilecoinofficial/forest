@@ -377,7 +377,7 @@ class Signal:
         group: Optional[str] = None,  # maybe combine this with recipient?
         endsession: bool = False,
         attachments: Optional[list[str]] = None,
-        content: str = "",
+        content: Optional[dict] = None,
         **other_params: Any,
     ) -> str:
         """
@@ -512,7 +512,7 @@ class Signal:
     async def send_typing(self, msg: Message, stop: bool = False) -> None:
         "Send a typing indicator to the person or group the message is from"
         if utils.AUXIN:
-            content = {
+            content: dict = {
                 "dataMessage": None,
                 "typingMessage": {
                     "action": "STOPPED" if stop else "STARTED",
@@ -1127,7 +1127,7 @@ class PayBot(ExtrasBot):
 
     async def fs_receipt_to_payment_message_content(
         self, fs_receipt: dict, note: str = ""
-    ) -> str:
+    ) -> dict:
         full_service_receipt = fs_receipt["result"]["receiver_receipts"][0]
         # this gets us a Receipt protobuf
         b64_receipt = mc_util.full_service_receipt_to_b64_receipt(full_service_receipt)
