@@ -38,10 +38,11 @@ class GetStr(ast.NodeTransformer):
         for child in ast.iter_child_nodes(node):
             self.visit(child)
         if isinstance(node.func, ast.Attribute):
+            # pylint: disable=too-many-boolean-expressions
             if (
                 hasattr(node.func, "attr")
                 and node.func.attr == "get"
-                and getattr(node.func, "value", "")
+                and getattr(node.func, "value", False)
                 and not isinstance(node.func.value, ast.Name)
                 and not isinstance(node.func.value, ast.Subscript)
                 and getattr(node.func.value, "attr", "") == "dialog"
