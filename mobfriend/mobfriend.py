@@ -42,6 +42,7 @@ class MobFriend(TalkBack):
 
     async def handle_message(self, message: Message) -> Response:
         if message.attachments and len(message.attachments):
+            await self.send_typing(message)
             attachment_info = message.attachments[0]
             attachment_path = attachment_info.get("fileName")
             timestamp = attachment_info.get("uploadTimestamp")
@@ -73,6 +74,7 @@ class MobFriend(TalkBack):
             contents = (
                 scan(self.user_images[message.source]) if download_success else None
             )
+            await self.send_typing(message, stop=True)
             if contents:
                 self.user_images.pop(message.source)
                 # pylint: disable=unsubscriptable-object
@@ -176,8 +178,9 @@ class MobFriend(TalkBack):
         I'll make a QR Code from the provided text!
         If you send me an image first, I'll use it as a template.
         """
-
+        await self.send_typing(msg)
         await self._actually_build_wait_and_send_qr(str(msg.arg1), msg.source)
+        await self.send_typing(msg, stop=True)
         return None
 
     async def do_makegift(self, msg: Message) -> Response:
@@ -416,6 +419,7 @@ class MobFriend(TalkBack):
             return "/redeem [base58 gift code]"
         if not await self.get_signalpay_address(msg.uuid):
             return "I couldn't get your MobileCoin Address!\n\nPlease make sure you have activated your wallet and messaged me from your phone before continuing!"
+        await self.send_typing(msg)
         check_status = await self.mobster.req_(
             "check_gift_code_status", gift_code_b58=msg.arg1
         )
@@ -427,12 +431,14 @@ class MobFriend(TalkBack):
             account_id=await self.mobster.get_account(),
         )
         if "Claimed" in claimed:
+            await self.send_typing(msg, stop=True)
             return "Sorry, that gift code has already been redeemed!"
         if amount_pmob:
             await self.send_payment(
                 msg.source, amount_pmob - FEE, "Gift code has been redeemed!"
             )
             amount_mob = pmob2mob(amount_pmob - FEE).quantize(Decimal("1.0000"))
+            await self.send_typing(msg, stop=True)
             return f"Claimed a gift code containing {amount_mob}MOB.\nSupport ID: {status.get('result', {}).get('txo_id')}"
         return f"Sorry, that doesn't look like a valid code.\nDEBUG: {status.get('result')}"
 
