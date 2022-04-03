@@ -56,11 +56,11 @@ class MobFriend(TalkBack):
                     if len(attachment_paths) > 0:
                         attachment_path = attachment_paths.pop()
                         download_path = self.user_images[
-                            message.source
+                            message.uuid
                         ] = f"{attachment_path}"
                 else:
                     download_path = self.user_images[
-                        message.source
+                        message.uuid
                     ] = f"/tmp/{attachment_path}"
                 if not (
                     os.path.exists(download_path)
@@ -72,15 +72,15 @@ class MobFriend(TalkBack):
                     break
                 download_success = False
             contents = (
-                scan(self.user_images[message.source]) if download_success else None
+                scan(self.user_images[message.uuid]) if download_success else None
             )
             await self.send_typing(message, stop=True)
             if contents:
-                self.user_images.pop(message.source)
+                self.user_images.pop(message.uuid)
                 # pylint: disable=unsubscriptable-object
                 payload = message.arg1 = contents[-1][1].decode()
                 await self.send_message(
-                    message.source, f"Found a QR! Contains:\n{payload}"
+                    message.uuid, f"Found a QR! Contains:\n{payload}"
                 )
                 # if it's plausibly b58, check it
                 if all(char in base58.alphabet.decode() for char in payload):
@@ -95,18 +95,18 @@ class MobFriend(TalkBack):
         """Adds a note for other users and the administrators."""
         if not msg.arg1 and not msg.arg1 == "note":
             if not await self.ask_yesno_question(
-                msg.source, "Would you like to add a note for future users?"
+                msg.uuid, "Would you like to add a note for future users?"
             ):
                 return "Okay! If you ever want to add a note, you can say 'add note'!"
         keyword = await self.ask_freeform_question(
-            msg.source, "What keywords for your note?"
+            msg.uuid, "What keywords for your note?"
         )
-        body = await self.ask_freeform_question(msg.source, "What should the note say?")
+        body = await self.ask_freeform_question(msg.uuid, "What should the note say?")
         blob = dict(
             From=(msg.uuid or "").split("-")[-1], Keywords=keyword, Message=f'"{body}"'
         )
-        await self.send_message(msg.source, blob)
-        if not await self.ask_yesno_question(msg.source, "Share this with others?"):
+        await self.send_message(msg.uuid, blob)
+        if not await self.ask_yesno_question(msg.uuid, "Share this with others?"):
             return "Okay, feel free to try again."
         await self.notes.set(keyword, blob)
         return "Saved!"
@@ -165,8 +165,8 @@ class MobFriend(TalkBack):
 
     async def do_clear(self, msg: Message) -> Response:
         """Clears (if relevant) any saved images."""
-        if msg.source in self.user_images:
-            return f"Will use default instead of {self.user_images.pop(msg.source)} for next QR code."
+        if msg.uuid in self.user_images:
+            return f"Will use default instead of {self.user_images.pop(msg.uuid)} for next QR code."
         return "No images saved."
 
     async def do_makeqr(self, msg: Message) -> None:
@@ -179,7 +179,7 @@ class MobFriend(TalkBack):
         If you send me an image first, I'll use it as a template.
         """
         await self.send_typing(msg)
-        await self._actually_build_wait_and_send_qr(str(msg.arg1), msg.source)
+        await self._actually_build_wait_and_send_qr(str(msg.arg1), msg.uuid)
         await self.send_typing(msg, stop=True)
         return None
 
@@ -188,33 +188,33 @@ class MobFriend(TalkBack):
         /makegift
         I'll use your next payment to make a MobileCoin Gift Code that can be redeemed in other wallets.
         Be sure to include an extra 0.0008 MOB to pay the network fees!"""
-        if msg.source in self.exchanging_gift_code:
-            self.exchanging_gift_code.remove(msg.source)
-            self.no_repay.remove(msg.source)
+        if msg.uuid in self.exchanging_gift_code:
+            self.exchanging_gift_code.remove(msg.uuid)
+            self.no_repay.remove(msg.uuid)
             return "Okay, nevermind about that gift code."
-        if msg.source not in self.no_repay:
-            self.no_repay.append(msg.source)
-        if msg.source not in self.exchanging_gift_code:
-            self.exchanging_gift_code.append(msg.source)
+        if msg.uuid not in self.no_repay:
+            self.no_repay.append(msg.uuid)
+        if msg.uuid not in self.exchanging_gift_code:
+            self.exchanging_gift_code.append(msg.uuid)
         return "Your next Signal Pay transaction will be converted into a MobileCoin Gift Code that can be redeemed in other wallets.\nYou may now send the bot MOB. For help, send the word 'payments'.\nBe sure to include an extra 0.0008MOB to pay the network fees!"
 
     async def do_tip(self, msg: Message) -> Response:
         """
         /tip
         Records the next payment as a tip, not intended to make a giftcode, or as an accident."""
-        if msg.source not in self.no_repay:
-            self.no_repay.append(msg.source)
-        if msg.source in self.exchanging_gift_code:
-            self.exchanging_gift_code.remove(msg.source)
+        if msg.uuid not in self.no_repay:
+            self.no_repay.append(msg.uuid)
+        if msg.uuid in self.exchanging_gift_code:
+            self.exchanging_gift_code.remove(msg.uuid)
         return "Your next transaction will be a tip, not refunded!\nThank you!\n(/no_tip cancels)"
 
     @hide
     async def do_no_tip(self, msg: Message) -> Response:
         """Cancels a tip in progress."""
-        if msg.source in self.exchanging_gift_code:
-            self.exchanging_gift_code.remove(msg.source)
-        if msg.source in self.no_repay:
-            self.no_repay.remove(msg.source)
+        if msg.uuid in self.exchanging_gift_code:
+            self.exchanging_gift_code.remove(msg.uuid)
+        if msg.uuid in self.no_repay:
+            self.no_repay.remove(msg.uuid)
             return "Okay, nevermind about that tip."
         return "Couldn't find a tip in process to cancel!"
 
@@ -223,10 +223,10 @@ class MobFriend(TalkBack):
     async def do_pay(self, msg: Message) -> Response:
         if msg.arg1:
             payment_notif_sent = await self.send_payment(
-                msg.source, mob2pmob(Decimal(msg.arg1))
+                msg.uuid, mob2pmob(Decimal(msg.arg1))
             )
         else:
-            payment_notif_sent = await self.send_payment(msg.source, mob2pmob(0.001))
+            payment_notif_sent = await self.send_payment(msg.uuid, mob2pmob(0.001))
         if payment_notif_sent:
             logging.info(payment_notif_sent)
             delta = (payment_notif_sent.timestamp - msg.timestamp) / 1000
@@ -236,23 +236,23 @@ class MobFriend(TalkBack):
 
     @time(REQUEST_TIME)
     async def payment_response(self, msg: Message, amount_pmob: int) -> Response:
-        if msg.source in self.exchanging_gift_code:
+        if msg.uuid in self.exchanging_gift_code:
             resp_list = await self.build_gift_code(amount_pmob - FEE)
             gift_code = resp_list[1]
-            self.exchanging_gift_code.remove(msg.source)
-            if msg.source in self.no_repay:
-                self.no_repay.remove(msg.source)
-            await self._actually_build_wait_and_send_qr(gift_code, msg.source)
+            self.exchanging_gift_code.remove(msg.uuid)
+            if msg.uuid in self.no_repay:
+                self.no_repay.remove(msg.uuid)
+            await self._actually_build_wait_and_send_qr(gift_code, msg.uuid)
             return None
-        if msg.source not in self.no_repay:
-            payment_notif = await self.send_payment(msg.source, amount_pmob - FEE)
+        if msg.uuid not in self.no_repay:
+            payment_notif = await self.send_payment(msg.uuid, amount_pmob - FEE)
             if not payment_notif:
                 return None
             delta = (payment_notif.timestamp - msg.timestamp) / 1000
             self.signal_roundtrip_latency.append((msg.timestamp, "repayment", delta))
             return None
-        if msg.source in self.no_repay:
-            self.no_repay.remove(msg.source)
+        if msg.uuid in self.no_repay:
+            self.no_repay.remove(msg.uuid)
         return f"Received {str(pmob2mob(amount_pmob)).rstrip('0')}MOB. Thank you for the tip!"
 
     @hide
@@ -291,7 +291,7 @@ class MobFriend(TalkBack):
             return None
         if not msg.arg1:
             msg.arg1 = await self.ask_freeform_question(
-                msg.source,
+                msg.uuid,
                 "Provide a MobileCoin request, address, or gift code as b58 and I'll tell you what it does!",
             )
             if msg.arg1.lower() in "stop,exit,quit,no,none":
@@ -335,7 +335,7 @@ class MobFriend(TalkBack):
             * the memo "Pay me a MOB!",
             * a 1MOB value,
             * and the address of the requester's Signal account."""
-        address = await self.get_signalpay_address(msg.source)
+        address = await self.get_signalpay_address(msg.uuid)
         if not address:
             return "Unable to retrieve your MobileCoin address!"
         payload = mc_util.printable_pb2.PrintableWrapper()
@@ -360,9 +360,9 @@ class MobFriend(TalkBack):
         if msg.tokens and len(msg.tokens) > 1:
             payload.payment_request.memo = " ".join(msg.tokens[1:])
         payment_request_b58 = mc_util.add_checksum_and_b58(payload.SerializeToString())
-        await self._actually_build_wait_and_send_qr(payment_request_b58, msg.source)
+        await self._actually_build_wait_and_send_qr(payment_request_b58, msg.uuid)
         await self.send_message(
-            msg.source,
+            msg.uuid,
             "Your friend can scan this code in the MobileCoin wallet and use it to pay you on Signal.",
         )
         return None
@@ -383,32 +383,30 @@ class MobFriend(TalkBack):
         memo = msg.arg3 or ""
         if not address or len(address) < 50:
             await self.send_message(
-                msg.source,
+                msg.uuid,
                 "Please provide a b58 address to be used for this payment request!",
             )
         payload = mc_util.printable_pb2.PrintableWrapper()
         address_proto = mc_util.b58_wrapper_to_protobuf(address or "")
         if not address_proto:
-            await self.send_message(
-                msg.source, "Sorry, could not find a valid address!"
-            )
+            await self.send_message(msg.uuid, "Sorry, could not find a valid address!")
             msg.arg1 = await self.ask_freeform_question(
-                msg.source, "What address would you like to use?"
+                msg.uuid, "What address would you like to use?"
             )
             return await self.do_paywallet(msg)
         payload.payment_request.public_address.CopyFrom(address_proto.public_address)
         if not amount or not amount.replace(".", "0", 1).isnumeric():
             await self.send_message(
-                msg.source, "Sorry, you need to provide a price (in MOB)!"
+                msg.uuid, "Sorry, you need to provide a price (in MOB)!"
             )
             msg.arg2 = await self.ask_freeform_question(
-                msg.source, "What price would you like to use? (in MOB)"
+                msg.uuid, "What price would you like to use? (in MOB)"
             )
             return await self.do_paywallet(msg)
         payload.payment_request.value = mob2pmob(Decimal(amount))
         payload.payment_request.memo = memo
         payment_request_b58 = mc_util.add_checksum_and_b58(payload.SerializeToString())
-        await self._actually_build_wait_and_send_qr(payment_request_b58, msg.source)
+        await self._actually_build_wait_and_send_qr(payment_request_b58, msg.uuid)
         return None
 
     async def do_redeem(self, msg: Message) -> Response:
@@ -435,7 +433,7 @@ class MobFriend(TalkBack):
             return "Sorry, that gift code has already been redeemed!"
         if amount_pmob:
             await self.send_payment(
-                msg.source, amount_pmob - FEE, "Gift code has been redeemed!"
+                msg.uuid, amount_pmob - FEE, "Gift code has been redeemed!"
             )
             amount_mob = pmob2mob(amount_pmob - FEE).quantize(Decimal("1.0000"))
             await self.send_typing(msg, stop=True)
@@ -446,34 +444,34 @@ class MobFriend(TalkBack):
         """Enter a dialog workflow where you can create a payment request, QR code, or gift code."""
         if not msg.arg1:
             maybe_resp = msg.arg1 = await self.ask_freeform_question(
-                msg.source,
+                msg.uuid,
                 "Would you like to make a QR, (payment) request, or gift (code.\nTo proceed, you can reply one of 'qr', 'request', or 'gift'.",
             )
         else:
             maybe_resp = msg.arg1
         if maybe_resp.lower() == "qr":
             maybe_payload = await self.ask_freeform_question(
-                msg.source, "What content would you like to include in this QR code?"
+                msg.uuid, "What content would you like to include in this QR code?"
             )
             if maybe_payload:
                 msg.arg1 = maybe_payload
                 return await self.do_makeqr(msg)
         elif maybe_resp.lower() == "request":
             target = await self.ask_freeform_question(
-                msg.source,
+                msg.uuid,
                 "Who should this pay, you or someone else?\nYou can reply 'me' or 'else'.",
             )
             if target.lower() == "me":
-                msg.arg1 = await self.get_signalpay_address(msg.source)
+                msg.arg1 = await self.get_signalpay_address(msg.uuid)
             else:
                 msg.arg1 = await self.ask_freeform_question(
-                    msg.source, "What MobileCoin address should this request pay?"
+                    msg.uuid, "What MobileCoin address should this request pay?"
                 )
             msg.arg2 = await self.ask_freeform_question(
-                msg.source, "For how many MOB should this request be made?"
+                msg.uuid, "For how many MOB should this request be made?"
             )
             msg.arg3 = await self.ask_freeform_question(
-                msg.source, "What memo would you like to use? ('None' for empty)"
+                msg.uuid, "What memo would you like to use? ('None' for empty)"
             )
             if msg.arg3.lower() == "none":
                 msg.arg3 = ""
@@ -525,7 +523,7 @@ https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
             and "help" not in msg.arg0.lower()  # and it's not 'help'
             and (
                 await self.ask_yesno_question(
-                    msg.source,
+                    msg.uuid,
                     f"There are one or more notes matching {msg.arg0}.\n\nWould you like to view them?",
                 )
             )
@@ -533,7 +531,7 @@ https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
             # ask for confirmation and then return all notes
             for keywords in self.notes.dict_:
                 if msg.arg0 in keywords.lower():
-                    await self.send_message(msg.source, await self.notes.get(keywords))
+                    await self.send_message(msg.uuid, await self.notes.get(keywords))
         elif msg.arg0:
             await self.talkback(msg)
             return "\n\n".join(
