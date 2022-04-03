@@ -41,6 +41,7 @@ class GetStr(ast.NodeTransformer):
             if (
                 hasattr(node.func, "attr")
                 and node.func.attr == "get"
+                and getattr(node.func, "value", "")
                 and not isinstance(node.func.value, ast.Name)
                 and not isinstance(node.func.value, ast.Subscript)
                 and getattr(node.func.value, "attr", "") == "dialog"
@@ -77,11 +78,11 @@ class TalkBack(QuestionBot):
 
     async def handle_message(self, message: Message) -> Response:
         if message.quoted_text and is_admin(message):
-            maybe_id = await self.displayname_lookup_cache.get(
-                message.quoted_text.split()[0]
-            )
+            maybe_displayname = message.quoted_text.split()[0]
+            maybe_id = await self.displayname_lookup_cache.get(maybe_displayname)
             if maybe_id:
                 await self.send_message(maybe_id, message.full_text)
+                return f"Sent reply to {maybe_displayname}!"
         return await super().handle_message(message)
 
     @requires_admin
