@@ -25,6 +25,7 @@ class Charity(DialogBot):
     def __init__(self) -> None:
         self.easter_eggs: aPersistDict[str] = aPersistDict("easter_eggs")
         self.first_messages = aPersistDictOfInts("first_messages")
+        self.last_prompted: aPersistDict[int] = aPersistDict("last_prompted")
         self.donations: aPersistDict[str] = aPersistDict("donations")
         self.donation_rewards: aPersistDict[str] = aPersistDict("donation_rewards")
         self.reward_levels: aPersistDict[int] = aPersistDict("reward_levels")
@@ -131,11 +132,14 @@ class Charity(DialogBot):
         if code in await self.easter_eggs.keys():
             return await self.easter_eggs.get(code)
         await self.talkback(msg)
-        await self.send_message(
-            msg.uuid,
-            await self.dialog.get("CHARITY_INFO", "CHARITY_INFO"),
-            attachments=["./how-to-donate.gif"],
-        )
+        # if it's been more than 60 seconds since we last prompted
+        if (time.time() * 1000 - await self.last_prompted.get(msg.uuid, 0)) > 60 * 1000:
+            await self.send_message(
+                msg.uuid,
+                await self.dialog.get("CHARITY_INFO", "CHARITY_INFO"),
+                attachments=["./how-to-donate.gif"],
+            )
+        await self.last_prompted.set(msg.uuid, time.time() * 1000)
         return None
 
     async def payment_response(self, msg: Message, amount_pmob: int) -> Response:

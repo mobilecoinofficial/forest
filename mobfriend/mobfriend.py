@@ -25,12 +25,13 @@ import mc_util
 from forest.core import Message, QuestionBot, Response, app, hide, utils, requires_admin
 from forest.pdictng import aPersistDict
 from mc_util import mob2pmob, pmob2mob
+from forest.extra import TalkBack
 
 FEE = int(1e12 * 0.0004)
 REQUEST_TIME = Summary("request_processing_seconds", "Time spent processing request")
 
 
-class MobFriend(QuestionBot):
+class MobFriend(TalkBack):
     no_repay: list[str] = []
     exchanging_gift_code: list[str] = []
     user_images: Dict[str, str] = {}
@@ -159,11 +160,6 @@ class MobFriend(QuestionBot):
                 "Sorry, no luck!\n\nTry sending a simpler template (or saying 'clear') and saying 'makeqr <value>'",
             )
         return save_name
-
-    async def do_signalme(self, _: Message) -> Response:
-        """signalme
-        Returns a link to share the bot with friends!"""
-        return f"https://signal.me/#p/{self.bot_number}"
 
     async def do_clear(self, msg: Message) -> Response:
         """Clears (if relevant) any saved images."""
@@ -533,9 +529,7 @@ https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
                 if msg.arg0 in keywords.lower():
                     await self.send_message(msg.source, await self.notes.get(keywords))
         elif msg.arg0:
-            await self.send_message(
-                utils.get_secret("ADMIN"), f"{msg.source} says '{msg.full_text}'"
-            )
+            await self.talkback(msg)
             return "\n\n".join(
                 [
                     "Hi, I'm MOBot!",

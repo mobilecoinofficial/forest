@@ -5,7 +5,7 @@ RUN mv /usr/bin/signal-cli-native /usr/bin/signal-cli
 FROM ghcr.io/rust-lang/rust:nightly as builder
 WORKDIR /app
 RUN rustup default nightly
-RUN git clone https://github.com/mobilecoinofficial/auxin && cd auxin && git pull origin 0.1.12
+RUN git clone https://github.com/mobilecoinofficial/auxin && cd auxin && git pull origin 0.1.17
 WORKDIR /app/auxin
 RUN cargo +nightly build --release
 
@@ -34,5 +34,5 @@ COPY --from=signal /lib/x86_64-linux-gnu/libz.so.1 /lib64/
 COPY ./forest/ /app/forest/
 COPY ./mc_util/ /app/mc_util/
 COPY ./how-to-activate.gif ./how-to-donate.gif /app/
-COPY ./teddy.py /app/
-ENTRYPOINT ["/usr/bin/python3.9", "/app/teddy.py"]
+COPY ./charity.py /app/
+ENTRYPOINT ["/usr/bin/python3.9", "/app/charity.py"]

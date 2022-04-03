@@ -60,6 +60,7 @@ class Hotline(DialogBot):  # pylint: disable=too-many-public-methods
         self.pay_lock: asyncio.Lock = asyncio.Lock()
         self.donations: aPersistDict[str] = aPersistDict("donations")
         self.first_messages: aPersistDict[int] = aPersistDict("first_messages")
+        self.last_prompted: aPersistDict[int] = aPersistDict("last_prompted")
         # okay, this now maps the tag (restore key) of each of the above to the instance of the PersistDict class
         self.state = {
             self.__getattribute__(attr).tag: self.__getattribute__(attr)
@@ -926,6 +927,9 @@ class Hotline(DialogBot):  # pylint: disable=too-many-public-methods
                     f"{user_given} ( {msg.source} ) says: {code} {msg.text}\nThey are on the following lists: {list(set(lists))}",
                 )
                 await asyncio.sleep(0.1)
+        if not all_owners:
+            return await super().talkback(msg)
+        return None
 
     async def default(self, message: Message) -> Response:
         # pylint: disable=too-many-return-statements,too-many-branches
@@ -951,7 +955,11 @@ class Hotline(DialogBot):  # pylint: disable=too-many-public-methods
             return maybe_unlocked
         await self.talkback(msg)
         # handle default case
-        return await self.do_help(msg)
+        if (time.time() * 1000 - await self.last_prompted.get(msg.uuid, 0)) > 60 * 1000:
+            await self.last_prompted.set(msg.uuid, time.time() * 1000)
+            return await self.do_help(msg)
+        await self.last_prompted.set(msg.uuid, time.time() * 1000)
+        return None
 
     async def payment_response(self, msg: Message, amount_pmob: int) -> Response:
         # pylint: disable=too-many-return-statements
