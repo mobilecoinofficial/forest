@@ -22,10 +22,10 @@ from amzqr import amzqr
 from scan import scan
 
 import mc_util
-from forest.core import Message, QuestionBot, Response, app, hide, utils, requires_admin
+from forest.core import Message, Response, app, hide, requires_admin
 from forest.pdictng import aPersistDict
-from mc_util import mob2pmob, pmob2mob
 from forest.extra import TalkBack
+from mc_util import mob2pmob, pmob2mob
 
 FEE = int(1e12 * 0.0004)
 REQUEST_TIME = Summary("request_processing_seconds", "Time spent processing request")
