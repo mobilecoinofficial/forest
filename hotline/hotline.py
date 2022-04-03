@@ -928,7 +928,7 @@ class Hotline(DialogBot):  # pylint: disable=too-many-public-methods
                 )
                 await asyncio.sleep(0.1)
         if not all_owners:
-            return await super().talkback(msg)
+            await super().talkback(msg)
         return None
 
     async def default(self, message: Message) -> Response:
@@ -956,9 +956,9 @@ class Hotline(DialogBot):  # pylint: disable=too-many-public-methods
         await self.talkback(msg)
         # handle default case
         if (time.time() * 1000 - await self.last_prompted.get(msg.uuid, 0)) > 60 * 1000:
-            await self.last_prompted.set(msg.uuid, time.time() * 1000)
+            await self.last_prompted.set(msg.uuid, int(time.time() * 1000))
             return await self.do_help(msg)
-        await self.last_prompted.set(msg.uuid, time.time() * 1000)
+        await self.last_prompted.set(msg.uuid, int(time.time() * 1000))
         return None
 
     async def payment_response(self, msg: Message, amount_pmob: int) -> Response:

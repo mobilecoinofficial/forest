@@ -139,7 +139,7 @@ class Charity(DialogBot):
                 await self.dialog.get("CHARITY_INFO", "CHARITY_INFO"),
                 attachments=["./how-to-donate.gif"],
             )
-        await self.last_prompted.set(msg.uuid, time.time() * 1000)
+        await self.last_prompted.set(msg.uuid, int(time.time() * 1000))
         return None
 
     async def payment_response(self, msg: Message, amount_pmob: int) -> Response:
