@@ -18,7 +18,7 @@ jobs:
         uses: actions/cache@v1
         with:
           path: ~/.cache/pypoetry/virtualenvs
-          key: '${{ runner.os }}-poetry-v1-${{ hashFiles(''**/poetry.lock'') }}'
+          key: '${{ runner.os }}-poetry-v2-${{ hashFiles(''**/poetry.lock'') }}'
       - name: Install dependencies
         if: steps.cache-poetry.outputs.cache-hit != 'true'
         run: cp .github/pyproject.toml .; rm poetry.lock; poetry install --dev
