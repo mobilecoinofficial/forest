@@ -1651,6 +1651,7 @@ class QuestionBot(PayBot):
 
         return email
 
+    @hide
     async def do_challenge(self, msg: Message) -> Response:
         """Challenges a user to do a simple math problem,
         optionally provided as an image to increase attacker complexity."""
