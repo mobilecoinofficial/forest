@@ -133,6 +133,8 @@ class PGInterface:
         self.pool = await asyncpg.create_pool(self.database)
         pools.append(self.pool)
 
+    _autocreating_table = False
+
     async def execute(
         self,
         qstring: str,
@@ -162,8 +164,15 @@ class PGInterface:
                     )
                     # list[asyncpg.Record], str, bool
                 except asyncpg.UndefinedTableError:
+                    if self._autocreating_table:
+                        logging.error(
+                            "would try creating the table, but we already tried to do that"
+                        )
+                        raise
+                    self._autocreating_table = True
                     logging.info("creating table %s", self.table)
                     await self.create_table()
+                    self._autocreating_table = False
                     result = await connection._execute(
                         qstring, args, 0, timeout, return_status=True
                     )
