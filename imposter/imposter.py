@@ -44,10 +44,9 @@ class Imposter(MemoryBot):
             (msg.full_text and not msg.group)
             or self.mentions_us(msg)
             or self.quotes_us(msg)
-            or any(o in msg.full_text for o in self.agent.activators)
+            or any(o.lower() in msg.full_text.lower() for o in self.agent.activators)
         ):
             return "generate_response"
-        # Pass the buck
         return super().match_command(msg)
 
     async def send_typing(self, msg: Message, stop=False):
@@ -98,7 +97,6 @@ class Imposter(MemoryBot):
                 await self.get_templated_message(blob)
                 for blob in user_history[-mem_length:]
             ]
-            logging.debug("################### %s", conversation)
             return conversation
         return []
 
@@ -125,7 +123,7 @@ class Imposter(MemoryBot):
         Respond in character, using the Jurassic-1 API
         """
         # Get recent conversational context
-        conversation = "\n\n".join(await self.get_conversation(msg))
+        conversation = "\n\n".join(await self.get_conversation(msg, mem_length=3))
         # Or use just the last message for testing
         # conversation = msg.full_text
 
@@ -135,6 +133,14 @@ class Imposter(MemoryBot):
         await self.send_typing(msg)
 
         # API call happens here, replace with below for rapid testing
+        history = await self.get_user_history(self.get_user_id(msg))
+        self.agent.add_facts(
+            [
+                self.get_message_content(blob)["text"]
+                for blob in history
+                if blob["source"] == self.bot_number
+            ]
+        )
         reply = await self.agent.generate_agent_response(conversation)
         reply = reply.strip()
         # reply = "TEST_REPLY"
@@ -146,6 +152,7 @@ class Imposter(MemoryBot):
         else:
             reply = "..."
         await self.send_typing(msg, stop=True)
+
         return reply
 
 
