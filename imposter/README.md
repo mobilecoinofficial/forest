@@ -1,4 +1,5 @@
-Imposter is a bot that uses prompt engineering and large language models to mimic a character. It takes inspiration (and maybe code) from [Personate, the zero-shot chatbot library for large language models](https://github.com/ckoshka/personate), but translates the underlying concepts to the context of bots on Signal instead of Discord.
+## What is Imposter?
+Imposter is a bot that uses prompt engineering and large language models to mimic a character. It calls on code from [Personate, the zero-shot chatbot library for large language models](https://github.com/ckoshka/personate), but translates the underlying concepts to the context of bots on Signal instead of Discord.
 
 ## What is Personate? 
 Personate is a library that wraps the Jurassic-1 large language model with prompt engineering and semantic search capabilities to imPersonate historical persons, advanced AIs, fictional characters or other types of guy.
@@ -16,8 +17,37 @@ Stretch goal for Imposter: have one bot that can spin up other bots from example
 
 Imposter could also work together with Imogen, supplementing the AI artist by coming up with creative prompts. A team duo. 
 
-## How can we adapt it to Signal?
+## How to install
+
+The file `imposter/pyproject.toml` contains the necessary dependencies. Copy or symlink the `forest` and `mc_util` folders into `imposter`, and follow the official [Forest instructions](https://github.com/mobilecoinofficial/forest/blob/main/README.md) to get `signal-cli` and its associated files into the `imposter` folder as well.
+
+You only need a few secret keys:
+* `dev_secrets` file as described in [Forest instructions](https://github.com/mobilecoinofficial/forest/blob/main/README.md#running-hellobot)
+  * To this file, add PAUTH keys as described in [Forest pdictng docs](https://github.com/mobilecoinofficial/forest/blob/189d77710a803130520e41c1a919445d8570eb92/pdictng_docs/README.md)
+  * and a line like "CONFIG_FILE=config/pkd.json" (change to your config file or use as-is to run the example PKD bot)
+* `keys`, which should contain one (or more) AI21 API keys, as described in [Personate instructions](https://github.com/ckoshka/personate/blob/master/SETUP.md#get-a-key-from-ai21-)
+* `.env` file, with a single line saying "AI21_API_KEY_FILE=" and the location of your `keys` file
+
+**Make sure not to check these keys into version control!**
+
+To install Personate, run the following command within the `imposter` folder:
+```
+poetry install
+```
+
+Now you should be ready to run Imposter:
+```
+poetry run python imposter.py
+```
+
+It may be useful to run an `acrossword` server, as described in the [Personate docs](https://github.com/ckoshka/personate/blob/master/SETUP.md#3b-start-up-a-tiny-little-server-), but this sometimes throws SIGSEGV errors. If so, just close the server and run the bot without it (this will increase startup time but functions the same).
+
+<hr />
+
+## Development roadmap for Imposter
 Personate is designed around the constraints of Discord. This means it has a different object model than Forest bots do, and can make use of different affordances. 
+
+**Features with a ✓ have been implemented in Imposter**:
 
 ### Hard
 Things Personate does that are not possible (so far as I know) in Signal:
@@ -26,24 +56,25 @@ Things Personate does that are not possible (so far as I know) in Signal:
 
 ### Medium
 Things for which Personate uses Discord-specific APIs, which will require work to convert for Signal:
-- Follow reply chains 
-- Access channel message history
-- Modify bot live through direct commands
+✓ Follow reply chains 
+✓ Access channel message history
+✓ Modify bot live through direct commands
 - Store conversation history, etc, in memory
 - Run an improvised adventure scene by scene
 
 ### Easy
 Things Personate does which are not Discord-specific, and could be imported or mimicked pretty directly:
-- Wrap each conversational turn in a well-engineered prompt
-- Maintain a personality and conversational context from turn to turn
-- Access knowledgebases to get appropriate information into the prompt
-- Access pre-written conversation examples and include appropriate examples in the prompt
-- Filter the resulting prompts for hate speech and other problematic outputs, retrying until it gets something usable
-- Access Python functions and API calls to get an appropriate function, then create a prompt with the function, docstring and args and get a result from the language model
+✓ Wrap each conversational turn in a well-engineered prompt
+✓ Maintain a personality and conversational context from turn to turn
+✓ Access knowledgebases to get appropriate information into the prompt
+✓ Access pre-written conversation examples and include appropriate examples in the prompt
+✓ Filter the resulting prompts for hate speech and other problematic outputs, retrying until it gets something usable
+✓ Access Python functions and API calls to get an appropriate function, then create a prompt with the function, docstring and args and get a result from the language model
 
 ## Who should the bot impersonate?
 Suggestions gathered from Forest team and Twitter at large (some were suggested multiple times):
 ```
+Philip K Dick
 Francis Bacon 	    	2	
 Adam Sandler
 Marshall McLuhan
@@ -72,7 +103,6 @@ HP Lovecraft
 Jesus
 Leo Tolstoy
 Orson Welles
-Adolf Hitler    		2
 Rasputin
 Carl Jung		    	2
 Isaac Asimov
