@@ -13,6 +13,7 @@ from . import printable_pb2
 
 
 PMOB = Decimal("1e12")
+FEE_PMOB = int(0.0004 * PMOB)
 
 
 def mob2pmob(x: Union[Decimal, float]) -> int:
