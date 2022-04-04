@@ -156,10 +156,17 @@ class PGInterface:
                 # )
                 # return self.execute(qstring, *args, timeout=timeout)
                 # _execute takes query, args, limit, timeout
-                result = await connection._execute(
-                    qstring, args, 0, timeout, return_status=True
-                )
-                # list[asyncpg.Record], str, bool
+                try:
+                    result = await connection._execute(
+                        qstring, args, 0, timeout, return_status=True
+                    )
+                    # list[asyncpg.Record], str, bool
+                except asyncpg.UndefinedTableError:
+                    logging.info("creating table %s", self.table)
+                    await self.create_table()
+                    result = await connection._execute(
+                        qstring, args, 0, timeout, return_status=True
+                    )
                 return result[0]
         return None
 
