@@ -1,5 +1,6 @@
 FROM registry.gitlab.com/packaging/signal-cli/signal-cli-native:latest as signal
 RUN signal-cli --version | tee /signal-version
+RUN mv /usr/bin/signal-cli-native /usr/bin/signal-cli
 
 FROM python:3.9 as libbuilder
 WORKDIR /app

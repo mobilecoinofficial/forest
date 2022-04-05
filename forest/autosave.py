@@ -79,10 +79,7 @@ async def start_memfs_monitor(app: web.Application) -> None:
         while True:
             queue_item = await queue.coro_get()
             # iff fsync triggered by signal-cli
-            if (
-                queue_item[0:2] == ["->", "fsync"]
-                and queue_item[5][0] == utils.ROOT_DIR + "/signal-cli"
-            ):
+            if queue_item[0:2] == ["->", "fsync"] and "-cli" in queue_item[5][0]:
                 # /+14703226669
                 # file_to_sync = queue_item[2]
                 # 14703226669
