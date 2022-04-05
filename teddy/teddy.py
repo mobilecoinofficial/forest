@@ -114,7 +114,7 @@ class Teddy(DialogBot):
             return f"Error! {list_.title()} has 0mmob balance!"  # thanks y?!
         return "Sorry, can't help you."
 
-    @require_admin
+    @requires_admin
     async def do_reset(self, msg: Message) -> Response:
         if msg.arg1 and await self.displayname_lookup_cache.get(msg.arg1):
             user = await self.displayname_lookup_cache.get(msg.arg1)
