@@ -1,17 +1,18 @@
 # Copyright (c) 2021 MobileCoin Inc.
 # Copyright (c) 2021 The Forest Team
-from forest.core import Bot, Message, Response, run_bot, rpc
+from forest.core import Bot, Message, Response, run_bot
 
 
 class EvilBot(Bot):
     async def handle_message(self, message: Message) -> Response:
         if message.typing == "STARTED":
-            await self.outbox.put(rpc("sendTyping", recipient=[message.source]))
+            await self.send_typing(message)
         if message.typing == "STOPPED":
-            await self.outbox.put(
-                rpc("sendTyping", recipient=[message.source], stop=True)
-            )
+            await self.send_typing(message, stop=True)
         return await super().handle_message(message)
+
+    async def do_type(self, message: Message) -> None:
+        await self.send_typing(message)
 
     async def default(self, _: Message) -> None:
         return None
