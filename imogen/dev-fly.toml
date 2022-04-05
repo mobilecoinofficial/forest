@@ -1,0 +1,46 @@
+app = "imogen-dev"
+kill_signal = "SIGINT"
+kill_timeout = 5
+processes = []
+
+[env]
+BOT_NUMBER="+12692462089"
+SIGNAL="signal-cli"
+LOGLEVEL="DEBUG"
+# ADMIN_GROUP="0om6G+Yj9Kv0LH5Z0992pucLPXTk2qyIYPwBpjhbZO4="
+FULL_SERVICE_URL="https://imogen-full-service-real.fly.dev/wallet"
+AUTOSAVE=1
+DOWNLOAD=1
+# UPLOAD=1
+LEDGER_NAME="imogen_ledger"
+
+[experimental]
+  allowed_public_ports = []
+  auto_rollback = true
+
+[[services]]
+  http_checks = []
+  internal_port = 8080
+  processes = ["app"]
+  protocol = "tcp"
+  script_checks = []
+
+  [services.concurrency]
+    hard_limit = 25
+    soft_limit = 20
+    type = "connections"
+
+  [[services.ports]]
+    handlers = ["http"]
+    port = 80
+
+  [[services.ports]]
+    handlers = ["tls", "http"]
+    port = 443
+
+  [[services.tcp_checks]]
+    grace_period = "5s"
+    interval = "15s"
+    restart_limit = 6
+    timeout = "5s"
+

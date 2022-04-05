@@ -425,7 +425,8 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         ret = await self.queue.execute(
             "SELECT filepath FROM prompt_queue WHERE sent_ts=$1", msg.quote.ts
         )
-        if not ret or (filepath := ret[0].get("filepath")):
+        logging.info(ret)
+        if not ret or not (filepath := ret[0].get("filepath")):
             return "Sorry, I don't have that image saved for upsampling right now"
         slug = (
             filepath.removeprefix("output/")
@@ -849,24 +850,28 @@ async def store_image_handler(  # pylint: disable=too-many-locals
         message += f"{prompt.loss} loss, "
     if prompt.version:
         message += f" v{prompt.version}."
-    message += "\n\N{Object Replacement Character}"
-    # needs to be String.length in Java, i.e. number of utf-16 code units,
-    # which are 2 bytes each. we need to specify any endianness to skip
-    # byte-order mark.
-    mention_start = len(message.encode("utf-16-be")) // 2 - 1
     quote = (
         {
             "quote-timestamp": int(prompt.signal_ts),
             "quote-author": str(prompt.author),
             "quote-message": str(prompt.prompt),
-            "mention": f"{mention_start}:1:{prompt.author}",
         }
         if prompt.author and prompt.signal_ts
         else {}
     )
     if prompt.group_id:
+        message += "\n\N{Object Replacement Character}"
+        # needs to be String.length in Java, i.e. number of utf-16 code units,
+        # which are 2 bytes each. we need to specify any endianness to skip
+        # byte-order mark.
+        mention_start = len(message.encode("utf-16-be")) // 2 - 1
         rpc_id = await bot.send_message(
-            None, message, attachments=[str(path)], group=prompt.group_id, **quote  # type: ignore
+            None,
+            message,
+            attachments=[str(path)],
+            group=prompt.group_id,
+            mention=f"{mention_start}:1:{prompt.author}",
+            **quote,  # type: ignore
         )
         if random.random() < 0.04:
             msg = dedent(random.choice(auto_messages)).strip()
