@@ -188,8 +188,6 @@ class DialogBot(TalkBack):
             await self.send_message(user, "overwriting:")
             await self.send_message(user, old_blurb)
         await self.dialog.set(fragment_to_set, blurb)
-        # elif not self.is_admin(msg):
-        #    return "You must be an administrator to overwrite someone else's blurb!"
         return "updated blurb!"
 
     @requires_admin
@@ -197,8 +195,10 @@ class DialogBot(TalkBack):
         dialog_json = json.dumps(self.dialog.dict_, indent=2)
         sendfilepath = f"/tmp/Dialog_{get_uid()}.json"
         open(sendfilepath, "w").write(dialog_json)
-        await self.send_message(msg.uuid, dialog_json, attachments=[sendfilepath])
-        return None
+        await self.send_message(
+            msg.uuid, f"dialogload {dialog_json}", attachments=[sendfilepath]
+        )
+        return "You can forward this message to a compatible bot to load the dialog!"
 
     @requires_admin
     async def do_dialogload(self, msg: Message) -> Response:

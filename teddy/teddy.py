@@ -114,18 +114,21 @@ class Teddy(DialogBot):
             return f"Error! {list_.title()} has 0mmob balance!"  # thanks y?!
         return "Sorry, can't help you."
 
+    @require_admin
     async def do_reset(self, msg: Message) -> Response:
-        user = msg.uuid
+        if msg.arg1 and await self.displayname_lookup_cache.get(msg.arg1):
+            user = await self.displayname_lookup_cache.get(msg.arg1)
+        else:
+            user = msg.uuid
         await self.attempted_claims.set(user, 0)
         claimed = await self.user_claimed.get(user)
         if claimed:
             await self.send_message(user, f"Found a code you claimed: {claimed}")
             await self.valid_codes.set(claimed, "unclaimed")
             await self.user_claimed.remove(user)
+            await self.user_state.set(user, "FIRST_GREETING")
         await self.first_messages.remove(user)
-        return (
-            "Reset your state! The previously used code, if any, may be redeemed again."
-        )
+        return "Your state has been reset! You may now try again."
 
     async def wait_then_followup(
         self, msg: Message, timeout_seconds: int = 300
