@@ -54,7 +54,7 @@ class MockBot(QuestionBot):
 class Tree:
     """tree implementation for test dialog trees"""
 
-    def __init__(self, dialog: list[str], children: list = None) -> None:
+    def __init__(self, dialog: list[str], children: list["Tree"] = None) -> None:
         if children is None:
             children = []
         self.dialog = dialog

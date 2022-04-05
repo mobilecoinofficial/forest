@@ -10,7 +10,7 @@ os.environ["ENV"] = "test"
 
 from forest.core import Message, run_bot, Response
 from forest import core
-from forest.mockbot import MockBot, Tree
+from tests.mockbot import MockBot, Tree
 
 # Sample bot number alice
 BOT_NUMBER = "+11111111111"
