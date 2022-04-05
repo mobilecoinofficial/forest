@@ -116,10 +116,7 @@ class Teddy(DialogBot):
 
     @requires_admin
     async def do_reset(self, msg: Message) -> Response:
-        if msg.arg1 and await self.displayname_lookup_cache.get(msg.arg1):
-            user = await self.displayname_lookup_cache.get(msg.arg1)
-        else:
-            user = msg.uuid
+        user = await self.displayname_lookup_cache.get(msg.arg1 or "", msg.uuid)
         await self.attempted_claims.set(user, 0)
         claimed = await self.user_claimed.get(user)
         if claimed:
