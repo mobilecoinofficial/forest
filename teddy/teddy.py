@@ -125,7 +125,10 @@ class Teddy(DialogBot):
             await self.user_claimed.remove(user)
             await self.user_state.set(user, "FIRST_GREETING")
         await self.first_messages.remove(user)
-        return "Your state has been reset! You may now try again."
+        await self.send_message(
+            user, "Your state has been reset! You may now try again."
+        )
+        return "Reset!"
 
     async def wait_then_followup(
         self, msg: Message, timeout_seconds: int = 300
