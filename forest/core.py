@@ -85,6 +85,17 @@ def rpc(
     }
 
 
+def check_valid_recipient(recipient: str) -> bool:
+    try:
+        assert recipient == utils.signal_format(recipient)
+    except (AssertionError, NumberParseException):
+        try:
+            assert recipient == str(uuid.UUID(recipient))
+        except (AssertionError, ValueError):
+            return False
+    return True
+
+
 ActivityQueries = pghelp.PGExpressions(
     table="user_activity",
     create_table="""CREATE TABLE user_activity (
@@ -429,24 +440,17 @@ class Signal:
             params["attachments"] = attachments
         if content:
             params["content"] = content
-        if group:
-            if utils.AUXIN:
-                logging.error("setting a group message, but auxin doesn't support this")
+        if group and not utils.AUXIN:
             params["group-id"] = group
-        elif recipient:
-            try:
-                assert recipient == utils.signal_format(recipient)
-            except (AssertionError, NumberParseException):
-                try:
-                    assert recipient == str(uuid.UUID(recipient))
-                except (AssertionError, ValueError) as e:
-                    logging.error(
-                        "not sending message to invalid recipient %s. error: %s",
-                        recipient,
-                        e,
-                    )
-                    return ""
-            params["destination" if utils.AUXIN else "recipient"] = str(recipient)
+        if recipient and not utils.AUXIN:
+            if not check_valid_recipient(recipient):
+                logging.error("not sending message to invalid recipient %s", recipient)
+                return ""
+            params["recipient"] = str(recipient)
+        if recipient and utils.AUXIN:
+            params["destination"] = str(recipient)
+        if group and utils.AUXIN:
+            params["group"] = group
         # maybe use rpc() instead
         rpc_id = f"send-{get_uid()}"
         json_command: JSON = {
@@ -462,7 +466,7 @@ class Signal:
 
     async def admin(self, msg: Response, **other_params: Any) -> None:
         "send a message to admin"
-        if (group := utils.get_secret("ADMIN_GROUP")) and not utils.AUXIN:
+        if group := utils.get_secret("ADMIN_GROUP"):
             await self.send_message(None, msg, group=group, **other_params)
         else:
             await self.send_message(utils.get_secret("ADMIN"), msg, **other_params)
