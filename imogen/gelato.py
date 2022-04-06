@@ -103,6 +103,7 @@ class GelatoBot(QuestionBot):
             ],
             "recipient": recipient,
         }
+        logging.info(current_quote_data)
         return await self.post_order(current_quote_data)
 
 
