@@ -21,7 +21,7 @@ from aiohttp import web
 from forest import pghelp, utils
 from forest.core import (
     Message,
-    PayBot,
+    QuestionBot,
     Response,
     UserError,
     app,
@@ -30,6 +30,7 @@ from forest.core import (
     requires_admin,
     run_bot,
 )
+from gelato import GelatoBot
 
 
 @dataclass
@@ -200,7 +201,7 @@ auto_messages = [
 ]
 
 
-class Imogen(PayBot):  # pylint: disable=too-many-public-methods
+class Imogen(QuestionBot, GelatoBot):  # pylint: disable=too-many-public-methods
     prompts: dict[str, str] = {}
 
     async def start_process(self) -> None:

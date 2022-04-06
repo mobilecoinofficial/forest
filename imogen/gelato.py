@@ -1,8 +1,7 @@
 import json
 import logging
 from forest import utils
-from forest.core import Message, run_bot
-from forest.talkback import TalkBack
+from forest.core import Message, run_bot, QuestionBot
 
 # === Define headers ===
 headers = {
@@ -16,7 +15,7 @@ quote_url = "https://api.gelato.com/v2/quote"
 order_create_url = "https://api.gelato.com/v2/order/create"
 
 
-class GelatoBot(TalkBack):
+class GelatoBot(QuestionBot):
     async def post_order(self, quote_data: dict) -> None:
         # === Send quote request ===
         async with self.client_session.post(
