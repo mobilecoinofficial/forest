@@ -377,7 +377,7 @@ class Signal:
         group: Optional[str] = None,  # maybe combine this with recipient?
         endsession: bool = False,
         attachments: Optional[list[str]] = None,
-        content: str = "",
+        content: Optional[dict] = None,
         **other_params: Any,
     ) -> str:
         """
@@ -472,9 +472,9 @@ class Signal:
     ) -> str:
         """Respond to a message depending on whether it's a DM or group"""
         logging.debug("responding to %s", target_msg.source)
-        if not target_msg.source:
+        if not target_msg.source or target_msg.uuid:
             logging.error(json.dumps(target_msg.blob))
-        if not utils.AUXIN and target_msg.group:
+        if target_msg.group:
             return await self.send_message(
                 None, msg, group=target_msg.group, **other_params
             )
@@ -483,6 +483,18 @@ class Signal:
 
     async def send_reaction(self, target_msg: Message, emoji: str) -> None:
         """Send a reaction. Protip: you can use e.g. \N{GRINNING FACE} in python"""
+        if utils.AUXIN:
+            react = {
+                "emoji": emoji,
+                "targetAuthorUuid": target_msg.uuid,
+                "targetSentTimestamp": target_msg.timestamp,
+            }
+            await self.respond(
+                target_msg,
+                "",
+                content={"dataMessage": {"body": None, "reaction": react}},
+            )
+            return
         react = {
             "target-author": target_msg.source,
             "target-timestamp": target_msg.timestamp,
@@ -493,54 +505,59 @@ class Signal:
             "sendReaction",
             param_dict=react,
             emoji=emoji,
-            recipient=target_msg.source,
+            recipient=None if target_msg.group else target_msg.source,
         )
         await self.outbox.put(cmd)
 
-    async def typing_message_content(
-        self, stop: bool = False, group_id: str = ""
-    ) -> str:
-        "serialized typing message content to pass to auxin --content for turning into protobufs"
-        resp = await self.signal_rpc_request(
-            "send", simulate=True, message="", destination="+15555555555"
-        )
-        # simulate gives us a dict corresponding to the protobuf structure
-        content_skeletor = json.loads(resp.blob["simulate_output"])
-        # typingMessage excludes having a dataMessage
-        content_skeletor["dataMessage"] = None
-        content_skeletor["typingMessage"] = {
-            "action": "STOPPED" if stop else "STARTED",
-            "timestamp": int(time.time() * 1000),
-        }
-        if group_id:
-            content_skeletor["typingMessage"]["groupId"] = group_id
-        return json.dumps(content_skeletor)
-
-    async def send_typing(
-        self,
-        msg: Optional[Message] = None,
-        stop: bool = False,
-        recipient: str = "",
-        group: str = "",
-    ) -> None:
+    async def send_typing(self, msg: Message, stop: bool = False) -> None:
         "Send a typing indicator to the person or group the message is from"
-        # typing indicators last 15s on their own
-        # https://github.com/signalapp/Signal-Android/blob/master/app/src/main/java/org/thoughtcrime/securesms/components/TypingStatusRepository.java#L32
-        if msg:
-            group = msg.group or ""
-            recipient = msg.source
         if utils.AUXIN:
-            if group:
-                content = await self.typing_message_content(stop, group)
-                await self.send_message(None, "", group=group, content=content)
+            content: dict = {
+                "dataMessage": None,
+                "typingMessage": {
+                    "action": "STOPPED" if stop else "STARTED",
+                    "timestamp": int(time.time() * 1000),
+                },
+            }
+            if msg.group:
+                content["typingMessage"]["groupId"] = msg.group
+                await self.send_message(None, "", group=msg.group, content=content)
             else:
-                content = await self.typing_message_content(stop)
-                await self.send_message(recipient, "", content=content)
+                await self.send_message(msg.source, "", content=content)
             return
-        if group:
-            await self.outbox.put(rpc("sendTyping", group_id=[group], stop=stop))
+        if msg.group:
+            await self.outbox.put(rpc("sendTyping", group_id=[msg.group], stop=stop))
         else:
-            await self.outbox.put(rpc("sendTyping", recipient=[recipient], stop=stop))
+            await self.outbox.put(rpc("sendTyping", recipient=[msg.source], stop=stop))
+
+    async def send_sticker(
+        self, msg: Message, sticker: str = "a4f608100f49e0992b6760f2b971b8a7:0"
+    ) -> None:
+        "send a sticker to the person or group the message is from"
+        if utils.AUXIN:
+            stick = {
+                "data": {
+                    "attachment_identifier": {"cdnId": 5902557749391454000},
+                    "contentType": "image/webp",
+                    "digest": u8("vo2+aWLvbOEYCVUZUocLb0ffORNFo5924nmyH28Pj04="),
+                    "height": 512,
+                    "key": u8(
+                        "a5B7fMYxWpn8DILBWfB/tnFSXufcC7C318XC4bXmwEy/NYnKof/oS15JU8sn33whcYwoXDKT12BF04RoDQ4Osg=="
+                    ),
+                    "size": 17540,
+                    "width": 512,
+                },
+                "packId": u8("pPYIEA9J4JkrZ2DyuXG4pw=="),
+                "packKey": u8("R2ZbM8Tz2N49WYY8yEWXPLML4JC/w1tu0naLoj5P1eY="),
+                "stickerId": 0,
+            }
+            content = {"dataMessage": {"body": None, "sticker": stick}}
+            if msg.group:
+                await self.send_message(None, "", group=msg.group, content=content)
+            else:
+                await self.send_message(msg.source, "", content=content)
+            return
+        await self.respond(msg, "", sticker=sticker)
 
     backoff = False
     messages_until_rate_limit = 1000.0
@@ -619,6 +636,11 @@ def hide(command: AsyncFunc) -> AsyncFunc:
 
 
 Datapoint = tuple[int, str, float]  # timestamp in ms, command/info, latency in seconds
+
+
+def u8(b64: str) -> list[int]:
+    "convert a b64 string into the u8[] that serde expects for bytes"
+    return [int(char) for char in base64.b64decode(b64)]
 
 
 class Bot(Signal):
@@ -1105,25 +1127,18 @@ class PayBot(ExtrasBot):
 
     async def fs_receipt_to_payment_message_content(
         self, fs_receipt: dict, note: str = ""
-    ) -> str:
+    ) -> dict:
         full_service_receipt = fs_receipt["result"]["receiver_receipts"][0]
         # this gets us a Receipt protobuf
         b64_receipt = mc_util.full_service_receipt_to_b64_receipt(full_service_receipt)
         # serde expects bytes to be u8[], not b64
-        u8_receipt = [int(char) for char in base64.b64decode(b64_receipt)]
-        tx = {"mobileCoin": {"receipt": u8_receipt}}
+        tx = {"mobileCoin": {"receipt": u8(b64_receipt)}}
         note = note or "check out this java-free payment notification"
         payment = {"Item": {"notification": {"note": note, "Transaction": tx}}}
         # SignalServiceMessageContent protobuf represented as JSON (spicy)
         # destination is outside the content so it doesn't matter,
         # but it does contain the bot's profileKey
-        resp = await self.signal_rpc_request(
-            "send", simulate=True, message="", destination="+15555555555"
-        )
-        content_skeletor = json.loads(resp.blob["simulate_output"])
-        content_skeletor["dataMessage"]["body"] = None
-        content_skeletor["dataMessage"]["payment"] = payment
-        return json.dumps(content_skeletor)
+        return {"dataMessage": {"body": None, "payment": payment}}
 
     async def build_gift_code(self, amount_pmob: int) -> list[str]:
         """Builds a gift code and returns a list of messages to send, given an amount in pMOB."""
@@ -1222,7 +1237,7 @@ class PayBot(ExtrasBot):
         content = await self.fs_receipt_to_payment_message_content(
             receipt_resp, receipt_message
         )
-        # pass our beautifully composed spicy JSON content to auxin.
+        # pass our beautifully composed JSON content to auxin.
         # message body is ignored in this case.
         payment_notif = await self.send_message(recipient, "", content=content)
         resp_future = asyncio.create_task(self.wait_for_response(rpc_id=payment_notif))
