@@ -133,10 +133,15 @@ class Charity(DialogBot):
             return await self.easter_eggs.get(code)
         await self.talkback(msg)
         # if it's been more than 60 seconds since we last prompted
-        if (time.time() * 1000 - await self.last_prompted.get(msg.uuid, 0)) > 60 * 1000:
+        if (time.time() * 1000 - await self.last_prompted.get(msg.uuid, 0)) > 10 * 1000:
+            await self.send_message(
+                msg.uuid, await self.dialog.get("CHARITY_INFO", "CHARITY_INFO")
+            )
+            await self.send_message(
+                msg.uuid, await self.dialog.get("HOW_TO_DONATE", "HOW_TO_DONATE")
+            )
             await self.send_message(
                 msg.uuid,
-                await self.dialog.get("CHARITY_INFO", "CHARITY_INFO"),
                 attachments=["./how-to-donate.gif"],
             )
         await self.last_prompted.set(msg.uuid, int(time.time() * 1000))
