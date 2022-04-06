@@ -920,24 +920,27 @@ async def prompt_msg_handler(request: web.Request) -> web.Response:
         return web.Response(text=info)
     prompt = Prompt(**row[0])
     message = await request.text()
-    message += "\n\N{Object Replacement Character}"
-    # needs to be String.length in Java, i.e. number of utf-16 code units,
-    # which are 2 bytes each. we need to specify any endianness to skip
-    # byte-order mark.
-    mention_start = len(message.encode("utf-16-be")) // 2 - 1
     quote = (
         {
             "quote-timestamp": int(prompt.signal_ts),
             "quote-author": str(prompt.author),
             "quote-message": str(prompt.prompt),
-            "mention": f"{mention_start}:1:{prompt.author}",
         }
         if prompt.author and prompt.signal_ts
         else {}
     )
     if prompt.group_id:
+        message += "\n\N{Object Replacement Character}"
+        # needs to be String.length in Java, i.e. number of utf-16 code units,
+        # which are 2 bytes each. we need to specify any endianness to skip
+        # byte-order mark.
+        mention_start = len(message.encode("utf-16-be")) // 2 - 1
         rpc_id = await bot.send_message(
-            None, message, group=prompt.group_id, **quote  # type: ignore
+            None,
+            message,
+            group=prompt.group_id,
+            mention=f"{mention_start}:1:{prompt.author}",
+            **quote,  # type: ignore
         )
     else:
         rpc_id = await bot.send_message(prompt.author, message, **quote)  # type: ignore
