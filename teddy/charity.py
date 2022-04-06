@@ -142,6 +142,7 @@ class Charity(DialogBot):
             )
             await self.send_message(
                 msg.uuid,
+                None,
                 attachments=["./how-to-donate.gif"],
             )
         await self.last_prompted.set(msg.uuid, int(time.time() * 1000))
