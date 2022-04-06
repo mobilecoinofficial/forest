@@ -201,7 +201,7 @@ auto_messages = [
 ]
 
 
-class Imogen(QuestionBot, GelatoBot):  # pylint: disable=too-many-public-methods
+class Imogen(GelatoBot):  # pylint: disable=too-many-public-methods
     prompts: dict[str, str] = {}
 
     async def start_process(self) -> None:
