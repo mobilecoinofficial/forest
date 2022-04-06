@@ -91,7 +91,10 @@ class Mobster:
 
     def __init__(self, url: str = "") -> None:
         if not url:
-            url = utils.get_secret("FULL_SERVICE_URL") or "http://localhost:9090/wallet"
+            url = (
+                utils.get_secret("FULL_SERVICE_URL") or "http://localhost:9090/"
+            ).removesuffix("/wallet") + "/wallet"
+
         self.account_id: Optional[str] = None
         logging.info("full-service url: %s", url)
         self.url = url

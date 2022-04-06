@@ -610,8 +610,8 @@ def is_admin(msg: Message) -> bool:
     ADMIN = utils.get_secret("ADMIN") or ""
     ADMIN_GROUP = utils.get_secret("ADMIN_GROUP") or ""
     ADMINS = utils.get_secret("ADMINS") or ""
-    source_admin = msg.source and msg.source in ADMIN or msg.source in ADMINS
-    source_uuid = msg.uuid and msg.uuid in ADMIN or msg.uuid in ADMINS
+    source_admin = msg.source and (msg.source in ADMIN or msg.source in ADMINS)
+    source_uuid = msg.uuid and (msg.uuid in ADMIN or msg.uuid in ADMINS)
     return source_admin or source_uuid or bool(msg.group and msg.group in ADMIN_GROUP)
 
 
