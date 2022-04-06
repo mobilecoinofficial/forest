@@ -73,7 +73,8 @@ class GelatoBot(QuestionBot):
         )
         try:
             delivery = await self.get_address_dict(msg)
-        except KeyError:
+        except KeyError as e:
+            logging.info(e)
             return "Sorry, couldn't get that"
         user_email = await self.ask_email_question(
             user, "What's your email?"
