@@ -88,7 +88,7 @@ QueueExpressions = pghelp.PGExpressions(
     last_active_group="SELECT group_id FROM prompt_queue WHERE author=$1 AND group_id<>'' ORDER BY id DESC LIMIT 1",
     costs="""select
     (select 0.860*sum(elapsed_gpu)/3600.0 from prompt_queue where inserted_ts > (select min(inserted_ts) from prompt_queue where paid=true and author<>'+***REMOVED***') and inserted_ts is not null and author<>'+***REMOVED***') as cost,
-    (select sum(amount_usd_cents/100.0) from imogen_ledger where amount_usd_cents>0 and account<>'+***REMOVED***') as revenue;
+    (select sum(amount_usd_cents/100.0) from imogen_ledger where amount_usd_cents>0 and account<>'+***REMOVED***' and memo<>'freebie') as revenue;
     """,
 )
 # selectors: paid, free, a6000, esrgan, diffusion, +ffmpeg video streaming
