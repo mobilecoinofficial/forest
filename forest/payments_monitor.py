@@ -230,11 +230,21 @@ class Mobster:
         params = {
             "mnemonic": utils.get_secret("MNEMONIC"),
             "key_derivation_version": "1",
-            "name": "falloopa",
+            "name": "bot",
             "next_subaddress_index": "2",
             "first_block_index": "3500",
         }
         return await self.req({"method": "import_account", "params": params})
+
+    async def ensure_address(self) -> str:
+        try:
+            await self.get_my_address()
+        except IndexError:
+            if utils.get_secret("MNEMONIC"):
+                await self.import_account()
+            else:
+                await self.req_(method="create_account", name="bot")
+        return await self.get_my_address()
 
     async def get_my_address(self) -> str:
         """Returns either the address set, or the address specified by the secret
