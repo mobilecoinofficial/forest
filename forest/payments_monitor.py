@@ -52,6 +52,8 @@ LedgerPGExpressions = PGExpressions(
         VALUES($1, $2, $3, $4, CURRENT_TIMESTAMP);",
     get_usd_balance="SELECT COALESCE(SUM(amount_usd_cents)/100, 0.0) AS balance \
         FROM {self.table} WHERE account=$1",
+    get_pmob_balance="SELECT COALESCE(SUM(amount_pmob), 0.0) AS balance \
+        FROM {self.table} WHERE account=$1",
 )
 
 InvoicePGEExpressions = PGExpressions(
@@ -89,7 +91,10 @@ class Mobster:
 
     def __init__(self, url: str = "") -> None:
         if not url:
-            url = utils.get_secret("FULL_SERVICE_URL") or "http://localhost:9090/wallet"
+            url = (
+                utils.get_secret("FULL_SERVICE_URL") or "http://localhost:9090/"
+            ).removesuffix("/wallet") + "/wallet"
+
         self.account_id: Optional[str] = None
         logging.info("full-service url: %s", url)
         self.url = url
