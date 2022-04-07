@@ -28,7 +28,7 @@ from asyncio import Queue, StreamReader, StreamWriter
 from asyncio.subprocess import PIPE
 from decimal import Decimal
 from functools import wraps
-from mimetypes import guess_extension
+from pathlib import Path
 from textwrap import dedent
 from typing import (
     Any,
@@ -87,7 +87,7 @@ def rpc(
     }
 
 
-async def get_attachment_paths(self, message: Message) -> list[str]:
+async def get_attachment_paths(message: Message) -> list[str]:
     if not utils.AUXIN:
         return [
             str(Path("./attachments") / attachment["id"])
@@ -388,7 +388,7 @@ class Signal:
             params["mobilecoinAddress"] = payment_address
         if profile_path:
             params["avatarFile"] = profile_path
-        for parameter, value in kwargs:
+        for parameter, value in kwargs.items():
             if value:
                 params[parameter] = value
         rpc_id = f"setProfile-{get_uid()}"
@@ -1030,7 +1030,7 @@ class PayBot(ExtrasBot):
         return "/fsr [command] ([arg1] [val1]( [arg2] [val2])...)"
 
     @requires_admin
-    async def do_setup(self, msg: Message) -> str:
+    async def do_setup(self, _: Message) -> str:
         if not utils.AUXIN:
             return "Can't set payment address without auxin"
         await self.set_profile_auxin(
@@ -1038,6 +1038,7 @@ class PayBot(ExtrasBot):
                 await self.mobster.ensure_address()
             )
         )
+        return "OK"
 
     @requires_admin
     async def do_balance(self, _: Message) -> Response:
@@ -1705,7 +1706,7 @@ class QuestionBot(PayBot):
         return "Thanks for helping protect our community!"
 
     @requires_admin
-    async def do_setup(self, msg: Msesage) -> str:
+    async def do_setup(self, msg: Message) -> str:
         if not utils.AUXIN:
             return "Can't set profile without auxin"
         fields = {}
