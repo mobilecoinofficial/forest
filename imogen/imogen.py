@@ -9,8 +9,8 @@ import logging
 import random
 import time
 from dataclasses import dataclass
-from pathlib import Path
 from mimetypes import guess_extension
+from pathlib import Path
 from textwrap import dedent
 from typing import Any, Callable
 
@@ -27,6 +27,7 @@ from forest.core import (
     app,
     group_help_text,
     hide,
+    is_admin,
     requires_admin,
     run_bot,
 )
@@ -449,6 +450,29 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         return f"you are #{ret[0]['queue_length']} in line"
 
     do_enhance = hide(do_upsample)
+
+    async def do_cancel(self, msg: Message) -> str:
+        if not msg.quote:
+            return "Quote a prompt you sent to use this command"
+        _prompt = await self.queue.execute(
+            "SELECT id, author, status FROM prompt_queue WHERE signal_ts=$1",
+            msg.quote.ts,
+        )
+        if not prompt or not (prompt_id := _prompt[0].get("id")):
+            return "Sorry, can't find that"
+        prompt = _prompt[0]
+        logging.info(prompt)
+        if prompt.get("author") != msg.source and not is_admin(msg):
+            return "You can only cancel your own prompts"
+        if prompt.get("status") != "pending":
+            return "That prompt isn't pending and can't be canceled"
+        ret = await self.queue.execute(
+            "UPDATE prompt_queue SET status='canceled' WHERE id=$1 AND status='pending' RETURNING id",
+            prompt_id,
+        )
+        if ret:
+            return f"Canceled prompt #{prompt_id}"
+        return "Sorry, that didn't work"
 
     async def enqueue_prompt(
         self,

@@ -26,6 +26,9 @@ LEDGER_NAME="imogen_ledger"
   allowed_public_ports = []
   auto_rollback = true
 
+[deploy]
+  strategy = "immediate"
+
 [[services]]
   http_checks = []
   internal_port = 8080
