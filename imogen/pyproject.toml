@@ -6,7 +6,18 @@ authors = ["Sylvie Liberman <technillogue@gmail.com>"]
 
 [tool.poetry.dependencies]
 python = "^3.9"
-forestbot = {git = "https://github.com/mobilecoinofficial/forest", rev="imogen-1.2.7"}
+aioprocessing = "*"
+asyncpg = "*"
+base58 = "*"
+phonenumberslite = "*"
+prometheus_async = "*"
+prometheus_client = "*"
+protobuf = "*"
+termcolor = "*"
+ulid2 = "*"
+pycryptodome = "*"
+aiohttp = {extras = ["speedups"], version = "^3.8.1"}
+#forestbot = {git = "https://github.com/mobilecoinofficial/forest", rev="auxin-imogen"}
 aioredis = "*"
 openai = "*"
 
