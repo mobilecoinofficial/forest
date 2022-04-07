@@ -513,8 +513,19 @@ class Signal:
         )
         await self.outbox.put(cmd)
 
-    async def send_typing(self, msg: Message, stop: bool = False) -> None:
+    async def send_typing(
+        self,
+        msg: Optional[Message] = None,
+        stop: bool = False,
+        recipient: str = "",
+        group: str = "",
+    ) -> None:
+        # typing indicators last 15s on their own
+        # https://github.com/signalapp/Signal-Android/blob/master/app/src/main/java/org/thoughtcrime/securesms/components/TypingStatusRepository.java#L32
         "Send a typing indicator to the person or group the message is from"
+        if msg:
+            group = msg.group or ""
+            recipient = msg.source
         if utils.AUXIN:
             content: dict = {
                 "dataMessage": None,
@@ -523,16 +534,16 @@ class Signal:
                     "timestamp": int(time.time() * 1000),
                 },
             }
-            if msg.group:
-                content["typingMessage"]["groupId"] = msg.group
-                await self.send_message(None, "", group=msg.group, content=content)
+            if group:
+                content["typingMessage"]["groupId"] = group
+                await self.send_message(None, "", group=group, content=content)
             else:
-                await self.send_message(msg.source, "", content=content)
+                await self.send_message(recipient, "", content=content)
             return
-        if msg.group:
-            await self.outbox.put(rpc("sendTyping", group_id=[msg.group], stop=stop))
+        if group:
+            await self.outbox.put(rpc("sendTyping", group_id=[group], stop=stop))
         else:
-            await self.outbox.put(rpc("sendTyping", recipient=[msg.source], stop=stop))
+            await self.outbox.put(rpc("sendTyping", recipient=[recipient], stop=stop))
 
     async def send_sticker(
         self, msg: Message, sticker: str = "a4f608100f49e0992b6760f2b971b8a7:0"
