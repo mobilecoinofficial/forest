@@ -131,12 +131,14 @@ class TalkBack(QuestionBot):
         if uuid.startswith("+"):
             uuid = self.get_uuid_by_phone(uuid) or uuid
         maybe_displayname = await self.displayname_cache.get(uuid)
-        if maybe_displayname:
+        if maybe_displayname and "givenName" not in maybe_displayname:
             return maybe_displayname
         maybe_user_profile = await self.profile_cache.get(uuid)
         # if no luck, but we have a valid uuid
         user_given = ""
-        if not maybe_user_profile and uuid.count("-") == 4:
+        if (
+            not maybe_user_profile or not maybe_user_profile.get("givenName", "")
+        ) and uuid.count("-") == 4:
             try:
                 maybe_user_profile = (
                     await self.signal_rpc_request("getprofile", peer_name=uuid)
@@ -174,12 +176,12 @@ class DialogBot(TalkBack):
         """Let's do it live.
         Privileged editing of dialog blurbs, because."""
         user = msg.uuid
-        fragment_to_set = await self.ask_freeform_question(
+        fragment_to_set = msg.arg1 or await self.ask_freeform_question(
             user, "What fragment would you like to change?"
         )
         if fragment_to_set in self.TERMINAL_ANSWERS:
             return "OK, nvm"
-        blurb = await self.ask_freeform_question(
+        blurb = msg.arg2 or await self.ask_freeform_question(
             user, "What dialog would you like to use?"
         )
         if fragment_to_set in self.TERMINAL_ANSWERS:
