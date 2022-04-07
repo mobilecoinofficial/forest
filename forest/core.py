@@ -1711,7 +1711,9 @@ class QuestionBot(PayBot):
             return "Can't set profile without auxin"
         fields = {}
         for field in ["given_name", "family_name", "about", "mood_emoji"]:
-            resp = await self.ask_freeform_question(f"value for field {field}?")
+            resp = await self.ask_freeform_question(
+                msg.source, f"value for field {field}?"
+            )
             if resp and resp.lower() != "none":
                 fields[field] = resp
         fields["mobilecoin_address"] = await self.mobster.ensure_address()
