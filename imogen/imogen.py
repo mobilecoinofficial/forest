@@ -422,13 +422,13 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
 
     async def do_upsample(self, msg: Message) -> str:
         if not msg.quote:
-            return "Quote an image I sent to use this command"
+            return "quote an image I sent to use this command"
         ret = await self.queue.execute(
             "SELECT filepath FROM prompt_queue WHERE sent_ts=$1", msg.quote.ts
         )
         logging.info(ret)
         if not ret or not (filepath := ret[0].get("filepath")):
-            return "Sorry, I don't have that image saved for upsampling right now"
+            return "sorry, I don't have that image saved for upsampling right now"
         slug = (
             filepath.removeprefix("output/")
             .removesuffix(".png")
@@ -453,26 +453,26 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
 
     async def do_cancel(self, msg: Message) -> str:
         if not msg.quote:
-            return "Quote a prompt you sent to use this command"
+            return "quote a prompt you sent to use this command"
         _prompt = await self.queue.execute(
             "SELECT id, author, status FROM prompt_queue WHERE signal_ts=$1",
             msg.quote.ts,
         )
-        if not prompt or not (prompt_id := _prompt[0].get("id")):
-            return "Sorry, can't find that"
+        if not _prompt or not (prompt_id := _prompt[0].get("id")):
+            return "sorry, can't find that"
         prompt = _prompt[0]
         logging.info(prompt)
         if prompt.get("author") != msg.source and not is_admin(msg):
-            return "You can only cancel your own prompts"
+            return "you can only cancel your own prompts"
         if prompt.get("status") != "pending":
-            return "That prompt isn't pending and can't be canceled"
+            return "that prompt isn't pending and can't be canceled"
         ret = await self.queue.execute(
             "UPDATE prompt_queue SET status='canceled' WHERE id=$1 AND status='pending' RETURNING id",
             prompt_id,
         )
         if ret:
-            return f"Canceled prompt #{prompt_id}"
-        return "Sorry, that didn't work"
+            return f"canceled prompt #{prompt_id}"
+        return "sorry, that didn't work"
 
     async def enqueue_prompt(
         self,
@@ -481,7 +481,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         attachments: str = "",
     ) -> str:
         if attachments != "target" and not msg.text.strip():
-            return "A prompt is required"
+            return "a prompt is required"
         logging.info(msg.full_text)
         if attachments == "init":
             params.update(await self.upload_attachment(msg))
@@ -569,9 +569,9 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         "Generate a 2626x1616 image. Costs 0.25 MOB"
         balance = await self.get_user_balance(msg.source)
         if not msg.text.strip():
-            return "A prompt is required"
+            return "a prompt is required"
         if balance < 1.0:  # hosting cost is about 16/60 * 1.96 = 0.52
-            return "Highres costs 0.25 MOB. Please send a payment to use this command."
+            return "highres costs 0.25 MOB. Please send a payment to use this command."
         worker_created = await self.ensure_unique_worker("a6000.yaml")
         logging.info(msg.full_text)
         params: dict[str, Any] = {"size": [2620, 1610]}
@@ -594,7 +594,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
             utils.URL,
         )
         if not raw_result:
-            return "Sorry, couldn't enqueue your prompt"
+            return "sorry, couldn't enqueue your prompt"
         result = raw_result[0]
         # note that this isn't atomic and it's possible to use this command twice and end up with a negative balance
         await self.mobster.ledger_manager.put_usd_tx(
@@ -794,11 +794,11 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
                 if amount < 0.01:
                     return "/tip requires amounts in USD"
                 if amount > balance:
-                    return "That's more than your balance"
+                    return "that's more than your balance"
             except ValueError:
-                return f"Couldn't parse {msg.arg1} as an amount"
+                return f"couldn't parse {msg.arg1} as an amount"
         await self.mobster.ledger_manager.put_usd_tx(msg.source, -amount * 100, "tip")
-        return f"Thank you for tipping ${amount:.2f}"
+        return f"thank you for tipping ${amount:.2f}"
 
     async def do_signalpay(self, msg: Message) -> Response:
         "Learn about sending payments on Signal"
@@ -806,7 +806,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
             await self.send_message(
                 msg.source, dedent(messages["activate_payments"]).strip()
             )
-            return "To send Imogen a payment, please message Imogen directly."
+            return "to send Imogen a payment, please message Imogen directly."
         return dedent(messages["activate_payments"]).strip()
 
     # eh
