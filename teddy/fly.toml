@@ -1,4 +1,4 @@
-app = "teddy-prod-bravo"
+app = "charity-fc-alpha"
 kill_signal = "SIGINT"
 kill_timeout = 5
 

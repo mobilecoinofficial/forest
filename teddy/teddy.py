@@ -42,6 +42,8 @@ class Teddy(DialogBot):
         self.successful_pays: aPersistDictOfLists[str] = aPersistDictOfLists(
             "successful_pays"
         )
+        # key -> int value map
+        self.int_map = aPersistDictOfInts("int_map")
         # count of user -> number of eight letter codes entered
         self.attempted_claims = aPersistDictOfInts("attempted_claims")
         # map of balance to distribute
@@ -66,6 +68,26 @@ class Teddy(DialogBot):
             if isinstance(self.__getattribute__(attr), aPersistDict)
         }
         super().__init__()
+
+    @requires_admin
+    async def do_intset(self, msg: Message) -> Response:
+        """Sets intmap values: arg1.upper() to int(arg2)"""
+        user = msg.uuid
+        if not msg.arg1:
+            msg.arg1 = await self.ask_freeform_question(
+                user, "What value reference would you like to change?"
+            )
+        if msg.arg1 and msg.arg2:
+            maybe_value = int(msg.arg2)
+        if msg.arg1 and not msg.arg2:
+            maybe_value = (
+                await self.ask_intable_question(
+                    user, f"What value to use for {msg.arg1}?"
+                )
+            ) or 0
+        if msg.arg1 and maybe_value:
+            await self.int_map.set(msg.arg1, maybe_value or 0)
+        return self.int_map.dict_
 
     @requires_admin
     async def do_dump(self, _: Message) -> Response:
@@ -154,7 +176,7 @@ class Teddy(DialogBot):
             .replace(" ", "")
             .replace("-", "")
         )
-        allowed_claims = 3
+        allowed_claims = await self.int_map.get("allowed_claims", 3)
         attempt_count = await self.attempted_claims.get(user, 0)
         claims_left = allowed_claims - attempt_count - 1
         if user in await self.user_claimed.keys():
@@ -203,7 +225,10 @@ class Teddy(DialogBot):
             # retry send up to 3x for overkill
             for _ in range(3):
                 await self.send_typing(msg)
-                payment_result = await self.pay_user_from_balance(user, "teddy", 4)
+                payment_amount = await self.int_map.get("amount", 6000)
+                payment_result = await self.pay_user_from_balance(
+                    user, "teddy", payment_amount
+                )
                 if payment_result and "Error" not in payment_result:
                     await self.send_message(
                         user,
@@ -222,6 +247,7 @@ class Teddy(DialogBot):
                     user, await self.dialog.get("WE_ARE_SO_SORRY", "WE_ARE_SO_SORRY")
                 )
                 await self.user_state.set(user, "WE_ARE_SO_SORRY")
+                await self.valid_codes.set(code, "unclaimed")
                 return None
             await asyncio.sleep(1)
             await self.send_message(
