@@ -1,3 +1,18 @@
+## 1.2.9
+
+* better test coverage for question bots (#181)
+* add `get_pmob_balance`, autocreate tables (#193)
+* better ergonomics for setting up paybots (#197)
+
+## 1.2.8
+
+- bump pdict-ng docs (#183)
+- add send_typing (#176)
+- check if ROOT_DIR/SIGNAL exists before using it and remove copied lines (#186)
+- to_dict base class so quotes get rendered right (#188)
+- make /wallet optional in the full service url (#191)
+- fix is_admin for groups (#196)
+
 ## 1.2.7
 
 - new user_activity table holds first seen and last seen per-user per-bot. requires `METRICS_SALT` (#157)
