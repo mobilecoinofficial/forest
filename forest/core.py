@@ -492,6 +492,8 @@ class Signal:
             await self.send_message(None, msg, group=group, **other_params)
         else:
             await self.send_message(utils.get_secret("ADMIN"), msg, **other_params)
+            for admin in utils.get_secret("ADMINS").split():
+                await self.send_message(admin, msg, **other_params)
 
     async def respond(
         self, target_msg: Message, msg: Response, **other_params: Any
