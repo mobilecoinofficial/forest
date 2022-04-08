@@ -18,6 +18,7 @@ import aioredis
 import openai
 from aiohttp import web
 
+import mc_util
 from forest import pghelp, utils
 from forest.core import (
     Message,
@@ -313,12 +314,12 @@ class Imogen(GelatoBot):  # pylint: disable=too-many-public-methods
         return repr((await self.queue.costs())[0])
 
     async def do_balance(self, msg: Message) -> Response:
-        "returns your Imogen balance in USD for priority requests and tips"
+        "returns your Imogen balance in MOB for priority requests, tips, and prints"
         balance = await self.get_user_usd_balance(msg.source)
         prompts = int(balance / (self.image_rate_cents / 100))
-        balance_msg = (
-            f"Your current Imogen balance is {prompts} priority prompt credits"
-        )
+
+        balance_pmob = await self.get_user_pmob_balance(msg.source)
+        balance_msg = f"Your current Imogen balance is {mc_util.pmob2mob(balance_pmob).normalize()} MOB, which is good for {prompts} priority prompts"
         if balance == 0:
             balance_msg += "\n\n To buy more credits, send Imogen some MobileCoin. Try /signalpay to learn more activating payments"
         # if msg.group:

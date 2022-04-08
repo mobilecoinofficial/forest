@@ -1,6 +1,7 @@
 import json
 import logging
 import time
+import mc_util
 from forest import utils
 from forest.core import Message, run_bot, QuestionBot
 
@@ -17,7 +18,7 @@ order_create_url = "https://api.gelato.com/v2/order/create"
 
 
 class GelatoBot(QuestionBot):
-    price = 8e12
+    price =8 # MOB Price should be negative amount
 
     async def post_order(
         self,
@@ -45,7 +46,10 @@ class GelatoBot(QuestionBot):
             create_response = await r.json()
             logging.info(create_response)
         await self.mobster.ledger_manager.put_pmob_tx(
-            msg.source, self.price, str(msg.source + time.time())
+            msg.source,
+            -round(self.price * await self.mobster.get_rate() * 100),
+            -mc_util.mob2pmob(self.price),
+            f"{msg.source} : {time.time()}",
         )
 
         return create_response.get("message", "Order submitted")
