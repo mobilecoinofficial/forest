@@ -133,7 +133,9 @@ class PGInterface:
 
     async def connect_pg(self) -> None:
         global pool
-        self.pool = pool = await asyncpg.create_pool(self.database)
+        if not pool:
+            pool = await asyncpg.create_pool(self.database)
+        self.pool = pool
 
     _autocreating_table = False
 
