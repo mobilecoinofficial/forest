@@ -39,15 +39,16 @@ def get_logger(name: str) -> logging.Logger:
     return logger
 
 
-pools: list[asyncpg.Pool] = []
+# this should be used for every insance
+pool: Optional[asyncpg.Pool] = None
 
 
 async def close_pools() -> None:
-    for pool in pools:
-        try:
-            await pool.close()
-        except (asyncpg.PostgresError, asyncpg.InternalClientError) as e:
-            logging.error(e)
+    global pool
+    try:
+        await pool.close()
+    except (asyncpg.PostgresError, asyncpg.InternalClientError) as e:
+        logging.error(e)
 
 
 class SimpleInterface:
@@ -57,14 +58,14 @@ class SimpleInterface:
 
     @asynccontextmanager
     async def get_connection(self) -> AsyncGenerator:
-        if not self.pool:
+        global pool
+        if not pool:
             logging.info("creating pool")
             if "localhost" in self.database:
-                self.pool = await asyncpg.create_pool(user="postgres")  # self.database)
+                pool = await asyncpg.create_pool(user="postgres")  # self.database)
             else:
-                self.pool = await asyncpg.create_pool(self.database)
-            pools.append(self.pool)
-        async with self.pool.acquire() as conn:
+                pool = await asyncpg.create_pool(self.database)
+        async with pool.acquire() as conn:
             logging.info("connection acquired")
             yield conn
 
@@ -105,7 +106,8 @@ class PGInterface:
         self.table = self.queries.table
         self.MAX_RESP_LOG_LEN = MAX_RESP_LOG_LEN
         # self.loop.create_task(self.connect_pg())
-        self.pool = None
+        global pool
+        self.pool = pool
         if isinstance(database, dict):
             self.invocations: list[dict] = []
         self.logger = get_logger(
@@ -130,8 +132,8 @@ class PGInterface:
                 self.__getattribute__(f"sync_{k}")()
 
     async def connect_pg(self) -> None:
-        self.pool = await asyncpg.create_pool(self.database)
-        pools.append(self.pool)
+        global pool
+        self.pool = pool = await asyncpg.create_pool(self.database)
 
     _autocreating_table = False
 
