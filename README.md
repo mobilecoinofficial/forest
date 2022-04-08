@@ -4,6 +4,8 @@ Forest is a framework for running payments-enabled chat and utility bots for [Si
 
 To get familiarised with deploying and running a forest bot, we've provided a short tutorial to teach you how to deploy hellobot, the simplest possible forest bot.
 
+See also: <https://github.com/mobilecoinofficial/forestbot-template>
+
 ## High Level Overview ##
 
 In this tutorial you will:
