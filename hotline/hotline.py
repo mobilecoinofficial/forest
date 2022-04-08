@@ -766,8 +766,10 @@ class Hotline(DialogBot):  # pylint: disable=too-many-public-methods
             elif obj == "price" and user_owns == "event":
                 # check if string == floatable
                 if (
-                    value.replace(".", "1", 1).isnumeric()  # 1.01
-                    or value.replace(",", "1", 1).isnumeric()  # 1,01
+                    value.replace("-", "1", 1).replace(".", "1", 1).isnumeric()  # 1.01
+                    or value.replace("-", "1", 1)
+                    .replace(",", "1", 1)
+                    .isnumeric()  # 1,01
                 ):
                     await self.event_prices.set(
                         param, float(value.replace(",", ".", 1))
