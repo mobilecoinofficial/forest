@@ -200,7 +200,7 @@ class Teddy(DialogBot):
                 user, text_message, attachments=["./how-to-activate.gif"]
             )
             return None
-        elif user_address and user not in (await self.user_address.keys()):
+        if user_address and user not in (await self.user_address.keys()):
             await self.user_address.set(user, user_address)
         # TODO: establish support path
         if claims_left < 0:
