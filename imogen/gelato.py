@@ -59,8 +59,7 @@ class GelatoBot(QuestionBot):
         if not msg.quote:
             return "Quote a url to use this command"
         image = (
-            msg.quoted_text.split(" ")[0]
-            or "https://mcltajcadcrkywecsigc.supabase.in/storage/v1/object/public/imoges/life_on_a_new_planetc8e3_upsampled.png"
+            msg.quoted_text.split()[0]
         )
         user = msg.uuid
         # delivery_name = (await self.get_displayname(msg.uuid)).split("_")[0]
