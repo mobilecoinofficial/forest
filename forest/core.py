@@ -700,7 +700,7 @@ class Bot(Signal):
             if not self.seen_users:
                 continue
             try:
-                async with self.activity.pool.acquire() as conn:
+                async with pghelp.pool.acquire() as conn:
                     # executemany batches this into an atomic db query
                     await conn.executemany(
                         self.activity.queries["log"],

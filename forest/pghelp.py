@@ -42,7 +42,7 @@ def get_logger(name: str) -> logging.Logger:
 # this should be used for every insance
 
 
-class Pool:
+class OneTruePool:
     connecting: Optional[asyncio.Future] = None
     pool: Optional[asyncpg.Pool] = None
 
@@ -61,14 +61,24 @@ class Pool:
                 logging.info("created pool %s for %s", pool, table)
                 self.connecting.set_result(True)
 
+    def acquire(
+        self, url: str = "", table: str = ""
+    ) -> asyncpg.pool.PoolAcquireContext:
+        """returns an async context manager. sugar around pool.pool.acquire
+        this *isn't* async, because pool.acquire returns an async context manager and not a coroutine"""
+        if not self.pool:
+            raise Exception("no pool, use pool.connect first")
+        return self.pool.acquire()
+
     async def close(self) -> None:
         try:
-            await self.pool.close()
+            if self.pool:
+                await self.pool.close()
         except (asyncpg.PostgresError, asyncpg.InternalClientError) as e:
             logging.error(e)
 
 
-pool = Pool()
+pool = OneTruePool()
 
 
 class SimpleInterface:
@@ -80,7 +90,7 @@ class SimpleInterface:
         if not pool.pool:
             pool.connect(self.database, "simple interface")
         assert pool.pool
-        async with pool.pool.acquire() as conn:
+        async with pool.acquire() as conn:
             logging.info("connection acquired")
             yield conn
 
@@ -156,7 +166,7 @@ class PGInterface:
         if not pool.pool and not isinstance(self.database, dict):
             await pool.connect(self.database, self.table)
         if pool.pool:
-            async with pool.pool.acquire() as connection:
+            async with pool.acquire() as connection:
                 # try:
                 # except asyncpg.TooManyConnectionsError:
                 # await connection.execute(
