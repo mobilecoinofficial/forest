@@ -214,9 +214,11 @@ class Mobster:
         return mob_rate
 
     async def pmob2usd(self, pmob: int) -> float:
+        "takes picoMOB, returns USD"
         return float(mc_util.pmob2mob(pmob)) * await self.get_rate()
 
     async def usd2mob(self, usd: float, perturb: bool = False) -> float:
+        "takes USD, returns MOB"
         invnano = 100000000
         # invpico = 100000000000 # doesn't work in mixin
         mob_rate = await self.get_rate()
@@ -228,15 +230,30 @@ class Mobster:
             return round(mob_amount, 8)
         return round(mob_amount, 3)  # maybe ceil?
 
-    async def import_account(self) -> dict:
+    async def import_account(self, name: str = "bot") -> dict:
+        "import an account using the MNEMONIC secret"
+        if not utils.get_secret("MNEMONIC"):
+            raise ValueError
         params = {
             "mnemonic": utils.get_secret("MNEMONIC"),
             "key_derivation_version": "1",
-            "name": "falloopa",
+            "name": name,
             "next_subaddress_index": "2",
             "first_block_index": "3500",
         }
         return await self.req({"method": "import_account", "params": params})
+
+    async def ensure_address(self) -> str:
+        """if we don't have an address, either import an account if MNEMONIC is set,
+        or create a new account. then return our address"""
+        try:
+            await self.get_my_address()
+        except IndexError:
+            if utils.get_secret("MNEMONIC"):
+                await self.import_account()
+            else:
+                await self.req_(method="create_account", name="bot")
+        return await self.get_my_address()
 
     async def get_my_address(self) -> str:
         """Returns either the address set, or the address specified by the secret
