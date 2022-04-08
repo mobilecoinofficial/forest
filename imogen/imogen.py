@@ -314,7 +314,7 @@ class Imogen(GelatoBot):  # pylint: disable=too-many-public-methods
 
     async def do_balance(self, msg: Message) -> Response:
         "returns your Imogen balance in USD for priority requests and tips"
-        balance = await self.get_user_balance(msg.source)
+        balance = await self.get_user_usd_balance(msg.source)
         prompts = int(balance / (self.image_rate_cents / 100))
         balance_msg = (
             f"Your current Imogen balance is {prompts} priority prompt credits"
@@ -342,7 +342,7 @@ class Imogen(GelatoBot):  # pylint: disable=too-many-public-methods
             return "Thank you for tipping Imogen! Your tip will be used to improve Imogen and shared with collaborators"
         rate = self.image_rate_cents / 100
         prompts = int(value / rate)
-        total = int(await self.get_user_balance(msg.source) / rate)
+        total = int(await self.get_user_usd_balance(msg.source) / rate)
         return f"Thank you for supporting Imogen! You now have an additional {prompts} priority prompts. Total: {total}. Your prompts will automatically get dedicated workers and bypass the free queue."
 
     async def ensure_unique_worker(
@@ -544,7 +544,7 @@ class Imogen(GelatoBot):  # pylint: disable=too-many-public-methods
     @hide
     async def do_highres(self, msg: Message) -> str:
         "Generate a 2626x1616 image. Costs 0.25 MOB"
-        balance = await self.get_user_balance(msg.source)
+        balance = await self.get_user_usd_balance(msg.source)
         if not msg.text.strip():
             return "A prompt is required"
         if balance < 1.0:  # hosting cost is about 16/60 * 1.96 = 0.52
@@ -762,7 +762,7 @@ class Imogen(GelatoBot):  # pylint: disable=too-many-public-methods
         """
         if msg.arg1 is None:
             return dedent(self.do_tip.__doc__).strip()
-        balance = await self.get_user_balance(msg.source)
+        balance = await self.get_user_usd_balance(msg.source)
         if msg.arg1 and msg.arg1.lower() in ("all", "everything"):
             amount = balance
         else:

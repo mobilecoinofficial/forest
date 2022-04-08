@@ -1,5 +1,6 @@
 import json
 import logging
+import time
 from forest import utils
 from forest.core import Message, run_bot, QuestionBot
 
@@ -16,7 +17,16 @@ order_create_url = "https://api.gelato.com/v2/order/create"
 
 
 class GelatoBot(QuestionBot):
-    async def post_order(self, quote_data: dict) -> None:
+    price = 8e12
+
+    async def post_order(
+        self,
+        quote_data: dict,
+        msg: Message,
+    ) -> None:
+        balance = await self.get_user_pmob_balance(msg.source)
+        if balance < self.price:  # Images go for 8 MOB
+            return "Prints costs 8 MOB. Please send a payment to use this command."
         # === Send quote request ===
         async with self.client_session.post(
             quote_url, data=json.dumps(quote_data), headers=headers
@@ -34,6 +44,10 @@ class GelatoBot(QuestionBot):
         ) as r:
             create_response = await r.json()
             logging.info(create_response)
+        await self.mobster.ledger_manager.put_pmob_tx(
+            msg.source, self.price, str(msg.source + time.time())
+        )
+
         return create_response.get("message", "Order submitted")
 
     async def get_address_dict(self, msg: Message) -> dict:
@@ -56,11 +70,14 @@ class GelatoBot(QuestionBot):
         }
 
     async def do_fulfillment(self, msg: Message) -> str:
+        """Order an imogen print by quoting"""
         if not msg.quote:
             return "Quote a url to use this command"
-        image = (
-            msg.quoted_text.split()[0]
-        )
+
+        balance = await self.get_user_pmob_balance(msg.source)
+        if balance < self.price:  # Images go for 8 MOB
+            return "Prints costs 8 MOB. Please send a payment to use this command."
+        image = msg.quoted_text.split()[0]
         user = msg.uuid
         # delivery_name = (await self.get_displayname(msg.uuid)).split("_")[0]
         # if not await self.ask_yesno_question(
@@ -80,6 +97,7 @@ class GelatoBot(QuestionBot):
         )  # could stub this out with forest email
         # sorry https://www.kalzumeus.com/2010/06/17/falsehoods-programmers-believe-about-names/
         first, last, *unused = delivery_name.split() + ["", ""]
+        ## TODO have this account for international users
         recipient = delivery | {
             "countryIsoCode": "US",
             "firstName": first,
@@ -104,7 +122,7 @@ class GelatoBot(QuestionBot):
             "recipient": recipient,
         }
         logging.info(current_quote_data)
-        return await self.post_order(current_quote_data)
+        return await self.post_order(current_quote_data, msg)
 
 
 if __name__ == "__main__":
