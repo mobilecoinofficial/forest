@@ -30,6 +30,8 @@ class Teddy(DialogBot):
         self.valid_codes: aPersistDict[str] = aPersistDict("valid_codes")
         # user -> timestamp in millis of first message
         self.first_messages = aPersistDictOfInts("first_messages")
+        # set of known user addresses; user -> address
+        self.user_address: aPersistDict[str] = aPersistDict("user_address")
         # set of codes users have claimed; user -> code claimed
         self.user_claimed: aPersistDict[str] = aPersistDict("user_claimed")
         # set of users from whom we are expecting payments
@@ -167,13 +169,17 @@ class Teddy(DialogBot):
                 user, await self.dialog.get("CHARITIES_INFO", "CHARITIES_INFO")
             )
             return None
-        user_address = await self.get_signalpay_address(user)
+        user_address = await self.user_address.get(
+            user, ""
+        ) or await self.get_signalpay_address(user)
         if not user_address:
             text_message = await self.dialog.get("PLEASE_ACTIVATE", "PLEASE_ACTIVATE")
             await self.send_message(
                 user, text_message, attachments=["./how-to-activate.gif"]
             )
             return None
+        elif user_address and user not in (await self.user_address.keys()):
+            await self.user_address.set(user, user_address)
         # TODO: establish support path
         if claims_left < 0:
             return await self.dialog.get("TOO_MANY_ATTEMPTS", "TOO_MANY_ATTEMPTS")
