@@ -61,9 +61,7 @@ class OneTruePool:
                 logging.info("created pool %s for %s", pool, table)
                 self.connecting.set_result(True)
 
-    def acquire(
-        self, url: str = "", table: str = ""
-    ) -> asyncpg.pool.PoolAcquireContext:
+    def acquire(self) -> asyncpg.pool.PoolAcquireContext:
         """returns an async context manager. sugar around pool.pool.acquire
         this *isn't* async, because pool.acquire returns an async context manager and not a coroutine"""
         if not self.pool:
