@@ -238,7 +238,7 @@ class Signal:
                 logging.info(f"no {utils.SIGNAL} process")
         if utils.UPLOAD:
             await self.datastore.mark_freed()
-        await pghelp.close_pools()
+        await pghelp.pool.close()
         # this still deadlocks. see https://github.com/forestcontact/forest-draft/issues/10
         if autosave._memfs_process:
             executor = autosave._memfs_process._get_executor()
