@@ -178,7 +178,7 @@ async def bot():
     bot.exiting = True
     bot.handle_messages_task.cancel()
     await bot.client_session.close()
-    await core.pghelp.close_pools()
+    await core.pghelp.pool.close()
 
 
 @pytest.mark.asyncio
