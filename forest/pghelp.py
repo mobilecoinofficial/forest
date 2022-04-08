@@ -124,7 +124,7 @@ class PGInterface:
         if isinstance(database, dict):
             self.invocations: list[dict] = []
         self.logger = get_logger(
-            f'{self.table}{"_fake" if not self.pool else ""}_interface'
+            f'{self.table}{"_fake" if not self.database else ""}_interface'
         )
 
     def finish_init(self) -> None:
