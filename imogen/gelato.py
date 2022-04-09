@@ -75,6 +75,7 @@ class GelatoBot(QuestionBot):
 
     async def do_fulfillment(self, msg: Message) -> str:
         """Order an imogen print by quoting"""
+        ## TODO Allow USER to cancel midflow.
         if not msg.quote:
             return "Quote a url to use this command"
 
