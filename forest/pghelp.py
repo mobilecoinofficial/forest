@@ -52,13 +52,13 @@ class OneTruePool:
                 await self.connecting
             else:
                 self.connecting = asyncio.Future()
-                logging.info("creating pool for %s", table)
+                logging.debug("creating pool for %s", table)
                 # this is helpful for connecting to an actually local db where your system username is different
                 # but counterproductive if you're proxying a database connection through localhost
                 # if "localhost" in self.database:
                 #     pool = await asyncpg.create_pool(user="postgres")
                 self.pool = await asyncpg.create_pool(url)
-                logging.info("created pool %s for %s", pool, table)
+                logging.debug("created pool %s for %s", self.pool, table)
                 self.connecting.set_result(True)
 
     def acquire(self) -> asyncpg.pool.PoolAcquireContext:
