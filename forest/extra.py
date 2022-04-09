@@ -131,7 +131,11 @@ class TalkBack(QuestionBot):
         if uuid.startswith("+"):
             uuid = self.get_uuid_by_phone(uuid) or uuid
         maybe_displayname = await self.displayname_cache.get(uuid)
-        if maybe_displayname and "givenName" not in maybe_displayname:
+        if (
+            maybe_displayname
+            and "givenName" not in maybe_displayname
+            and " " not in maybe_displayname
+        ):
             return maybe_displayname
         maybe_user_profile = await self.profile_cache.get(uuid)
         # if no luck, but we have a valid uuid
@@ -152,6 +156,7 @@ class TalkBack(QuestionBot):
             user_given = maybe_user_profile["givenName"]
         if not user_given:
             user_given = "givenName"
+        user_given = user_given.replace(" ", "_")
         if uuid and ("+" not in uuid and "-" in uuid):
             user_short = f"{user_given}_{uuid.split('-')[1]}"
         else:

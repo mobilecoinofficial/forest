@@ -14,8 +14,10 @@ from forest.core import (
     Response,
     hide,
     requires_admin,
+    is_admin,
     run_bot,
 )
+import forest.utils
 from forest.extra import DialogBot
 from forest.pdictng import aPersistDict, aPersistDictOfInts, aPersistDictOfLists
 from mc_util import pmob2mob
@@ -138,8 +140,24 @@ class Teddy(DialogBot):
             return f"Error! {list_.title()} has 0mmob balance!"  # thanks y?!
         return "Sorry, can't help you."
 
-    @requires_admin
+    async def do_raisehand(self, msg: Message) -> Response:
+        """A user raises their hand which messages their display name to the admins!"""
+        user_displayname = await self.get_displayname(msg.uuid)
+        nota_bene = msg.text or ""
+        if nota_bene:
+            nota_bene = f" ({nota_bene})"
+        outgoing = f"{user_displayname} just raised their hand ✋{nota_bene}"
+        admins = (forest.utils.get_secret("ADMINS") or "").split(",")
+        admins += (await self.dialog.get("ADMINS", "")).split(",")
+        for admin in admins:
+            if admin:
+                await self.send_message(admin, outgoing)
+        return "Notified the admins!"
+
     async def do_reset(self, msg: Message) -> Response:
+        """Resets a user's attempts and claim code."""
+        if not (is_admin(msg) or msg.uuid in await self.dialog.get("ADMINS", "")):
+            return "Unauthorized, sorry!"
         user = await self.displayname_lookup_cache.get(msg.arg1 or "", msg.uuid)
         await self.attempted_claims.set(user, 0)
         claimed = await self.user_claimed.get(user)
@@ -243,6 +261,8 @@ class Teddy(DialogBot):
                 )
             # should never fall through
             if not payment_result or payment_result and "Error" in payment_result:
+                msg.text = "We just exhausted retries trying to send a payment. Call eng lead!! (Out of balance?)"
+                await self.do_raisehand(msg)
                 await self.send_message(
                     user, await self.dialog.get("WE_ARE_SO_SORRY", "WE_ARE_SO_SORRY")
                 )
