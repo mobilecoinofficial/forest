@@ -1723,7 +1723,9 @@ class QuestionBot(PayBot):
                 break
             if resp and resp.lower() != "none":
                 fields[field] = resp
-        fields["payment_address"] = await self.mobster.ensure_address()
+        fields["payment_address"] = mc_util.b58_wrapper_to_b64_public_address(
+            await self.mobster.ensure_address()
+        )
         attachments = await get_attachment_paths(msg)
         if attachments:
             fields["profile_path"] = attachments[0]
