@@ -1719,6 +1719,8 @@ class QuestionBot(PayBot):
             resp = await self.ask_freeform_question(
                 msg.source, f"value for field {field}?"
             )
+            if resp and resp.lower() == "skip":
+                break
             if resp and resp.lower() != "none":
                 fields[field] = resp
         fields["mobilecoin_address"] = await self.mobster.ensure_address()
