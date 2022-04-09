@@ -1051,9 +1051,13 @@ class PayBot(ExtrasBot):
             return None
         return await super().handle_message(message)
 
-    async def get_user_balance(self, account: str) -> float:
+    async def get_user_usd_balance(self, account: str) -> float:
         res = await self.mobster.ledger_manager.get_usd_balance(account)
         return float(round(res[0].get("balance"), 2))
+
+    async def get_user_pmob_balance(self, account: str) -> float:
+        res = await self.mobster.ledger_manager.get_pmob_balance(account)
+        return res[0].get("balance")
 
     async def handle_payment(self, message: Message) -> None:
         """Decode the receipt, then update balances.
@@ -1678,6 +1682,7 @@ class QuestionBot(PayBot):
 
         return email
 
+    @hide
     async def do_challenge(self, msg: Message) -> Response:
         """Challenges a user to do a simple math problem,
         optionally provided as an image to increase attacker complexity."""
