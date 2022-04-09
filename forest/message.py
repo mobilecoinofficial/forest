@@ -217,7 +217,7 @@ class StdioMessage(Message):
         # msg data
         msg = envelope.get("dataMessage", {})
         # "attachments":[{"contentType":"image/png","filename":"image.png","id":"1484072582431702699","size":2496}]}
-        self.attachments: list[dict[str, str]] = msg.get("attachments")
+        self.attachments: list[dict[str, str]] = msg.get("attachments", [])
         # "mentions":[{"name":"+447927948360","number":"+447927948360","uuid":"fc4457f0-c683-44fe-b887-fe3907d7762e","start":0,"length":1}
         self.mentions = msg.get("mentions") or []
         self.full_text = self.text = msg.get("message", "")
