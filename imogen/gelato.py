@@ -3,7 +3,7 @@ import logging
 import time
 import mc_util
 from forest import utils
-from forest.core import Message, run_bot, QuestionBot
+from forest.core import Message, run_bot, QuestionBot, Response
 
 # === Define headers ===
 headers = {
@@ -18,13 +18,21 @@ order_create_url = "https://api.gelato.com/v2/order/create"
 
 
 class GelatoBot(QuestionBot):
-    price =8 # MOB Price should be negative amount
+    price = 8  # MOB Price should be negative amount
 
     async def post_order(
         self,
         quote_data: dict,
         msg: Message,
-    ) -> None:
+    ) -> Response:
+
+        final_confirmation = await self.ask_yesno_question(
+            msg.source,
+            "I will place your order now and deduct 8 MOB. Is this ok? (y/n)",
+        )
+
+        if not final_confirmation:
+            return "Ok, cancelling your order."
         balance = await self.get_user_pmob_balance(msg.source)
         if balance < self.price:  # Images go for 8 MOB
             return "Prints costs 8 MOB. Please send a payment to use this command."
@@ -92,14 +100,21 @@ class GelatoBot(QuestionBot):
         delivery_name = await self.ask_freeform_question(
             user, "To what name should we address your package?"
         )
+        ## TODO refactor cancel flow
+        if delivery_name in self.TERMINAL_ANSWERS:
+            return "Ok, cancelling your oder."
         try:
             delivery = await self.get_address_dict(msg)
         except KeyError as e:
             logging.info(e)
-            return "Sorry, couldn't get that"
+            return "Sorry, couldn't get that. Cancelling your order."
+        if not delivery:
+            return "Ok, cancelling your order."
         user_email = await self.ask_email_question(
             user, "What's your email?"
         )  # could stub this out with forest email
+        if user_email is None:
+            return "Ok, cancelling your order."
         # sorry https://www.kalzumeus.com/2010/06/17/falsehoods-programmers-believe-about-names/
         first, last, *unused = delivery_name.split() + ["", ""]
         ## TODO have this account for international users
