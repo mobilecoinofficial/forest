@@ -35,7 +35,7 @@ class GelatoBot(QuestionBot):
             return "Ok, cancelling your order."
         balance = await self.get_user_pmob_balance(msg.source)
         if balance < self.price:  # Images go for 8 MOB
-            return "Prints costs 8 MOB. Please send a payment to use this command."
+            return "Prints costs 8 MOB. Please send a payment and then try again."
         # === Send quote request ===
         async with self.client_session.post(
             quote_url, data=json.dumps(quote_data), headers=headers
