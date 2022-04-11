@@ -34,6 +34,6 @@ COPY --from=signal /lib/x86_64-linux-gnu/libz.so.1 /lib64/
 COPY ./forest/ /app/forest/
 COPY ./mc_util/ /app/mc_util/
 COPY ./how-to-activate.gif ./how-to-donate.gif /app/
-COPY ./teddy.py /app/
+COPY ./charity.py /app/
 COPY ./main_workbook /app/
-ENTRYPOINT ["/usr/bin/python3.9", "/app/teddy.py"]
+ENTRYPOINT ["/usr/bin/python3.9", "/app/charity.py"]
