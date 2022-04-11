@@ -941,7 +941,7 @@ class Hotline(DialogBot):  # pylint: disable=too-many-public-methods
         ):
             msg.uuid = maybe_uuid
             _, admins = await self._get_user_lists_and_admins(msg)
-            if user in admins:
+            if user in admins or is_admin(msg):
                 await self.send_message(maybe_uuid, "TERMINATE", end_session=True)
                 await self.send_message(maybe_uuid, "TERMINATE", end_session=True)
                 await self.send_message(maybe_uuid, "Reset your session!")
