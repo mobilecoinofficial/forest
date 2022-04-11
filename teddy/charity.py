@@ -117,6 +117,11 @@ class Charity(DialogBot):
         await self.send_message(user, await self.dialog.get("GOT_IT", "GOT_IT"))
         return donation_uid
 
+    async def do_help(self, msg: Message) -> str:
+        """Returns a link to the support channel."""
+        help_dialog = await self.dialog.get("HELP", "HELP")
+        return help_dialog
+
     async def default(self, message: Message) -> Response:
         # pylint: disable=too-many-return-statements,too-many-branches
         msg = message
