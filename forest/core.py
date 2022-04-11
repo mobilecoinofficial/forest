@@ -980,16 +980,6 @@ class ExtrasBot(Bot):
 
 
 class PayBot(ExtrasBot):
-    PAYMENTS_HELPTEXT = """Enable Signal Pay:
-
-    1. In Signal, tap “⬅️“ & tap on your profile icon in the top left & tap *Settings*
-
-    2. Tap *Payments* & tap *Activate Payments*
-
-    For more information on Signal Payments visit:
-
-    https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
-
     @requires_admin
     async def do_fsr(self, msg: Message) -> Response:
         """

@@ -120,16 +120,7 @@ class Hotline(DialogBot):  # pylint: disable=too-many-public-methods
             for list_ in await self.event_lists.keys()
             if user in await self.event_lists.get(list_, [])
         ]
-        owns_event = [
-            list_
-            for list_ in await self.event_lists.keys()
-            if user in await self.event_owners.get(list_, [])
-        ]
-        owns_list = [
-            list_
-            for list_ in await self.event_lists.keys()
-            if user in await self.list_owners.get(list_, [])
-        ]
+        owns_event, owns_list = await self._get_user_owns(user)
         return f"You're on the list for {lists_}.\n\nYou own these paid events: {owns_event}\n\nYou own these free lists: {owns_list}\n\nFor more information reply: check <code>."
 
     async def do_stop(self, msg: Message) -> Response:
@@ -539,6 +530,7 @@ class Hotline(DialogBot):  # pylint: disable=too-many-public-methods
 
     @hide
     async def do_subscribe(self, msg: Message) -> Response:
+        """Subscribe to a list."""
         obj = (msg.arg1 or "").lower()
         if obj not in await self.event_lists.keys():
             return f"Sorry, I couldn't find a list called {obj} - to create your own, try 'add list {obj}'."
@@ -895,8 +887,10 @@ class Hotline(DialogBot):  # pylint: disable=too-many-public-methods
             )
         return None
 
-    async def talkback(self, msg: Message) -> None:
-        code = msg.arg0
+    async def _get_user_lists_and_admins(
+        self, msg: Message
+    ) -> tuple[list[str], list[str]]:
+        """Takes a message, returns all lists and all list owners related to the originating user."""
         lists = []
         all_owners = []
         for list_ in await self.event_lists.keys():
@@ -919,16 +913,53 @@ class Hotline(DialogBot):  # pylint: disable=too-many-public-methods
             if maybe_pending and maybe_pending in await self.event_owners.keys():
                 all_owners += await self.event_owners.get(maybe_pending, [])
                 lists += [f"pending: {maybe_pending}"]
-        user_given = await self.get_displayname(msg.uuid)
-        # being really lazy about owners / all_owners here
-        for owner in list(set(all_owners)):
-            # don't flood j
-            if "7777" not in owner:
-                await self.send_message(
-                    owner,
-                    f"{user_given} ( {msg.source} ) says: {code} {msg.text}\nThey are on the following lists: {list(set(lists))}",
-                )
-                await asyncio.sleep(0.1)
+        return lists, list(set(all_owners))
+
+    async def _get_user_owns(self, user: str) -> tuple[list[str], list[str]]:
+        """Returns a 2-tuple of all events and lists owned by a user (passed as uuid)."""
+        owns_event = [
+            list_
+            for list_ in await self.event_lists.keys()
+            if user in await self.event_owners.get(list_, [])
+        ]
+        owns_list = [
+            list_
+            for list_ in await self.event_lists.keys()
+            if user in await self.list_owners.get(list_, [])
+        ]
+        return owns_event, owns_list
+
+    async def do_reset(self, msg: Message) -> Response:
+        """reset <displayname>
+        Allows the owner of a list or event to reset the session state of an attendee."""
+        user = msg.uuid
+        owns_event, owns_list = await self._get_user_owns(user)
+        if (
+            (owns_event or owns_list)
+            and msg.arg1
+            and (maybe_uuid := await self.displayname_lookup_cache.get(msg.arg1, ""))
+        ):
+            msg.uuid = maybe_uuid
+            _, admins = await self._get_user_lists_and_admins(msg)
+            if user in admins:
+                await self.send_message(maybe_uuid, "TERMINATE", end_session=True)
+                return None
+            return "You're not administrator of any lists this user is on!"
+        if (owns_event or owns_list) and msg.arg1 and msg.arg1.startswith("+"):
+            await self.send_message(msg.arg1, "TERMINATE", end_session=True)
+            sent_okay = await self.send_message(msg.arg1, "Reset your session!")
+            return f"Reset {msg.arg1} and notified: {sent_okay}."
+        return "Couldn't find that username!"
+
+    async def talkback(self, msg: Message) -> None:
+        """Override talkback implementation to show context about events and notify list/event owners."""
+        lists, all_owners = await self._get_user_lists_and_admins(msg)
+        for owner in all_owners:
+            await self.send_message(
+                owner,
+                f"{await self.get_displayname(msg.uuid)} ( {msg.source} ) says: {msg.full_text}\nThey are on the following lists: {list(set(lists))}",
+            )
+            await asyncio.sleep(0.1)
         if not all_owners:
             await super().talkback(msg)
         return None
@@ -942,7 +973,7 @@ class Hotline(DialogBot):  # pylint: disable=too-many-public-methods
         if code == "?":
             return await self.do_help(msg)
         if code in "+ buy purchase".split():  # was a function, now helptext
-            return self.PAYMENTS_HELPTEXT
+            return await self.dialog.get("HOW_TO_SEND")
         if not code:
             return None
         if msg.full_text and msg.full_text.strip(string.punctuation) in [
