@@ -108,7 +108,7 @@ async def get_attachment_paths(message: Message) -> list[str]:
     for attachment_info in message.attachments:
         attachment_name = attachment_info.get("fileName")
         timestamp = attachment_info.get("uploadTimestamp")
-        for i in range(30): # wait up to 3s 
+        for i in range(30):  # wait up to 3s
             if attachment_name is None:
                 maybe_paths = glob.glob(f"/tmp/unnamed_attachment_{timestamp}.*")
                 attachment_path = maybe_paths[0] if maybe_paths else ""
