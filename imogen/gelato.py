@@ -82,9 +82,7 @@ class GelatoBot(QuestionBot):
         }
 
     async def do_buy(self, msg: Message) -> str:
-        """Buy a physical aluminum print of an Imogen Image.
-        Reply to an image with "upsample" to upsample it,
-        then reply to the upsampled image with buy to buy it"""
+        """Buy a physical aluminum print of an Imogen Image. Reply to an image with "upsample" to upsample it, then reply to the upsampled image with buy to buy it"""
 
         if not msg.quote:
             return "Quote a url to use this command"
