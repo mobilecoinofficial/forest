@@ -344,7 +344,8 @@ class Imogen(GelatoBot):  # pylint: disable=too-many-public-methods
         rate = self.image_rate_cents / 100
         prompts = int(value / rate)
         total = int(await self.get_user_usd_balance(msg.source) / rate)
-        return f"Thank you for supporting Imogen! You now have an additional {prompts} priority prompts. Total: {total}. Your prompts will automatically get dedicated workers and bypass the free queue."
+        balance_pmob = await self.get_user_pmob_balance(msg.source)
+        return f"Thank you for supporting Imogen! You now have an Imogen Balance of {mc_util.pmob2mob(balance_pmob)} MOB. You can use this balance to tip, buy prints, and use the priority queue. You now have an additional {prompts} priority prompts. Total: {total}. Your prompts will automatically get dedicated workers and bypass the free queue."
 
     async def ensure_unique_worker(
         self, yaml_path: str = "free-imagegen-job.yaml"
