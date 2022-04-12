@@ -18,7 +18,7 @@ order_create_url = "https://api.gelato.com/v2/order/create"
 
 
 class GelatoBot(QuestionBot):
-    price = 8  # MOB Price should be negative amount
+    price = 10  # MOB Price should be negative amount
 
     async def post_order(
         self,
@@ -34,8 +34,8 @@ class GelatoBot(QuestionBot):
         if not final_confirmation:
             return "Ok, cancelling your order."
         balance = await self.get_user_pmob_balance(msg.source)
-        if balance < self.price:  # Images go for 8 MOB
-            return "Prints costs 8 MOB. Please send a payment and then try again."
+        if balance < self.price:  # Images go for 10 MOB
+            return "It seems you no longer have enough MOB in your balance to place your order. Make sure you have at least 10 MOB in your Imogen Balance to order a print."
         # === Send quote request ===
         async with self.client_session.post(
             quote_url, data=json.dumps(quote_data), headers=headers
@@ -81,15 +81,22 @@ class GelatoBot(QuestionBot):
             "postcode": bits["postal_code"],
         }
 
-    async def do_fulfillment(self, msg: Message) -> str:
-        """Order an imogen print by quoting"""
-        ## TODO Allow USER to cancel midflow.
+    async def do_buy(self, msg: Message) -> str:
+        """Buy a physical aluminum print of an Imogen Image.
+        Reply to an image with "upsample" to upsample it,
+        then reply to the upsampled image with buy to buy it"""
+
         if not msg.quote:
             return "Quote a url to use this command"
 
         balance = await self.get_user_pmob_balance(msg.source)
         if balance < self.price:  # Images go for 8 MOB
-            return "Prints costs 8 MOB. Please send a payment to use this command."
+            return "You need 10 MOB of Imogen Balance to buy a print. Send Imogen a payment and try again."
+
+        ## TODO if quoting regular Imoge, upsample it instead and tell user how to order from that.
+        # if msg.quoted_text:
+        #     self.do_upsample()
+        #     return "You need an upsample image to "
         image = msg.quoted_text.split()[0]
         user = msg.uuid
         # delivery_name = (await self.get_displayname(msg.uuid)).split("_")[0]
