@@ -1095,7 +1095,7 @@ class PayBot(ExtrasBot):
         res = await self.mobster.ledger_manager.get_usd_balance(account)
         return float(round(res[0].get("balance"), 2))
 
-    async def get_user_pmob_balance(self, account: str) -> float:
+    async def get_user_pmob_balance(self, account: str) -> int:
         res = await self.mobster.ledger_manager.get_pmob_balance(account)
         return res[0].get("balance")
 
