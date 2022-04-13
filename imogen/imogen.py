@@ -537,7 +537,7 @@ class Imogen(PayBot):
 
     async def do_nopost(self, msg: Message) -> str:
         "Like /imagine, but doesn't post on Twitter"
-        return await self.enqueue_prompt(msg, {"nopost": True}, attachments="init")
+        return await self.enqueue_prompt(msg, {"nopost": "true"}, attachments="init")
 
     @hide
     async def do_priority(self, msg: Message) -> str:
@@ -617,7 +617,7 @@ class Imogen(PayBot):
         params = {} if msg.group else {"nopost": True}
         ret = await self.queue.execute(
             """INSERT INTO prompt_queue (prompt, author, group_id, signal_ts, url, params, selector, paid)
-            VALUES ($1, $2, $3, $4, $5, 'diffuse', false)
+            VALUES ($1, $2, $3, $4, $5, $6, 'diffuse', false)
             RETURNING (SELECT count(*) + 1 FROM prompt_queue WHERE
             selector='diffuse' AND status='pending' OR status='assigned') as queue_length;""",
             msg.text,
@@ -625,12 +625,12 @@ class Imogen(PayBot):
             msg.group,
             msg.timestamp,
             utils.URL,
-            params,
+            json.dumps(params),
         )
         logging.info(ret)
         worker_created = await self.ensure_unique_worker("diffuse.yaml")
         deets = " (started a new worker)" if worker_created else ""
-        return f"you are #{ret['queue_length']} in the line{deets}"
+        return f"you are #{ret[0]['queue_length']} in the diffusion line{deets}"
 
     def make_prefix(prefix: str) -> Callable:  # type: ignore  # pylint: disable=no-self-argument
         async def wrapped(self: "Imogen", msg: Message) -> Response:
