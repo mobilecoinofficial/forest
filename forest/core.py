@@ -67,7 +67,7 @@ Response = Union[str, list, dict[str, str], None]
 AsyncFunc = Callable[..., Awaitable]
 Command = Callable[["Bot", Message], Coroutine[Any, Any, Response]]
 
-roundtrip_histogram = Histogram("roundtrip_h", "Roundtrip message response time")  # type: ignore
+roundtrip_histogram = Histogram("roundtrip_h", "Roundtrip message response time")
 roundtrip_summary = Summary("roundtrip_s", "Roundtrip message response time")
 
 MessageParser = AuxinMessage if utils.AUXIN else StdioMessage
@@ -86,23 +86,37 @@ def rpc(
     }
 
 
+def check_valid_recipient(recipient: str) -> bool:
+    try:
+        assert recipient == utils.signal_format(recipient)
+    except (AssertionError, NumberParseException):
+        try:
+            assert recipient == str(uuid.UUID(recipient))
+        except (AssertionError, ValueError):
+            return False
+    return True
+
+
 async def get_attachment_paths(message: Message) -> list[str]:
     if not utils.AUXIN:
         return [
             str(Path("./attachments") / attachment["id"])
             for attachment in message.attachments
         ]
-    await asyncio.sleep(2)
     attachments = []
     for attachment_info in message.attachments:
-        attachment_path = attachment_info.get("fileName")
+        attachment_name = attachment_info.get("fileName")
         timestamp = attachment_info.get("uploadTimestamp")
-        if attachment_path is None:
-            attachment_paths = glob.glob(f"/tmp/unnamed_attachment_{timestamp}.*")
-            if attachment_paths:
-                attachments.append(attachment_paths.pop())
-        else:
-            attachments.append(f"/tmp/{attachment_path}")
+        for i in range(30):  # wait up to 3s
+            if attachment_name is None:
+                maybe_paths = glob.glob(f"/tmp/unnamed_attachment_{timestamp}.*")
+                attachment_path = maybe_paths[0] if maybe_paths else ""
+            else:
+                attachment_path = f"/tmp/{attachment_name}"
+            if attachment_path and Path(attachment_path).exists():
+                attachments.append(attachment_path)
+                break
+            await asyncio.sleep(0.1)
     return attachments
 
 
@@ -140,11 +154,6 @@ class Signal:
         logging.debug("bot number: %s", bot_number)
         self.bot_number = bot_number
         self.datastore = datastore.SignalDatastore(bot_number)
-        self.activity = pghelp.PGInterface(
-            query_strings=ActivityQueries, database=utils.get_secret("DATABASE_URL")
-        )
-        # set of users we've received messages from in the last minute
-        self.seen_users: set[str] = set()
         self.proc: Optional[subprocess.Process] = None
         self.inbox: Queue[Message] = Queue()
         self.outbox: Queue[dict] = Queue()
@@ -173,7 +182,6 @@ class Signal:
                 path += " --download-path /tmp"
             else:
                 path += " --trust-new-identities always"
-                # path += " --verbose"
             command = f"{path} --config {utils.ROOT_DIR} --user {self.bot_number} jsonRpc".split()
             logging.info(command)
             proc_launch_time = time.time()
@@ -244,7 +252,7 @@ class Signal:
                 logging.info(f"no {utils.SIGNAL} process")
         if utils.UPLOAD:
             await self.datastore.mark_freed()
-        await pghelp.close_pools()
+        await pghelp.pool.close()
         # this still deadlocks. see https://github.com/forestcontact/forest-draft/issues/10
         if autosave._memfs_process:
             executor = autosave._memfs_process._get_executor()
@@ -420,7 +428,7 @@ class Signal:
         endsession: bool = False,
         attachments: Optional[list[str]] = None,
         content: str = "",
-        **other_params: str,
+        **other_params: Any,
     ) -> str:
         """
         Builds send command for the specified recipient in jsonrpc format and
@@ -471,24 +479,17 @@ class Signal:
             params["attachments"] = attachments
         if content:
             params["content"] = content
-        if group:
-            if utils.AUXIN:
-                logging.error("setting a group message, but auxin doesn't support this")
+        if group and not utils.AUXIN:
             params["group-id"] = group
-        elif recipient:
-            try:
-                assert recipient == utils.signal_format(recipient)
-            except (AssertionError, NumberParseException):
-                try:
-                    assert recipient == str(uuid.UUID(recipient))
-                except (AssertionError, ValueError) as e:
-                    logging.error(
-                        "not sending message to invalid recipient %s. error: %s",
-                        recipient,
-                        e,
-                    )
-                    return ""
-            params["destination" if utils.AUXIN else "recipient"] = str(recipient)
+        if recipient and not utils.AUXIN:
+            if not check_valid_recipient(recipient):
+                logging.error("not sending message to invalid recipient %s", recipient)
+                return ""
+            params["recipient"] = str(recipient)
+        if recipient and utils.AUXIN:
+            params["destination"] = str(recipient)
+        if group and utils.AUXIN:
+            params["group"] = group
         # maybe use rpc() instead
         rpc_id = f"send-{get_uid()}"
         json_command: JSON = {
@@ -729,7 +730,7 @@ class Bot(Signal):
             if not self.seen_users:
                 continue
             try:
-                async with self.activity.pool.acquire() as conn:
+                async with pghelp.pool.acquire() as conn:
                     # executemany batches this into an atomic db query
                     await conn.executemany(
                         self.activity.queries["log"],
@@ -1082,7 +1083,7 @@ class PayBot(ExtrasBot):
         if not utils.AUXIN:
             return "Can't set payment address without auxin"
         await self.set_profile_auxin(
-            mobilecoin_address=mc_util.b58_wrapper_to_b64_public_address(
+            payment_address=mc_util.b58_wrapper_to_b64_public_address(
                 await self.mobster.ensure_address()
             )
         )
@@ -1103,7 +1104,7 @@ class PayBot(ExtrasBot):
         res = await self.mobster.ledger_manager.get_usd_balance(account)
         return float(round(res[0].get("balance"), 2))
 
-    async def get_user_pmob_balance(self, account: str) -> float:
+    async def get_user_pmob_balance(self, account: str) -> int:
         res = await self.mobster.ledger_manager.get_pmob_balance(account)
         return res[0].get("balance")
 
@@ -1762,14 +1763,18 @@ class QuestionBot(PayBot):
     async def do_setup(self, msg: Message) -> str:
         if not utils.AUXIN:
             return "Can't set profile without auxin"
-        fields = {}
+        fields: dict[str, Optional[str]] = {}
         for field in ["given_name", "family_name", "about", "mood_emoji"]:
             resp = await self.ask_freeform_question(
                 msg.source, f"value for field {field}?"
             )
+            if resp and resp.lower() == "skip":
+                break
             if resp and resp.lower() != "none":
                 fields[field] = resp
-        fields["mobilecoin_address"] = await self.mobster.ensure_address()
+        fields["payment_address"] = mc_util.b58_wrapper_to_b64_public_address(
+            await self.mobster.ensure_address()
+        )
         attachments = await get_attachment_paths(msg)
         if attachments:
             fields["profile_path"] = attachments[0]
