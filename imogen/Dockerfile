@@ -22,5 +22,5 @@ COPY --from=libbuilder /app/venv/lib/python3.9/site-packages /app/
 COPY --from=kubectl /opt/bitnami/kubectl/bin/kubectl /usr/local/bin/
 COPY ./mc_util/ /app/mc_util/
 COPY ./forest/ /app/forest/
-COPY ./imogen.py ./free-imagegen-job.yaml ./paid-imagegen-job.yaml ./a6000.yaml ./esrgan-job.yaml /app/ 
+COPY ./imogen.py ./free-imagegen-job.yaml ./paid-imagegen-job.yaml ./a6000.yaml ./esrgan-job.yaml ./diffuse.yaml /app/ 
 ENTRYPOINT ["/usr/bin/python3.9", "/app/imogen.py"]

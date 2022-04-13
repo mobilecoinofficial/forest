@@ -201,9 +201,8 @@ auto_messages = [
 ]
 
 
-class Imogen(PayBot):  # pylint: disable=too-many-public-methods
-    prompts: dict[str, str] = {}
-
+class Imogen(PayBot):
+    # pylint: disable=too-many-public-methods, no-self-use
     async def start_process(self) -> None:
         self.queue = pghelp.PGInterface(
             query_strings=QueueExpressions,
@@ -314,7 +313,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
 
     async def do_balance(self, msg: Message) -> Response:
         "returns your Imogen balance in USD for priority requests and tips"
-        balance = await self.get_user_balance(msg.source)
+        balance = await self.get_user_usd_balance(msg.source)
         prompts = int(balance / (self.image_rate_cents / 100))
         balance_msg = (
             f"Your current Imogen balance is {prompts} priority prompt credits"
@@ -342,7 +341,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
             return "Thank you for tipping Imogen! Your tip will be used to improve Imogen and shared with collaborators"
         rate = self.image_rate_cents / 100
         prompts = int(value / rate)
-        total = int(await self.get_user_balance(msg.source) / rate)
+        total = int(await self.get_user_usd_balance(msg.source) / rate)
         return f"Thank you for supporting Imogen! You now have an additional {prompts} priority prompts. Total: {total}. Your prompts will automatically get dedicated workers and bypass the free queue."
 
     async def ensure_unique_worker(
@@ -445,7 +444,6 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
             msg.timestamp,
             utils.URL,
         )
-        ret[0].get("queue_length")
         await self.ensure_unique_worker("esrgan-job.yaml")
         return f"you are #{ret[0]['queue_length']} in line"
 
@@ -567,10 +565,10 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
     @hide
     async def do_highres(self, msg: Message) -> str:
         "Generate a 2626x1616 image. Costs 0.25 MOB"
-        balance = await self.get_user_balance(msg.source)
+        balance = await self.get_user_pmob_balance(msg.source)
         if not msg.text.strip():
             return "a prompt is required"
-        if balance < 1.0:  # hosting cost is about 16/60 * 1.96 = 0.52
+        if balance < 0.25e12:  # hosting cost is about 16/60 * 1.96 = 0.52
             return "highres costs 0.25 MOB. Please send a payment to use this command."
         worker_created = await self.ensure_unique_worker("a6000.yaml")
         logging.info(msg.full_text)
@@ -606,6 +604,33 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         else:
             deets = ""
         return f"you are #{result['queue_length']} in the highres line{deets}"
+
+    async def do_diffuse(
+        self,
+        msg: Message,
+    ) -> str:
+        if msg.attachments:
+            return "diffusion doesn't currently accept initial or target images"
+        if not msg.text.strip():
+            return "a prompt is required"
+        logging.info(msg.full_text)
+        params = {} if msg.group else {"nopost": True}
+        ret = await self.queue.execute(
+            """INSERT INTO prompt_queue (prompt, author, group_id, signal_ts, url, params, selector, paid)
+            VALUES ($1, $2, $3, $4, $5, 'diffuse', false)
+            RETURNING (SELECT count(*) + 1 FROM prompt_queue WHERE
+            selector='diffuse' AND status='pending' OR status='assigned') as queue_length;""",
+            msg.text,
+            msg.source,
+            msg.group,
+            msg.timestamp,
+            utils.URL,
+            params,
+        )
+        logging.info(ret)
+        worker_created = await self.ensure_unique_worker("diffuse.yaml")
+        deets = " (started a new worker)" if worker_created else ""
+        return f"you are #{ret['queue_length']} in the line{deets}"
 
     def make_prefix(prefix: str) -> Callable:  # type: ignore  # pylint: disable=no-self-argument
         async def wrapped(self: "Imogen", msg: Message) -> Response:
@@ -785,7 +810,7 @@ class Imogen(PayBot):  # pylint: disable=too-many-public-methods
         """
         if msg.arg1 is None:
             return dedent(self.do_tip.__doc__).strip()
-        balance = await self.get_user_balance(msg.source)
+        balance = await self.get_user_usd_balance(msg.source)
         if msg.arg1 and msg.arg1.lower() in ("all", "everything"):
             amount = balance
         else:
