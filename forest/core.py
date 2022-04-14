@@ -715,6 +715,7 @@ class Bot(Signal):
         # set of users we've received messages from in the last minute
         self.seen_users: set[str] = set()
         self.log_activity_task = asyncio.create_task(self.log_activity())
+        self.log_activity_task.add_done_callback(self.log_task_result)
         self.restart_task = asyncio.create_task(
             self.start_process()
         )  # maybe cancel on sigint?
@@ -731,10 +732,8 @@ class Bot(Signal):
         runs in the bg as batches to avoid a seperate db query for every message
         used for signup metrics
         """
-        if not self.activity.pool:
-            await self.activity.connect_pg()
-            # mypy can't infer that connect_pg creates pool
-            assert self.activity.pool
+        if not pghelp.pool.pool:
+            await pghelp.pool.connect("user_activity", utils.get_secret("DATABASE_URL"))
         while 1:
             await asyncio.sleep(60)
             if not self.seen_users:
