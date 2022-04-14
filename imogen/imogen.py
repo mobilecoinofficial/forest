@@ -311,6 +311,14 @@ class Imogen(PayBot):
     async def do_costs(self, _: Message) -> str:
         return repr((await self.queue.costs())[0])
 
+    @requires_admin
+    async def do_kubectl(self, msg: Message) -> Response:
+        return await get_output(f"kubectl {msg.text}")
+
+    @requires_admin
+    async def do_bash(self, msg: Message) -> Response:
+        return await get_output(msg.text)
+
     async def do_balance(self, msg: Message) -> Response:
         "returns your Imogen balance in USD for priority requests and tips"
         balance = await self.get_user_usd_balance(msg.source)
