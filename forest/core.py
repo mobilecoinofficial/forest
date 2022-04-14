@@ -733,7 +733,7 @@ class Bot(Signal):
         used for signup metrics
         """
         if not pghelp.pool.pool:
-            await pghelp.pool.connect("user_activity", utils.get_secret("DATABASE_URL"))
+            await pghelp.pool.connect(utils.get_secret("DATABASE_URL"), "user_activity")
         while 1:
             await asyncio.sleep(60)
             if not self.seen_users:
