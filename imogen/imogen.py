@@ -1,7 +1,6 @@
 #!/usr/bin/python3.9
 # Copyright (c) 2022 Sylvie Liberman
 # Copyright (c) 2022 The Forest Team
-
 import asyncio
 import base64
 import json
@@ -17,12 +16,12 @@ from typing import Any, Callable
 import aioredis
 import openai
 from aiohttp import web
+from gelato import GelatoBot
 
 import mc_util
 from forest import pghelp, utils
 from forest.core import (
     Message,
-    QuestionBot,
     Response,
     UserError,
     app,
@@ -32,7 +31,6 @@ from forest.core import (
     requires_admin,
     run_bot,
 )
-from gelato import GelatoBot
 
 
 @dataclass
@@ -638,6 +636,8 @@ class Imogen(GelatoBot):
             utils.URL,
             json.dumps(params),
         )
+        if not ret:
+            return "sorry, something wrong happened"
         logging.info(ret)
         worker_created = await self.ensure_unique_worker("diffuse.yaml")
         deets = " (started a new worker)" if worker_created else ""
