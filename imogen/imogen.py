@@ -18,10 +18,11 @@ import aioredis
 import openai
 from aiohttp import web
 
+import mc_util
 from forest import pghelp, utils
 from forest.core import (
     Message,
-    PayBot,
+    QuestionBot,
     Response,
     UserError,
     app,
@@ -31,6 +32,7 @@ from forest.core import (
     requires_admin,
     run_bot,
 )
+from gelato import GelatoBot
 
 
 @dataclass
@@ -88,7 +90,7 @@ QueueExpressions = pghelp.PGExpressions(
     last_active_group="SELECT group_id FROM prompt_queue WHERE author=$1 AND group_id<>'' ORDER BY id DESC LIMIT 1",
     costs="""select
     (select 0.860*sum(elapsed_gpu)/3600.0 from prompt_queue where inserted_ts > (select min(inserted_ts) from prompt_queue where paid=true and author<>'+16176088864') and inserted_ts is not null and author<>'+16176088864') as cost,
-    (select sum(amount_usd_cents/100.0) from imogen_ledger where amount_usd_cents>0 and account<>'+16176088864') as revenue;
+    (select sum(amount_usd_cents/100.0) from imogen_ledger where amount_usd_cents>0 and account<>'+16176088864' and memo<>'freebie') as revenue;
     """,
 )
 # selectors: paid, free, a6000, esrgan, diffusion, +ffmpeg video streaming
@@ -201,7 +203,7 @@ auto_messages = [
 ]
 
 
-class Imogen(PayBot):
+class Imogen(GelatoBot):
     # pylint: disable=too-many-public-methods, no-self-use
     async def start_process(self) -> None:
         self.queue = pghelp.PGInterface(
@@ -320,12 +322,12 @@ class Imogen(PayBot):
         return await get_output(msg.text)
 
     async def do_balance(self, msg: Message) -> Response:
-        "returns your Imogen balance in USD for priority requests and tips"
+        "returns your Imogen balance in MOB for priority requests, tips, and prints"
         balance = await self.get_user_usd_balance(msg.source)
         prompts = int(balance / (self.image_rate_cents / 100))
-        balance_msg = (
-            f"Your current Imogen balance is {prompts} priority prompt credits"
-        )
+
+        balance_pmob = await self.get_user_pmob_balance(msg.source)
+        balance_msg = f"Your current Imogen balance is {mc_util.pmob2mob(balance_pmob).normalize()} MOB, which is good for {prompts} priority prompts"
         if balance == 0:
             balance_msg += "\n\n To buy more credits, send Imogen some MobileCoin. Try /signalpay to learn more activating payments"
         # if msg.group:
@@ -350,7 +352,8 @@ class Imogen(PayBot):
         rate = self.image_rate_cents / 100
         prompts = int(value / rate)
         total = int(await self.get_user_usd_balance(msg.source) / rate)
-        return f"Thank you for supporting Imogen! You now have an additional {prompts} priority prompts. Total: {total}. Your prompts will automatically get dedicated workers and bypass the free queue."
+        balance_pmob = await self.get_user_pmob_balance(msg.source)
+        return f"Thank you for supporting Imogen! You now have an Imogen Balance of {mc_util.pmob2mob(balance_pmob)} MOB. You can use this balance to tip, buy prints, and use the priority queue. You now have an additional {prompts} priority prompts. Total: {total}. Your prompts will automatically get dedicated workers and bypass the free queue."
 
     async def ensure_unique_worker(
         self, yaml_path: str = "free-imagegen-job.yaml"
@@ -976,24 +979,27 @@ async def prompt_msg_handler(request: web.Request) -> web.Response:
         return web.Response(text=info)
     prompt = Prompt(**row[0])
     message = await request.text()
-    message += "\n\N{Object Replacement Character}"
-    # needs to be String.length in Java, i.e. number of utf-16 code units,
-    # which are 2 bytes each. we need to specify any endianness to skip
-    # byte-order mark.
-    mention_start = len(message.encode("utf-16-be")) // 2 - 1
     quote = (
         {
             "quote-timestamp": int(prompt.signal_ts),
             "quote-author": str(prompt.author),
             "quote-message": str(prompt.prompt),
-            "mention": f"{mention_start}:1:{prompt.author}",
         }
         if prompt.author and prompt.signal_ts
         else {}
     )
     if prompt.group_id:
+        message += "\n\N{Object Replacement Character}"
+        # needs to be String.length in Java, i.e. number of utf-16 code units,
+        # which are 2 bytes each. we need to specify any endianness to skip
+        # byte-order mark.
+        mention_start = len(message.encode("utf-16-be")) // 2 - 1
         rpc_id = await bot.send_message(
-            None, message, group=prompt.group_id, **quote  # type: ignore
+            None,
+            message,
+            group=prompt.group_id,
+            mention=f"{mention_start}:1:{prompt.author}",
+            **quote,  # type: ignore
         )
     else:
         rpc_id = await bot.send_message(prompt.author, message, **quote)  # type: ignore

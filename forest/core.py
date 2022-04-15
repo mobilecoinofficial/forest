@@ -1523,13 +1523,12 @@ class QuestionBot(PayBot):
             recipient, question_text, require_first_device
         )
 
-    async def ask_address_question(
+    async def ask_address_question_(
         self,
         recipient: str,
         question_text: str = "What's your shipping address?",
-        require_first_device: bool = False,
         require_confirmation: bool = False,
-    ) -> Optional[str]:
+    ) -> Optional[dict]:
         """Asks user for their address and verifies through the google maps api
         Can ask User for confirmation, returns string with formatted address or none"""
         # get google maps api key from secrets
@@ -1538,9 +1537,7 @@ class QuestionBot(PayBot):
             logging.error("Error, missing Google Maps API in secrets configuration")
             return None
         # ask for the address as a freeform question
-        address = await self.ask_freeform_question(
-            recipient, question_text, require_first_device
-        )
+        address = await self.ask_freeform_question(recipient, question_text)
         # we take the answer provided by the user, format it nicely as a request to google maps' api
         # It returns a JSON object from which we can ascertain if the address is valid
         async with self.client_session.get(
@@ -1558,8 +1555,8 @@ class QuestionBot(PayBot):
                 recipient,
                 "Sorry, I couldn't find that. \nPlease try again or reply cancel to cancel \n",
             )
-            return await self.ask_address_question(
-                recipient, question_text, require_first_device, require_confirmation
+            return await self.ask_address_question_(
+                recipient, question_text, require_confirmation
             )
         # if maps does return a formatted address
         if address_json["results"] and address_json["results"][0]["formatted_address"]:
@@ -1571,20 +1568,32 @@ class QuestionBot(PayBot):
                 confirmation = await self.ask_yesno_question(
                     recipient,
                     f"Got: \n{maybe_address} \n\n{maps_url} \n\nIs this your address? (yes/no)",
-                    require_first_device,
                 )
                 # If not, ask again
                 if not confirmation:
-                    return await self.ask_address_question(
+                    return await self.ask_address_question_(
                         recipient,
                         question_text,
-                        require_first_device,
                         require_confirmation,
                     )
-            return address_json["results"][0]["formatted_address"]
+            return address_json["results"][0]  # ["formatted_address"]
         # If we made it here something unexpected probably went wrong.
         # Google returned something but didn't have a formatted address
         return None
+
+    async def ask_address_question(
+        self,
+        recipient: str,
+        question_text: str = "What's your shipping address?",
+        require_first_device: bool = False,
+        require_confirmation: bool = False,
+    ) -> Optional[dict]:
+        addr = await self.ask_address_question_(
+            recipient, question_text, require_confirmation
+        )
+        if addr:
+            return addr["formatted_address"]
+        return addr
 
     async def ask_multiple_choice_question(  # pylint: disable=too-many-arguments
         self,
