@@ -590,7 +590,7 @@ class Imogen(GelatoBot):
             INSERT INTO prompt_queue (prompt, paid, author, signal_ts, group_id, params, url, selector)
             VALUES ($1, true, $2, $3, $4, $5, $6, 'a6000')
             RETURNING id AS prompt_id,
-            (select count(*) from prompt_queue where
+            (select count(*) + 1 from prompt_queue where
             (status='pending' or status='assigned') and selector='a6000') as queue_length;
             """,
             msg.text,
