@@ -57,7 +57,7 @@ class GelatoBot(QuestionBot):
             msg.source,
             -round(self.price * await self.mobster.get_rate() * 100),
             -mc_util.mob2pmob(self.price),
-            f"{msg.source} : {time.time()}",
+            f"{msg.source}: {time.time()}",
         )
 
         return create_response.get("message", "Order submitted")
@@ -83,7 +83,6 @@ class GelatoBot(QuestionBot):
 
     async def do_buy(self, msg: Message) -> str:
         """Buy a physical aluminum print of an Imogen Image. Reply to an image with "upsample" to upsample it, then reply to the upsampled image with buy to buy it"""
-
         if not msg.quote:
             return "Quote a url to use this command"
 
@@ -132,8 +131,8 @@ class GelatoBot(QuestionBot):
         }
         current_quote_data = {
             "order": {
-                "orderReferenceId": f"{{MyOrderId}}",  # maybe user-promptid-date?
-                "customerReferenceId": "{{MyCustomerId}}",  # uuid
+                "orderReferenceId": msg.uuid + str(int(time.time())),
+                "customerReferenceId": msg.uuid,
                 "currencyIsoCode": "USD",
             },
             "products": [
