@@ -17,7 +17,7 @@ SIGNAL="signal-cli"
 LOGLEVEL="DEBUG"
 # ADMIN_GROUP="0om6G+Yj9Kv0LH5Z0992pucLPXTk2qyIYPwBpjhbZO4="
 FULL_SERVICE_URL="https://imogen-full-service-real.fly.dev/wallet"
-AUTOSAVE=1
+#AUTOSAVE=1
 DOWNLOAD=1
 # UPLOAD=1
 LEDGER_NAME="imogen_ledger"
