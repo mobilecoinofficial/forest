@@ -1855,7 +1855,7 @@ async def metrics(request: web.Request) -> web.Response:
 async def restart(request: web.Request) -> web.Response:
     bot = request.app["bot"]
     bot.restart_task = asyncio.create_task(bot.start_process())
-    bot.restart_task.add_done_callback(functools.partial(bot.handle_task))
+    bot.restart_task.add_done_callback(bot.log_task_result)
     return web.Response(status=200)
 
 
