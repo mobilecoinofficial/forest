@@ -439,7 +439,8 @@ class Imogen(GelatoBot):
             return "sorry, I don't have that image saved for upsampling right now"
         slug = (
             filepath.removeprefix("output/")
-            .removesuffix(".png")
+            .removesuffix("png")
+            .rstrip(".")
             .removesuffix("/progress")
         )
         ret = await self.queue.execute(
