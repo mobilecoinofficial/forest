@@ -29,7 +29,7 @@ You'll need a working rust enviornment on your system to build Auxin.
     cargo --version
     ```
     ```bash
-    cargo 1.60.0-nightly (95bb3c92b 2022-01-18)
+    cargo 1.59.0-nightly (358e79fe5 2022-01-04)
     ```  
 <br>
 
@@ -55,7 +55,7 @@ Once you have rust set up properly you can build Auxin-cli from source.
     ./target/release/auxin-cli 
     ```
     ```bash
-    auxin-cli 0.1.11
+    auxin-cli 0.1.17-26fef6f*
     ```
 - Finally SymLink auxin-cli to your forest directory.
     ```bash
@@ -66,12 +66,12 @@ Once you have rust set up properly you can build Auxin-cli from source.
     ./auxin-cli --version
     ```
     ```
-    auxin-cli 0.1.11
+    auxin-cli 0.1.17-26fef6f*
     ```
 
 ### Send a message with Auxin ###
 
-Since Auxin is fully compatible with signal-cli datastores, you should easily be able to send a message with it as you could with signal-cli. 
+Auxin is mostly compatible with signal-cli datastores, so you should easily be able to send a message with it as you could with signal-cli. If you can't, there should be a way to register with Auxin soon.
 ```bash
 ./auxin-cli --config . --user $BOT_NUMBER send $ADMIN -m "hello"
 ```
@@ -82,7 +82,7 @@ You should have received a Signal message on your device. You will note that the
 
 ### Run Hello Bot With Auxin ###
 
-Auxin can run hellobot as good as signal-cli. To test hellobot with auxin, edit your dev_secrets file to the following:
+You can run hellobot with Auxin in the same way you did with signal-cli. To test hellobot with auxin, edit your dev_secrets file to the following:
 
 ```bash
 NO_MEMFS=1
@@ -90,8 +90,6 @@ ROOT_DIR=.
 SIGNAL=auxin
 ADMIN=+15551111111
 BOT_NUMBER=+15551234567
-NO_DOWNLOAD=1
-NO_MONITOR_WALLET=1
 ```
 Then run hellobot as usual with:
 ```bash
@@ -102,9 +100,9 @@ pipenv run python -m sample_bots.hellobot
 
 ## MobileCoin Wallet and Full Service ##
 
-Now for the payments enabled part of payments-enabled Signal bot. Signal Pay uses a lightweight version of the MobileCoin wallet called Fog. For running a bot however, we want to use the full service version of the wallet, appropriately named Full Service. The easiest way to create and use a MobileCoin Wallet is with the Desktop Wallet which can be installed here.
+Now for the payments enabled part of payments-enabled Signal bot. Signal Pay uses a lightweight version of the MobileCoin wallet called Fog. For running a bot however, we want to use the full service version of the wallet, appropriately named Full Service. The easiest way to create and use a MobileCoin Wallet is with [the Desktop Wallet which can be downloaded here](https://developers.mobilecoin.com/ecosystem/desktop-wallet).
 
-Running the MobileCoin Desktop Wallet creates an instance of Full Service. Full Service is, at its core, a client that talks to MobileCoin consensus nodes and allows you to submit transactions and receive transactions. The Desktop Wallet uses Full Service to interact with the MobileCoin Blockchain. You can use this instance of Full Service to create additional accounts.
+Running the MobileCoin Desktop Wallet creates an instance of Full Service. Full Service is, at its core, a client that talks to MobileCoin consensus nodes and allows you to submit and receive transactions. The Desktop Wallet uses Full Service to interact with the MobileCoin Blockchain. You can use this instance of Full Service to create additional accounts.
 
 Forest bots interact with a Full Service instance through HTTP. When you start the desktop wallet, it opens a socket on `http://127.0.0.1:9090/wallet`. You can put this URL in your dev_secrets file and the bot will be able to communicate with your wallet, meaning it can send and receive MOB and create separate accounts. If you don't want to use your main account for your bot, and in fact we recommend you don't, you can create a separate account in the desktop wallet and use that. That's what we'll be doing in this tutorial. If you want to host your bot on a server or cloud instance, you must enact additional security to ensure only authorised requests are being made to full-service. We'll explain one way to do that at the end.
 
@@ -120,7 +118,6 @@ ROOT_DIR=.
 SIGNAL=auxin
 ADMIN=+15551111111
 BOT_NUMBER=+15551234567
-NO_DOWNLOAD=1
 FULL_SERVICE_URL=http://127.0.0.1:9090/wallet
 FS_ACCOUNT_NAME=paymebot
 
@@ -130,7 +127,7 @@ With these, you're ready to run Echopay
 
 ## Echopay aka PayMeBot ##
 
-Just like Hellobot is the simplest possible forest bot that reads and replies to messages. Echopay is the simplest possible bot that sends and receives payments. It used to be a bot that took any payment and returned it to sender, minus the network fee, hence the name Echopay. Now it is a bot with 3 capabilities:
+Just like Hellobot is the simplest possible forest bot that reads and replies to messages. Echopay is the simplest possible bot that sends and receives payments. It's a bot that takes any payment and returned it to sender, minus the network fee, hence the name Echopay. It has 3 additional capabilities:
 
 - Pay an user that messages it
 - Receive payments from an user and reply to thank them
