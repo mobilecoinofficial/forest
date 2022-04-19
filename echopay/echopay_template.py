@@ -38,7 +38,7 @@ class Echopay(PayBot):
             given_name="PaymeBot",
             family_name="",
             payment_address=signal_address,
-            profile_path="avatar.png",
+            # profile_path="avatar.png",
         )
 
     async def do_payme(self, message: Message) -> Response:
