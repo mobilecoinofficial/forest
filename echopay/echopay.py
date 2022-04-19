@@ -123,7 +123,7 @@ class Echopay(PayBot):
         if getattr(payment_status, "status", "") == "tx_status_succeeded":
             return f"Thank you for your payment of {str(amount_mob)} MOB. Here's your money back, minus the network fee, {str(self.to_mob(amount_to_return))} MOB."
 
-        return f"Couldn't return your payment for some reason. Please contact administrator for assistance."
+        return "Couldn't return your payment for some reason. Please contact administrator for assistance."
 
 
 if __name__ == "__main__":
