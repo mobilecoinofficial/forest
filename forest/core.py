@@ -1080,6 +1080,10 @@ class PayBot(ExtrasBot):
             amount_pmob,
             message.payment.get("note"),
         )
+        await self.respond(
+            message,
+            f"Thank you for sending {float(amount_mob)} MOB ({amount_usd_cents / 100} USD)",
+        )
         await self.respond(message, await self.payment_response(message, amount_pmob))
 
     async def payment_response(self, msg: Message, amount_pmob: int) -> Response:
