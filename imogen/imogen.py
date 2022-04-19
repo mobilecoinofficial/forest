@@ -429,10 +429,12 @@ class Imogen(GelatoBot):
         return {"image_prompts": keys}
 
     async def do_upsample(self, msg: Message) -> str:
+        "quote an image I sent or a prompt you sent to upsample it x4"
         if not msg.quote:
-            return "quote an image I sent to use this command"
+            return "quote an image I sent or a prompt you sent to use this command"
         ret = await self.queue.execute(
-            "SELECT filepath FROM prompt_queue WHERE sent_ts=$1", msg.quote.ts
+            "SELECT filepath FROM prompt_queue WHERE sent_ts=$1 OR signal_ts=$1",
+            msg.quote.ts,
         )
         logging.info(ret)
         if not ret or not (filepath := ret[0].get("filepath")):
@@ -447,7 +449,7 @@ class Imogen(GelatoBot):
             """INSERT INTO prompt_queue (prompt, author, group_id, signal_ts, url, selector, paid)
             VALUES ($1, $2, $3, $4, $5, 'ESRGAN', true)
             RETURNING (SELECT count(*) + 1 FROM prompt_queue WHERE
-            selector='ESRGAN' AND status='pending' OR status='assigned') as queue_length;""",
+            selector='ESRGAN' AND (status='pending' OR status='assigned')) as queue_length;""",
             slug,  # f"https://mcltajcadcrkywecsigc.supabase.in/storage/v1/object/public/imoges/{slug}.png",
             msg.source,
             msg.group,
@@ -619,6 +621,7 @@ class Imogen(GelatoBot):
         self,
         msg: Message,
     ) -> str:
+        "generate an image using the CompVis latent-diffusion model, trained on pictures in the Internet Archive with alt text"
         if msg.attachments:
             return "diffusion doesn't currently accept initial or target images"
         if not msg.text.strip():
@@ -629,7 +632,7 @@ class Imogen(GelatoBot):
             """INSERT INTO prompt_queue (prompt, author, group_id, signal_ts, url, params, selector, paid)
             VALUES ($1, $2, $3, $4, $5, $6, 'diffuse', false)
             RETURNING (SELECT count(*) + 1 FROM prompt_queue WHERE
-            selector='diffuse' AND status='pending' OR status='assigned') as queue_length;""",
+            selector='diffuse' AND (status='pending' OR status='assigned')) as queue_length;""",
             msg.text,
             msg.source,
             msg.group,
@@ -906,11 +909,12 @@ async def store_image_handler(  # pylint: disable=too-many-locals
 
     prompt = Prompt(**row[0])
     minutes, seconds = divmod(prompt.elapsed_gpu, 60)
-    message = f"{prompt.prompt}\nTook {minutes}m{seconds}s to generate, "
-    if prompt.loss:
-        message += f"{prompt.loss} loss, "
+    messages = [f"{prompt.prompt}\nTook {minutes}m{seconds}s to generate"]
+    if prompt.loss and prompt.loss != -1:
+        message.append(f"{prompt.loss} loss")
     if prompt.version:
-        message += f" v{prompt.version}."
+        messages.append(f"v{prompt.version}")
+    message = ", ".join(messages) + "."
     quote = (
         {
             "quote-timestamp": int(prompt.signal_ts),
