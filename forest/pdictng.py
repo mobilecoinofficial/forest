@@ -215,10 +215,10 @@ class aPersistDict(Generic[V]):
         self.write_task: Optional[asyncio.Task] = None
 
     def __repr__(self) -> str:
-        return f"a{self.dict_}"
+        return f"a{json.dumps(self.dict_)}"
 
     def __str__(self) -> str:
-        return f"a{self.dict_}"
+        return f"a{json.dumps(self.dict_)}"
 
     async def __getitem__(self, key: str) -> V:
         if value := await self.get(key):
