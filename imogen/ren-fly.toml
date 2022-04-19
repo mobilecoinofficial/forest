@@ -18,15 +18,13 @@ SIGNAL="signal-cli"
 LOGLEVEL="DEBUG"
 ADMIN_GROUP="0om6G+Yj9Kv0LH5Z0992pucLPXTk2qyIYPwBpjhbZO4="
 FULL_SERVICE_URL="https://imogen-full-service-real.fly.dev/wallet"
-NO_MEMFS=1
-NO_DOWNLOAD=1
 UPLOAD=1
 LEDGER_NAME="imogen_ledger"
 #ENABLE_MAGIC=1
 
 [experimental]
   allowed_public_ports = []
-  auto_rollback = true
+  auto_rollback = false
 
 [[services]]
   http_checks = []
