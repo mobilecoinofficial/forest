@@ -109,16 +109,19 @@ class Echopay(PayBot):
         # amounts are received in picoMob, convert to Mob for readability
         amount_mob = self.to_mob(amount_pmob)
 
-        to_return = amount_pmob - FEE_PMOB
+        amount_to_return = amount_pmob - FEE_PMOB
+
+        if amount_to_return < 0:
+            return f"Thank you for your payment of {str(amount_mob)} MOB. This payment is for less than the Network Fee (0.0004 MOB), so I can't return it to you."
 
         payment_status = await self.send_payment(
             msg.source,
-            to_return,
+            amount_to_return,
             confirm_tx_timeout=10,
             receipt_message="",
         )
         if getattr(payment_status, "status", "") == "tx_status_succeeded":
-            return f"Thank you for your payment of {str(amount_mob)} MOB. Here's your money back, minus the network fee."
+            return f"Thank you for your payment of {str(amount_mob)} MOB. Here's your money back, minus the network fee, {str(self.to_mob(amount_to_return))} MOB."
 
         return f"Couldn't return your payment for some reason. Please contact administrator for assistance."
 
