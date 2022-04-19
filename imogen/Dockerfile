@@ -11,7 +11,7 @@ RUN VIRTUAL_ENV=/app/venv poetry install
 
 FROM bitnami/kubectl:1.21.8 as kubectl
 
-FROM ubuntu:impish
+FROM ubuntu:focal 
 WORKDIR /app
 RUN mkdir -p /app/data
 RUN apt-get update
