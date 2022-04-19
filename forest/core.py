@@ -10,7 +10,6 @@ import asyncio.subprocess as subprocess  # https://github.com/PyCQA/pylint/issue
 import base64
 import codecs
 import datetime
-import functools
 import glob
 import json
 import logging
@@ -807,8 +806,8 @@ class Bot(Signal):
             self.signal_roundtrip_latency.append(
                 (message.timestamp, note, roundtrip_delta)
             )
-            roundtrip_summary.observe(roundtrip_delta)  # type: ignore
-            roundtrip_histogram.observe(roundtrip_delta)  # type: ignore
+            roundtrip_summary.observe(roundtrip_delta)
+            roundtrip_histogram.observe(roundtrip_delta)
             logging.info("noted roundtrip time: %s", roundtrip_delta)
             if utils.get_secret("ADMIN_METRICS"):
                 await self.admin(
@@ -1585,7 +1584,6 @@ class QuestionBot(PayBot):
         self,
         recipient: str,
         question_text: str = "What's your shipping address?",
-        require_first_device: bool = False,
         require_confirmation: bool = False,
     ) -> Optional[dict]:
         addr = await self.ask_address_question_(
