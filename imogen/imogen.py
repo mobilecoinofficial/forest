@@ -909,12 +909,12 @@ async def store_image_handler(  # pylint: disable=too-many-locals
 
     prompt = Prompt(**row[0])
     minutes, seconds = divmod(prompt.elapsed_gpu, 60)
-    messages = [f"{prompt.prompt}\nTook {minutes}m{seconds}s to generate"]
+    message_parts = [f"{prompt.prompt}\nTook {minutes}m{seconds}s to generate"]
     if prompt.loss and prompt.loss != -1:
-        message.append(f"{prompt.loss} loss")
+        message_parts.append(f"{prompt.loss} loss")
     if prompt.version:
-        messages.append(f"v{prompt.version}")
-    message = ", ".join(messages) + "."
+        message_parts.append(f"v{prompt.version}")
+    message = ", ".join(message_parts) + "."
     quote = (
         {
             "quote-timestamp": int(prompt.signal_ts),
