@@ -1,0 +1,76 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: diffuse-job
+  namespace: tenant-mobilecoin-imogen
+  labels:
+      tier: free
+spec:
+  ttlSecondsAfterFinished: 60
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: diffuse
+        image: technillogue/latent-diffusion:0.0.12
+        # command: ["/usr/bin/sleep"]
+        # args: ["1h"]
+        resources:
+          limits:
+            cpu: 4
+            memory: 16Gi
+            nvidia.com/gpu: 1
+        env:
+          # - name: REDIS_URL
+          #   valueFrom:
+          #     secretKeyRef:
+          #       name: dev-secrets
+          #       key: REDIS_URL
+          - name: DATABASE_URL
+            valueFrom:
+              secretKeyRef:
+                name: dev-secrets
+                key: DATABASE_URL
+          - name: SUPABASE_API_KEY
+            valueFrom:
+              secretKeyRef:
+                name: dev-secrets
+                key: SUPABASE_API_KEY
+          - name: TWITTER_CREDS
+            valueFrom:
+              secretKeyRef:
+                name: dev-secrets
+                key: TWITTER_CREDS
+          - name: EXIT # exit when fetching prompt fails on queue empty
+            value: "true"
+          - name: SELECTOR
+            value: "diffuse"
+          - name: FREE
+            value: "true"
+      # affinity:
+      #   nodeAffinity:
+      #     requiredDuringSchedulingIgnoredDuringExecution:
+      #       nodeSelectorTerms:
+      #       - matchExpressions:
+      #         - key: gpu.nvidia.com/class
+      #           operator: In
+      #           values:
+      #             - RTX_A6000
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: gpu.nvidia.com/class
+                operator: In
+                values:
+                  - Tesla_V100_PCIE
+                  - Tesla_V100_NVLINK
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 20
+              preference:
+                matchExpressions:
+                  - key: gpu.nvidia.com/class
+                    operator: In
+                    values:
+                      - Tesla_V100_PCIE
