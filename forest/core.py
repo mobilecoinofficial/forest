@@ -476,7 +476,7 @@ class Signal:
             logging.error(json.dumps(target_msg.blob))
         if target_msg.group:
             return await self.send_message(
-                None, msg, group=target_msg.group, **other_params
+                None, msg, group=target_msg.group_id, **other_params
             )
         destination = target_msg.source or target_msg.uuid
         return await self.send_message(destination, msg, **other_params)
