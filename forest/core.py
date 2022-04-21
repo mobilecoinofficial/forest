@@ -472,7 +472,7 @@ class Signal:
     ) -> str:
         """Respond to a message depending on whether it's a DM or group"""
         logging.debug("responding to %s", target_msg.source)
-        if not target_msg.source or target_msg.uuid:
+        if not (target_msg.source or target_msg.uuid):
             logging.error(json.dumps(target_msg.blob))
         if target_msg.group:
             return await self.send_message(
@@ -520,7 +520,7 @@ class Signal:
         # https://github.com/signalapp/Signal-Android/blob/master/app/src/main/java/org/thoughtcrime/securesms/components/TypingStatusRepository.java#L32
         "Send a typing indicator to the person or group the message is from"
         if msg:
-            group = msg.group or ""
+            group = msg.group_id or ""
             recipient = msg.source
         if utils.AUXIN:
             content: dict = {
@@ -564,7 +564,7 @@ class Signal:
             }
             content = {"dataMessage": {"body": None, "sticker": stick}}
             if msg.group:
-                await self.send_message(None, "", group=msg.group, content=content)
+                await self.send_message(None, "", group=msg.group_id, content=content)
             else:
                 await self.send_message(msg.source, "", content=content)
             return

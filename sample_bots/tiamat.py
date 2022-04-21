@@ -11,6 +11,7 @@ from typing import Any, Optional, Union
 from aiohttp import web
 
 import mc_util
+from forest import utils
 from forest.core import JSON, Message, PayBot, Response, app
 from forest.utils import get_secret
 
@@ -943,7 +944,7 @@ class Tiamat(PayBot):
             step_result.actual_response = TestMessage(
                 recipient=self.bot_number,
                 message=response.full_text,
-                group=response.group,
+                group=response.group_id if utils.AUXIN else respones.group,
                 endsession=False,
                 attachments=response.attachments,
                 sender=response.source,
