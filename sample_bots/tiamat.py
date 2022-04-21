@@ -944,7 +944,7 @@ class Tiamat(PayBot):
             step_result.actual_response = TestMessage(
                 recipient=self.bot_number,
                 message=response.full_text,
-                group=response.group_id if utils.AUXIN else respones.group,
+                group=response.group_id if utils.AUXIN else response.group,
                 endsession=False,
                 attachments=response.attachments,
                 sender=response.source,
