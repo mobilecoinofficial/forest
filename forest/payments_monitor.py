@@ -155,7 +155,9 @@ class Mobster:
         output_pmob = output_millimob * MILLIMOB_TO_PICOMOB + FEE_PMOB
         built = 0
         i = 0
-        utxos: list[tuple[str, int]] = []
+        utxos: list[tuple[str, int]] = list(reversed((await self.get_utxos()).items()))
+        if sum([value for _, value in utxos]) < output_pmob * target_quantity:
+            return "insufficient MOB"
         while built < (target_quantity + 3):
             if len(utxos) < 1:
                 # if we have few big txos, we can have a lot of change we don't see yet
