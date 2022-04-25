@@ -218,6 +218,13 @@ class Imogen(GelatoBot):
         #     "family-name": "",
         # }
 
+    ban = ["+15795090727", "+13068051597"]
+
+    async def handle_message(self, message: Message) -> Response:
+        if message.source in self.ban or message.uuid in self.ban:
+            return None
+        return await super().handle_message(message)
+
     async def handle_reaction(self, msg: Message) -> Response:
         await super().handle_reaction(msg)
         assert msg.reaction
@@ -493,6 +500,8 @@ class Imogen(GelatoBot):
         if attachments != "target" and not msg.text.strip():
             return "a prompt is required"
         logging.info(msg.full_text)
+        if "porn" in msg.text:
+            return "no"
         if attachments == "init":
             params.update(await self.upload_attachment(msg))
         elif attachments == "target":
