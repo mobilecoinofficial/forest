@@ -1309,8 +1309,8 @@ def get_source_or_uuid_from_dict(
     This abstracts over the possibility space, returning a boolean indicator of whether the sender of a Message
     is referenced in a dict, and the value pointed at (if any)."""
     return (
-        (msg.source in dict_ or msg.uuid in dict_),
-        dict_.get(msg.uuid) or dict_.get(msg.source),
+        ((msg.source,msg.group_id) in dict_ or (msg.uuid, msg.group_id) in dict_),
+        (dict_.get((msg.source,msg.group_id)) or dict_.get((msg.uuid, msg.group_id))),
     )
 
 
@@ -1324,7 +1324,7 @@ class QuestionBot(PayBot):
     """Class of Bots that have methods for asking questions and awaiting answers"""
 
     def __init__(self, bot_number: Optional[str] = None) -> None:
-        self.pending_answers: dict[str, asyncio.Future[Message]] = {}
+        self.pending_answers: dict[Tuple(str, str), asyncio.Future[Message]] = {}
         self.requires_first_device: dict[str, bool] = {}
         self.failed_user_challenges: dict[str, int] = {}
         self.TERMINAL_ANSWERS = "0 no none stop quit exit break cancel abort".split()
@@ -1358,9 +1358,11 @@ class QuestionBot(PayBot):
         question_text: str = "What's your favourite colour?",
         require_first_device: bool = False,
     ) -> str:
-        """Asks a question fulfilled by a sentence or short answer."""
+        """UrQuestion that all other questions use. Asks a question fulfilled by a sentence or short answer."""
         await self.send_message(recipient, question_text)
-        answer_future = self.pending_answers[recipient] = asyncio.Future()
+        if recipient.group:
+            answer_future = self.pending_answers[recipient.uuid, recipient.group_id] = asyncio.Future()
+        answer_future = self.pending_answers[recipient.uuid, 0] = asyncio.Future()
         if require_first_device:
             self.requires_first_device[recipient] = True
         answer = await answer_future
