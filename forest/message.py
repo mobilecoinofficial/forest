@@ -26,7 +26,29 @@ unicode_quotes = [
 ]
 
 
-class Message:
+class Dictable:
+    def to_dict(self) -> dict:
+        """
+        Returns a dictionary of message instance
+        variables except for the blob
+        """
+        properties = {}
+        for attr in dir(self):
+            if not (attr.startswith("_") or attr in ("blob", "full_text", "envelope")):
+                val = getattr(self, attr)
+                if val and not callable(val):
+                    # if attr == "text":
+                    #    val = termcolor.colored(val, attrs=["bold"])
+                    #    # gets mangled by repr
+                    if isinstance(val, Dictable):
+                        properties[attr] = val.to_dict()
+                    else:
+                        properties[attr] = val
+
+        return properties
+
+
+class Message(Dictable):
     """
     Base message type
 
@@ -46,6 +68,7 @@ class Message:
     source: str
     uuid: str
     payment: dict
+    typing: str
     arg0: str
     arg1: Optional[str]
     arg2: Optional[str]
@@ -85,29 +108,12 @@ class Message:
         # reconstitute the text minus arg0
         self.text = " ".join(self.tokens)
 
-    def to_dict(self) -> dict:
-        """
-        Returns a dictionary of message instance
-        variables except for the blob
-        """
-        properties = {}
-        for attr in dir(self):
-            if not (attr.startswith("_") or attr in ("blob", "full_text", "envelope")):
-                val = getattr(self, attr)
-                if val and not callable(val):
-                    # if attr == "text":
-                    #    val = termcolor.colored(val, attrs=["bold"])
-                    #    # gets mangled by repr
-                    properties[attr] = val
-
-        return properties
-
     def __getattr__(self, attr: str) -> None:
         # return falsy string back if not found
         return None
 
     def __repr__(self) -> str:
-        return f"Message: {self.to_dict()}"
+        return f"Message: {json.dumps(self.to_dict())}"
 
 
 class AuxinMessage(Message):
@@ -150,6 +156,10 @@ class AuxinMessage(Message):
                 logging.error("text message has no remote address: %s", outer_blob)
         if self.text and not self.source:
             logging.error(outer_blob)
+        # {"end_session":false,"source":{"typingMessage":{"action":"STOPPED","timestamp":1648512301846}}}
+        self.typing = (
+            content.get("source", {}).get("typingMessage", {}).get("action", "")
+        )
         payment_notif = (
             (msg.get("payment") or {}).get("Item", {}).get("notification", {})
         )
@@ -168,7 +178,7 @@ class AuxinMessage(Message):
 
 # auxin:
 # {'dataMessage': {'profileKey': 'LZa0kKwD0/L3qs96L+lIORyi3ATqqsOUEowtAic7Y0A=', 'reaction': {'emoji': '❤️', 'remove': False, 'targetAuthorUuid': 'da1fb04c-bf1a-458f-92c7-6f21ad443684', 'targetSentTimestamp': 1647300333914}, 'timestamp': 1647300340210}}}
-class Reaction:
+class Reaction(Dictable):
     def __init__(self, reaction: dict) -> None:
         assert reaction
         self.emoji = reaction["emoji"]
@@ -177,7 +187,7 @@ class Reaction:
         self.ts = reaction["targetSentTimestamp"]
 
 
-class Quote:
+class Quote(Dictable):
     def __init__(self, quote: dict) -> None:
         assert quote
         # signal-cli:
@@ -207,7 +217,7 @@ class StdioMessage(Message):
         # msg data
         msg = envelope.get("dataMessage", {})
         # "attachments":[{"contentType":"image/png","filename":"image.png","id":"1484072582431702699","size":2496}]}
-        self.attachments: list[dict[str, str]] = msg.get("attachments")
+        self.attachments: list[dict[str, str]] = msg.get("attachments", [])
         # "mentions":[{"name":"+447927948360","number":"+447927948360","uuid":"fc4457f0-c683-44fe-b887-fe3907d7762e","start":0,"length":1}
         self.mentions = msg.get("mentions") or []
         self.full_text = self.text = msg.get("message", "")
@@ -215,6 +225,7 @@ class StdioMessage(Message):
             "groupId"
         ) or result.get("groupId")
         self.quoted_text = msg.get("quote", {}).get("text")
+        self.typing = envelope.get("typingMessage", {}).get("action")
         self.payment = msg.get("payment")
         try:
             self.quote: Optional[Quote] = Quote(msg.get("quote"))
