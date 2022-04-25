@@ -68,6 +68,7 @@ class Message(Dictable):
     source: str
     uuid: str
     payment: dict
+    typing: str
     arg0: str
     arg1: Optional[str]
     arg2: Optional[str]
@@ -112,7 +113,7 @@ class Message(Dictable):
         return None
 
     def __repr__(self) -> str:
-        return f"Message: {self.to_dict()}"
+        return f"Message: {json.dumps(self.to_dict())}"
 
 
 class AuxinMessage(Message):
@@ -155,6 +156,10 @@ class AuxinMessage(Message):
                 logging.error("text message has no remote address: %s", outer_blob)
         if self.text and not self.source:
             logging.error(outer_blob)
+        # {"end_session":false,"source":{"typingMessage":{"action":"STOPPED","timestamp":1648512301846}}}
+        self.typing = (
+            content.get("source", {}).get("typingMessage", {}).get("action", "")
+        )
         payment_notif = (
             (msg.get("payment") or {}).get("Item", {}).get("notification", {})
         )
@@ -212,7 +217,7 @@ class StdioMessage(Message):
         # msg data
         msg = envelope.get("dataMessage", {})
         # "attachments":[{"contentType":"image/png","filename":"image.png","id":"1484072582431702699","size":2496}]}
-        self.attachments: list[dict[str, str]] = msg.get("attachments")
+        self.attachments: list[dict[str, str]] = msg.get("attachments", [])
         # "mentions":[{"name":"+447927948360","number":"+447927948360","uuid":"fc4457f0-c683-44fe-b887-fe3907d7762e","start":0,"length":1}
         self.mentions = msg.get("mentions") or []
         self.full_text = self.text = msg.get("message", "")
@@ -220,6 +225,7 @@ class StdioMessage(Message):
             "groupId"
         ) or result.get("groupId")
         self.quoted_text = msg.get("quote", {}).get("text")
+        self.typing = envelope.get("typingMessage", {}).get("action")
         self.payment = msg.get("payment")
         try:
             self.quote: Optional[Quote] = Quote(msg.get("quote"))

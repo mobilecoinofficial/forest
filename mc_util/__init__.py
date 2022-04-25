@@ -13,6 +13,7 @@ from . import printable_pb2
 
 
 PMOB = Decimal("1e12")
+FEE_PMOB = int(1e12 * 0.0004)  # mobilecoin transaction fee in picomob.
 
 
 def mob2pmob(x: Union[Decimal, float]) -> int:

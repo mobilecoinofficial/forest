@@ -1,3 +1,32 @@
+## 1.2.9
+
+* better test coverage for question bots (#181)
+* add `get_pmob_balance`, autocreate tables (#193)
+* better ergonomics for setting up paybots (#197)
+
+## 1.2.8
+
+- bump pdict-ng docs (#183)
+- add send_typing (#176)
+- check if ROOT_DIR/SIGNAL exists before using it and remove copied lines (#186)
+- to_dict base class so quotes get rendered right (#188)
+- make /wallet optional in the full service url (#191)
+- fix is_admin for groups (#196)
+
+## 1.2.7
+
+- new user_activity table holds first seen and last seen per-user per-bot. requires `METRICS_SALT` (#157)
+- if there isn't a txo big enough to split into 15, split into however many we can (#182)
+
+## 1.2.6
+
+- notes on the new captcha and installing on arch (#166)
+- quote messages to reply in TalkBack (#170)
+- improved `ask_yesno_question` (#172)
+- `ask_email_question` (#175)
+- improve type hints (#171)
+- add values() and items() to pdict (#179)
+
 ## 1.2.5
 
 - persistent synonyms with pdictng (#134)

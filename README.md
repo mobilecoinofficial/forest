@@ -4,6 +4,8 @@ Forest is a framework for running payments-enabled chat and utility bots for [Si
 
 To get familiarised with deploying and running a forest bot, we've provided a short tutorial to teach you how to deploy hellobot, the simplest possible forest bot.
 
+See also: <https://github.com/mobilecoinofficial/forestbot-template>
+
 ## High Level Overview ##
 
 In this tutorial you will:
@@ -263,6 +265,9 @@ These are the environment variables and flags that the bots read to work. Not al
 - `TYPO_THRESHOLD`: maximum normalized Levenshtein edit distance for typo correction. 0 is only exact matches, 1 is any match. Default: 0.3
 - `SIGNAL_CLI_PATH`: path to executable to use. useful for running signal-cli with graalvm tracing agent
 - `GOOGLE_MAPS_API`: google maps api key
+- `PAUTH`: used for PersistDict; see </pdictng_docs/README.md>
+- `SALT`: used for PersistDict
+- `METRICS_SALT`: used for logging when users were first and last seen. Must be set to log 
 
 ## Binary flags
 - `DOWNLOAD`: download/upload datastore from the database instead of using what's in the current working directory.

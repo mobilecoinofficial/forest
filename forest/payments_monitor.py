@@ -9,8 +9,7 @@ import logging
 import random
 import ssl
 import time
-from typing import Any, Optional, List
-
+from typing import Any, Optional
 import aiohttp
 import asyncpg
 
@@ -33,8 +32,9 @@ else:
     ssl_context.verify_mode = ssl.CERT_REQUIRED
     ssl_context.load_cert_chain(certfile="client.full.pem")
 
-MICROMOB_TO_PICOMOB = 1_000_000
-MILLIMOB_TO_PICOMOB = 1_000_000_000
+MICROMOB_TO_PICOMOB = 1_000_000  # that's 1e12/1e6
+MILLIMOB_TO_PICOMOB = 1_000_000_000  # that's 1e12/1e3
+FEE_PMOB = int(1e12 * 0.0004)  # mobilecoin transaction fee in picomob.
 
 DATABASE_URL = utils.get_secret("DATABASE_URL")
 LedgerPGExpressions = PGExpressions(
@@ -51,6 +51,8 @@ LedgerPGExpressions = PGExpressions(
     put_pmob_tx="INSERT INTO {self.table} (account, amount_usd_cents, amount_pmob, memo, ts) \
         VALUES($1, $2, $3, $4, CURRENT_TIMESTAMP);",
     get_usd_balance="SELECT COALESCE(SUM(amount_usd_cents)/100, 0.0) AS balance \
+        FROM {self.table} WHERE account=$1",
+    get_pmob_balance="SELECT COALESCE(SUM(amount_pmob), 0.0) AS balance \
         FROM {self.table} WHERE account=$1",
 )
 
@@ -89,7 +91,10 @@ class Mobster:
 
     def __init__(self, url: str = "") -> None:
         if not url:
-            url = utils.get_secret("FULL_SERVICE_URL") or "http://localhost:9090/wallet"
+            url = (
+                utils.get_secret("FULL_SERVICE_URL") or "http://localhost:9090/"
+            ).removesuffix("/wallet") + "/wallet"
+
         self.account_id: Optional[str] = None
         logging.info("full-service url: %s", url)
         self.url = url
@@ -147,23 +152,28 @@ class Mobster:
     async def split_txos_slow(
         self, output_millimob: int = 100, target_quantity: int = 200
     ) -> str:
-        output_millimob = int(output_millimob)
+        output_pmob = output_millimob * MILLIMOB_TO_PICOMOB + FEE_PMOB
         built = 0
         i = 0
-        utxos: List[str] = []
+        utxos: list[tuple[str, int]] = list(reversed((await self.get_utxos()).items()))
+        if sum([value for _, value in utxos]) < output_pmob * target_quantity:
+            return "insufficient MOB"
         while built < (target_quantity + 3):
             if len(utxos) < 1:
-                utxos = list(reversed(await self.get_utxos()))
+                # if we have few big txos, we can have a lot of change we don't see yet
+                # so if we've run out of txos we check for change from previous iterations
+                utxos = list(reversed((await self.get_utxos()).items()))
+            txo_id, value = utxos.pop(0)
+            if value / output_pmob < 2:
+                continue
             split_transaction = await self.req_(
                 "build_split_txo_transaction",
                 **dict(
-                    txo_id=utxos.pop(0),
+                    txo_id=txo_id,
                     output_values=[
-                        str(
-                            output_millimob * MILLIMOB_TO_PICOMOB
-                            + 400 * MICROMOB_TO_PICOMOB
-                        )
-                        for _ in range(15)
+                        # if we can't split into 15, split into however much possible
+                        str(output_pmob)
+                        for _ in range(min(value // output_pmob, 15))
                     ],
                 ),
             )
@@ -173,6 +183,7 @@ class Mobster:
                 results = await self.req_("submit_transaction", **params)
             else:
                 results = {}
+            # not only did we have params, submitting also had a result
             if results.get("results"):
                 await asyncio.sleep(2)
                 built += 15
@@ -205,9 +216,11 @@ class Mobster:
         return mob_rate
 
     async def pmob2usd(self, pmob: int) -> float:
+        "takes picoMOB, returns USD"
         return float(mc_util.pmob2mob(pmob)) * await self.get_rate()
 
     async def usd2mob(self, usd: float, perturb: bool = False) -> float:
+        "takes USD, returns MOB"
         invnano = 100000000
         # invpico = 100000000000 # doesn't work in mixin
         mob_rate = await self.get_rate()
@@ -219,15 +232,30 @@ class Mobster:
             return round(mob_amount, 8)
         return round(mob_amount, 3)  # maybe ceil?
 
-    async def import_account(self) -> dict:
+    async def import_account(self, name: str = "bot") -> dict:
+        "import an account using the MNEMONIC secret"
+        if not utils.get_secret("MNEMONIC"):
+            raise ValueError
         params = {
             "mnemonic": utils.get_secret("MNEMONIC"),
             "key_derivation_version": "1",
-            "name": "falloopa",
+            "name": name,
             "next_subaddress_index": "2",
             "first_block_index": "3500",
         }
         return await self.req({"method": "import_account", "params": params})
+
+    async def ensure_address(self) -> str:
+        """if we don't have an address, either import an account if MNEMONIC is set,
+        or create a new account. then return our address"""
+        try:
+            await self.get_my_address()
+        except IndexError:
+            if utils.get_secret("MNEMONIC"):
+                await self.import_account()
+            else:
+                await self.req_(method="create_account", name="bot")
+        return await self.get_my_address()
 
     async def get_my_address(self) -> str:
         """Returns either the address set, or the address specified by the secret

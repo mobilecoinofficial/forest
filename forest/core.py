@@ -28,11 +28,13 @@ from asyncio import Queue, StreamReader, StreamWriter
 from asyncio.subprocess import PIPE
 from decimal import Decimal
 from functools import wraps
+from pathlib import Path
 from textwrap import dedent
 from typing import (
     Any,
     Awaitable,
     Callable,
+    Coroutine,
     Mapping,
     Optional,
     Tuple,
@@ -42,6 +44,7 @@ from typing import (
 )
 
 import aiohttp
+import asyncpg
 import termcolor
 from aiohttp import web
 from phonenumbers import NumberParseException
@@ -52,22 +55,25 @@ from ulid2 import generate_ulid_as_base32 as get_uid
 # framework
 import mc_util
 from forest import autosave, datastore, payments_monitor, pghelp, string_dist, utils
+from forest.cryptography import hash_salt
 from forest.message import AuxinMessage, Message, StdioMessage
+
+try:
+    import captcha
+except ImportError:
+    captcha = None  # type: ignore
 
 JSON = dict[str, Any]
 Response = Union[str, list, dict[str, str], None]
 AsyncFunc = Callable[..., Awaitable]
+Command = Callable[["Bot", Message], Coroutine[Any, Any, Response]]
 
 roundtrip_histogram = Histogram("roundtrip_h", "Roundtrip message response time")  # type: ignore
 roundtrip_summary = Summary("roundtrip_s", "Roundtrip message response time")
 
 MessageParser = AuxinMessage if utils.AUXIN else StdioMessage
 logging.info("Using message parser: %s", MessageParser)
-fee_pmob = int(1e12 * 0.0004)
-try:
-    import captcha
-except ImportError:
-    captcha = None  # type:ignore
+FEE_PMOB = int(1e12 * 0.0004)
 
 
 def rpc(
@@ -79,6 +85,43 @@ def rpc(
         "id": _id,
         "params": (param_dict or {}) | params,
     }
+
+
+async def get_attachment_paths(message: Message) -> list[str]:
+    if not utils.AUXIN:
+        return [
+            str(Path("./attachments") / attachment["id"])
+            for attachment in message.attachments
+        ]
+    attachments = []
+    for attachment_info in message.attachments:
+        attachment_name = attachment_info.get("fileName")
+        timestamp = attachment_info.get("uploadTimestamp")
+        for i in range(30):  # wait up to 3s
+            if attachment_name is None:
+                maybe_paths = glob.glob(f"/tmp/unnamed_attachment_{timestamp}.*")
+                attachment_path = maybe_paths[0] if maybe_paths else ""
+            else:
+                attachment_path = f"/tmp/{attachment_name}"
+            if attachment_path and Path(attachment_path).exists():
+                attachments.append(attachment_path)
+                break
+            await asyncio.sleep(0.1)
+    return attachments
+
+
+ActivityQueries = pghelp.PGExpressions(
+    table="user_activity",
+    create_table="""CREATE TABLE user_activity (
+        id SERIAL PRIMARY KEY,
+        account TEXT,
+        first_seen TIMESTAMP default now(),
+        last_seen TIMESTAMP default now(),
+        bot TEXT,
+        UNIQUE (account, bot));""",
+    log="""INSERT INTO user_activity (account, bot) VALUES ($1, $2)
+    ON CONFLICT ON CONSTRAINT user_activity_account_bot_key1 DO UPDATE SET last_seen=now()""",
+)
 
 
 class Signal:
@@ -337,6 +380,7 @@ class Signal:
         family_name: Optional[str] = "",
         payment_address: Optional[str] = "",
         profile_path: Optional[str] = None,
+        **kwargs: Optional[str],
     ) -> str:
         """set given and family name, payment address (must be b64 format),
         and profile picture"""
@@ -347,6 +391,9 @@ class Signal:
             params["mobilecoinAddress"] = payment_address
         if profile_path:
             params["avatarFile"] = profile_path
+        for parameter, value in kwargs.items():
+            if value:
+                params[parameter] = value
         rpc_id = f"setProfile-{get_uid()}"
         await self.outbox.put(rpc("setProfile", params, rpc_id))
         return rpc_id
@@ -365,7 +412,7 @@ class Signal:
         endsession: bool = False,
         attachments: Optional[list[str]] = None,
         content: str = "",
-        **other_params: str,
+        **other_params: Any,
     ) -> str:
         """
         Builds send command for the specified recipient in jsonrpc format and
@@ -448,22 +495,26 @@ class Signal:
         asyncio.create_task(self.save_sent_message(rpc_id, params))
         return rpc_id
 
-    async def admin(self, msg: Response, **kwargs: Any) -> None:
+    async def admin(self, msg: Response, **other_params: Any) -> None:
         "send a message to admin"
         if (group := utils.get_secret("ADMIN_GROUP")) and not utils.AUXIN:
-            await self.send_message(None, msg, group=group, **kwargs)
+            await self.send_message(None, msg, group=group, **other_params)
         else:
-            await self.send_message(utils.get_secret("ADMIN"), msg, **kwargs)
+            await self.send_message(utils.get_secret("ADMIN"), msg, **other_params)
 
-    async def respond(self, target_msg: Message, msg: Response, **kwargs: Any) -> str:
+    async def respond(
+        self, target_msg: Message, msg: Response, **other_params: Any
+    ) -> str:
         """Respond to a message depending on whether it's a DM or group"""
         logging.debug("responding to %s", target_msg.source)
         if not target_msg.source:
             logging.error(json.dumps(target_msg.blob))
         if not utils.AUXIN and target_msg.group:
-            return await self.send_message(None, msg, group=target_msg.group, **kwargs)
+            return await self.send_message(
+                None, msg, group=target_msg.group, **other_params
+            )
         destination = target_msg.source or target_msg.uuid
-        return await self.send_message(destination, msg, **kwargs)
+        return await self.send_message(destination, msg, **other_params)
 
     async def send_reaction(self, target_msg: Message, emoji: str) -> None:
         """Send a reaction. Protip: you can use e.g. \N{GRINNING FACE} in python"""
@@ -480,6 +531,51 @@ class Signal:
             recipient=target_msg.source,
         )
         await self.outbox.put(cmd)
+
+    async def typing_message_content(
+        self, stop: bool = False, group_id: str = ""
+    ) -> str:
+        "serialized typing message content to pass to auxin --content for turning into protobufs"
+        resp = await self.signal_rpc_request(
+            "send", simulate=True, message="", destination="+15555555555"
+        )
+        # simulate gives us a dict corresponding to the protobuf structure
+        content_skeletor = json.loads(resp.blob["simulate_output"])
+        # typingMessage excludes having a dataMessage
+        content_skeletor["dataMessage"] = None
+        content_skeletor["typingMessage"] = {
+            "action": "STOPPED" if stop else "STARTED",
+            "timestamp": int(time.time() * 1000),
+        }
+        if group_id:
+            content_skeletor["typingMessage"]["groupId"] = group_id
+        return json.dumps(content_skeletor)
+
+    async def send_typing(
+        self,
+        msg: Optional[Message] = None,
+        stop: bool = False,
+        recipient: str = "",
+        group: str = "",
+    ) -> None:
+        "Send a typing indicator to the person or group the message is from"
+        # typing indicators last 15s on their own
+        # https://github.com/signalapp/Signal-Android/blob/master/app/src/main/java/org/thoughtcrime/securesms/components/TypingStatusRepository.java#L32
+        if msg:
+            group = msg.group or ""
+            recipient = msg.source
+        if utils.AUXIN:
+            if group:
+                content = await self.typing_message_content(stop, group)
+                await self.send_message(None, "", group=group, content=content)
+            else:
+                content = await self.typing_message_content(stop)
+                await self.send_message(recipient, "", content=content)
+            return
+        if group:
+            await self.outbox.put(rpc("sendTyping", group_id=[group], stop=stop))
+        else:
+            await self.outbox.put(rpc("sendTyping", recipient=[recipient], stop=stop))
 
     backoff = False
     messages_until_rate_limit = 1000.0
@@ -528,14 +624,17 @@ def is_admin(msg: Message) -> bool:
     ADMIN = utils.get_secret("ADMIN") or ""
     ADMIN_GROUP = utils.get_secret("ADMIN_GROUP") or ""
     ADMINS = utils.get_secret("ADMINS") or ""
-    source_admin = msg.source and msg.source in ADMIN or msg.source in ADMINS
-    source_uuid = msg.uuid and msg.uuid in ADMIN or msg.uuid in ADMINS
+    source_admin = msg.source and (msg.source in ADMIN or msg.source in ADMINS)
+    source_uuid = msg.uuid and (msg.uuid in ADMIN or msg.uuid in ADMINS)
     return source_admin or source_uuid or bool(msg.group and msg.group in ADMIN_GROUP)
 
 
-def requires_admin(command: Callable) -> Callable:
+B = TypeVar("B", bound="Bot")
+
+
+def requires_admin(command: AsyncFunc) -> AsyncFunc:
     @wraps(command)
-    async def admin_command(self: "Bot", msg: Message) -> Response:
+    async def admin_command(self: B, msg: Message) -> Response:
         if is_admin(msg):
             return await command(self, msg)
         return "you must be an admin to use this command"
@@ -545,9 +644,9 @@ def requires_admin(command: Callable) -> Callable:
     return admin_command
 
 
-def hide(command: Callable) -> Callable:
+def hide(command: AsyncFunc) -> AsyncFunc:
     @wraps(command)
-    async def hidden_command(self: "Bot", msg: Message) -> Response:
+    async def hidden_command(self: B, msg: Message) -> Response:
         return await command(self, msg)
 
     hidden_command.hide = True  # type: ignore
@@ -579,6 +678,12 @@ class Bot(Signal):
             if not hasattr(getattr(self, f"do_{name}"), "hide")
         ]
         super().__init__(bot_number)
+        self.activity = pghelp.PGInterface(
+            query_strings=ActivityQueries, database=utils.get_secret("DATABASE_URL")
+        )
+        # set of users we've received messages from in the last minute
+        self.seen_users: set[str] = set()
+        self.log_activity_task = asyncio.create_task(self.log_activity())
         self.restart_task = asyncio.create_task(
             self.start_process()
         )  # maybe cancel on sigint?
@@ -589,14 +694,44 @@ class Bot(Signal):
             self.restart_task_callback(self.handle_messages)
         )
 
+    async def log_activity(self) -> None:
+        """
+        every 60s, update the user_activity table with users we've seen
+        runs in the bg as batches to avoid a seperate db query for every message
+        used for signup metrics
+        """
+        if not self.activity.pool:
+            await self.activity.connect_pg()
+            # mypy can't infer that connect_pg creates pool
+            assert self.activity.pool
+        while 1:
+            await asyncio.sleep(60)
+            if not self.seen_users:
+                continue
+            try:
+                async with self.activity.pool.acquire() as conn:
+                    # executemany batches this into an atomic db query
+                    await conn.executemany(
+                        self.activity.queries["log"],
+                        [(name, utils.APP_NAME) for name in self.seen_users],
+                    )
+                    logging.debug("recorded %s seen users", len(self.seen_users))
+                    self.seen_users = set()
+            except asyncpg.UndefinedTableError:
+                logging.info("creating user_activity table")
+                await self.activity.create_table()
+
     async def handle_messages(self) -> None:
         """
         Read messages from the queue. If it matches a pending request to auxin-cli/signal-cli,
         set the result for that request. If said result is being rate limited, retry sending it
         after pausing. Otherwise, concurrently respond to each message.
         """
+        metrics_salt = utils.get_secret("METRICS_SALT")
         while True:
             message = await self.inbox.get()
+            if metrics_salt and message.uuid:
+                self.seen_users.add(hash_salt(message.uuid, metrics_salt))
             if message.id and message.id in self.pending_requests:
                 logging.debug("setting result for future %s: %s", message.id, message)
                 self.pending_requests[message.id].set_result(message)
@@ -904,6 +1039,17 @@ class PayBot(ExtrasBot):
         return "/fsr [command] ([arg1] [val1]( [arg2] [val2])...)"
 
     @requires_admin
+    async def do_setup(self, _: Message) -> str:
+        if not utils.AUXIN:
+            return "Can't set payment address without auxin"
+        await self.set_profile_auxin(
+            mobilecoin_address=mc_util.b58_wrapper_to_b64_public_address(
+                await self.mobster.ensure_address()
+            )
+        )
+        return "OK"
+
+    @requires_admin
     async def do_balance(self, _: Message) -> Response:
         """Returns bot balance in MOB."""
         return f"Bot has balance of {mc_util.pmob2mob(await self.mobster.get_balance()).quantize(Decimal('1.0000'))} MOB"
@@ -914,9 +1060,13 @@ class PayBot(ExtrasBot):
             return None
         return await super().handle_message(message)
 
-    async def get_user_balance(self, account: str) -> float:
+    async def get_user_usd_balance(self, account: str) -> float:
         res = await self.mobster.ledger_manager.get_usd_balance(account)
         return float(round(res[0].get("balance"), 2))
+
+    async def get_user_pmob_balance(self, account: str) -> float:
+        res = await self.mobster.ledger_manager.get_pmob_balance(account)
+        return res[0].get("balance")
 
     async def handle_payment(self, message: Message) -> None:
         """Decode the receipt, then update balances.
@@ -938,10 +1088,6 @@ class PayBot(ExtrasBot):
             amount_usd_cents,
             amount_pmob,
             message.payment.get("note"),
-        )
-        await self.respond(
-            message,
-            f"Thank you for sending {float(amount_mob)} MOB ({amount_usd_cents / 100} USD)",
         )
         await self.respond(message, await self.payment_response(message, amount_pmob))
 
@@ -973,19 +1119,9 @@ class PayBot(ExtrasBot):
 
     @requires_admin
     async def do_set_profile(self, message: Message) -> Response:
-        """Renames bot (requires admin) - accepts first name, last name, and address."""
-        user_image = None
-        if message.attachments and len(message.attachments):
-            await asyncio.sleep(2)
-            attachment_info = message.attachments[0]
-            attachment_path = attachment_info.get("fileName")
-            timestamp = attachment_info.get("uploadTimestamp")
-            if attachment_path is None:
-                attachment_paths = glob.glob(f"/tmp/unnamed_attachment_{timestamp}.*")
-                if attachment_paths:
-                    user_image = attachment_paths.pop()
-            else:
-                user_image = f"/tmp/{attachment_path}"
+        """Renames bot (requires admin) - accepts first name, last name, and payment address."""
+        attachments = await get_attachment_paths(message)
+        user_image = attachments[0] if attachments else None
         if user_image or (message.tokens and len(message.tokens) > 0):
             await self.set_profile_auxin(
                 given_name=message.arg1,
@@ -1031,7 +1167,7 @@ class PayBot(ExtrasBot):
             "build_gift_code",
             account_id=await self.mobster.get_account(),
             value_pmob=str(int(amount_pmob)),
-            fee=str(fee_pmob),
+            fee=str(FEE_PMOB),
             memo="Gift code built with MOBot!",
         )
         prop = raw_prop["result"]["tx_proposal"]
@@ -1046,7 +1182,7 @@ class PayBot(ExtrasBot):
         return [
             "Built Gift Code",
             b58,
-            f"redeemable for {str(mc_util.pmob2mob(amount_pmob - fee_pmob)).rstrip('0')} MOB",
+            f"redeemable for {str(mc_util.pmob2mob(amount_pmob - FEE_PMOB)).rstrip('0')} MOB",
         ]
 
     # FIXME: clarify signature and return details/docs
@@ -1551,6 +1687,7 @@ class QuestionBot(PayBot):
 
         return email
 
+    @hide
     async def do_challenge(self, msg: Message) -> Response:
         """Challenges a user to do a simple math problem,
         optionally provided as an image to increase attacker complexity."""
@@ -1577,6 +1714,24 @@ class QuestionBot(PayBot):
             )
             return await self.do_challenge(msg)
         return "Thanks for helping protect our community!"
+
+    @requires_admin
+    async def do_setup(self, msg: Message) -> str:
+        if not utils.AUXIN:
+            return "Can't set profile without auxin"
+        fields: dict[str, Optional[str]] = {}
+        for field in ["given_name", "family_name", "about", "mood_emoji"]:
+            resp = await self.ask_freeform_question(
+                msg.source, f"value for field {field}?"
+            )
+            if resp and resp.lower() != "none":
+                fields[field] = resp
+        fields["mobilecoin_address"] = await self.mobster.ensure_address()
+        attachments = await get_attachment_paths(msg)
+        if attachments:
+            fields["profile_path"] = attachments[0]
+        await self.set_profile_auxin(**fields)
+        return f"set {', '.join(fields)}"
 
 
 async def no_get(request: web.Request) -> web.Response:
