@@ -1309,8 +1309,8 @@ def get_source_or_uuid_from_dict(
     This abstracts over the possibility space, returning a boolean indicator of whether the sender of a Message
     is referenced in a dict, and the value pointed at (if any)."""
     return (
-        ((msg.source,msg.group_id) in dict_ or (msg.uuid, msg.group_id) in dict_),
-        (dict_.get((msg.source,msg.group_id)) or dict_.get((msg.uuid, msg.group_id))),
+        ((msg.source, msg.group) in dict_ or (msg.uuid, msg.group) in dict_),
+        (dict_.get((msg.source, msg.group)) or dict_.get((msg.uuid, msg.group))),
     )
 
 
@@ -1336,12 +1336,15 @@ class QuestionBot(PayBot):
         super().__init__(bot_number)
 
     async def handle_message(self, message: Message) -> Response:
+
+        # import pdb;pdb.set_trace()
         pending_answer, probably_future = get_source_or_uuid_from_dict(
             message, self.pending_answers
         )
         _, requires_first_device = get_source_or_uuid_from_dict(
             message, self.requires_first_device
         )
+        
         if message.full_text and pending_answer:
             if requires_first_device and not is_first_device(message):
                 return self.FIRST_DEVICE_PLEASE
@@ -1354,19 +1357,20 @@ class QuestionBot(PayBot):
 
     async def ask_freeform_question(
         self,
-        recipient: str,
+        recipient: Union[str, tuple[str, str]],
         question_text: str = "What's your favourite colour?",
         require_first_device: bool = False,
     ) -> str:
         """UrQuestion that all other questions use. Asks a question fulfilled by a sentence or short answer."""
-        await self.send_message(recipient, question_text)
-        if recipient.group:
-            answer_future = self.pending_answers[recipient.uuid, recipient.group_id] = asyncio.Future()
-        answer_future = self.pending_answers[recipient.uuid, 0] = asyncio.Future()
+        group = ""
+        if isinstance(recipient, Tuple):
+            recipient, group = recipient
+        answer_future = self.pending_answers[recipient, group] = asyncio.Future()
         if require_first_device:
             self.requires_first_device[recipient] = True
+        await self.send_message(recipient, question_text)
         answer = await answer_future
-        self.pending_answers.pop(recipient)
+        self.pending_answers.pop(recipient, group)
         return answer.full_text or ""
 
     async def ask_floatable_question(
@@ -1378,13 +1382,10 @@ class QuestionBot(PayBot):
         """Asks a question answered with a floating point or decimal number.
         Asks user clarifying questions if an invalid number is provided.
         Returns None if user says any of the terminal answers."""
-        if question_text:
-            await self.send_message(recipient, question_text)
-        answer_future = self.pending_answers[recipient] = asyncio.Future()
-        if require_first_device:
-            self.requires_first_device[recipient] = True
-        answer = await answer_future
-        self.pending_answers.pop(recipient)
+
+        answer = await self.ask_freeform_question(
+            recipient, question_text, require_first_device
+        )
         answer_text = answer.full_text
 
         # This checks to see if the answer is a valid candidate for float by replacing
@@ -1405,7 +1406,7 @@ class QuestionBot(PayBot):
                 recipient, (question_text or "") + " (as a decimal, ie 1.01 or 2,02)"
             )
         if answer_text:
-            return float(answer.full_text.replace(",", ".", 1))
+            return float(answer.replace(",", ".", 1))
         return None
 
     async def ask_intable_question(
@@ -1417,17 +1418,14 @@ class QuestionBot(PayBot):
         """Asks a question answered with an integer or whole number.
         Asks user clarifying questions if an invalid number is provided.
         Returns None if user says any of the terminal answers."""
-        if require_first_device:
-            self.requires_first_device[recipient] = True
-        if question_text:
-            await self.send_message(recipient, question_text)
-        answer_future = self.pending_answers[recipient] = asyncio.Future()
-        answer = await answer_future
-        self.pending_answers.pop(recipient)
-        if answer.full_text and not answer.full_text.isnumeric():
+
+        answer = await self.ask_freeform_question(
+            recipient, question_text, require_first_device
+        )
+        if answer and not answer.isnumeric():
 
             # cancel if user replies with any of the terminal answers "stop, cancel, quit, etc. defined above"
-            if answer.full_text.lower() in self.TERMINAL_ANSWERS:
+            if answer.lower() in self.TERMINAL_ANSWERS:
                 return None
 
             # Check to see if the original question already specified wanting the answer as a decimal.
@@ -1438,8 +1436,8 @@ class QuestionBot(PayBot):
                 recipient,
                 (question_text or "") + " (as a whole number, ie '1' or '2000')",
             )
-        if answer.full_text:
-            return int(answer.full_text)
+        if answer:
+            return int(answer)
         return None
 
     async def ask_yesno_question(
@@ -1450,7 +1448,7 @@ class QuestionBot(PayBot):
     ) -> Optional[bool]:
         """Asks a question that expects a yes or no answer. Returns a Boolean:
         True if Yes False if No. None if cancelled"""
-
+        
         # ask the question as a freeform question
         answer = await self.ask_freeform_question(
             recipient, question_text, require_first_device
@@ -1589,22 +1587,21 @@ class QuestionBot(PayBot):
         if len(lower_dict_options) != len(dict_options):
             raise ValueError("Need to ensure unique options when lower-cased!")
 
-        # send user the formatted question and await their response
-        await self.send_message(recipient, question_text + "\n" + options_text)
-        answer_future = self.pending_answers[recipient] = asyncio.Future()
-        answer = await answer_future
-        self.pending_answers.pop(recipient)
+        # send user the formatted question as a freeform question and process their response
+        answer = await self.ask_freeform_question(
+            recipient, question_text + "\n" + options_text, require_first_device
+        )
 
         # when there is a match
-        if answer.full_text and answer.full_text.lower() in lower_dict_options.keys():
+        if answer and answer.lower() in lower_dict_options.keys():
 
             # if confirmation is required ask for it as a yes/no question
             if require_confirmation:
                 confirmation_text = (
                     "You picked: \n"
-                    + answer.full_text
+                    + answer
                     + spacer
-                    + lower_dict_options[answer.full_text.lower()]
+                    + lower_dict_options[answer.lower()]
                     + "\n\nIs this correct? (yes/no)"
                 )
                 confirmation = await self.ask_yesno_question(
@@ -1622,11 +1619,11 @@ class QuestionBot(PayBot):
                     )
         # if the answer given does not match a label
         if (
-            answer.full_text
-            and not answer.full_text.lower() in lower_dict_options.keys()
+            answer
+            and not answer.lower() in lower_dict_options.keys()
         ):
             # return none and exit if user types cancel, stop, exit, etc...
-            if answer.full_text.lower() in self.TERMINAL_ANSWERS:
+            if answer.lower() in self.TERMINAL_ANSWERS:
                 return None
             # otherwise reminder to type the label exactly as it appears and restate the question
             if "Please reply" not in question_text:
@@ -1642,7 +1639,7 @@ class QuestionBot(PayBot):
                 require_first_device,
             )
         # finally return the option that matches the answer, or if empty the answer itself
-        return lower_dict_options[answer.full_text.lower()] or answer.full_text
+        return lower_dict_options[answer.lower()] or answer
 
     async def ask_email_question(
         self,
