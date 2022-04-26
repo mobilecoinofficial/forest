@@ -87,27 +87,15 @@ def rpc(
     }
 
 
-async def get_attachment_paths(message: Message) -> list[str]:
-    if not utils.AUXIN:
-        return [
-            str(Path("./attachments") / attachment["id"])
-            for attachment in message.attachments
-        ]
-    attachments = []
-    for attachment_info in message.attachments:
-        attachment_name = attachment_info.get("fileName")
-        timestamp = attachment_info.get("uploadTimestamp")
-        for i in range(30):  # wait up to 3s
-            if attachment_name is None:
-                maybe_paths = glob.glob(f"/tmp/unnamed_attachment_{timestamp}.*")
-                attachment_path = maybe_paths[0] if maybe_paths else ""
-            else:
-                attachment_path = f"/tmp/{attachment_name}"
-            if attachment_path and Path(attachment_path).exists():
-                attachments.append(attachment_path)
-                break
-            await asyncio.sleep(0.1)
-    return attachments
+def check_valid_recipient(recipient: str) -> bool:
+    try:
+        assert recipient == utils.signal_format(recipient)
+    except (AssertionError, NumberParseException):
+        try:
+            assert recipient == str(uuid.UUID(recipient))
+        except (AssertionError, ValueError):
+            return False
+    return True
 
 
 ActivityQueries = pghelp.PGExpressions(
@@ -458,24 +446,17 @@ class Signal:
             params["attachments"] = attachments
         if content:
             params["content"] = content
-        if group:
-            if utils.AUXIN:
-                logging.error("setting a group message, but auxin doesn't support this")
+        if group and not utils.AUXIN:
             params["group-id"] = group
-        elif recipient:
-            try:
-                assert recipient == utils.signal_format(recipient)
-            except (AssertionError, NumberParseException):
-                try:
-                    assert recipient == str(uuid.UUID(recipient))
-                except (AssertionError, ValueError) as e:
-                    logging.error(
-                        "not sending message to invalid recipient %s. error: %s",
-                        recipient,
-                        e,
-                    )
-                    return ""
-            params["destination" if utils.AUXIN else "recipient"] = str(recipient)
+        if recipient and not utils.AUXIN:
+            if not check_valid_recipient(recipient):
+                logging.error("not sending message to invalid recipient %s", recipient)
+                return ""
+            params["recipient"] = str(recipient)
+        if recipient and utils.AUXIN:
+            params["destination"] = str(recipient)
+        if group and utils.AUXIN:
+            params["group"] = group
         # maybe use rpc() instead
         rpc_id = f"send-{get_uid()}"
         json_command: JSON = {
@@ -491,7 +472,7 @@ class Signal:
 
     async def admin(self, msg: Response, **other_params: Any) -> None:
         "send a message to admin"
-        if (group := utils.get_secret("ADMIN_GROUP")) and not utils.AUXIN:
+        if group := utils.get_secret("ADMIN_GROUP"):
             await self.send_message(None, msg, group=group, **other_params)
         else:
             await self.send_message(utils.get_secret("ADMIN"), msg, **other_params)
@@ -503,7 +484,7 @@ class Signal:
         logging.debug("responding to %s", target_msg.source)
         if not target_msg.source:
             logging.error(json.dumps(target_msg.blob))
-        if not utils.AUXIN and target_msg.group:
+        if target_msg.group:
             return await self.send_message(
                 None, msg, group=target_msg.group, **other_params
             )
