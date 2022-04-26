@@ -1349,7 +1349,11 @@ class QuestionBot(PayBot):
         answer_future = self.pending_answers[recipient, group] = asyncio.Future()
         if require_first_device:
             self.requires_first_device[recipient] = True
-        await self.send_message(recipient, question_text)
+        if group:
+            await self.send_message(None,question_text, group=group)
+        else:
+            await self.send_message(recipient, question_text)
+        # await self.send_message(recipient, question_text, group = group)
         answer = await answer_future
         self.pending_answers.pop((recipient, group))
         return answer.full_text or ""
