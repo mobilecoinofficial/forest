@@ -5,19 +5,20 @@ import pytest_asyncio
 
 
 # Prevent Utils from importing dev_secrets by default
-os.environ["ENV"] = "test"
+# os.environ["ENV"] = "test"
 
 
 from forest.core import Message, run_bot, Response
 from forest import core
-from tests.mockbot import MockBot, Tree
+from tests.mockbot import MockBot, Tree , QuestionBot
 
 # Sample bot number alice
 BOT_NUMBER = "+11111111111"
 USER_NUMBER = "+22222222222"
 
 
-class TestBot(MockBot):
+class TestBot(QuestionBot):
+# class TestBot(MockBot):
     """Bot that has tests for every type of question"""
 
     # async def do_test_ask_multiple(self, message:Message) -> None:
@@ -25,7 +26,7 @@ class TestBot(MockBot):
     async def do_test_ask_yesno_question(self, message: Message) -> Response:
         """Asks a sample Yes or No question"""
 
-        if await self.ask_yesno_question(message.source, "Do you like faeries?"):
+        if await self.ask_yesno_question((message.uuid,message.group), "Do you like faeries?"):
             return "That's cool, me too!"
         return "Aww :c"
 
