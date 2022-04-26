@@ -1370,7 +1370,7 @@ class QuestionBot(PayBot):
             self.requires_first_device[recipient] = True
         await self.send_message(recipient, question_text)
         answer = await answer_future
-        self.pending_answers.pop(recipient, group)
+        self.pending_answers.pop((recipient, group))
         return answer.full_text or ""
 
     async def ask_floatable_question(
