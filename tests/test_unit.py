@@ -8,9 +8,10 @@ import pytest_asyncio
 
 # Prevent Utils from importing dev_secrets by default
 os.environ["ENV"] = "test"
-logging.info(os.getenv("ENV"))
+
 from forest import utils, core
-from forest.core import Message, QuestionBot, Response
+from forest.core import Message, Response
+from tests.mockbot import MockBot
 
 # Sample bot number alice
 BOT_NUMBER = "+11111111111"
@@ -46,80 +47,21 @@ def test_root(tmp_path: pathlib.Path) -> None:
     assert reload(utils).ROOT_DIR == "/app"
 
 
-class MockMessage(Message):
-    """Makes a Mock Message that has a predefined source and uuid"""
-
-    def __init__(self, text: str) -> None:
-        self.text = text
-        self.full_text = text
-        self.source = USER_NUMBER
-        self.uuid = "cf3d7d34-2dcd-4fcd-b193-cbc6a666758b"
-        self.mentions = []
-        super().__init__({})
-
-
-class MockBot(QuestionBot):
-    """Makes a bot that bypasses the normal start_process allowing
-    us to have an inbox and outbox that doesn't depend on Signal"""
-
-    async def start_process(self) -> None:
-        pass
-
-    async def do_test_ask_yesno_question(self, message: Message) -> Response:
-        """Asks a sample Yes or No question"""
-
-        if await self.ask_yesno_question(message.source, "Do you like faeries?"):
-            return "That's cool, me too!"
-        return "Aww :c"
-
-    # async def send_message(
-    #     self,
-    #     recipient: Optional[str],
-    #     msg: Response,
-    #     group: Optional[str] = None,
-    #     endsession: bool = False,
-    #     attachments: Optional[list[str]] = None,
-    #     content: str = "",
-    # ) -> str:
-    #     return msg
-
-    async def send_input(self, text: str) -> None:
-        """Puts a MockMessage in the inbox queue"""
-        await self.inbox.put(MockMessage(text))
-
-    async def get_all_output(self) -> list[str]:
-        return [await self.get_output() for _ in range(self.outbox.qsize())]
-
-    async def get_output(self) -> str:
-        """Reads messages in the outbox that would otherwise be sent over signal"""
-        try:
-            outgoing_msg = await asyncio.wait_for(self.outbox.get(), timeout=1)
-            return outgoing_msg["params"]["message"]
-        except asyncio.TimeoutError:
-            logging.error("timed out waiting for output")
-            return ""
-
-    async def get_cmd_output(self, text: str) -> str:
-        """Runs commands as normal but intercepts the output instead of passing it onto signal"""
-        await self.send_input(text)
-        return await self.get_output()
-
-
 # https://github.com/pytest-dev/pytest-asyncio/issues/68
 # all async tests and fixtures implicitly use event_loop, which has scope "function" by default
 # so if we want bot to have scope "session" (so it's not destroyed and created between tests),
 # all the fixtures it uses need to have at least "session" scope
-@pytest.fixture(scope="session")
+@pytest.fixture()
 def event_loop(request):
-    """special version of the even loop"""
+    """Fixture version of the event loop"""
     loop = asyncio.get_event_loop_policy().new_event_loop()
     yield loop
     loop.close()
 
 
-@pytest_asyncio.fixture(scope="session")
+@pytest_asyncio.fixture()
 async def bot():
-    """special bot"""
+    """Bot Fixture allows for exiting gracefully"""
     bot = MockBot(BOT_NUMBER)
     yield bot
     bot.sigints += 1
@@ -164,38 +106,40 @@ async def test_questions(bot) -> None:
     os.environ["ENABLE_MAGIC"] = "1"
     # the issue here is that we need to send "yes" *after* the question has been asked
     # so we make it as create_task, then send the input, then await the task to get the result
-    t = asyncio.create_task(bot.ask_yesno_question(USER_NUMBER, "Do you like faeries?"))
+
+    answer = asyncio.create_task(
+        bot.ask_yesno_question(USER_NUMBER, "Do you like faeries?")
+    )
     await bot.send_input("yes")
-    assert await t == True
+    assert await answer is True
 
-
-@pytest.mark.asyncio
-async def test_email_questions(bot) -> None:
-    # normal email
-    answer = asyncio.create_task(bot.ask_email_question(USER_NUMBER))
-    await bot.send_input("example@example.com")
-    assert await answer == "example@example.com"
-
-    # email with special character
-    answer = asyncio.create_task(bot.ask_email_question(USER_NUMBER))
-    await bot.send_input("exam+ple@example.com")
-    assert await answer == "exam+ple@example.com"
-
-    # email with superfluous bits
-    answer = asyncio.create_task(bot.ask_email_question(USER_NUMBER))
-    await bot.send_input(
-        "hello my email is example@example.com and you can call me example"
+    answer = asyncio.create_task(
+        bot.ask_freeform_question(USER_NUMBER, "What's your favourite tree?")
     )
-    assert await answer == "example@example.com"
+    await bot.send_input("Birch")
+    assert await answer == "Birch"
 
-    # invalid email
-    answer = asyncio.create_task(bot.ask_email_question(USER_NUMBER))
-    logging.info(await bot.get_all_output())
-    assert (
-        await bot.get_cmd_output("random garbage") == "Please enter your email address"
+    answer = asyncio.create_task(
+        bot.ask_freeform_question(USER_NUMBER, "What's your favourite tree?")
     )
-    assert (await bot.get_cmd_output("random garbage")).startswith(
-        "Please reply with a valid email address"
+
+    question_text = "What is your tshirt size?"
+    options = {"S": "", "M": "", "L": "", "XL": "", "XXL": ""}
+
+    choice = asyncio.create_task(
+        bot.ask_multiple_choice_question(
+            USER_NUMBER, question_text, options, require_confirmation=False
+        )
     )
-    await bot.send_input("cancel")
-    assert await answer == None
+    await bot.send_input("M")
+    assert await choice == "M"
+
+    choice = asyncio.create_task(
+        bot.ask_multiple_choice_question(
+            USER_NUMBER, question_text, options, require_confirmation=True
+        )
+    )
+    await bot.send_input("XXL")
+    await asyncio.sleep(0)
+    await bot.send_input("yes")
+    assert await choice == "XXL"
