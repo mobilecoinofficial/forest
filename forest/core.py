@@ -1293,11 +1293,10 @@ def get_source_or_uuid_from_dict(
     This abstracts over the possibility space, returning a boolean indicator of whether the sender of a Message
     is referenced in a dict, and the value pointed at (if any)."""
     group = msg.group or ""
-    possible_keys = [(msg.source, group), (msg.uuid, group), msg.source, msg.uuid]
-    value: Optional[V] = None
-    for key in possible_keys:
-        value = value or dict_.get(key)  # type: ignore
-    return (any(key in dict_ for key in possible_keys), value)
+    for key in [(msg.source, group), (msg.uuid, group), msg.source, msg.uuid]:
+        if value := dict_.get(key):  # type: ignore
+            return True, value
+    return False, None
 
 
 def is_first_device(msg: Message) -> bool:
