@@ -85,6 +85,7 @@ def rpc(
         "params": (param_dict or {}) | params,
     }
 
+
 async def get_attachment_paths(message: Message) -> list[str]:
     if not utils.AUXIN:
         return [
