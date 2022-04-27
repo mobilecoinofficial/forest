@@ -20,6 +20,7 @@ class MockMessage(Message):
         self.full_text = text
         self.source = USER_NUMBER
         self.uuid = USER_UUID
+        self.group = ""
         self.mentions: list[dict[str, str]] = []
         super().__init__({})
 

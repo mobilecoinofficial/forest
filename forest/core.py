@@ -111,6 +111,10 @@ ActivityQueries = pghelp.PGExpressions(
     ON CONFLICT ON CONSTRAINT user_activity_account_bot_key1 DO UPDATE SET last_seen=now()""",
 )
 
+# This software is intended to promote growth. Like a well managed forest, it grows, it nurtures, it kills.
+# Attempts to use this software in a destructive matter, or attempts to harm the forest will be thwarted.
+########################################°–_⛤_–°#########################################################
+
 
 class Signal:
     """
@@ -1305,7 +1309,7 @@ class QuestionBot(PayBot):
     """Class of Bots that have methods for asking questions and awaiting answers"""
 
     def __init__(self, bot_number: Optional[str] = None) -> None:
-        self.pending_answers: dict[Tuple(str, str), asyncio.Future[Message]] = {}
+        self.pending_answers: dict[Tuple[str, str], asyncio.Future[Message]] = {}
         self.requires_first_device: dict[str, bool] = {}
         self.failed_user_challenges: dict[str, int] = {}
         self.TERMINAL_ANSWERS = "0 no none stop quit exit break cancel abort".split()
@@ -1325,7 +1329,7 @@ class QuestionBot(PayBot):
         _, requires_first_device = get_source_or_uuid_from_dict(
             message, self.requires_first_device
         )
-        
+
         if message.full_text and pending_answer:
             if requires_first_device and not is_first_device(message):
                 return self.FIRST_DEVICE_PLEASE
@@ -1338,8 +1342,8 @@ class QuestionBot(PayBot):
 
     async def ask_freeform_question(
         self,
-        recipient: Union[str, tuple[str, str]],
-        question_text: str = "What's your favourite colour?",
+        recipient: Union[str, Tuple[str, str]],
+        question_text: Optional[str] = "What's your favourite colour?",
         require_first_device: bool = False,
     ) -> str:
         """UrQuestion that all other questions use. Asks a question fulfilled by a sentence or short answer."""
@@ -1349,11 +1353,12 @@ class QuestionBot(PayBot):
         answer_future = self.pending_answers[recipient, group] = asyncio.Future()
         if require_first_device:
             self.requires_first_device[recipient] = True
-        if group:
-            await self.send_message(None,question_text, group=group)
-        else:
-            await self.send_message(recipient, question_text)
-        # await self.send_message(recipient, question_text, group = group)
+
+        if question_text:
+            if group:
+                await self.send_message(None, question_text, group=group)
+            else:
+                await self.send_message(recipient, question_text)
         answer = await answer_future
         self.pending_answers.pop((recipient, group))
         return answer.full_text or ""
@@ -1371,7 +1376,7 @@ class QuestionBot(PayBot):
         answer = await self.ask_freeform_question(
             recipient, question_text, require_first_device
         )
-        answer_text = answer.full_text
+        answer_text = answer
 
         # This checks to see if the answer is a valid candidate for float by replacing
         # the first comma or decimal point with a number to see if the resulting string .isnumeric()
@@ -1380,7 +1385,7 @@ class QuestionBot(PayBot):
             or answer_text.replace(",", "1", 1).isnumeric()
         ):
             # cancel if user replies with any of the terminal answers "stop, cancel, quit, etc. defined above"
-            if answer.full_text.lower() in self.TERMINAL_ANSWERS:
+            if answer.lower() in self.TERMINAL_ANSWERS:
                 return None
 
             # Check to see if the original question already specified wanting the answer as a decimal.
@@ -1433,7 +1438,7 @@ class QuestionBot(PayBot):
     ) -> Optional[bool]:
         """Asks a question that expects a yes or no answer. Returns a Boolean:
         True if Yes False if No. None if cancelled"""
-        
+
         # ask the question as a freeform question
         answer = await self.ask_freeform_question(
             recipient, question_text, require_first_device
@@ -1603,10 +1608,7 @@ class QuestionBot(PayBot):
                         require_first_device,
                     )
         # if the answer given does not match a label
-        if (
-            answer
-            and not answer.lower() in lower_dict_options.keys()
-        ):
+        if answer and not answer.lower() in lower_dict_options.keys():
             # return none and exit if user types cancel, stop, exit, etc...
             if answer.lower() in self.TERMINAL_ANSWERS:
                 return None
