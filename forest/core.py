@@ -37,7 +37,6 @@ from typing import (
     Coroutine,
     Mapping,
     Optional,
-    Tuple,
     Type,
     TypeVar,
     Union,
@@ -1287,16 +1286,18 @@ V = TypeVar("V")
 
 
 def get_source_or_uuid_from_dict(
-    msg: Message, dict_: Mapping[str, V]
-) -> Tuple[bool, Optional[V]]:
+    msg: Message, dict_: Union[Mapping[str, V], Mapping[tuple[str, str], V]]
+) -> tuple[bool, Optional[V]]:
     """A common pattern is to store intermediate state for individual users as a dictionary.
     Users can be referred to by some combination of source (a phone number) or uuid (underlying user ID)
     This abstracts over the possibility space, returning a boolean indicator of whether the sender of a Message
     is referenced in a dict, and the value pointed at (if any)."""
-    return (
-        ((msg.source, msg.group) in dict_ or (msg.uuid, msg.group) in dict_),
-        (dict_.get((msg.source, msg.group)) or dict_.get((msg.uuid, msg.group))),
-    )
+    group = msg.group or ""
+    possible_keys = [(msg.source, group), (msg.uuid, group), msg.source, msg.uuid]
+    value: Optional[V] = None
+    for key in possible_keys:
+        value = value or dict_.get(key)  # type: ignore
+    return (any(key in dict_ for key in possible_keys), value)
 
 
 def is_first_device(msg: Message) -> bool:
@@ -1309,7 +1310,7 @@ class QuestionBot(PayBot):
     """Class of Bots that have methods for asking questions and awaiting answers"""
 
     def __init__(self, bot_number: Optional[str] = None) -> None:
-        self.pending_answers: dict[Tuple[str, str], asyncio.Future[Message]] = {}
+        self.pending_answers: dict[tuple[str, str], asyncio.Future[Message]] = {}
         self.requires_first_device: dict[str, bool] = {}
         self.failed_user_challenges: dict[str, int] = {}
         self.TERMINAL_ANSWERS = "0 no none stop quit exit break cancel abort".split()
@@ -1342,13 +1343,13 @@ class QuestionBot(PayBot):
 
     async def ask_freeform_question(
         self,
-        recipient: Union[str, Tuple[str, str]],
+        recipient: Union[str, tuple[str, str]],
         question_text: Optional[str] = "What's your favourite colour?",
         require_first_device: bool = False,
     ) -> str:
         """UrQuestion that all other questions use. Asks a question fulfilled by a sentence or short answer."""
         group = ""
-        if isinstance(recipient, Tuple):
+        if isinstance(recipient, tuple):
             recipient, group = recipient
         answer_future = self.pending_answers[recipient, group] = asyncio.Future()
         if require_first_device:
