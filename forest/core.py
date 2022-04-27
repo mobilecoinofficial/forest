@@ -85,6 +85,28 @@ def rpc(
         "params": (param_dict or {}) | params,
     }
 
+async def get_attachment_paths(message: Message) -> list[str]:
+    if not utils.AUXIN:
+        return [
+            str(Path("./attachments") / attachment["id"])
+            for attachment in message.attachments
+        ]
+    attachments = []
+    for attachment_info in message.attachments:
+        attachment_name = attachment_info.get("fileName")
+        timestamp = attachment_info.get("uploadTimestamp")
+        for i in range(30):  # wait up to 3s
+            if attachment_name is None:
+                maybe_paths = glob.glob(f"/tmp/unnamed_attachment_{timestamp}.*")
+                attachment_path = maybe_paths[0] if maybe_paths else ""
+            else:
+                attachment_path = f"/tmp/{attachment_name}"
+            if attachment_path and Path(attachment_path).exists():
+                attachments.append(attachment_path)
+                break
+            await asyncio.sleep(0.1)
+    return attachments
+
 
 def check_valid_recipient(recipient: str) -> bool:
     try:
