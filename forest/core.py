@@ -58,7 +58,7 @@ from forest.message import AuxinMessage, Message, Reaction, StdioMessage
 try:
     import captcha
 except ImportError:
-    captcha = None  # type: ignore
+    captcha = None
 
 JSON = dict[str, Any]
 Response = Union[str, list, dict[str, str], None]
@@ -116,17 +116,6 @@ async def get_attachment_paths(message: Message) -> list[str]:
                 break
             await asyncio.sleep(0.1)
     return attachments
-
-
-def check_valid_recipient(recipient: str) -> bool:
-    try:
-        assert recipient == utils.signal_format(recipient)
-    except (AssertionError, NumberParseException):
-        try:
-            assert recipient == str(uuid.UUID(recipient))
-        except (AssertionError, ValueError):
-            return False
-    return True
 
 
 ActivityQueries = pghelp.PGExpressions(
