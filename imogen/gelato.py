@@ -1,8 +1,8 @@
 import json
 import logging
 import time
-import mc_util
 import asyncio
+import mc_util
 from forest import utils
 from forest.core import Message, run_bot, QuestionBot, Response
 
@@ -142,9 +142,10 @@ class GelatoBot(QuestionBot):
             "email": user_email,
             "phone": msg.source,
         }
+        order_id = msg.uuid + str(int(time.time()))
         current_quote_data = {
             "order": {
-                "orderReferenceId": msg.uuid + str(int(time.time())),
+                "orderReferenceId": order_id,
                 "customerReferenceId": msg.uuid,
                 "currencyIsoCode": "USD",
             },
@@ -159,7 +160,10 @@ class GelatoBot(QuestionBot):
             "recipient": recipient,
         }
         logging.info(current_quote_data)
-        return await self.post_order(current_quote_data, msg)
+        resp = await self.post_order(current_quote_data, msg)
+        if resp == "Promise Uid is accepted for processing":
+            return f"Order is being processed. Your order id {order_id}"
+        return f"Something went wrong: {resp}"
 
 
 if __name__ == "__main__":
