@@ -28,7 +28,7 @@ FROM ubuntu:focal
 WORKDIR /app
 RUN mkdir -p /app/data
 RUN apt-get update
-RUN apt-get install -y python3.9 libfuse2 kmod jq ssh
+RUN apt-get install -y python3.9 libfuse2 kmod jq ssh squid apache2-utils
 RUN apt-get install -y openjdk-17-jre-headless
 RUN apt-get clean autoclean && apt-get autoremove --yes && rm -rf /var/lib/{apt,dpkg,cache,log}/
 COPY --from=signal /usr/bin/signal-cli /signal-version /app/
@@ -39,4 +39,5 @@ COPY --from=kubectl /opt/bitnami/kubectl/bin/kubectl /usr/local/bin/
 COPY ./mc_util/ /app/mc_util/
 COPY ./forest/ /app/forest/
 COPY ./gelato.py ./imogen.py ./free-imagegen-job.yaml ./paid-imagegen-job.yaml ./a6000.yaml ./esrgan-job.yaml ./diffuse.yaml /app/
+COPY ./squid.conf ./passwd /etc/squid/
 ENTRYPOINT ["/usr/bin/python3.9", "/app/imogen.py"]

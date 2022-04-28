@@ -30,6 +30,7 @@ LEDGER_NAME="imogen_ledger"
   strategy = "immediate"
 
 [[services]]
+
   http_checks = []
   internal_port = 8080
   processes = ["app"]
@@ -49,11 +50,20 @@ LEDGER_NAME="imogen_ledger"
     handlers = ["tls", "http"]
     port = 443
 
+
+
   [[services.tcp_checks]]
     grace_period = "5s"
     interval = "15s"
     restart_limit = 6
     timeout = "5s"
+
+[[services]]
+  internal_port = 3128
+
+  [[services.ports]]
+    port = 3128 # squid
+
 
 # fly volumes create imogen_ren_data --region iad --size 10
 # [[mounts]]
