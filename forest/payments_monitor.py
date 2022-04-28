@@ -96,7 +96,7 @@ class Mobster:
             ).removesuffix("/wallet") + "/wallet"
 
         self.account_id: Optional[str] = None
-        logging.info("full-service url: %s", url)
+        logging.debug("full-service url: %s", url)
         self.url = url
 
     async def req_(self, method: str, **params: Any) -> dict:
@@ -247,13 +247,16 @@ class Mobster:
         """if we don't have an address, either import an account if MNEMONIC is set,
         or create a new account. then return our address"""
         try:
-            await self.get_my_address()
-        except IndexError:
-            if utils.get_secret("MNEMONIC"):
-                await self.import_account()
-            else:
-                await self.req_(method="create_account", name="bot")
-        return await self.get_my_address()
+            try:
+                await self.get_my_address()
+            except IndexError:
+                if utils.get_secret("MNEMONIC"):
+                    await self.import_account()
+                else:
+                    await self.req_(method="create_account", name="bot")
+            return await self.get_my_address()
+        except aiohttp.ClientError:
+            return ""
 
     async def get_my_address(self) -> str:
         """Returns either the address set, or the address specified by the secret
