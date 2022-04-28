@@ -36,7 +36,10 @@ class GelatoBot(QuestionBot):
             return await self.cancel_fulfillment(msg)
         balance = await self.get_user_pmob_balance(msg.source)
         if balance < self.price:  # Images go for 10 MOB
-            return await self.send_message(msg.uuid,f"It seems you no longer have enough MOB in your balance to place your order. Make sure you have at least {self.price}MOB in your Imogen Balance to order a print.")
+            return await self.send_message(
+                msg.uuid,
+                f"It seems you no longer have enough MOB in your balance to place your order. Make sure you have at least {self.price}MOB in your Imogen Balance to order a print.",
+            )
         # === Send quote request ===
         async with self.client_session.post(
             quote_url, data=json.dumps(quote_data), headers=headers
@@ -60,7 +63,9 @@ class GelatoBot(QuestionBot):
             -mc_util.mob2pmob(self.price),
             f"{msg.source}: {time.time()}",
         )
-        return await self.send_message(msg.uuid,create_response.get("message", "Order submitted"))
+        return await self.send_message(
+            msg.uuid, create_response.get("message", "Order submitted")
+        )
 
     async def get_address_dict(self, msg: Message) -> dict:
         addr_data = await self.ask_address_question_(
@@ -90,16 +95,14 @@ class GelatoBot(QuestionBot):
         if balance < self.price:  # Images go for 8 MOB
             return "You need 10 MOB of Imogen Balance to buy a print. Send Imogen a payment and try again."
 
-        
         asyncio.create_task(self.fulfillment(msg))
         if msg.group:
             return "DMing you to complete your transaction"
 
-    async def cancel_fulfillment(self, msg:Message) -> str:
-       return await self.send_message(msg.uuid,"Ok, cancelling your oder.")
+    async def cancel_fulfillment(self, msg: Message) -> str:
+        return await self.send_message(msg.uuid, "Ok, cancelling your oder.")
 
-
-    async def fulfillment(self, msg:Message) -> str:
+    async def fulfillment(self, msg: Message) -> str:
 
         ## TODO if quoting regular Imoge, upsample it instead and tell user how to order from that.
         # if msg.quoted_text:

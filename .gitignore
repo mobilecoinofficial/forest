@@ -7,3 +7,7 @@ auxin-cli
 data
 *log
 .idea
+imogen/forest/*
+imogen/mc_util/*
+*.png
+*.jpg
