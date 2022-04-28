@@ -134,7 +134,7 @@ class Forest(QuestionBot):
             return await super().do_help(msg)
         return (
             "Welcome to the Forest.contact Pre-Release!\n"
-            "To get started, try /register, or /status! "
+            "To get started, try /order <area code>, or /status! "
             "If you've already registered, try to send a message via /send."
         )
 
