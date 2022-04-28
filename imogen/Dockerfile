@@ -28,8 +28,7 @@ FROM ubuntu:focal
 WORKDIR /app
 RUN mkdir -p /app/data
 RUN apt-get update
-RUN apt-get install -y python3.9 libfuse2 kmod jq ssh squid apache2-utils
-RUN apt-get install -y openjdk-17-jre-headless
+RUN DEBIAN_FRONTEND="noninteractive" apt-get install -y python3.9 libfuse2 kmod jq ssh squid apache2-utils openjdk-17-jre-headless
 RUN apt-get clean autoclean && apt-get autoremove --yes && rm -rf /var/lib/{apt,dpkg,cache,log}/
 COPY --from=signal /usr/bin/signal-cli /signal-version /app/
 COPY --from=signal /usr/share/signal-cli /usr/share/signal-cli
