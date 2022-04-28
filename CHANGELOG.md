@@ -1,3 +1,10 @@
+## 1.2.9.1
+
+- remove thank you message in handle_payment
+- echopay readme
+- check if there's enough MOB for `split_txos_slow`
+- better attachment downloading
+
 ## 1.2.9
 
 * better test coverage for question bots (#181)
