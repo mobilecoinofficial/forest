@@ -849,6 +849,11 @@ class Imogen(GelatoBot):
         await self.mobster.ledger_manager.put_usd_tx(msg.source, -amount * 100, "tip")
         return f"thank you for tipping ${amount:.2f}"
 
+    @requires_admin
+    def do_freebie(self, msg: Message) -> Response:
+        # amount and user to add a freebie memo
+        pass
+
     async def do_signalpay(self, msg: Message) -> Response:
         "Learn about sending payments on Signal"
         if msg.group:

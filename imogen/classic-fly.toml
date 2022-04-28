@@ -23,7 +23,6 @@ DOWNLOAD=1
 LEDGER_NAME="imogen_ledger"
 
 [experimental]
-  allowed_public_ports = []
   auto_rollback = true
 
 [deploy]

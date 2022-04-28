@@ -34,7 +34,7 @@ class GelatoBot(QuestionBot):
 
         if not final_confirmation:
             return await self.cancel_fulfillment(msg)
-        balance = await self.get_user_pmob_balance(msg.source)
+        balance = mc_util.pmob2mob(await self.get_user_pmob_balance(msg.source))
         if balance < self.price:  # Images go for 10 MOB
             return await self.send_message(
                 msg.uuid,
@@ -91,7 +91,7 @@ class GelatoBot(QuestionBot):
         if not msg.quote:
             return "Quote a url to use this command"
 
-        balance = await self.get_user_pmob_balance(msg.source)
+        balance = mc_util.pmob2mob(await self.get_user_pmob_balance(msg.source))
         if balance < self.price:  # Images go for 8 MOB
             return "You need 10 MOB of Imogen Balance to buy a print. Send Imogen a payment and try again."
 
@@ -102,8 +102,7 @@ class GelatoBot(QuestionBot):
     async def cancel_fulfillment(self, msg: Message) -> str:
         return await self.send_message(msg.uuid, "Ok, cancelling your oder.")
 
-    async def fulfillment(self, msg: Message) -> str:
-
+    async def fulfillment(self, msg: Message) -> Response:
         ## TODO if quoting regular Imoge, upsample it instead and tell user how to order from that.
         # if msg.quoted_text:
         #     self.do_upsample()
