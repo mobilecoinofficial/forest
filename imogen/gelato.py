@@ -28,15 +28,15 @@ class GelatoBot(QuestionBot):
     ) -> Response:
 
         final_confirmation = await self.ask_yesno_question(
-            msg.source,
-            "I will place your order now and deduct 8 MOB. Is this ok? (y/n)",
+            msg.uuid,
+            f"I will place your order now and deduct {self.price} MOB. Is this ok? (y/n)",
         )
 
         if not final_confirmation:
-            return "Ok, cancelling your order."
-        balance = await self.get_user_pmob_balance(msg.source)
+            return await self.cancel_fulfillment(msg)
+        balance = await self.get_user_pmob_balance(msg.uuid)
         if balance < self.price:  # Images go for 10 MOB
-            return f"It seems you no longer have enough MOB in your balance to place your order. Make sure you have at least {self.price}MOB in your Imogen Balance to order a print."
+            return await self.send_message(msg.uuid,f"It seems you no longer have enough MOB in your balance to place your order. Make sure you have at least {self.price}MOB in your Imogen Balance to order a print.")
         # === Send quote request ===
         async with self.client_session.post(
             quote_url, data=json.dumps(quote_data), headers=headers
@@ -55,17 +55,16 @@ class GelatoBot(QuestionBot):
             create_response = await r.json()
             logging.info(create_response)
         await self.mobster.ledger_manager.put_pmob_tx(
-            msg.source,
+            msg.uuid,
             -round(self.price * await self.mobster.get_rate() * 100),
             -mc_util.mob2pmob(self.price),
-            f"{msg.source}: {time.time()}",
+            f"{msg.uuid}: {time.time()}",
         )
-
-        return create_response.get("message", "Order submitted")
+        return await self.send_message(msg.uuid,create_response.get("message", "Order submitted"))
 
     async def get_address_dict(self, msg: Message) -> dict:
         addr_data = await self.ask_address_question_(
-            msg.source, require_confirmation=True
+            msg.uuid, require_confirmation=True
         )
         if not addr_data:
             return {}
@@ -87,7 +86,7 @@ class GelatoBot(QuestionBot):
         if not msg.quote:
             return "Quote a url to use this command"
 
-        balance = await self.get_user_pmob_balance(msg.source)
+        balance = await self.get_user_pmob_balance(msg.uuid)
         if balance < self.price:  # Images go for 8 MOB
             return "You need 10 MOB of Imogen Balance to buy a print. Send Imogen a payment and try again."
 
@@ -125,12 +124,12 @@ class GelatoBot(QuestionBot):
             logging.info(e)
             return "Sorry, couldn't get that. Cancelling your order."
         if not delivery:
-            return "Ok, cancelling your order."
+            return await self.cancel_fulfillment(msg)
         user_email = await self.ask_email_question(
             user, "What's your email?"
         )  # could stub this out with forest email
         if user_email is None:
-            return "Ok, cancelling your order."
+            return await self.cancel_fulfillment(msg)
         # sorry https://www.kalzumeus.com/2010/06/17/falsehoods-programmers-believe-about-names/
         first, last, *unused = delivery_name.split() + ["", ""]
         ## TODO have this account for international users
