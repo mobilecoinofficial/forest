@@ -34,7 +34,7 @@ class GelatoBot(QuestionBot):
 
         if not final_confirmation:
             return await self.cancel_fulfillment(msg)
-        balance = await self.get_user_pmob_balance(msg.uuid)
+        balance = await self.get_user_pmob_balance(msg.source)
         if balance < self.price:  # Images go for 10 MOB
             return await self.send_message(msg.uuid,f"It seems you no longer have enough MOB in your balance to place your order. Make sure you have at least {self.price}MOB in your Imogen Balance to order a print.")
         # === Send quote request ===
@@ -55,10 +55,10 @@ class GelatoBot(QuestionBot):
             create_response = await r.json()
             logging.info(create_response)
         await self.mobster.ledger_manager.put_pmob_tx(
-            msg.uuid,
+            msg.source,
             -round(self.price * await self.mobster.get_rate() * 100),
             -mc_util.mob2pmob(self.price),
-            f"{msg.uuid}: {time.time()}",
+            f"{msg.source}: {time.time()}",
         )
         return await self.send_message(msg.uuid,create_response.get("message", "Order submitted"))
 
@@ -86,7 +86,7 @@ class GelatoBot(QuestionBot):
         if not msg.quote:
             return "Quote a url to use this command"
 
-        balance = await self.get_user_pmob_balance(msg.uuid)
+        balance = await self.get_user_pmob_balance(msg.source)
         if balance < self.price:  # Images go for 8 MOB
             return "You need 10 MOB of Imogen Balance to buy a print. Send Imogen a payment and try again."
 
