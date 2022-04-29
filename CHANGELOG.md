@@ -1,3 +1,11 @@
+## 1.2.10
+
+- singleton pool fixed
+- new auxin content format
+- check ROOT_DIR secret
+- auxin supports group now (sorta)
+- refactor questionbot to support asking in groups
+
 ## 1.2.9.1
 
 - remove thank you message in handle_payment
