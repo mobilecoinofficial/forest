@@ -219,11 +219,31 @@ class Imogen(GelatoBot):
         # }
 
     ban = ["+15795090727", "+13068051597"]
+    group_whitelist : list [str]= []
 
     async def handle_message(self, message: Message) -> Response:
         if message.source in self.ban or message.uuid in self.ban:
             return None
+        
+        if utils.get_secret("SAFE_MODE"):
+            if message.group and message.group not in self.group_whitelist:
+                
+                ## leave group
+                self.admin(f"found myself running in a group I don't recognise. Leaving the group but if you'd like to add me use add_group {msg.group} to both add me to the group and add the group to the group whitelist")
+                pass
+
         return await super().handle_message(message)
+
+    @requires_admin
+    async def do_get_group(self, msg:Message) -> None:
+        await self.admin(msg.group)
+        return None
+
+    @requires_admin
+    async def do_gg(self, msg:Message) -> None:
+        """
+        await self.do_get_group(msg)
+        return None
 
     async def handle_reaction(self, msg: Message) -> Response:
         await super().handle_reaction(msg)
