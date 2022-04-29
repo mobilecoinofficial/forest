@@ -11,6 +11,7 @@ from typing import Any, Optional, Union
 from aiohttp import web
 
 import mc_util
+from forest import utils
 from forest.core import JSON, Message, PayBot, Response, app
 from forest.utils import get_secret
 
@@ -86,7 +87,6 @@ class TestMessage:
       group (Optional[str]): target group of the TestMessage
       endsession (bool): send command to reset session/keystate
       attachments (Optional[list[str]]): attachment list
-      content (str): used for payments
       sender (Optional[str]): sender of the message
       payment (Optional[tuple[str, Optional[int]]]): payment recipient and
       amount of Mobilecoin to send to recipient
@@ -97,7 +97,6 @@ class TestMessage:
     group: Optional[str] = None
     endsession: bool = False
     attachments: Optional[Union[list[dict[str, str]], list[str]]] = None
-    content: str = ""
     sender: Optional[str] = None
     payment: Optional[tuple[str, Optional[int]]] = None
 
@@ -766,7 +765,6 @@ class Tiamat(PayBot):
                     group=step.message.group,
                     endsession=step.message.endsession,
                     attachments=step.message.attachments,  # type: ignore
-                    content=step.message.content,
                 )
                 send_receipt = await self.pending_requests[rpc_id]
 
@@ -946,10 +944,9 @@ class Tiamat(PayBot):
             step_result.actual_response = TestMessage(
                 recipient=self.bot_number,
                 message=response.full_text,
-                group=response.group,
+                group=response.group_id if utils.AUXIN else response.group,
                 endsession=False,
                 attachments=response.attachments,
-                content="",
                 sender=response.source,
             )
 
