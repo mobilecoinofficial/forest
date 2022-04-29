@@ -86,6 +86,17 @@ def rpc(
     }
 
 
+def check_valid_recipient(recipient: str) -> bool:
+    try:
+        assert recipient == utils.signal_format(recipient)
+    except (AssertionError, NumberParseException):
+        try:
+            assert recipient == str(uuid.UUID(recipient))
+        except (AssertionError, ValueError):
+            return False
+    return True
+
+
 async def get_attachment_paths(message: Message) -> list[str]:
     if not utils.AUXIN:
         return [
