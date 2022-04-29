@@ -437,22 +437,25 @@ class Imogen(GelatoBot):
 
     async def do_upsample(self, msg: Message) -> str:
         "quote an image I sent or a prompt you sent to upsample it x4"
-        if not msg.quote:
-            return "quote an image I sent or a prompt you sent to use this command"
-        ret = await self.queue.execute(
-            "SELECT filepath FROM prompt_queue WHERE sent_ts=$1 OR signal_ts=$1",
-            msg.quote.ts,
-        )
-        logging.info(ret)
-        if not ret or not (filepath := ret[0].get("filepath")):
-            return "sorry, I don't have that image saved for upsampling right now"
-        slug = (
-            filepath.removeprefix("output/")
-            .removesuffix("png")
-            .rstrip(".")
-            .removesuffix("/progress")
-        )
-        ret = await self.queue.execute(
+        if msg.text.startswith("http"):
+            slug = msg.text.split(" ")[0]
+        else:
+            if not msg.quote:
+                return "quote an image I sent or a prompt you sent to use this command"
+            ret = await self.queue.execute(
+                "SELECT filepath FROM prompt_queue WHERE sent_ts=$1 OR signal_ts=$1",
+                msg.quote.ts,
+            )
+            logging.info(ret)
+            if not ret or not (filepath := ret[0].get("filepath")):
+                return "sorry, I don't have that image saved for upsampling right now"
+            slug = (
+                filepath.removeprefix("output/")
+                .removesuffix("png")
+                .rstrip(".")
+                .removesuffix("/progress")
+            )
+        enqueue_ret = await self.queue.execute(
             """INSERT INTO prompt_queue (prompt, author, group_id, signal_ts, url, selector, paid)
             VALUES ($1, $2, $3, $4, $5, 'ESRGAN', true)
             RETURNING (SELECT count(*) + 1 FROM prompt_queue WHERE
@@ -463,8 +466,10 @@ class Imogen(GelatoBot):
             msg.timestamp,
             utils.URL,
         )
+        if not enqueue_ret:
+            return "something went wrong"
         await self.ensure_unique_worker("esrgan-job.yaml")
-        return f"you are #{ret[0]['queue_length']} in line"
+        return f"you are #{enqueue_ret[0]['queue_length']} in line"
 
     do_enhance = hide(do_upsample)
 
@@ -850,7 +855,7 @@ class Imogen(GelatoBot):
         return f"thank you for tipping ${amount:.2f}"
 
     @requires_admin
-    def do_freebie(self, msg: Message) -> Response:
+    async def do_freebie(self, msg: Message) -> Response:
         # amount and user to add a freebie memo
         pass
 

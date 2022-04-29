@@ -15,6 +15,12 @@ RUN signal-cli --version | tee /signal-version
 # RUN git log -1 --pretty=%B | tee signal-version
 # RUN ./gradlew nativeCompile
 
+# FROM ubuntu:hirsute as auxin
+# WORKDIR /app
+# RUN apt-get update && apt-get -yy install curl unzip
+# RUN curl -L --output auxin-cli.zip https://nightly.link/mobilecoinofficial/auxin/workflows/actions/main/auxin-cli.zip
+# RUN unzip auxin-cli.zip && chmod +x ./auxin-cli
+
 FROM python:3.9 as libbuilder
 WORKDIR /app
 RUN pip install poetry
@@ -34,6 +40,7 @@ COPY --from=signal /usr/bin/signal-cli /signal-version /app/
 COPY --from=signal /usr/share/signal-cli /usr/share/signal-cli
 #COPY --from=signal /app/signal-cli/build/native/nativeCompile/signal-cli /app/
 COPY --from=libbuilder /app/venv/lib/python3.9/site-packages /app/
+#COPY --from=auxin /app/auxin-cli /app/
 COPY --from=kubectl /opt/bitnami/kubectl/bin/kubectl /usr/local/bin/
 COPY ./mc_util/ /app/mc_util/
 COPY ./forest/ /app/forest/
