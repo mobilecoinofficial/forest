@@ -37,7 +37,6 @@ from typing import (
     Coroutine,
     Mapping,
     Optional,
-    Tuple,
     Type,
     TypeVar,
     Union,
@@ -87,24 +86,49 @@ def rpc(
     }
 
 
+def check_valid_recipient(recipient: str) -> bool:
+    try:
+        assert recipient == utils.signal_format(recipient)
+    except (AssertionError, NumberParseException):
+        try:
+            assert recipient == str(uuid.UUID(recipient))
+        except (AssertionError, ValueError):
+            return False
+    return True
+
+
 async def get_attachment_paths(message: Message) -> list[str]:
     if not utils.AUXIN:
         return [
             str(Path("./attachments") / attachment["id"])
             for attachment in message.attachments
         ]
-    await asyncio.sleep(2)
     attachments = []
     for attachment_info in message.attachments:
-        attachment_path = attachment_info.get("fileName")
+        attachment_name = attachment_info.get("fileName")
         timestamp = attachment_info.get("uploadTimestamp")
-        if attachment_path is None:
-            attachment_paths = glob.glob(f"/tmp/unnamed_attachment_{timestamp}.*")
-            if attachment_paths:
-                attachments.append(attachment_paths.pop())
-        else:
-            attachments.append(f"/tmp/{attachment_path}")
+        for i in range(30):  # wait up to 3s
+            if attachment_name is None:
+                maybe_paths = glob.glob(f"/tmp/unnamed_attachment_{timestamp}.*")
+                attachment_path = maybe_paths[0] if maybe_paths else ""
+            else:
+                attachment_path = f"/tmp/{attachment_name}"
+            if attachment_path and Path(attachment_path).exists():
+                attachments.append(attachment_path)
+                break
+            await asyncio.sleep(0.1)
     return attachments
+
+
+def check_valid_recipient(recipient: str) -> bool:
+    try:
+        assert recipient == utils.signal_format(recipient)
+    except (AssertionError, NumberParseException):
+        try:
+            assert recipient == str(uuid.UUID(recipient))
+        except (AssertionError, ValueError):
+            return False
+    return True
 
 
 ActivityQueries = pghelp.PGExpressions(
@@ -119,6 +143,10 @@ ActivityQueries = pghelp.PGExpressions(
     log="""INSERT INTO user_activity (account, bot) VALUES ($1, $2)
     ON CONFLICT ON CONSTRAINT user_activity_account_bot_key1 DO UPDATE SET last_seen=now()""",
 )
+
+# This software is intended to promote growth. Like a well managed forest, it grows, it nurtures, it kills.
+# Attempts to use this software in a destructive matter, or attempts to harm the forest will be thwarted.
+########################################°–_⛤_–°#########################################################
 
 
 class Signal:
@@ -403,7 +431,7 @@ class Signal:
         group: Optional[str] = None,  # maybe combine this with recipient?
         endsession: bool = False,
         attachments: Optional[list[str]] = None,
-        content: str = "",
+        content: Optional[dict] = None,
         **other_params: Any,
     ) -> str:
         """
@@ -455,24 +483,17 @@ class Signal:
             params["attachments"] = attachments
         if content:
             params["content"] = content
-        if group:
-            if utils.AUXIN:
-                logging.error("setting a group message, but auxin doesn't support this")
+        if group and not utils.AUXIN:
             params["group-id"] = group
-        elif recipient:
-            try:
-                assert recipient == utils.signal_format(recipient)
-            except (AssertionError, NumberParseException):
-                try:
-                    assert recipient == str(uuid.UUID(recipient))
-                except (AssertionError, ValueError) as e:
-                    logging.error(
-                        "not sending message to invalid recipient %s. error: %s",
-                        recipient,
-                        e,
-                    )
-                    return ""
-            params["destination" if utils.AUXIN else "recipient"] = str(recipient)
+        if recipient and not utils.AUXIN:
+            if not check_valid_recipient(recipient):
+                logging.error("not sending message to invalid recipient %s", recipient)
+                return ""
+            params["recipient"] = str(recipient)
+        if recipient and utils.AUXIN:
+            params["destination"] = str(recipient)
+        if group and utils.AUXIN:
+            params["group"] = group
         # maybe use rpc() instead
         rpc_id = f"send-{get_uid()}"
         json_command: JSON = {
@@ -488,7 +509,7 @@ class Signal:
 
     async def admin(self, msg: Response, **other_params: Any) -> None:
         "send a message to admin"
-        if (group := utils.get_secret("ADMIN_GROUP")) and not utils.AUXIN:
+        if group := utils.get_secret("ADMIN_GROUP"):
             await self.send_message(None, msg, group=group, **other_params)
         else:
             await self.send_message(utils.get_secret("ADMIN"), msg, **other_params)
@@ -498,17 +519,29 @@ class Signal:
     ) -> str:
         """Respond to a message depending on whether it's a DM or group"""
         logging.debug("responding to %s", target_msg.source)
-        if not target_msg.source:
+        if not (target_msg.source or target_msg.uuid):
             logging.error(json.dumps(target_msg.blob))
-        if not utils.AUXIN and target_msg.group:
+        if target_msg.group:
             return await self.send_message(
-                None, msg, group=target_msg.group, **other_params
+                None, msg, group=target_msg.group_id, **other_params
             )
         destination = target_msg.source or target_msg.uuid
         return await self.send_message(destination, msg, **other_params)
 
     async def send_reaction(self, target_msg: Message, emoji: str) -> None:
         """Send a reaction. Protip: you can use e.g. \N{GRINNING FACE} in python"""
+        if utils.AUXIN:
+            react = {
+                "emoji": emoji,
+                "targetAuthorUuid": target_msg.uuid,
+                "targetSentTimestamp": target_msg.timestamp,
+            }
+            await self.respond(
+                target_msg,
+                "",
+                content={"dataMessage": {"body": None, "reaction": react}},
+            )
+            return
         react = {
             "target-author": target_msg.source,
             "target-timestamp": target_msg.timestamp,
@@ -519,28 +552,9 @@ class Signal:
             "sendReaction",
             param_dict=react,
             emoji=emoji,
-            recipient=target_msg.source,
+            recipient=None if target_msg.group else target_msg.source,
         )
         await self.outbox.put(cmd)
-
-    async def typing_message_content(
-        self, stop: bool = False, group_id: str = ""
-    ) -> str:
-        "serialized typing message content to pass to auxin --content for turning into protobufs"
-        resp = await self.signal_rpc_request(
-            "send", simulate=True, message="", destination="+15555555555"
-        )
-        # simulate gives us a dict corresponding to the protobuf structure
-        content_skeletor = json.loads(resp.blob["simulate_output"])
-        # typingMessage excludes having a dataMessage
-        content_skeletor["dataMessage"] = None
-        content_skeletor["typingMessage"] = {
-            "action": "STOPPED" if stop else "STARTED",
-            "timestamp": int(time.time() * 1000),
-        }
-        if group_id:
-            content_skeletor["typingMessage"]["groupId"] = group_id
-        return json.dumps(content_skeletor)
 
     async def send_typing(
         self,
@@ -549,24 +563,59 @@ class Signal:
         recipient: str = "",
         group: str = "",
     ) -> None:
-        "Send a typing indicator to the person or group the message is from"
         # typing indicators last 15s on their own
         # https://github.com/signalapp/Signal-Android/blob/master/app/src/main/java/org/thoughtcrime/securesms/components/TypingStatusRepository.java#L32
+        "Send a typing indicator to the person or group the message is from"
         if msg:
-            group = msg.group or ""
+            group = msg.group_id or ""
             recipient = msg.source
         if utils.AUXIN:
+            content: dict = {
+                "dataMessage": None,
+                "typingMessage": {
+                    "action": "STOPPED" if stop else "STARTED",
+                    "timestamp": int(time.time() * 1000),
+                },
+            }
             if group:
-                content = await self.typing_message_content(stop, group)
+                content["typingMessage"]["groupId"] = group
                 await self.send_message(None, "", group=group, content=content)
             else:
-                content = await self.typing_message_content(stop)
                 await self.send_message(recipient, "", content=content)
             return
         if group:
             await self.outbox.put(rpc("sendTyping", group_id=[group], stop=stop))
         else:
             await self.outbox.put(rpc("sendTyping", recipient=[recipient], stop=stop))
+
+    async def send_sticker(
+        self, msg: Message, sticker: str = "a4f608100f49e0992b6760f2b971b8a7:0"
+    ) -> None:
+        "send a sticker to the person or group the message is from"
+        if utils.AUXIN:
+            stick = {
+                "data": {
+                    "attachment_identifier": {"cdnId": 5902557749391454000},
+                    "contentType": "image/webp",
+                    "digest": u8("vo2+aWLvbOEYCVUZUocLb0ffORNFo5924nmyH28Pj04="),
+                    "height": 512,
+                    "key": u8(
+                        "a5B7fMYxWpn8DILBWfB/tnFSXufcC7C318XC4bXmwEy/NYnKof/oS15JU8sn33whcYwoXDKT12BF04RoDQ4Osg=="
+                    ),
+                    "size": 17540,
+                    "width": 512,
+                },
+                "packId": u8("pPYIEA9J4JkrZ2DyuXG4pw=="),
+                "packKey": u8("R2ZbM8Tz2N49WYY8yEWXPLML4JC/w1tu0naLoj5P1eY="),
+                "stickerId": 0,
+            }
+            content = {"dataMessage": {"body": None, "sticker": stick}}
+            if msg.group:
+                await self.send_message(None, "", group=msg.group_id, content=content)
+            else:
+                await self.send_message(msg.source, "", content=content)
+            return
+        await self.respond(msg, "", sticker=sticker)
 
     backoff = False
     messages_until_rate_limit = 1000.0
@@ -645,6 +694,11 @@ def hide(command: AsyncFunc) -> AsyncFunc:
 
 
 Datapoint = tuple[int, str, float]  # timestamp in ms, command/info, latency in seconds
+
+
+def u8(b64: str) -> list[int]:
+    "convert a b64 string into the u8[] that serde expects for bytes"
+    return [int(char) for char in base64.b64decode(b64)]
 
 
 class Bot(Signal):
@@ -1080,10 +1134,6 @@ class PayBot(ExtrasBot):
             amount_pmob,
             message.payment.get("note"),
         )
-        await self.respond(
-            message,
-            f"Thank you for sending {float(amount_mob)} MOB ({amount_usd_cents / 100} USD)",
-        )
         await self.respond(message, await self.payment_response(message, amount_pmob))
 
     async def payment_response(self, msg: Message, amount_pmob: int) -> Response:
@@ -1136,25 +1186,18 @@ class PayBot(ExtrasBot):
 
     async def fs_receipt_to_payment_message_content(
         self, fs_receipt: dict, note: str = ""
-    ) -> str:
+    ) -> dict:
         full_service_receipt = fs_receipt["result"]["receiver_receipts"][0]
         # this gets us a Receipt protobuf
         b64_receipt = mc_util.full_service_receipt_to_b64_receipt(full_service_receipt)
         # serde expects bytes to be u8[], not b64
-        u8_receipt = [int(char) for char in base64.b64decode(b64_receipt)]
-        tx = {"mobileCoin": {"receipt": u8_receipt}}
+        tx = {"mobileCoin": {"receipt": u8(b64_receipt)}}
         note = note or "check out this java-free payment notification"
         payment = {"Item": {"notification": {"note": note, "Transaction": tx}}}
         # SignalServiceMessageContent protobuf represented as JSON (spicy)
         # destination is outside the content so it doesn't matter,
         # but it does contain the bot's profileKey
-        resp = await self.signal_rpc_request(
-            "send", simulate=True, message="", destination="+15555555555"
-        )
-        content_skeletor = json.loads(resp.blob["simulate_output"])
-        content_skeletor["dataMessage"]["body"] = None
-        content_skeletor["dataMessage"]["payment"] = payment
-        return json.dumps(content_skeletor)
+        return {"dataMessage": {"body": None, "payment": payment}}
 
     async def build_gift_code(self, amount_pmob: int) -> list[str]:
         """Builds a gift code and returns a list of messages to send, given an amount in pMOB."""
@@ -1253,7 +1296,7 @@ class PayBot(ExtrasBot):
         content = await self.fs_receipt_to_payment_message_content(
             receipt_resp, receipt_message
         )
-        # pass our beautifully composed spicy JSON content to auxin.
+        # pass our beautifully composed JSON content to auxin.
         # message body is ignored in this case.
         payment_notif = await self.send_message(recipient, "", content=content)
         resp_future = asyncio.create_task(self.wait_for_response(rpc_id=payment_notif))
@@ -1303,16 +1346,17 @@ V = TypeVar("V")
 
 
 def get_source_or_uuid_from_dict(
-    msg: Message, dict_: Mapping[str, V]
-) -> Tuple[bool, Optional[V]]:
+    msg: Message, dict_: Union[Mapping[str, V], Mapping[tuple[str, str], V]]
+) -> tuple[bool, Optional[V]]:
     """A common pattern is to store intermediate state for individual users as a dictionary.
     Users can be referred to by some combination of source (a phone number) or uuid (underlying user ID)
     This abstracts over the possibility space, returning a boolean indicator of whether the sender of a Message
     is referenced in a dict, and the value pointed at (if any)."""
-    return (
-        (msg.source in dict_ or msg.uuid in dict_),
-        dict_.get(msg.uuid) or dict_.get(msg.source),
-    )
+    group = msg.group or ""
+    for key in [(msg.source, group), (msg.uuid, group), msg.source, msg.uuid]:
+        if value := dict_.get(key):  # type: ignore
+            return True, value
+    return False, None
 
 
 def is_first_device(msg: Message) -> bool:
@@ -1325,7 +1369,7 @@ class QuestionBot(PayBot):
     """Class of Bots that have methods for asking questions and awaiting answers"""
 
     def __init__(self, bot_number: Optional[str] = None) -> None:
-        self.pending_answers: dict[str, asyncio.Future[Message]] = {}
+        self.pending_answers: dict[tuple[str, str], asyncio.Future[Message]] = {}
         self.requires_first_device: dict[str, bool] = {}
         self.failed_user_challenges: dict[str, int] = {}
         self.TERMINAL_ANSWERS = "0 no none stop quit exit break cancel abort".split()
@@ -1337,12 +1381,15 @@ class QuestionBot(PayBot):
         super().__init__(bot_number)
 
     async def handle_message(self, message: Message) -> Response:
+
+        # import pdb;pdb.set_trace()
         pending_answer, probably_future = get_source_or_uuid_from_dict(
             message, self.pending_answers
         )
         _, requires_first_device = get_source_or_uuid_from_dict(
             message, self.requires_first_device
         )
+
         if message.full_text and pending_answer:
             if requires_first_device and not is_first_device(message):
                 return self.FIRST_DEVICE_PLEASE
@@ -1355,17 +1402,25 @@ class QuestionBot(PayBot):
 
     async def ask_freeform_question(
         self,
-        recipient: str,
-        question_text: str = "What's your favourite colour?",
+        recipient: Union[str, tuple[str, str]],
+        question_text: Optional[str] = "What's your favourite colour?",
         require_first_device: bool = False,
     ) -> str:
-        """Asks a question fulfilled by a sentence or short answer."""
-        await self.send_message(recipient, question_text)
-        answer_future = self.pending_answers[recipient] = asyncio.Future()
+        """UrQuestion that all other questions use. Asks a question fulfilled by a sentence or short answer."""
+        group = ""
+        if isinstance(recipient, tuple):
+            recipient, group = recipient
+        answer_future = self.pending_answers[recipient, group] = asyncio.Future()
         if require_first_device:
             self.requires_first_device[recipient] = True
+
+        if question_text:
+            if group:
+                await self.send_message(None, question_text, group=group)
+            else:
+                await self.send_message(recipient, question_text)
         answer = await answer_future
-        self.pending_answers.pop(recipient)
+        self.pending_answers.pop((recipient, group))
         return answer.full_text or ""
 
     async def ask_floatable_question(
@@ -1377,14 +1432,11 @@ class QuestionBot(PayBot):
         """Asks a question answered with a floating point or decimal number.
         Asks user clarifying questions if an invalid number is provided.
         Returns None if user says any of the terminal answers."""
-        if question_text:
-            await self.send_message(recipient, question_text)
-        answer_future = self.pending_answers[recipient] = asyncio.Future()
-        if require_first_device:
-            self.requires_first_device[recipient] = True
-        answer = await answer_future
-        self.pending_answers.pop(recipient)
-        answer_text = answer.full_text
+
+        answer = await self.ask_freeform_question(
+            recipient, question_text, require_first_device
+        )
+        answer_text = answer
 
         # This checks to see if the answer is a valid candidate for float by replacing
         # the first comma or decimal point with a number to see if the resulting string .isnumeric()
@@ -1393,7 +1445,7 @@ class QuestionBot(PayBot):
             or answer_text.replace(",", "1", 1).isnumeric()
         ):
             # cancel if user replies with any of the terminal answers "stop, cancel, quit, etc. defined above"
-            if answer.full_text.lower() in self.TERMINAL_ANSWERS:
+            if answer.lower() in self.TERMINAL_ANSWERS:
                 return None
 
             # Check to see if the original question already specified wanting the answer as a decimal.
@@ -1404,7 +1456,7 @@ class QuestionBot(PayBot):
                 recipient, (question_text or "") + " (as a decimal, ie 1.01 or 2,02)"
             )
         if answer_text:
-            return float(answer.full_text.replace(",", ".", 1))
+            return float(answer.replace(",", ".", 1))
         return None
 
     async def ask_intable_question(
@@ -1416,17 +1468,14 @@ class QuestionBot(PayBot):
         """Asks a question answered with an integer or whole number.
         Asks user clarifying questions if an invalid number is provided.
         Returns None if user says any of the terminal answers."""
-        if require_first_device:
-            self.requires_first_device[recipient] = True
-        if question_text:
-            await self.send_message(recipient, question_text)
-        answer_future = self.pending_answers[recipient] = asyncio.Future()
-        answer = await answer_future
-        self.pending_answers.pop(recipient)
-        if answer.full_text and not answer.full_text.isnumeric():
+
+        answer = await self.ask_freeform_question(
+            recipient, question_text, require_first_device
+        )
+        if answer and not answer.isnumeric():
 
             # cancel if user replies with any of the terminal answers "stop, cancel, quit, etc. defined above"
-            if answer.full_text.lower() in self.TERMINAL_ANSWERS:
+            if answer.lower() in self.TERMINAL_ANSWERS:
                 return None
 
             # Check to see if the original question already specified wanting the answer as a decimal.
@@ -1437,8 +1486,8 @@ class QuestionBot(PayBot):
                 recipient,
                 (question_text or "") + " (as a whole number, ie '1' or '2000')",
             )
-        if answer.full_text:
-            return int(answer.full_text)
+        if answer:
+            return int(answer)
         return None
 
     async def ask_yesno_question(
@@ -1588,22 +1637,21 @@ class QuestionBot(PayBot):
         if len(lower_dict_options) != len(dict_options):
             raise ValueError("Need to ensure unique options when lower-cased!")
 
-        # send user the formatted question and await their response
-        await self.send_message(recipient, question_text + "\n" + options_text)
-        answer_future = self.pending_answers[recipient] = asyncio.Future()
-        answer = await answer_future
-        self.pending_answers.pop(recipient)
+        # send user the formatted question as a freeform question and process their response
+        answer = await self.ask_freeform_question(
+            recipient, question_text + "\n" + options_text, require_first_device
+        )
 
         # when there is a match
-        if answer.full_text and answer.full_text.lower() in lower_dict_options.keys():
+        if answer and answer.lower() in lower_dict_options.keys():
 
             # if confirmation is required ask for it as a yes/no question
             if require_confirmation:
                 confirmation_text = (
                     "You picked: \n"
-                    + answer.full_text
+                    + answer
                     + spacer
-                    + lower_dict_options[answer.full_text.lower()]
+                    + lower_dict_options[answer.lower()]
                     + "\n\nIs this correct? (yes/no)"
                 )
                 confirmation = await self.ask_yesno_question(
@@ -1620,12 +1668,9 @@ class QuestionBot(PayBot):
                         require_first_device,
                     )
         # if the answer given does not match a label
-        if (
-            answer.full_text
-            and not answer.full_text.lower() in lower_dict_options.keys()
-        ):
+        if answer and not answer.lower() in lower_dict_options.keys():
             # return none and exit if user types cancel, stop, exit, etc...
-            if answer.full_text.lower() in self.TERMINAL_ANSWERS:
+            if answer.lower() in self.TERMINAL_ANSWERS:
                 return None
             # otherwise reminder to type the label exactly as it appears and restate the question
             if "Please reply" not in question_text:
@@ -1641,7 +1686,7 @@ class QuestionBot(PayBot):
                 require_first_device,
             )
         # finally return the option that matches the answer, or if empty the answer itself
-        return lower_dict_options[answer.full_text.lower()] or answer.full_text
+        return lower_dict_options[answer.lower()] or answer
 
     async def ask_email_question(
         self,
@@ -1714,7 +1759,7 @@ class QuestionBot(PayBot):
     async def do_setup(self, msg: Message) -> str:
         if not utils.AUXIN:
             return "Can't set profile without auxin"
-        fields = {}
+        fields: dict[str, Optional[str]] = {}
         for field in ["given_name", "family_name", "about", "mood_emoji"]:
             resp = await self.ask_freeform_question(
                 msg.source, f"value for field {field}?"

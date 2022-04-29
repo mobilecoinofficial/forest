@@ -137,7 +137,13 @@ class AuxinMessage(Message):
         self.attachments: list[dict[str, str]] = msg.get("attachments", [])
         # "bodyRanges":[{"associatedValue":{"mentionUuid":"fc4457f0-c683-44fe-b887-fe3907d7762e"},"length":1,"start":0}] ... no groups anyway
         self.mentions = []
-        self.group = msg.get("group") or msg.get("groupV2") or ""
+        self.group = (
+            blob.get("group_id")
+            or msg.get("group")
+            or msg.get("groupV2")
+            or content.get("source", {}).get("typingMessage", {}).get("groupId")
+            or ""
+        )
         maybe_quote = msg.get("quote")
         self.address = blob.get("Address", {})
         self.quoted_text = "" if not maybe_quote else maybe_quote.get("text")
