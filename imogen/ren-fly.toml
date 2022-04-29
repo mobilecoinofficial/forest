@@ -6,8 +6,8 @@ app = "imogen-renaissance"
 kill_signal = "SIGINT"
 kill_timeout = 5
 [processes]
-app = "/usr/bin/python3.9 /app/imogen.py"
-squid = "squid -d 30 -N"
+#app = "/usr/bin/python3.9 /app/imogen.py"
+#squid = "squid -d 30 -N"
 
 [env]
 # imogen ren final FINAL (1)
@@ -28,13 +28,13 @@ LEDGER_NAME="imogen_ledger"
 [experimental]
   auto_rollback = false
 
-[deploy]
-  release_command = "squid -z"
+# [deploy]
+#   release_command = "squid -z"
 
 [[services]]
   http_checks = []
   internal_port = 8080
-  processes = ["app"]
+#  processes = ["app"]
   protocol = "tcp"
   script_checks = []
 
@@ -57,7 +57,7 @@ LEDGER_NAME="imogen_ledger"
     restart_limit = 6
     timeout = "5s"
 [[services]]
-  process = ["squid"]
+#  process = ["squid"]
   internal_port = 3128
   [[services.ports]]
     port = 3128
