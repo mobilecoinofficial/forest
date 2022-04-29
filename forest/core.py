@@ -266,7 +266,7 @@ class Signal:
                 logging.info(f"no {utils.SIGNAL} process")
         if utils.UPLOAD:
             await self.datastore.mark_freed()
-        await pghelp.close_pools()
+        await pghelp.pool.close()
         # this still deadlocks. see https://github.com/forestcontact/forest-draft/issues/10
         if autosave._memfs_process:
             executor = autosave._memfs_process._get_executor()
@@ -721,7 +721,7 @@ class Bot(Signal):
             if not self.seen_users:
                 continue
             try:
-                async with self.activity.pool.acquire() as conn:
+                async with pghelp.pool.acquire() as conn:
                     # executemany batches this into an atomic db query
                     await conn.executemany(
                         self.activity.queries["log"],
