@@ -30,6 +30,7 @@ from forest.core import (
     is_admin,
     requires_admin,
     run_bot,
+    rpc,
 )
 
 
@@ -219,31 +220,66 @@ class Imogen(GelatoBot):
         # }
 
     ban = ["+15795090727", "+13068051597"]
-    group_whitelist : list [str]= []
+    group_whitelist = [
+        "DwUevQ+ErcSvI2vFwwEy2IR2LXlsLBAKOHjqfe8TdGE=",
+        "YmgX+pNJKWQp6KgVPwI5ZoXim5X8iLiQkJxM08GdtPU=",
+        "gdA1XSX68c25ju39zrjHTO7EB5LLK+C448w3L+No9EU=",
+        "y46s4SUCS+i9nakiHvTOSdh4InWIpoeYndDFzzlYRkY=",
+        "5oMi7gxzinBL1gnRjRoB1qp2FhtrVA34+tleeIxV/6M=",
+        "kxKAXKi3xJxPJJ7Zdsdo5cbVqYrrT/50/Bk3OUXPSvU=",
+        "Jj77IPq4AxjA7IDUhXB943ssSX5dawXwxiPPjHu2Y1k=",
+        "wkBvUZWhIIGoOC27lpnpaYzl+fSwW6a/qGeXeq1wb1Q=",
+        "72Z8qDeqm2BB9dYRXPGNRT7YFQTcgYyhKBvX9zU7AgY=",
+        "IODISPud1SPMpBNv3bV11Rx1YZWY02Ikd3HSCVbEPtM=",
+        "0om6G+Yj9Kv0LH5Z0992pucLPXTk2qyIYPwBpjhbZO4=",
+        "2w469N6khbcoeAUlBpR91gHgyl2yj84guiyqZ5d84og=",
+    ]
 
     async def handle_message(self, message: Message) -> Response:
         if message.source in self.ban or message.uuid in self.ban:
             return None
-        
+
         if utils.get_secret("SAFE_MODE"):
             if message.group and message.group not in self.group_whitelist:
-                
-                ## leave group
-                self.admin(f"found myself running in a group I don't recognise. Leaving the group but if you'd like to add me use add_group {msg.group} to both add me to the group and add the group to the group whitelist")
-                pass
+                if not utils.AUXIN:
+                    await self.admin(
+                        f"found myself running in a group I don't recognise. Leaving the group but if you'd like to add me use whitelist_group {message.group} to both add  the group to my group whitelist, and try again"
+                    )
+                    await self.leave_group(message.group)
+                    return None
 
+                await self.admin(
+                    f"Oops, can't leave groups with Auxin. Staying in group: {message.group} but will not reply."
+                )
+                return None
         return await super().handle_message(message)
 
+    async def leave_group(self, group: str) -> None:
+        "leave a signal group"
+        await self.wait_for_response(req=rpc("quitGroup", {"group-id": group}))
+
     @requires_admin
-    async def do_get_group(self, msg:Message) -> None:
+    async def do_get_group(self, msg: Message) -> None:
+        """Gived admin the group ID"""
         await self.admin(msg.group)
         return None
 
     @requires_admin
-    async def do_gg(self, msg:Message) -> None:
-        """
+    async def do_gg(self, msg: Message) -> None:
+        """like get group but more discreet"""
         await self.do_get_group(msg)
         return None
+
+    @requires_admin
+    async def do_whitelist_group(self, msg: Message) -> Response:
+        """Adds a bot to a group and adds that group to the bot's whitelist"""
+        if msg.arg1:
+            self.group_whitelist.append(msg.arg1)
+            return (
+                f'Succesfully added group: "{msg.arg1}" to whitelist. Invite me again.'
+            )
+
+        return "You must provide a group ID."
 
     async def handle_reaction(self, msg: Message) -> Response:
         await super().handle_reaction(msg)
