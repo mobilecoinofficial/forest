@@ -58,7 +58,7 @@ from forest.message import AuxinMessage, Message, Reaction, StdioMessage
 try:
     import captcha
 except ImportError:
-    captcha = None
+    captcha = None  # type: ignore
 
 JSON = dict[str, Any]
 Response = Union[str, list, dict[str, str], None]
