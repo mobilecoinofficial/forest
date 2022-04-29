@@ -1,8 +1,8 @@
 import json
 import logging
 import time
-import mc_util
 import asyncio
+import mc_util
 from forest import utils
 from forest.core import Message, run_bot, QuestionBot, Response
 
@@ -34,7 +34,7 @@ class GelatoBot(QuestionBot):
 
         if not final_confirmation:
             return await self.cancel_fulfillment(msg)
-        balance = await self.get_user_pmob_balance(msg.source)
+        balance = mc_util.pmob2mob(await self.get_user_pmob_balance(msg.source))
         if balance < self.price:  # Images go for 10 MOB
             return await self.send_message(
                 msg.uuid,
@@ -91,7 +91,7 @@ class GelatoBot(QuestionBot):
         if not msg.quote:
             return "Quote a url to use this command"
 
-        balance = await self.get_user_pmob_balance(msg.source)
+        balance = mc_util.pmob2mob(await self.get_user_pmob_balance(msg.source))
         if balance < self.price:  # Images go for 8 MOB
             return "You need 10 MOB of Imogen Balance to buy a print. Send Imogen a payment and try again."
 
@@ -102,8 +102,7 @@ class GelatoBot(QuestionBot):
     async def cancel_fulfillment(self, msg: Message) -> str:
         return await self.send_message(msg.uuid, "Ok, cancelling your oder.")
 
-    async def fulfillment(self, msg: Message) -> str:
-
+    async def fulfillment(self, msg: Message) -> Response:
         ## TODO if quoting regular Imoge, upsample it instead and tell user how to order from that.
         # if msg.quoted_text:
         #     self.do_upsample()
@@ -143,9 +142,10 @@ class GelatoBot(QuestionBot):
             "email": user_email,
             "phone": msg.source,
         }
+        order_id = msg.uuid + str(int(time.time()))
         current_quote_data = {
             "order": {
-                "orderReferenceId": msg.uuid + str(int(time.time())),
+                "orderReferenceId": order_id,
                 "customerReferenceId": msg.uuid,
                 "currencyIsoCode": "USD",
             },
@@ -160,7 +160,10 @@ class GelatoBot(QuestionBot):
             "recipient": recipient,
         }
         logging.info(current_quote_data)
-        return await self.post_order(current_quote_data, msg)
+        resp = await self.post_order(current_quote_data, msg)
+        if resp == "Promise Uid is accepted for processing":
+            return f"Order is being processed. Your order id {order_id}"
+        return f"Something went wrong: {resp}"
 
 
 if __name__ == "__main__":

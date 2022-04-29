@@ -42,6 +42,7 @@ class InsertedPrompt:
     group: str
     params: dict
     url: str = utils.URL
+    selector: str = ""
 
     def as_args(self) -> list:
         return [
@@ -51,6 +52,7 @@ class InsertedPrompt:
             self.group,
             json.dumps(self.params),
             self.url,
+            self.selector,
         ]
 
 
@@ -79,7 +81,7 @@ QueueExpressions = pghelp.PGExpressions(
         sent_ts BIGINT DEFAULT null,
         errors INTEGER DEFAULT 0,
         selector TEXT);""",
-    enqueue_any="SELECT enqueue_prompt(prompt:=$1, _author:=$2, signal_ts:=$3, group_id:=$4, params:=$5, url:=$6)",
+    enqueue_any="SELECT enqueue_prompt(prompt:=$1, _author:=$2, signal_ts:=$3, group_id:=$4, params:=$5, url:=$6, selector:=$7)",
     enqueue_free="SELECT enqueue_free_prompt(prompt:=$1, _author:=$2, signal_ts:=$3, group_id:=$4, params:=$5, url:=$6)",
     enqueue_paid="SELECT enqueue_paid_prompt(prompt:=$1, author:=$2, signal_ts:=$3, group_id:=$4, params:=$5, url:=$6)",
     length="SELECT count(id) AS len FROM {self.table} WHERE status='pending' OR status='assigned';",
@@ -493,22 +495,25 @@ class Imogen(GelatoBot):
 
     async def do_upsample(self, msg: Message) -> str:
         "quote an image I sent or a prompt you sent to upsample it x4"
-        if not msg.quote:
-            return "quote an image I sent or a prompt you sent to use this command"
-        ret = await self.queue.execute(
-            "SELECT filepath FROM prompt_queue WHERE sent_ts=$1 OR signal_ts=$1",
-            msg.quote.ts,
-        )
-        logging.info(ret)
-        if not ret or not (filepath := ret[0].get("filepath")):
-            return "sorry, I don't have that image saved for upsampling right now"
-        slug = (
-            filepath.removeprefix("output/")
-            .removesuffix("png")
-            .rstrip(".")
-            .removesuffix("/progress")
-        )
-        ret = await self.queue.execute(
+        if msg.text.startswith("http"):
+            slug = msg.text.split(" ")[0]
+        else:
+            if not msg.quote:
+                return "quote an image I sent or a prompt you sent to use this command"
+            ret = await self.queue.execute(
+                "SELECT filepath FROM prompt_queue WHERE sent_ts=$1 OR signal_ts=$1",
+                msg.quote.ts,
+            )
+            logging.info(ret)
+            if not ret or not (filepath := ret[0].get("filepath")):
+                return "sorry, I don't have that image saved for upsampling right now"
+            slug = (
+                filepath.removeprefix("output/")
+                .removesuffix("png")
+                .rstrip(".")
+                .removesuffix("/progress")
+            )
+        enqueue_ret = await self.queue.execute(
             """INSERT INTO prompt_queue (prompt, author, group_id, signal_ts, url, selector, paid)
             VALUES ($1, $2, $3, $4, $5, 'ESRGAN', true)
             RETURNING (SELECT count(*) + 1 FROM prompt_queue WHERE
@@ -519,8 +524,10 @@ class Imogen(GelatoBot):
             msg.timestamp,
             utils.URL,
         )
+        if not enqueue_ret:
+            return "something went wrong"
         await self.ensure_unique_worker("esrgan-job.yaml")
-        return f"you are #{ret[0]['queue_length']} in line"
+        return f"you are #{enqueue_ret[0]['queue_length']} in line"
 
     do_enhance = hide(do_upsample)
 
@@ -548,15 +555,12 @@ class Imogen(GelatoBot):
         return "sorry, that didn't work"
 
     async def enqueue_prompt(
-        self,
-        msg: Message,
-        params: dict,
-        attachments: str = "",
+        self, msg: Message, params: dict, attachments: str = "", selector: str = ""
     ) -> str:
         if attachments != "target" and not msg.text.strip():
             return "a prompt is required"
         logging.info(msg.full_text)
-        if "porn" in msg.text:
+        if any(bad in msg.text for bad in ["porn", "rape", "orgy", "sex"]):
             return "no"
         if attachments == "init":
             params.update(await self.upload_attachment(msg))
@@ -570,6 +574,7 @@ class Imogen(GelatoBot):
             signal_ts=msg.timestamp,
             group=msg.group or "",
             params=params,
+            selector=selector,
         )
         result = (await self.queue.enqueue_any(*prompt.as_args()))[0].get(
             "enqueue_prompt"
@@ -598,8 +603,8 @@ class Imogen(GelatoBot):
     async def do_imagine(self, msg: Message) -> str:
         """
         /imagine [prompt]
-        Generates an image based on your prompt.
-        Request is handled in the free queue, every free request is addressed and generated sequentially.
+         Generates an image based on your prompt.
+         Request is handled in the free queue, every free request is addressed and generated sequentially.
         """
         return await self.enqueue_prompt(msg, {}, attachments="init")
 
@@ -692,25 +697,28 @@ class Imogen(GelatoBot):
         if not msg.text.strip():
             return "a prompt is required"
         logging.info(msg.full_text)
-        params = {} if msg.group else {"nopost": True}
-        ret = await self.queue.execute(
-            """INSERT INTO prompt_queue (prompt, author, group_id, signal_ts, url, params, selector, paid)
-            VALUES ($1, $2, $3, $4, $5, $6, 'diffuse', false)
-            RETURNING (SELECT count(*) + 1 FROM prompt_queue WHERE
-            selector='diffuse' AND (status='pending' OR status='assigned')) as queue_length;""",
-            msg.text,
-            msg.source,
-            msg.group,
-            msg.timestamp,
-            utils.URL,
-            json.dumps(params),
+        if any(bad in msg.text for bad in ["porn", "rape", "orgy", "sex"]):
+            return "no"
+        params = {}
+        if not msg.group:
+            params["nopost"] = True
+        prompt = InsertedPrompt(
+            prompt=msg.text,
+            author=msg.source,
+            signal_ts=msg.timestamp,
+            group=msg.group or "",
+            params=params,
+            selector="diffuse",
         )
-        if not ret:
-            return "sorry, something wrong happened"
-        logging.info(ret)
+        result = (await self.queue.enqueue_any(*prompt.as_args()))[0].get(
+            "enqueue_prompt"
+        )
+        logging.info(result)
+        if not result.get("success"):
+            return dedent(messages["rate_limit"]).strip()
         worker_created = await self.ensure_unique_worker("diffuse.yaml")
         deets = " (started a new worker)" if worker_created else ""
-        return f"you are #{ret[0]['queue_length']} in the diffusion line{deets}"
+        return f"you are #{result['queue_length']} in the diffusion line{deets}"
 
     def make_prefix(prefix: str) -> Callable:  # type: ignore  # pylint: disable=no-self-argument
         async def wrapped(self: "Imogen", msg: Message) -> Response:
@@ -904,6 +912,11 @@ class Imogen(GelatoBot):
                 return f"couldn't parse {msg.arg1} as an amount"
         await self.mobster.ledger_manager.put_usd_tx(msg.source, -amount * 100, "tip")
         return f"thank you for tipping ${amount:.2f}"
+
+    @requires_admin
+    async def do_freebie(self, msg: Message) -> Response:
+        # amount and user to add a freebie memo
+        pass
 
     async def do_signalpay(self, msg: Message) -> Response:
         "Learn about sending payments on Signal"
