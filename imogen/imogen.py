@@ -443,7 +443,7 @@ class Imogen(GelatoBot):
             slug = msg.text.split(" ")[0]
         else:
             if not msg.quote:
-                return "quote an image I sent or a prompt you sent to use this command"
+                return "reply to (quote) an image I sent or a prompt you sent to use this command"
             ret = await self.queue.execute(
                 "SELECT filepath FROM prompt_queue WHERE sent_ts=$1 OR signal_ts=$1",
                 msg.quote.ts,
