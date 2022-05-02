@@ -266,11 +266,7 @@ class Imogen(GelatoBot):
         await self.admin(msg.group)
         return None
 
-    @requires_admin
-    async def do_gg(self, msg: Message) -> None:
-        """like get group but more discreet"""
-        await self.do_get_group(msg)
-        return None
+    do_gg = do_get_group
 
     @requires_admin
     async def do_whitelist_group(self, msg: Message) -> Response:
