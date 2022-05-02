@@ -88,8 +88,8 @@ class GelatoBot(QuestionBot):
 
     async def do_buy(self, msg: Message) -> str:
         """Buy a physical aluminum print of an Imogen Image. Reply to an image with "upsample" to upsample it, then reply to the upsampled image with buy to buy it"""
-        if not msg.quote:
-            return "Quote a url to use this command"
+        if not msg.quote or not msg.quote.startswith("http"):
+            return "Quote a url to use this command. Try responding to a generated image with 'upsample'"
 
         balance = mc_util.pmob2mob(await self.get_user_pmob_balance(msg.source))
         if balance < self.price:  # Images go for 8 MOB
