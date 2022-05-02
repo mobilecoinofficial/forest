@@ -12,7 +12,7 @@ spec:
       restartPolicy: Never
       containers:
       - name: diffuse
-        image: technillogue/latent-diffusion:0.0.14
+        image: technillogue/latent-diffusion:0.0.15
         # command: ["/usr/bin/sleep"]
         # args: ["1h"]
         resources:
