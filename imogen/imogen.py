@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from mimetypes import guess_extension
 from pathlib import Path
 from textwrap import dedent
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 import aioredis
 import openai
@@ -20,6 +20,7 @@ from gelato import GelatoBot
 
 import mc_util
 from forest import pghelp, utils
+from forest.pdictng import aPersistDict
 from forest.core import (
     Message,
     Response,
@@ -30,6 +31,7 @@ from forest.core import (
     is_admin,
     requires_admin,
     run_bot,
+    rpc,
 )
 
 
@@ -205,6 +207,10 @@ auto_messages = [
 
 class Imogen(GelatoBot):
     # pylint: disable=too-many-public-methods, no-self-use
+    def __init__(self, bot_number: Optional[str] = None) -> None:
+        self.group_whitelist: aPersistDict[bool] = aPersistDict("group_whitelist")
+        super().__init__(bot_number)
+
     async def start_process(self) -> None:
         self.queue = pghelp.PGInterface(
             query_strings=QueueExpressions,
@@ -225,7 +231,60 @@ class Imogen(GelatoBot):
     async def handle_message(self, message: Message) -> Response:
         if message.source in self.ban or message.uuid in self.ban:
             return None
+
+        if utils.get_secret("SAFE_MODE"):
+            if message.group and message.group not in await self.group_whitelist.keys():
+                if not utils.AUXIN:
+                    await self.admin(
+                        f"found myself running in a group I don't recognise. Leaving the group but if you'd like to add me use \nwhitelist_group {message.group} \nto both add  the group to my group whitelist, and try again"
+                    )
+                    await self.leave_group(message.group)
+                    return None
+
+                await self.admin(
+                    f"Oops, can't leave groups with Auxin. Staying in group: {message.group} but will not reply."
+                )
+                return None
         return await super().handle_message(message)
+
+    async def leave_group(self, group: str) -> None:
+        "leave a signal group"
+        await self.wait_for_response(req=rpc("quitGroup", {"group-id": group}))
+
+    @requires_admin
+    async def do_get_group(self, msg: Message) -> None:
+        """Gived admin the group ID"""
+        await self.admin(msg.group)
+        return None
+
+    do_gg = do_get_group
+
+    # wishlist: get group ids for user
+
+    @requires_admin
+    async def do_whitelist_group(self, msg: Message) -> Response:
+        """Adds a bot to a group and adds that group to the bot's whitelist"""
+        if msg.text:
+            for group in msg.text.split(","):
+                # ideally check if it's a group
+                await self.group_whitelist.set(group, True)
+            return f'Succesfully added group(s): "{msg.text}" to whitelist. Invite me again.'
+        return "You must provide a group ID."
+
+    @requires_admin
+    async def do_get_group_whitelist(self, _: Message) -> Response:
+        """Returns the list of groups this bot is allowed to be in whilst running in safe mode"""
+        group_list = await self.group_whitelist.keys()
+        return "\n".join(group_list)
+
+    @requires_admin
+    async def do_unwhitelist_group(self, msg: Message) -> Response:
+        """Remove arg1 from whitelisted group list, if no arg1."""
+        if msg.arg1 and msg.arg1 in await self.group_whitelist.keys():
+            await self.group_whitelist.remove(msg.arg1)
+            return f"group: {msg.arg1} removed from whitelist"
+
+        return "You must provide a group id to use this command."
 
     async def handle_reaction(self, msg: Message) -> Response:
         await super().handle_reaction(msg)
@@ -664,7 +723,7 @@ class Imogen(GelatoBot):
         deets = " (started a new worker)" if worker_created else ""
         return f"you are #{result['queue_length']} in the diffusion line{deets}"
 
-    def make_prefix(prefix: str) -> Callable:  # type: ignore  # pylint: disable=no-self-argument
+    def make_prefix(prefix: str, *_) -> Callable:  # type: ignore  # pylint: disable=no-self-argument
         async def wrapped(self: "Imogen", msg: Message) -> Response:
             if msg.group and msg.group == utils.get_secret("ADMIN_GROUP"):
                 return None
@@ -682,7 +741,7 @@ class Imogen(GelatoBot):
     do_synthwave = make_prefix("synthwave")
     del make_prefix  # shouldn't be used after class definition is over
 
-    def single_response(response: str) -> Callable:  # type: ignore # pylint: disable=no-self-argument
+    def single_response(response: str, *_) -> Callable:  # type: ignore # pylint: disable=no-self-argument
         async def wrapped(self: "Imogen", msg: Message) -> Response:
             del self, msg  # shush pylint
             return response

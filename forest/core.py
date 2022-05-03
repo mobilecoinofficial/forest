@@ -31,7 +31,6 @@ from pathlib import Path
 from textwrap import dedent
 from typing import (
     Any,
-    Awaitable,
     Callable,
     Coroutine,
     Mapping,
@@ -62,7 +61,7 @@ except ImportError:
 
 JSON = dict[str, Any]
 Response = Union[str, list, dict[str, str], None]
-AsyncFunc = Callable[..., Awaitable]
+AsyncFunc = Callable[..., Coroutine[Any, Any, Any]]
 Command = Callable[["Bot", Message], Coroutine[Any, Any, Response]]
 
 roundtrip_histogram = Histogram("roundtrip_h", "Roundtrip message response time")
