@@ -208,9 +208,9 @@ auto_messages = [
 class Imogen(GelatoBot):
     # pylint: disable=too-many-public-methods, no-self-use
     def __init__(self, bot_number: Optional[str] = None) -> None:
-        self.group_whitelist : aPersistDict[str] = aPersistDict("group_whitelist")
+        self.group_whitelist: aPersistDict[str] = aPersistDict("group_whitelist")
         super().__init__(bot_number)
-        
+
     async def start_process(self) -> None:
         self.queue = pghelp.PGInterface(
             query_strings=QueueExpressions,
@@ -227,7 +227,6 @@ class Imogen(GelatoBot):
         # }
 
     ban = ["+15795090727", "+13068051597"]
-    
 
     async def handle_message(self, message: Message) -> Response:
         if message.source in self.ban or message.uuid in self.ban:
@@ -272,22 +271,20 @@ class Imogen(GelatoBot):
         return "You must provide a group ID."
 
     @requires_admin
-    async def do_get_group_whitelist(self, msg:Message) -> Response:
+    async def do_get_group_whitelist(self, msg: Message) -> Response:
         """Returns the list of groups this bot is allowed to be in whilst running in safe mode"""
         group_list = await self.group_whitelist.keys()
-        
+
         return "\n".join(group_list)
-    
+
     @requires_admin
-    async def do_unwhitelist_group(self, msg:Message) -> Response:
+    async def do_unwhitelist_group(self, msg: Message) -> Response:
         """Remove arg1 from whitelisted group list, if no arg1."""
         if msg.arg1 and msg.arg1 in await self.group_whitelist.keys():
             await self.group_whitelist.remove(msg.arg1)
             return f"group: {msg.arg1} removed from whitelist"
 
         return "You must provide a group id to use this command."
-        
-
 
     async def handle_reaction(self, msg: Message) -> Response:
         await super().handle_reaction(msg)
