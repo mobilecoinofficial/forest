@@ -31,7 +31,6 @@ from pathlib import Path
 from textwrap import dedent
 from typing import (
     Any,
-    Awaitable,
     Callable,
     Coroutine,
     Mapping,

@@ -259,22 +259,22 @@ class Imogen(GelatoBot):
 
     do_gg = do_get_group
 
+    # wishlist: get group ids for user
+
     @requires_admin
     async def do_whitelist_group(self, msg: Message) -> Response:
         """Adds a bot to a group and adds that group to the bot's whitelist"""
-        if msg.arg1:
-            await self.group_whitelist.set(msg.arg1, True)
-            return (
-                f'Succesfully added group: "{msg.arg1}" to whitelist. Invite me again.'
-            )
-
+        if msg.text:
+            for group in msg.text.split(","):
+                # ideally check if it's a group
+                await self.group_whitelist.set(group, True)
+            return f'Succesfully added group(s): "{msg.text}" to whitelist. Invite me again.'
         return "You must provide a group ID."
 
     @requires_admin
-    async def do_get_group_whitelist(self, msg: Message) -> Response:
+    async def do_get_group_whitelist(self, _: Message) -> Response:
         """Returns the list of groups this bot is allowed to be in whilst running in safe mode"""
         group_list = await self.group_whitelist.keys()
-
         return "\n".join(group_list)
 
     @requires_admin
@@ -723,7 +723,7 @@ class Imogen(GelatoBot):
         deets = " (started a new worker)" if worker_created else ""
         return f"you are #{result['queue_length']} in the diffusion line{deets}"
 
-    def make_prefix(prefix: str) -> Callable:  # type: ignore  # pylint: disable=no-self-argument
+    def make_prefix(prefix: str, *_) -> Callable:  # type: ignore  # pylint: disable=no-self-argument
         async def wrapped(self: "Imogen", msg: Message) -> Response:
             if msg.group and msg.group == utils.get_secret("ADMIN_GROUP"):
                 return None
@@ -741,7 +741,7 @@ class Imogen(GelatoBot):
     do_synthwave = make_prefix("synthwave")
     del make_prefix  # shouldn't be used after class definition is over
 
-    def single_response(response: str) -> Callable:  # type: ignore # pylint: disable=no-self-argument
+    def single_response(response: str, *_) -> Callable:  # type: ignore # pylint: disable=no-self-argument
         async def wrapped(self: "Imogen", msg: Message) -> Response:
             del self, msg  # shush pylint
             return response
