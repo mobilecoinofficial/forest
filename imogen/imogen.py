@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from mimetypes import guess_extension
 from pathlib import Path
 from textwrap import dedent
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 import aioredis
 import openai
@@ -20,6 +20,7 @@ from gelato import GelatoBot
 
 import mc_util
 from forest import pghelp, utils
+from forest.pdictng import aPersistDict
 from forest.core import (
     Message,
     Response,
@@ -206,6 +207,10 @@ auto_messages = [
 
 class Imogen(GelatoBot):
     # pylint: disable=too-many-public-methods, no-self-use
+    def __init__(self, bot_number: Optional[str] = None) -> None:
+        self.group_whitelist : aPersistDict[str] = aPersistDict("group_whitelist")
+        super().__init__(bot_number)
+        
     async def start_process(self) -> None:
         self.queue = pghelp.PGInterface(
             query_strings=QueueExpressions,
@@ -222,30 +227,17 @@ class Imogen(GelatoBot):
         # }
 
     ban = ["+15795090727", "+13068051597"]
-    group_whitelist = [
-        "DwUevQ+ErcSvI2vFwwEy2IR2LXlsLBAKOHjqfe8TdGE=",
-        "YmgX+pNJKWQp6KgVPwI5ZoXim5X8iLiQkJxM08GdtPU=",
-        "gdA1XSX68c25ju39zrjHTO7EB5LLK+C448w3L+No9EU=",
-        "y46s4SUCS+i9nakiHvTOSdh4InWIpoeYndDFzzlYRkY=",
-        "5oMi7gxzinBL1gnRjRoB1qp2FhtrVA34+tleeIxV/6M=",
-        "kxKAXKi3xJxPJJ7Zdsdo5cbVqYrrT/50/Bk3OUXPSvU=",
-        "Jj77IPq4AxjA7IDUhXB943ssSX5dawXwxiPPjHu2Y1k=",
-        "wkBvUZWhIIGoOC27lpnpaYzl+fSwW6a/qGeXeq1wb1Q=",
-        "72Z8qDeqm2BB9dYRXPGNRT7YFQTcgYyhKBvX9zU7AgY=",
-        "IODISPud1SPMpBNv3bV11Rx1YZWY02Ikd3HSCVbEPtM=",
-        "0om6G+Yj9Kv0LH5Z0992pucLPXTk2qyIYPwBpjhbZO4=",
-        "2w469N6khbcoeAUlBpR91gHgyl2yj84guiyqZ5d84og=",
-    ]
+    
 
     async def handle_message(self, message: Message) -> Response:
         if message.source in self.ban or message.uuid in self.ban:
             return None
 
         if utils.get_secret("SAFE_MODE"):
-            if message.group and message.group not in self.group_whitelist:
+            if message.group and message.group not in await self.group_whitelist.keys():
                 if not utils.AUXIN:
                     await self.admin(
-                        f"found myself running in a group I don't recognise. Leaving the group but if you'd like to add me use whitelist_group {message.group} to both add  the group to my group whitelist, and try again"
+                        f"found myself running in a group I don't recognise. Leaving the group but if you'd like to add me use \nwhitelist_group {message.group} \nto both add  the group to my group whitelist, and try again"
                     )
                     await self.leave_group(message.group)
                     return None
@@ -272,12 +264,30 @@ class Imogen(GelatoBot):
     async def do_whitelist_group(self, msg: Message) -> Response:
         """Adds a bot to a group and adds that group to the bot's whitelist"""
         if msg.arg1:
-            self.group_whitelist.append(msg.arg1)
+            await self.group_whitelist.set(msg.arg1, True)
             return (
                 f'Succesfully added group: "{msg.arg1}" to whitelist. Invite me again.'
             )
 
         return "You must provide a group ID."
+
+    @requires_admin
+    async def do_get_group_whitelist(self, msg:Message) -> Response:
+        """Returns the list of groups this bot is allowed to be in whilst running in safe mode"""
+        group_list = await self.group_whitelist.keys()
+        
+        return "\n".join(group_list)
+    
+    @requires_admin
+    async def do_unwhitelist_group(self, msg:Message) -> Response:
+        """Remove arg1 from whitelisted group list, if no arg1."""
+        if msg.arg1 and msg.arg1 in await self.group_whitelist.keys():
+            await self.group_whitelist.remove(msg.arg1)
+            return f"group: {msg.arg1} removed from whitelist"
+
+        return "You must provide a group id to use this command."
+        
+
 
     async def handle_reaction(self, msg: Message) -> Response:
         await super().handle_reaction(msg)
