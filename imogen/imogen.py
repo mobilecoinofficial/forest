@@ -208,7 +208,7 @@ auto_messages = [
 class Imogen(GelatoBot):
     # pylint: disable=too-many-public-methods, no-self-use
     def __init__(self, bot_number: Optional[str] = None) -> None:
-        self.group_whitelist: aPersistDict[str] = aPersistDict("group_whitelist")
+        self.group_whitelist: aPersistDict[bool] = aPersistDict("group_whitelist")
         super().__init__(bot_number)
 
     async def start_process(self) -> None:
