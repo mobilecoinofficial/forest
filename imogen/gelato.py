@@ -88,7 +88,7 @@ class GelatoBot(QuestionBot):
 
     async def do_buy(self, msg: Message) -> str:
         """Buy a physical aluminum print of an Imogen Image. Reply to an image with "upsample" to upsample it, then reply to the upsampled image with buy to buy it"""
-        if not msg.quote or not msg.quote.startswith("http"):
+        if not msg.quoted_text or not msg.quoted_text.strip().startswith("http"):
             return "Quote a url to use this command. Try responding to a generated image with 'upsample'"
 
         balance = mc_util.pmob2mob(await self.get_user_pmob_balance(msg.source))
@@ -100,14 +100,14 @@ class GelatoBot(QuestionBot):
             return "DMing you to complete your transaction"
 
     async def cancel_fulfillment(self, msg: Message) -> str:
-        return await self.send_message(msg.uuid, "Ok, cancelling your oder.")
+        return await self.send_message(msg.uuid, "Ok, cancelling your order.")
 
     async def fulfillment(self, msg: Message) -> Response:
         ## TODO if quoting regular Imoge, upsample it instead and tell user how to order from that.
         # if msg.quoted_text:
         #     self.do_upsample()
         #     return "You need an upsample image to "
-        image = msg.quoted_text.split()[0]
+        image = msg.quoted_text.strip().split()[0]
         user = msg.uuid
         # delivery_name = (await self.get_displayname(msg.uuid)).split("_")[0]
         # if not await self.ask_yesno_question(
