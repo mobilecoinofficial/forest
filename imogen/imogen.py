@@ -81,6 +81,7 @@ QueueExpressions = pghelp.PGExpressions(
         url TEXT DEFAULT 'https://imogen-renaissance.fly.dev/',
         sent_ts BIGINT DEFAULT null,
         errors INTEGER DEFAULT 0,
+        tweet_id TEXT,
         selector TEXT);""",
     enqueue_any="SELECT enqueue_prompt(prompt:=$1, _author:=$2, signal_ts:=$3, group_id:=$4, params:=$5, url:=$6, selector:=$7)",
     enqueue_free="SELECT enqueue_free_prompt(prompt:=$1, _author:=$2, signal_ts:=$3, group_id:=$4, params:=$5, url:=$6)",
