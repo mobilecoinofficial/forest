@@ -135,7 +135,7 @@ class Imogen(Bot):
             # asyncio.create_task(really_start_worker())
         return resp
 
-    def make_prefix(prefix: str) -> Callable:  # type: ignore # pylint: disable=no-self-argument
+    def make_prefix(prefix: str, *_) -> Callable:  # type: ignore # pylint: disable=no-self-argument
         async def wrapped(self: "Imogen", msg: Message) -> str:
             msg.text = f"{prefix} {msg.text}"
             return await self.do_imagine(msg)
