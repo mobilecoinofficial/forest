@@ -1,11 +1,12 @@
-app = "charity-fc-alpha"
+app = "charity-mock"
 kill_signal = "SIGINT"
 kill_timeout = 5
 
 [env]
-LOGLEVEL="ERROR"
-RUST_LOG="WARN"
-RUST_BACKTRACE="full"
+  LOGLEVEL="ERROR"
+  RUST_LOG="WARN"
+  RUST_BACKTRACE="full"
+  SIGNAL="signal-cli"
 
 [mounts]
   destination = "/app/data"
@@ -16,8 +17,8 @@ RUST_BACKTRACE="full"
   auto_rollback = false
 
 [metrics]
-port = 8080
-path = "/metrics"
+  port = 8080
+  path = "/metrics"
 
 [[services]]
   internal_port = 8080

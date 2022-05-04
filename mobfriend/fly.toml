@@ -6,7 +6,11 @@ kill_timeout = 5
 strategy = "immediate"
 
 [env]
-BOT_NUMBER="+12232222922"
+  BOT_NUMBER="+12232222922"
+  RUST_BACKTRACE=1
+  RUST_LOG="DEBUG"
+  DOWNLOAD=1
+  SIGNAL="signal-cli"
 
 [mounts]
   destination = "/app/data"
