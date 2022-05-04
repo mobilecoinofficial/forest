@@ -38,10 +38,10 @@ class Echopay(PayBot):
 
         # This will set the bot's Signal profile, replace avatar.png to give your bot a custom avatar
         await self.set_profile_auxin(
-            given_name="PaymeBot",
+            given_name="Echopay",
             family_name="",
             payment_address=signal_address,
-            profile_path="avatar.png",
+            # profile_path="avatar.png",
         )
 
     async def do_payme(self, message: Message) -> Response:
@@ -55,6 +55,12 @@ class Echopay(PayBot):
         # and msg.arg1 is the next word after that. In "payme please" please is msg.arg1
 
         if message.arg1 == password:
+            payment_status = await self.send_payment(
+                message.source,
+                amount_picomob,
+                confirm_tx_timeout=10,
+                receipt_message="",
+            )
             # This check verifies that the payment succeeded.
             if getattr(payment_status, "status", "") == "tx_status_succeeded":
                 return f"Sent you a payment for {str(amount_mob)} MOB"
@@ -103,10 +109,21 @@ class Echopay(PayBot):
         # amounts are received in picoMob, convert to Mob for readability
         amount_mob = self.to_mob(amount_pmob)
 
-        if amount_mob > 0.002:
-            return f"Wow! Thank you for your payment of {str(amount_mob)} MOB"
+        amount_to_return = amount_pmob - FEE_PMOB
 
-        return "Thanks I guess"
+        if amount_to_return < 0:
+            return f"Thank you for your payment of {str(amount_mob)} MOB. This payment is for less than the Network Fee (0.0004 MOB), so I can't return it to you."
+
+        payment_status = await self.send_payment(
+            msg.source,
+            amount_to_return,
+            confirm_tx_timeout=10,
+            receipt_message="",
+        )
+        if getattr(payment_status, "status", "") == "tx_status_succeeded":
+            return f"Thank you for your payment of {str(amount_mob)} MOB. Here's your money back, minus the network fee, {str(self.to_mob(amount_to_return))} MOB."
+
+        return "Couldn't return your payment for some reason. Please contact administrator for assistance."
 
 
 if __name__ == "__main__":

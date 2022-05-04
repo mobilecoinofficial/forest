@@ -1,3 +1,24 @@
+## 1.2.10
+
+- singleton pool fixed
+- new auxin content format
+- check ROOT_DIR secret
+- auxin supports group now (sorta)
+- refactor questionbot to support asking in groups
+
+## 1.2.9.1
+
+- remove thank you message in handle_payment
+- echopay readme
+- check if there's enough MOB for `split_txos_slow`
+- better attachment downloading
+
+## 1.2.9
+
+* better test coverage for question bots (#181)
+* add `get_pmob_balance`, autocreate tables (#193)
+* better ergonomics for setting up paybots (#197)
+
 ## 1.2.8
 
 - bump pdict-ng docs (#183)

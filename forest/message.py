@@ -137,7 +137,13 @@ class AuxinMessage(Message):
         self.attachments: list[dict[str, str]] = msg.get("attachments", [])
         # "bodyRanges":[{"associatedValue":{"mentionUuid":"fc4457f0-c683-44fe-b887-fe3907d7762e"},"length":1,"start":0}] ... no groups anyway
         self.mentions = []
-        self.group = blob.get("group_id") or ""
+        self.group = (
+            blob.get("group_id")
+            or msg.get("group")
+            or msg.get("groupV2")
+            or content.get("source", {}).get("typingMessage", {}).get("groupId")
+            or ""
+        )
         maybe_quote = msg.get("quote")
         self.address = blob.get("Address", {})
         self.quoted_text = "" if not maybe_quote else maybe_quote.get("text")
@@ -217,7 +223,7 @@ class StdioMessage(Message):
         # msg data
         msg = envelope.get("dataMessage", {})
         # "attachments":[{"contentType":"image/png","filename":"image.png","id":"1484072582431702699","size":2496}]}
-        self.attachments: list[dict[str, str]] = msg.get("attachments")
+        self.attachments: list[dict[str, str]] = msg.get("attachments", [])
         # "mentions":[{"name":"+447927948360","number":"+447927948360","uuid":"fc4457f0-c683-44fe-b887-fe3907d7762e","start":0,"length":1}
         self.mentions = msg.get("mentions") or []
         self.full_text = self.text = msg.get("message", "")

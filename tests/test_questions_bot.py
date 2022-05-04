@@ -10,13 +10,14 @@ os.environ["ENV"] = "test"
 
 from forest.core import Message, run_bot, Response
 from forest import core
-from tests.mockbot import MockBot, Tree
+from tests.mockbot import MockBot, Tree, QuestionBot
 
 # Sample bot number alice
 BOT_NUMBER = "+11111111111"
 USER_NUMBER = "+22222222222"
 
 
+# class TestBot(QuestionBot):
 class TestBot(MockBot):
     """Bot that has tests for every type of question"""
 
@@ -25,7 +26,9 @@ class TestBot(MockBot):
     async def do_test_ask_yesno_question(self, message: Message) -> Response:
         """Asks a sample Yes or No question"""
 
-        if await self.ask_yesno_question(message.source, "Do you like faeries?"):
+        if await self.ask_yesno_question(
+            (message.uuid, message.group), "Do you like faeries?"
+        ):
             return "That's cool, me too!"
         return "Aww :c"
 
@@ -38,7 +41,10 @@ class TestBot(MockBot):
         options = ["Deer", "Foxes", "Faeries", "Crows"]
 
         choice = await self.ask_multiple_choice_question(
-            message.source, question_text, options, require_confirmation=False
+            (message.uuid, message.group),
+            question_text,
+            options,
+            require_confirmation=False,
         )
         if choice and choice == "Faeries":
             return "Faeries are my favourite too c:"
@@ -57,7 +63,7 @@ class TestBot(MockBot):
         options = ["Deer", "Foxes", "Faeries", "Crows"]
 
         choice = await self.ask_multiple_choice_question(
-            message.source, question_text, options
+            (message.uuid, message.group), question_text, options
         )
         if choice and choice == "Faeries":
             return "Faeries are my favourite too c:"
@@ -76,7 +82,10 @@ class TestBot(MockBot):
         options = {"A": "Deer", "B": "Foxes", "⛧": "Faeries", "D": "Crows"}
 
         choice = await self.ask_multiple_choice_question(
-            message.source, question_text, options, require_confirmation=True
+            (message.uuid, message.group),
+            question_text,
+            options,
+            require_confirmation=True,
         )
         if choice and choice == "Faeries":
             return "Faeries are my favourite too c:"
@@ -95,7 +104,10 @@ class TestBot(MockBot):
         options = {"A": "Deer", "B": "Foxes", "⛧": "Faeries", "D": "Crows"}
 
         choice = await self.ask_multiple_choice_question(
-            message.source, question_text, options, require_confirmation=False
+            (message.uuid, message.group),
+            question_text,
+            options,
+            require_confirmation=False,
         )
         if choice and choice == "Faeries":
             return "Faeries are my favourite too c:"
@@ -112,7 +124,10 @@ class TestBot(MockBot):
         options = {"S": "", "M": "", "L": "", "XL": "", "XXL": ""}
 
         choice = await self.ask_multiple_choice_question(
-            message.source, question_text, options, require_confirmation=True
+            (message.uuid, message.group),
+            question_text,
+            options,
+            require_confirmation=True,
         )
         if choice:
             return choice
@@ -127,7 +142,10 @@ class TestBot(MockBot):
         options = {"S": "", "M": "M", "L": "", "XL": "", "XXL": ""}
 
         choice = await self.ask_multiple_choice_question(
-            message.source, question_text, options, require_confirmation=True
+            (message.uuid, message.group),
+            question_text,
+            options,
+            require_confirmation=True,
         )
         if choice:
             return choice
@@ -138,7 +156,7 @@ class TestBot(MockBot):
     ) -> Response:
         """Asks a sample address question"""
 
-        address = await self.ask_address_question(message.source)
+        address = await self.ask_address_question((message.uuid, message.group))
 
         if address:
             return address
@@ -150,7 +168,7 @@ class TestBot(MockBot):
         """Asks a sample address question"""
 
         address = await self.ask_address_question(
-            message.source, require_confirmation=True
+            (message.uuid, message.group), require_confirmation=True
         )
 
         if address:
@@ -161,7 +179,7 @@ class TestBot(MockBot):
         """Asks a sample freeform question"""
 
         answer = await self.ask_freeform_question(
-            message.source, "What's your favourite tree?"
+            (message.uuid, message.group), "What's your favourite tree?"
         )
 
         if answer:
@@ -178,7 +196,7 @@ async def bot():
     bot.exiting = True
     bot.handle_messages_task.cancel()
     await bot.client_session.close()
-    await core.pghelp.close_pools()
+    await core.pghelp.pool.close()
 
 
 @pytest.mark.asyncio

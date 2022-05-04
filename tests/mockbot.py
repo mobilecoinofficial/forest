@@ -6,6 +6,8 @@ from forest.core import Message, QuestionBot
 # Sample bot number alice
 BOT_NUMBER = "+11111111111"
 USER_NUMBER = "+22222222222"
+USER_UUID = "11111111-1111-1111-1111-111111111111"
+
 
 os.environ["ENV"] = "test"
 
@@ -17,7 +19,8 @@ class MockMessage(Message):
         self.text = text
         self.full_text = text
         self.source = USER_NUMBER
-        self.uuid = "cf3d7d34-2dcd-4fcd-b193-cbc6a666758b"
+        self.uuid = USER_UUID
+        self.group = ""
         self.mentions: list[dict[str, str]] = []
         super().__init__({})
 

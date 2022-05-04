@@ -68,7 +68,7 @@ async def bot():
     bot.exiting = True
     bot.handle_messages_task.cancel()
     await bot.client_session.close()
-    await core.pghelp.close_pools()
+    await core.pghelp.pool.close()
 
 
 @pytest.mark.asyncio
@@ -101,7 +101,6 @@ async def test_commands(bot) -> None:
 @pytest.mark.asyncio
 async def test_questions(bot) -> None:
     """Tests the various questions from questionbot class"""
-
     # Enable Magic allows for mistyped commands
     os.environ["ENABLE_MAGIC"] = "1"
     # the issue here is that we need to send "yes" *after* the question has been asked
@@ -118,6 +117,18 @@ async def test_questions(bot) -> None:
     )
     await bot.send_input("Birch")
     assert await answer == "Birch"
+
+    answer = asyncio.create_task(
+        bot.ask_intable_question(USER_NUMBER, "How many fingers am I holding up?")
+    )
+    await bot.send_input("7")
+    assert await answer == 7
+
+    answer = asyncio.create_task(
+        bot.ask_floatable_question(USER_NUMBER, "How much is your life worth stranger?")
+    )
+    await bot.send_input("7.99")
+    assert await answer == 7.99
 
     answer = asyncio.create_task(
         bot.ask_freeform_question(USER_NUMBER, "What's your favourite tree?")
