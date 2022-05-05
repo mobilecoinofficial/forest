@@ -160,7 +160,7 @@ class Mobster:
             return "insufficient MOB"
         while built < (target_quantity + 3):
             if len(utxos) < 1:
-                utxos = list(reversed(await self.get_utxos()))
+                utxos = list(reversed(await self.get_utxos()))  # type: ignore
             split_transaction = await self.req_(
                 "build_split_txo_transaction",
                 **dict(
