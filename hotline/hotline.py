@@ -671,7 +671,7 @@ class Hotline(DialogBot):  # pylint: disable=too-many-public-methods
                     "What phrase should be returned when the easter egg is revealed?",
                 )
             if maybe_old_message:
-                self.send_message(msg.uuid, f"replacing: {maybe_old_message}")
+                await self.send_message(msg.uuid, f"replacing: {maybe_old_message}")
                 await self.easter_eggs.set(
                     param,
                     f"{value} - updated by {await self.get_displayname(msg.uuid)}",
