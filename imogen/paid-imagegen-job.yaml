@@ -12,7 +12,7 @@ spec:
       restartPolicy: Never
       containers:
       - name: imogegen
-        image: technillogue/imagegen:1.2.11
+        image: technillogue/imagegen:1.2.12.1
         resources:
           limits:
             cpu: 3
@@ -41,8 +41,8 @@ spec:
                 key: TWITTER_CREDS
           - name: EXIT # exit when fetching prompt fails on queue empty
             value: "true"
-          - name: EXIT_ON_LOAD # exit after finishing a prompt if queue low
-            value: "true"
+          # - name: EXIT_ON_LOAD # exit after finishing a prompt if queue low
+          #   value: "true"
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
