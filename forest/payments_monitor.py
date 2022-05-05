@@ -98,6 +98,7 @@ class Mobster:
         self.account_id: Optional[str] = None
         logging.info("full-service url: %s", url)
         self.url = url
+        self.client_session = aiohttp.ClientSession()
 
     async def req_(self, method: str, **params: Any) -> dict:
         logging.info("full-service request: %s", method)
@@ -196,7 +197,7 @@ class Mobster:
             return self.rate_cache[1]
         try:
             url = "https://big.one/api/xn/v1/asset_pairs/8e900cb1-6331-4fe7-853c-d678ba136b2f"
-            last_val = await aiohttp.ClientSession().get(url)
+            last_val = await self.client_session.get(url)
             resp_json = await last_val.json()
             mob_rate = float(resp_json.get("data").get("ticker").get("close"))
         except (
@@ -210,6 +211,12 @@ class Mobster:
             mob_rate = 14
         self.rate_cache = (hour, mob_rate)
         return mob_rate
+
+    async def get_historical_rate(self, timestamp: float) -> str:
+        async with self.client_session.get(
+            f"https://ftx.com/api/markets/MOB/USD/candles?resolution=300&end_time={timestamp}"
+        ) as resp:
+            return (await resp.json()).get("result")[-1].get("close")
 
     async def pmob2usd(self, pmob: int) -> float:
         "takes picoMOB, returns USD"

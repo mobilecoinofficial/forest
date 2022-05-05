@@ -1,24 +1,33 @@
 #!/usr/bin/python3.9
 # Copyright (c) 2021 MobileCoin Inc.
 # Copyright (c) 2021 The Forest Team
-
+import asyncio
+import datetime
 import json
+import logging
 import time
 from decimal import Decimal
+from typing import Any, Callable, Coroutine
 
-from forest.core import (
-    Message,
-    Response,
-    hide,
-    requires_admin,
-    get_uid,
-    run_bot,
-)
-from forest.pdictng import aPersistDict, aPersistDictOfInts, aPersistDictOfLists
+from forest.core import Message, Response, get_uid, requires_admin, run_bot
 from forest.extra import DialogBot
+from forest.pdictng import aPersistDict, aPersistDictOfInts, aPersistDictOfLists
 from mc_util import pmob2mob
 
 FEE = int(1e12 * 0.0004)
+
+
+async def midnight_job(fn: Callable[[], Coroutine[Any, Any, None]]) -> None:
+    while 1:
+        now = datetime.datetime.now()
+        tomorrow = now + datetime.timedelta(days=1)
+        midnight = datetime.time.min
+        seconds_until_midnight = datetime.datetime.combine(tomorrow, midnight) - now
+        logging.info(
+            "sleeping %s seconds until midnight report", seconds_until_midnight
+        )
+        await asyncio.sleep(seconds_until_midnight.total_seconds())
+        await fn()
 
 
 class Charity(DialogBot):
@@ -37,7 +46,25 @@ class Charity(DialogBot):
             for attr in dir(self)
             if isinstance(self.__getattribute__(attr), aPersistDict)
         }
+        asyncio.create_task(midnight_job(self.report))
         super().__init__()
+
+    async def report(self) -> None:
+        report_timestamp = datetime.datetime.utcnow().isoformat()
+        header = "Donation UID, User UID, Timestamp, Amount MOB, Charity, FTXUSDPriceAtTimestamp"
+        body = [
+            f"{k}, {v}, {await self.mobster.get_historical_rate(v.split(', ')[1])}"
+            for (k, v) in self.donations.dict_.items()
+        ]
+        report_output = "\n".join([header, "\n"] + body)
+        report_filename = f"/tmp/HotlineDonations_{report_timestamp}.csv"
+        open(report_filename, "w").write(report_output)
+        await self.admin("Report Built", attachments=[report_filename])
+
+    @requires_admin
+    async def do_report(self) -> None:
+        """Generate donation report now as opposed to waiting till midnight"""
+        await self.report()
 
     @requires_admin
     async def do_dump(self, _: Message) -> Response:
