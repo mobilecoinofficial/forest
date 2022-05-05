@@ -3,10 +3,10 @@ kill_signal = "SIGINT"
 kill_timeout = 5
 
 [env]
-  LOGLEVEL="ERROR"
-  RUST_LOG="WARN"
+  LOGLEVEL="DEBUG"
+  RUST_LOG="DEBUG"
   RUST_BACKTRACE="full"
-  SIGNAL="signal-cli"
+#  SIGNAL="signal-cli"
 
 [mounts]
   destination = "/app/data"
