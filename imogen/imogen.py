@@ -210,6 +210,7 @@ class Imogen(GelatoBot):
     # pylint: disable=too-many-public-methods, no-self-use
     def __init__(self, bot_number: Optional[str] = None) -> None:
         self.group_whitelist: aPersistDict[bool] = aPersistDict("group_whitelist")
+        self.chaos_groups: aPersistDict[bool] = aPersistDict("chaos_group")
         super().__init__(bot_number)
 
     async def start_process(self) -> None:
@@ -229,6 +230,12 @@ class Imogen(GelatoBot):
 
     ban = ["+15795090727", "+13068051597"]
 
+    async def get_score(self, text: str) -> float:
+        resp = await self.client_session.get(
+            "https://good-post-detector.fly.dev/good", data=text
+        )
+        return float(await resp.text())
+
     async def handle_message(self, message: Message) -> Response:
         if message.source in self.ban or message.uuid in self.ban:
             return None
@@ -246,6 +253,17 @@ class Imogen(GelatoBot):
                     f"Oops, can't leave groups with Auxin. Staying in group: {message.group} but will not reply."
                 )
                 return None
+
+        if message.group:
+            logging.info(
+                "chaos enabled in group: %s", await self.chaos_groups.get(message.group)
+            )
+        if message.group and await self.chaos_groups.get(message.group):
+            score = await self.get_score(message.text)
+            logging.info("score: %s", score)
+            if score > 0.8:
+                await self.send_reaction(message, f"\N{fire}")
+
         return await super().handle_message(message)
 
     async def leave_group(self, group: str) -> None:
@@ -387,6 +405,9 @@ class Imogen(GelatoBot):
     @requires_admin
     async def do_bash(self, msg: Message) -> Response:
         return await get_output(msg.text)
+
+    async def do_score(self, msg: Message) -> Response:
+        return str(await self.get_score(msg.text))
 
     async def do_balance(self, msg: Message) -> Response:
         "returns your Imogen balance in MOB for priority requests, tips, and prints"
@@ -878,11 +899,20 @@ class Imogen(GelatoBot):
     async def do_exception(self, msg: Message) -> None:
         raise Exception("You asked for it~!")
 
+    @requires_admin
+    async def do_toggle_chaos(self, msg: Message) -> str:
+        if not msg.group:
+            return "use in a group"
+        current = await self.chaos_groups.get(msg.group, False)
+        await self.chaos_groups.set(msg.group, not current)
+        return f"{msg.group} now {not current}"
+
     async def default(self, message: Message) -> Response:
-        if message.full_text and message.full_text.startswith("/"):
-            message.full_text = message.full_text.removeprefix("/")
-            message.parse_text(message.full_text)
-            return await self.do_imagine(message)
+        # if message.full_text and message.full_text.startswith("/"):
+        #     message.full_text = message.full_text.removeprefix("/")
+        #     message.parse_text(message.full_text)
+        #     return await self.do_imagine(message)
+        logging.info("in default")
         return await super().default(message)
 
     @group_help_text(

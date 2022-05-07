@@ -86,7 +86,7 @@ class GelatoBot(QuestionBot):
             "postcode": bits["postal_code"],
         }
 
-    async def do_buy(self, msg: Message) -> str:
+    async def do_buy(self, msg: Message) -> Response:
         """Buy a physical aluminum print of an Imogen Image. Reply to an image with "upsample" to upsample it, then reply to the upsampled image with buy to buy it"""
         if not msg.quoted_text or not msg.quoted_text.strip().startswith("http"):
             return "Quote a url to use this command. Try responding to a generated image with 'upsample'"
@@ -98,6 +98,7 @@ class GelatoBot(QuestionBot):
         asyncio.create_task(self.fulfillment(msg))
         if msg.group:
             return "DMing you to complete your transaction"
+        return None
 
     async def cancel_fulfillment(self, msg: Message) -> str:
         return await self.send_message(msg.uuid, "Ok, cancelling your order.")

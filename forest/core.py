@@ -533,12 +533,12 @@ class Signal:
             "target-timestamp": target_msg.timestamp,
         }
         if target_msg.group:
-            react["group"] = target_msg.group
+            react["group-id"] = target_msg.group
         cmd = rpc(
             "sendReaction",
             param_dict=react,
             emoji=emoji,
-            recipient=target_msg.source,
+            recipient=None if target_msg.group else target_msg.source,
         )
         await self.outbox.put(cmd)
 
