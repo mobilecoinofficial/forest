@@ -11,3 +11,15 @@ imogen/forest/*
 imogen/mc_util/*
 *.png
 *.jpg
+.vscode
+imposter/forest
+imposter/mc_util
+imposter/Pipfile.lock
+imposter/personate
+imposter/.env
+imposter/poetry.lock
+imposter/.venv
+imposter/attachments
+imposter/stickers
+imposter/bots/
+imposter/keys

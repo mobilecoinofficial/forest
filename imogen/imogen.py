@@ -262,7 +262,7 @@ class Imogen(GelatoBot):
             score = await self.get_score(message.text)
             logging.info("score: %s", score)
             if score > 0.8:
-                await self.send_reaction(message, f"\N{fire}")
+                await self.send_reaction(message, "\N{fire}")
 
         return await super().handle_message(message)
 
