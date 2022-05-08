@@ -409,6 +409,12 @@ class Imogen(GelatoBot):
     async def do_score(self, msg: Message) -> Response:
         return str(await self.get_score(msg.text))
 
+    async def do_score_info(self, msg: Message) -> Response:
+        resp = await self.client_session.get(
+            "https://good-post-detector.fly.dev/info", data=msg.text
+        )
+        return await resp.json()
+
     async def do_balance(self, msg: Message) -> Response:
         "returns your Imogen balance in MOB for priority requests, tips, and prints"
         balance = await self.get_user_usd_balance(msg.source)
