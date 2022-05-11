@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "imposter"
+version = "0.1.0"
+description = ""
+authors = ["deepfates <deepfates@gmail.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+pycryptodome = "^3.14.1"
+h11 = "^0.13.0"
+acrossword = {git = "https://github.com/deepfates/acrossword"}
+personate = {git = "https://github.com/deepfates/personate"}
+forestbot = {git = "https://github.com/mobilecoinofficial/forest", rev = "df/imposter"}
+
+
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"

@@ -120,17 +120,6 @@ async def get_attachment_paths(message: Message) -> list[str]:
     return attachments
 
 
-def check_valid_recipient(recipient: str) -> bool:
-    try:
-        assert recipient == utils.signal_format(recipient)
-    except (AssertionError, NumberParseException):
-        try:
-            assert recipient == str(uuid.UUID(recipient))
-        except (AssertionError, ValueError):
-            return False
-    return True
-
-
 ActivityQueries = pghelp.PGExpressions(
     table="user_activity",
     create_table="""CREATE TABLE user_activity (
@@ -423,6 +412,11 @@ class Signal:
         await self.outbox.put(rpc("setProfile", params, rpc_id))
         return rpc_id
 
+    async def save_sent_message(self, rpc_id: str, params: dict[str, str]) -> None:
+        # do something with sent messages after sending them
+        # override in child classes
+        pass
+
     # this should maybe yield a future (eep) and/or use signal_rpc_request
     async def send_message(  # pylint: disable=too-many-arguments
         self,
@@ -505,6 +499,7 @@ class Signal:
         self.pending_messages_sent[rpc_id] = json_command
         self.pending_requests[rpc_id] = asyncio.Future()
         await self.outbox.put(json_command)
+        asyncio.create_task(self.save_sent_message(rpc_id, params))
         return rpc_id
 
     async def admin(self, msg: Response, **other_params: Any) -> None:
