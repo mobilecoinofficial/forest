@@ -13,7 +13,7 @@ FROM python:3.9 as libbuilder
 WORKDIR /app
 RUN pip install poetry
 RUN python3.9 -m venv /app/venv 
-COPY ./pyproject.toml ./poetry.lock /app/
+COPY ./pyproject.toml /app/
 RUN VIRTUAL_ENV=/app/venv poetry install 
 
 FROM ubuntu:hirsute

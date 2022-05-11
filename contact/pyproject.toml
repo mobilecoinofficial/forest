@@ -6,7 +6,7 @@ authors = ["forest <forest@mobilecoin.com>"]
 
 [tool.poetry.dependencies]
 python = "^3.9"
-forestbot = {git = "https://github.com/mobilecoinofficial/forest", rev="1.2.7"}
+forestbot = {git = "https://github.com/mobilecoinofficial/forest", rev="1.2.10"}
 
 [tool.poetry.dev-dependencies]
 
