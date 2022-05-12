@@ -61,6 +61,10 @@ async def start_memfs(app: web.Application) -> None:
     await launch()
 
 
+# app["memfs"].terminate()
+# app["memfs"] = aioprocessing.AioProcess(target=memfs_proc)
+# app["memfs"].start()
+
 # input, operation, path, arguments, caller
 # ["->", "fsync", "/+14703226669", "(1, 2)", "/app/signal-cli", ["/app/signal-cli", "--config", "/app", "--username=+14703226669", "--output=json", "stdio", ""], 0, 0, 523]
 # ["<-", "fsync", "0"]

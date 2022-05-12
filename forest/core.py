@@ -10,7 +10,6 @@ import asyncio.subprocess as subprocess  # https://github.com/PyCQA/pylint/issue
 import base64
 import codecs
 import datetime
-import functools
 import glob
 import json
 import logging
@@ -32,7 +31,6 @@ from pathlib import Path
 from textwrap import dedent
 from typing import (
     Any,
-    Awaitable,
     Callable,
     Coroutine,
     Mapping,
@@ -41,7 +39,6 @@ from typing import (
     TypeVar,
     Union,
 )
-
 import aiohttp
 import asyncpg
 import termcolor
@@ -64,10 +61,10 @@ except ImportError:
 
 JSON = dict[str, Any]
 Response = Union[str, list, dict[str, str], None]
-AsyncFunc = Callable[..., Awaitable]
+AsyncFunc = Callable[..., Coroutine[Any, Any, Any]]
 Command = Callable[["Bot", Message], Coroutine[Any, Any, Response]]
 
-roundtrip_histogram = Histogram("roundtrip_h", "Roundtrip message response time")  # type: ignore
+roundtrip_histogram = Histogram("roundtrip_h", "Roundtrip message response time")
 roundtrip_summary = Summary("roundtrip_s", "Roundtrip message response time")
 
 MessageParser = AuxinMessage if utils.AUXIN else StdioMessage
@@ -330,6 +327,10 @@ class Signal:
                 # maybe also send this to admin as a signal message
                 for _line in tb:
                     logging.error(_line)
+            if "sender keys" in blob["error"] and self.proc:
+                logging.error("killing signal-cli")
+                self.proc.kill()
+                return
         # {"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"+16176088864","sourceNumber":"+16176088864","sourceUuid":"412e180d-c500-4c60-b370-14f6693d8ea7","sourceName":"sylv","sourceDevice":3,"timestamp":1637290344242,"dataMessage":{"timestamp":1637290344242,"message":"/ping","expiresInSeconds":0,"viewOnce":false}},"account":"+447927948360"}}
         try:
             await self.enqueue_blob_messages(blob)
@@ -542,7 +543,7 @@ class Signal:
             "target-timestamp": target_msg.timestamp,
         }
         if target_msg.group:
-            react["group"] = target_msg.group
+            react["group-id"] = target_msg.group
         cmd = rpc(
             "sendReaction",
             param_dict=react,
@@ -688,6 +689,18 @@ def hide(command: AsyncFunc) -> AsyncFunc:
     return hidden_command
 
 
+def group_help_text(text: str) -> Callable:
+    def decorate(command: Callable) -> Callable:
+        @wraps(command)
+        async def group_help_text_command(self: "Bot", msg: Message) -> Response:
+            return await command(self, msg)
+
+        group_help_text_command.__group_doc__ = text  # type: ignore
+        return group_help_text_command
+
+    return decorate
+
+
 Datapoint = tuple[int, str, float]  # timestamp in ms, command/info, latency in seconds
 
 
@@ -724,6 +737,7 @@ class Bot(Signal):
         # set of users we've received messages from in the last minute
         self.seen_users: set[str] = set()
         self.log_activity_task = asyncio.create_task(self.log_activity())
+        self.log_activity_task.add_done_callback(self.log_task_result)
         self.restart_task = asyncio.create_task(
             self.start_process()
         )  # maybe cancel on sigint?
@@ -826,13 +840,17 @@ class Bot(Signal):
             self.signal_roundtrip_latency.append(
                 (message.timestamp, note, roundtrip_delta)
             )
-            roundtrip_summary.observe(roundtrip_delta)  # type: ignore
-            roundtrip_histogram.observe(roundtrip_delta)  # type: ignore
+            roundtrip_summary.observe(roundtrip_delta)
+            roundtrip_histogram.observe(roundtrip_delta)
             logging.info("noted roundtrip time: %s", roundtrip_delta)
             if utils.get_secret("ADMIN_METRICS"):
                 await self.admin(
                     f"command: {note}. python delta: {python_delta}s. roundtrip delta: {roundtrip_delta}s",
                 )
+
+    async def handle_reaction(self, msg: Message) -> Response:
+        del msg
+        return None
 
     def mentions_us(self, msg: Message) -> bool:
         # "mentions":[{"name":"+447927948360","number":"+447927948360","uuid":"fc4457f0-c683-44fe-b887-fe3907d7762e","start":0,"length":1}
@@ -876,6 +894,9 @@ class Bot(Signal):
         """Method dispatch to do_x commands and goodies.
         Overwrite this to add your own non-command logic,
         but call super().handle_message(message) at the end"""
+        if message.reaction:
+            logging.info("saw a reaction")
+            return await self.handle_reaction(message)
         # try to get a direct match, or a fuzzy match if appropriate
         if cmd := self.match_command(message):
             # invoke the function and return the response
@@ -1104,7 +1125,7 @@ class PayBot(ExtrasBot):
         res = await self.mobster.ledger_manager.get_usd_balance(account)
         return float(round(res[0].get("balance"), 2))
 
-    async def get_user_pmob_balance(self, account: str) -> float:
+    async def get_user_pmob_balance(self, account: str) -> int:
         res = await self.mobster.ledger_manager.get_pmob_balance(account)
         return res[0].get("balance")
 
@@ -1518,13 +1539,12 @@ class QuestionBot(PayBot):
             recipient, question_text, require_first_device
         )
 
-    async def ask_address_question(
+    async def ask_address_question_(
         self,
         recipient: str,
         question_text: str = "What's your shipping address?",
-        require_first_device: bool = False,
         require_confirmation: bool = False,
-    ) -> Optional[str]:
+    ) -> Optional[dict]:
         """Asks user for their address and verifies through the google maps api
         Can ask User for confirmation, returns string with formatted address or none"""
         # get google maps api key from secrets
@@ -1533,9 +1553,7 @@ class QuestionBot(PayBot):
             logging.error("Error, missing Google Maps API in secrets configuration")
             return None
         # ask for the address as a freeform question
-        address = await self.ask_freeform_question(
-            recipient, question_text, require_first_device
-        )
+        address = await self.ask_freeform_question(recipient, question_text)
         # we take the answer provided by the user, format it nicely as a request to google maps' api
         # It returns a JSON object from which we can ascertain if the address is valid
         async with self.client_session.get(
@@ -1553,8 +1571,8 @@ class QuestionBot(PayBot):
                 recipient,
                 "Sorry, I couldn't find that. \nPlease try again or reply cancel to cancel \n",
             )
-            return await self.ask_address_question(
-                recipient, question_text, require_first_device, require_confirmation
+            return await self.ask_address_question_(
+                recipient, question_text, require_confirmation
             )
         # if maps does return a formatted address
         if address_json["results"] and address_json["results"][0]["formatted_address"]:
@@ -1566,20 +1584,31 @@ class QuestionBot(PayBot):
                 confirmation = await self.ask_yesno_question(
                     recipient,
                     f"Got: \n{maybe_address} \n\n{maps_url} \n\nIs this your address? (yes/no)",
-                    require_first_device,
                 )
                 # If not, ask again
                 if not confirmation:
-                    return await self.ask_address_question(
+                    return await self.ask_address_question_(
                         recipient,
                         question_text,
-                        require_first_device,
                         require_confirmation,
                     )
-            return address_json["results"][0]["formatted_address"]
+            return address_json["results"][0]  # ["formatted_address"]
         # If we made it here something unexpected probably went wrong.
         # Google returned something but didn't have a formatted address
         return None
+
+    async def ask_address_question(
+        self,
+        recipient: str,
+        question_text: str = "What's your shipping address?",
+        require_confirmation: bool = False,
+    ) -> Optional[dict]:
+        addr = await self.ask_address_question_(
+            recipient, question_text, require_confirmation
+        )
+        if addr:
+            return addr["formatted_address"]
+        return addr
 
     async def ask_multiple_choice_question(  # pylint: disable=too-many-arguments
         self,
@@ -1759,9 +1788,13 @@ class QuestionBot(PayBot):
             resp = await self.ask_freeform_question(
                 msg.source, f"value for field {field}?"
             )
+            if resp and resp.lower() == "skip":
+                break
             if resp and resp.lower() != "none":
                 fields[field] = resp
-        fields["mobilecoin_address"] = await self.mobster.ensure_address()
+        fields["payment_address"] = mc_util.b58_wrapper_to_b64_public_address(
+            await self.mobster.ensure_address()
+        )
         attachments = await get_attachment_paths(msg)
         if attachments:
             fields["profile_path"] = attachments[0]
@@ -1833,11 +1866,17 @@ async def metrics(request: web.Request) -> web.Response:
 async def restart(request: web.Request) -> web.Response:
     bot = request.app["bot"]
     bot.restart_task = asyncio.create_task(bot.start_process())
-    bot.restart_task.add_done_callback(functools.partial(bot.handle_task))
+    bot.restart_task.add_done_callback(bot.log_task_result)
     return web.Response(status=200)
 
 
 app = web.Application()
+
+
+async def recipients(request: web.Request) -> web.Response:
+    bot = request.app["bot"]
+    recipeints = open(f"data/{bot.bot_number}.d/recipients-store").read()
+    return web.Response(status=200, text=recipeints)
 
 
 async def add_tiprat(_app: web.Application) -> None:
@@ -1856,6 +1895,7 @@ app.add_routes(
         web.post("/restart", restart),
         web.get("/metrics", aio.web.server_stats),
         web.get("/csv_metrics", metrics),
+        web.get("/recipients", recipients),
     ]
 )
 

@@ -86,7 +86,7 @@ class SimpleInterface:
     @asynccontextmanager
     async def get_connection(self) -> AsyncGenerator:
         if not pool.pool:
-            pool.connect(self.database, "simple interface")
+            await pool.connect(self.database, "simple interface")
         assert pool.pool
         async with pool.acquire() as conn:
             logging.info("connection acquired")

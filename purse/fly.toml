@@ -1,0 +1,46 @@
+app = "imogen-purse"
+kill_signal = "SIGINT" 
+kill_timeout = 5
+
+[env]
+LOGLEVEL="DEBUG"
+SIGNAL="auxin"
+BOT_NUMBER="+14153187534"
+FULL_SERVICE_URL="https://imogen-full-service-real.fly.dev/wallet"
+RUST_LOG="WARN"
+RUST_BACKTRACE="full"
+ENABLE_MAGIC=1
+
+[experimental]
+  allowed_public_ports = []
+  auto_rollback = false
+[deploy]
+  strategy = "immediate"
+
+[metrics]
+port = 8080
+path = "/metrics"
+
+[[services]]
+  internal_port = 8080
+  protocol = "tcp"
+  script_checks = []
+
+  [services.concurrency]
+    hard_limit = 25
+    soft_limit = 20
+    type = "connections"
+
+  [[services.ports]]
+    handlers = ["http"]
+    port = 80
+
+  [[services.ports]]
+    handlers = ["tls", "http"]
+    port = 443
+
+  [[services.tcp_checks]]
+    grace_period = "1s"
+    interval = "15s"
+    restart_limit = 6
+    timeout = "2s"

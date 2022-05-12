@@ -1,0 +1,28 @@
+[tool.poetry]
+name = "imogen"
+version = "0.1.0"
+description = ""
+authors = ["Sylvie Liberman <technillogue@gmail.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+aioprocessing = "*"
+asyncpg = "*"
+base58 = "*"
+phonenumberslite = "*"
+prometheus_async = "*"
+prometheus_client = "*"
+protobuf = "*"
+termcolor = "*"
+ulid2 = "*"
+pycryptodome = "*"
+aiohttp = {extras = ["speedups"], version = "^3.8.1"}
+#forestbot = {git = "https://github.com/mobilecoinofficial/forest", rev="auxin-imogen"}
+aioredis = "*"
+openai = "*"
+
+[tool.poetry.dev-dependencies]
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"

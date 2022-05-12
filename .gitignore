@@ -1,12 +1,16 @@
 __pycache__
 *secrets
-*.pem
 avatars
 signal-cli*
 auxin-cli
+*.pem
 data
 *log
 .idea
+imogen/forest/*
+imogen/mc_util/*
+*.png
+*.jpg
 .vscode
 imposter/forest
 imposter/mc_util
