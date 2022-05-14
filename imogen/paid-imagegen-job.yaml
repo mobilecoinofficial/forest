@@ -12,7 +12,7 @@ spec:
       restartPolicy: Never
       containers:
       - name: imogegen
-        image: technillogue/imagegen:1.2.13
+        image: technillogue/imagegen:1.3.5
         resources:
           limits:
             cpu: 3

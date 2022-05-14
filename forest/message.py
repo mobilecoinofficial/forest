@@ -144,6 +144,7 @@ class AuxinMessage(Message):
             or content.get("source", {}).get("typingMessage", {}).get("groupId")
             or ""
         )
+        self.group_id = self.group
         maybe_quote = msg.get("quote")
         self.address = blob.get("Address", {})
         self.quoted_text = "" if not maybe_quote else maybe_quote.get("text")
@@ -230,6 +231,7 @@ class StdioMessage(Message):
         self.group: Optional[str] = msg.get("groupInfo", {}).get(
             "groupId"
         ) or result.get("groupId")
+        self.group_id = self.group
         self.quoted_text = msg.get("quote", {}).get("text")
         self.typing = envelope.get("typingMessage", {}).get("action")
         self.payment = msg.get("payment")

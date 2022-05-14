@@ -228,7 +228,7 @@ class Imogen(GelatoBot):
         #     "family-name": "",
         # }
 
-    ban = ["+15795090727", "+13068051597"]
+    ban = ["+15795090727", "+13068051597", "+12897688809"]
 
     async def get_score(self, text: str) -> float:
         resp = await self.client_session.get(
@@ -241,6 +241,8 @@ class Imogen(GelatoBot):
             return None
 
         if utils.get_secret("SAFE_MODE"):
+            if message.group:
+                logging.info("in safe mode, checking group %s", message.group)
             if message.group and message.group not in await self.group_whitelist.keys():
                 if not utils.AUXIN:
                     await self.admin(
@@ -254,10 +256,6 @@ class Imogen(GelatoBot):
                 )
                 return None
 
-        if message.group:
-            logging.info(
-                "chaos enabled in group: %s", await self.chaos_groups.get(message.group)
-            )
         if message.group and await self.chaos_groups.get(message.group):
             score = await self.get_score(message.text)
             logging.info("score: %s", score)
@@ -635,7 +633,6 @@ class Imogen(GelatoBot):
         """
         /imagine [prompt]
          Generates an image based on your prompt.
-         Request is handled in the free queue, every free request is addressed and generated sequentially.
         """
         return await self.enqueue_prompt(msg, {}, attachments="init")
 
@@ -655,6 +652,26 @@ class Imogen(GelatoBot):
     @hide
     async def do_priority(self, msg: Message) -> str:
         return await self.do_imagine(msg)
+
+    async def do_imagine_likely(self, msg: Message) -> str:
+        """
+        /imagine_likely <prompt>
+        Generate an image based on your prompt, using a classifier for prompts that get reactions as an additional loss term
+        """
+        return await self.enqueue_prompt(msg, {"likely": True}, attachments="init")
+
+    do_imagine_good = do_imagine_likely
+
+    async def do_imagine_target_likely(self, msg: Message) -> str:
+        """
+        /imagine_target_likely <prompt>
+        Generate an image based on your prompt, using a classifier for prompts that get reactions as an additional loss term
+        You can attach image prompts that will be used in addition to text prompts
+
+        """
+        return await self.enqueue_prompt(msg, {"likely": True}, attachments="target")
+
+    do_imagine_target_good = do_imagine_target_likely
 
     async def do_paint(self, msg: Message) -> str:
         """
