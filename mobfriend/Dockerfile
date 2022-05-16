@@ -21,9 +21,9 @@ RUN mkdir -p /app/data
 RUN apt update && apt install -y python3.9 wget libfuse2 kmod
 RUN apt-get clean autoclean && apt-get autoremove --yes && rm -rf /var/lib/{apt,dpkg,cache,log}/
 
-#ENV SIGNAL="signal-cli"
+ENV SIGNAL="signal-cli"
 COPY --from=signal /usr/bin/signal-cli /signal-version /app/
-# COPY --from=builder /app/auxin/target/release/auxin-cli /app/auxin-cli
+COPY --from=auxin /app/auxin-cli /app/auxin-cli
 COPY --from=libbuilder /app/venv/lib/python3.9/site-packages /app/
 COPY ./mobfriend.py ./scan.py ./template.png /app/
 ENTRYPOINT ["/usr/bin/python3.9", "/app/mobfriend.py"]
