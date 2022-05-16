@@ -935,7 +935,6 @@ class Imogen(GelatoBot):
         #     message.full_text = message.full_text.removeprefix("/")
         #     message.parse_text(message.full_text)
         #     return await self.do_imagine(message)
-        logging.info("in default")
         return await super().default(message)
 
     @group_help_text(

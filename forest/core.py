@@ -187,8 +187,8 @@ class Signal:
             proc_launch_time = time.time()
             # this ought to FileNotFoundError but doesn't
             self.proc = await asyncio.create_subprocess_exec(
-                *command, stdin=PIPE, stdout=PIPE
-            )
+                *command, stdin=PIPE, stdout=PIPE, limit=2**20
+            )  # 1MB, for group output
             logging.info(
                 "started %s @ %s with PID %s",
                 utils.SIGNAL,
