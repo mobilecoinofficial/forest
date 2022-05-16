@@ -5,7 +5,7 @@
 # RUN rustup default nightly
 # RUN cargo +nightly build --release
 
-FROM registry.gitlab.com/packaging/signal-cli/signal-cli-native:latest as signal
+FROM registry.gitlab.com/packaging/signal-cli/signal-cli-native:v0-10-5-5 as signal
 RUN signal-cli --version | tee /signal-version
 RUN mv /usr/bin/signal-cli-native /usr/bin/signal-cli
 
