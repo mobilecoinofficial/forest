@@ -1,9 +1,8 @@
-# FROM ghcr.io/rust-lang/rust:nightly as builder
-# WORKDIR /app
-# RUN git clone https://github.com/mobilecoinofficial/auxin && cd auxin && git checkout 0.1.12
-# WORKDIR /app/auxin
-# RUN rustup default nightly
-# RUN cargo +nightly build --release
+FROM ubuntu:hirsute as auxin
+WORKDIR /app
+RUN apt-get update && apt-get -yy install curl unzip
+RUN curl -L --output auxin-cli.zip https://nightly.link/mobilecoinofficial/auxin/workflows/actions/main/auxin-cli.zip
+RUN unzip auxin-cli.zip && chmod +x ./auxin-cli
 
 FROM registry.gitlab.com/packaging/signal-cli/signal-cli-native:v0-10-5-5 as signal
 RUN signal-cli --version | tee /signal-version
@@ -13,7 +12,7 @@ FROM python:3.9 as libbuilder
 WORKDIR /app
 RUN pip install poetry
 RUN python3.9 -m venv /app/venv 
-COPY ./pyproject.toml ./poetry.lock /app/
+COPY ./pyproject.toml /app/
 RUN VIRTUAL_ENV=/app/venv poetry install 
 
 FROM ubuntu:hirsute
@@ -22,7 +21,7 @@ RUN mkdir -p /app/data
 RUN apt update && apt install -y python3.9 wget libfuse2 kmod
 RUN apt-get clean autoclean && apt-get autoremove --yes && rm -rf /var/lib/{apt,dpkg,cache,log}/
 
-ENV SIGNAL="signal-cli"
+#ENV SIGNAL="signal-cli"
 COPY --from=signal /usr/bin/signal-cli /signal-version /app/
 # COPY --from=builder /app/auxin/target/release/auxin-cli /app/auxin-cli
 COPY --from=libbuilder /app/venv/lib/python3.9/site-packages /app/
