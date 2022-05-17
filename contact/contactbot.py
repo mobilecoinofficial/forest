@@ -6,11 +6,12 @@ import logging
 from functools import wraps
 from typing import Callable, Union, cast
 import phonenumbers as pn
-import teli as api
 from aiohttp import web
-from forest_tables import GroupRoutingManager, PaymentsManager, RoutingManager
+import mc_util
+import teli as api
 from forest import utils
 from forest.core import Message, QuestionBot, Response, app, requires_admin, run_bot
+from forest_tables import GroupRoutingManager, PaymentsManager, RoutingManager
 
 
 def takes_number(command: Callable) -> Callable:
@@ -231,17 +232,21 @@ class Forest(QuestionBot):
 
     async def do_register(self, _: Message) -> Response:
         """register for a phone number"""
-        return f"Please send {await self.mobster.usd2mob(self.usd_price)} MOB via Signal Pay"
+        return f"Please send {self.mob_price} MOB via Signal Pay"
 
     async def do_balance(self, message: Message) -> str:
         """Check your balance"""
-        balance = await self.get_user_usd_balance(message.source)
-        return f"Your balance is {balance} USD"
+        balance = await self.get_user_pmob_balance(message.source)
+        return f"Your balance is {mc_util.pmob2mob(balance)} MOB"
 
     async def do_pay(self, message: Message) -> str:
         if message.arg1 == "shibboleth":
-            await self.mobster.ledger_manager.put_usd_tx(
-                message.source, int(self.usd_price * 100), "shibboleth"
+            fake_usd = int(await self.mobster.pmob2usd(self.mob_price * 1e12) * 100)
+            await self.mobster.ledger_manager.put_pmob_tx(
+                message.source,
+                fake_usd,
+                mc_util.mob2pmob(self.mob_price * 100),
+                "shibboleth",
             )
             return "...thank you for your payment. You can buy a phone number with /order <area code>"
         if message.arg1 == "sibboleth":
@@ -293,8 +298,12 @@ class Forest(QuestionBot):
         await self.routing_manager.set_destination(number, msg.source)
         await self.routing_manager.set_expiration_1mo(number)
         if await self.routing_manager.get_destination(number):
-            await self.mobster.ledger_manager.put_usd_tx(
-                msg.source, -int(self.usd_price * 100), number
+            fake_usd = int(await self.mobster.pmob2usd(self.mob_price * 1e12) * 100)
+            await self.mobster.ledger_manager.put_pmob_tx(
+                msg.source,
+                -fake_usd,
+                -mc_util.mob2pmob(self.mob_price * 100),
+                number,
             )
             return f"You are now the proud owner of {number}"
         return "Database error?"

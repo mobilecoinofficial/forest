@@ -67,7 +67,7 @@ Response = Union[str, list, dict[str, str], None]
 AsyncFunc = Callable[..., Awaitable]
 Command = Callable[["Bot", Message], Coroutine[Any, Any, Response]]
 
-roundtrip_histogram = Histogram("roundtrip_h", "Roundtrip message response time")  # type: ignore
+roundtrip_histogram = Histogram("roundtrip_h", "Roundtrip message response time")
 roundtrip_summary = Summary("roundtrip_s", "Roundtrip message response time")
 
 MessageParser = AuxinMessage if utils.AUXIN else StdioMessage
@@ -742,7 +742,7 @@ class Bot(Signal):
         used for signup metrics
         """
         if not pghelp.pool.pool:
-            await pghelp.pool.connect()
+            await pghelp.pool.connect(self.activity.database, self.activity.table)
             # mypy can't infer that connect_pg creates pool
             assert pghelp.pool.pool
         while 1:
@@ -827,8 +827,8 @@ class Bot(Signal):
             self.signal_roundtrip_latency.append(
                 (message.timestamp, note, roundtrip_delta)
             )
-            roundtrip_summary.observe(roundtrip_delta)  # type: ignore
-            roundtrip_histogram.observe(roundtrip_delta)  # type: ignore
+            roundtrip_summary.observe(roundtrip_delta)
+            roundtrip_histogram.observe(roundtrip_delta)
             logging.info("noted roundtrip time: %s", roundtrip_delta)
             if utils.get_secret("ADMIN_METRICS"):
                 await self.admin(
