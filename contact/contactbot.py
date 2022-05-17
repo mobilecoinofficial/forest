@@ -193,12 +193,15 @@ class Forest(QuestionBot):
 
     async def payment_response(self, msg: Message, amount_pmob: int) -> str:
         del amount_pmob
-        diff = await self.get_user_usd_balance(msg.source) - self.usd_price
+        diff = (
+            mc_util.pmob2mob(await self.get_user_pmob_balance(msg.source))
+            - self.mob_price
+        )
         if diff < 0:
-            return f"Please send another {abs(diff)} USD to buy a phone number"
+            return f"Please send another {abs(diff)} MOB to buy a phone number"
         if diff == 0:
             return "Thank you for paying! You can now buy a phone number with /order <area code>"
-        return f"Thank you for paying! You've overpayed by {diff} USD. Contact an administrator for a refund"
+        return f"Thank you for paying! You've overpayed by {diff} MOB. Contact an administrator for a refund"
 
     async def do_status(self, message: Message) -> Union[list[str], str]:
         """List numbers if you have them. Usage: /status"""
@@ -224,7 +227,7 @@ class Forest(QuestionBot):
             'try "/register" and following the instructions.'
         )
 
-    usd_price = 5
+    mob_price = 1
 
     async def do_register(self, _: Message) -> Response:
         """register for a phone number"""
@@ -254,12 +257,16 @@ class Forest(QuestionBot):
             msg.arg1 = str(code)
         if not (msg.arg1 and len(msg.arg1) == 3 and msg.arg1.isnumeric()):
             return "Usage: /order <area code>"
-        diff = await self.get_user_balance(msg.source) - self.usd_price
         numbers = await self.get_user_numbers(msg)
         # one free for everyone, always free in UA
         # need to note that this is a freebie
-        if diff < 0 and not msg.source.startswith("+380") and numbers:
-            return await self.do_register(msg)
+        if numbers and not msg.source.startswith("+380"):
+            diff = (
+                mc_util.pmob2mob(await self.get_user_pmob_balance(msg.source))
+                - self.mob_price
+            )
+            if diff < 0:
+                return await self.do_register(msg)
         await self.routing_manager.sweep_expired_destinations()
         available_numbers = [
             num
