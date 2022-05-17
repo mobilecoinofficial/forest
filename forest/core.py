@@ -754,10 +754,10 @@ class Bot(Signal):
         runs in the bg as batches to avoid a seperate db query for every message
         used for signup metrics
         """
-        if not self.activity.pool:
-            await self.activity.connect_pg()
+        if not pghelp.pool.pool:
+            await pghelp.pool.connect()
             # mypy can't infer that connect_pg creates pool
-            assert self.activity.pool
+            assert pghelp.pool.pool
         while 1:
             await asyncio.sleep(60)
             if not self.seen_users:
