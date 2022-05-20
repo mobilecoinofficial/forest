@@ -257,7 +257,7 @@ class Signal:
             await self.datastore.mark_freed()
         await pghelp.pool.close()
         # this still deadlocks. see https://github.com/forestcontact/forest-draft/issues/10
-        if autosave._memfs_process:
+        if utils.MEMFS and autosave._memfs_process:
             executor = autosave._memfs_process._get_executor()
             logging.info(executor)
             executor.shutdown(wait=False, cancel_futures=True)
@@ -1867,6 +1867,8 @@ app.add_routes(
 
 app.on_startup.append(add_tiprat)
 if utils.MEMFS:
+    import autosave
+
     app.on_startup.append(autosave.start_memfs)
     app.on_startup.append(autosave.start_memfs_monitor)
 

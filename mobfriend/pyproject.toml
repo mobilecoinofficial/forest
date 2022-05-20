@@ -6,7 +6,7 @@ authors = ["Ilia <i@mobilecoin.com>"]
 
 [tool.poetry.dependencies]
 python = "^3.9"
-forestbot = {git = "https://github.com/mobilecoinofficial/forest", rev = "syl/mobfriend-metrics"}
+forestbot = {git = "https://github.com/mobilecoinofficial/forest", rev = "main"}
 zbar-py = {git = "https://github.com/zplab/zbar-py"}
 amzqr = {git = "https://github.com/itdaniher/amazing-qr", rev = "63cbdfd"}
 [tool.poetry.dev-dependencies]
