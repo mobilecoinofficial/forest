@@ -8,7 +8,7 @@ strategy = "immediate"
 [env]
 BOT_NUMBER="+12232222922"
 RUST_LOG="DEBUG"
-#SIGNAL="signal"
+SIGNAL="signal"
 
 
 [mounts]

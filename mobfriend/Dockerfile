@@ -1,7 +1,6 @@
 FROM ubuntu:hirsute as auxin
 WORKDIR /app
 RUN apt-get update && apt-get -yy install curl unzip
-ENV A=1
 RUN curl -L --output auxin-cli.zip https://nightly.link/mobilecoinofficial/auxin/workflows/actions/main/auxin-cli.zip
 RUN unzip auxin-cli.zip && chmod +x ./auxin-cli
 
