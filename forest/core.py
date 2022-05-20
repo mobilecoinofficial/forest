@@ -1050,6 +1050,17 @@ class ExtrasBot(Bot):
         return t
 
 
+def compose_payment_content(receipt: str, note: str) -> dict:
+    # serde expects bytes to be u8[], not b64
+    tx = {"mobileCoin": {"receipt": u8(b64_receipt)}}
+    note = note or "check out this java-free payment notification"
+    payment = {"Item": {"notification": {"note": note, "Transaction": tx}}}
+    # SignalServiceMessageContent protobuf represented as JSON (spicy)
+    # destination is outside the content so it doesn't matter,
+    # but it does contain the bot's profileKey
+    return {"dataMessage": {"body": None, "payment": payment}}
+
+
 class PayBot(ExtrasBot):
     PAYMENTS_HELPTEXT = """Enable Signal Pay:
 
@@ -1283,18 +1294,32 @@ class PayBot(ExtrasBot):
             msg.status, msg.transaction_log_id = "tx_status_failed", tx_id
             return msg
 
-        receipt_resp = await self.mob_request(
-            "create_receiver_receipts",
-            tx_proposal=prop,
-            account_id=await self.mobster.get_account(),
-        )
-        content = await self.fs_receipt_to_payment_message_content(
-            receipt_resp, receipt_message
-        )
-        # pass our beautifully composed JSON content to auxin.
-        # message body is ignored in this case.
-        payment_notif = await self.send_message(recipient, "", content=content)
-        resp_future = asyncio.create_task(self.wait_for_response(rpc_id=payment_notif))
+        full_service_receipt = (
+            await self.mob_request(
+                "create_receiver_receipts",
+                tx_proposal=prop,
+                account_id=account_id,
+            )
+        )["result"]["receiver_receipts"][0]
+        # this gets us a Receipt protobuf
+        b64_receipt = mc_util.full_service_receipt_to_b64_receipt(full_service_receipt)
+        if utils.AUXIN:
+            content = compose_payment_content(b64_receipt, receipt_message)
+            # pass our beautifully composed JSON content to auxin.
+            # message body is ignored in this case.
+            payment_notif = await self.send_message(recipient, "", content=content)
+            resp_future = asyncio.create_task(
+                self.wait_for_response(rpc_id=payment_notif)
+            )
+        else:
+            resp_future = asyncio.create_task(
+                self.signal_rpc_request(
+                    "sentPaymentNotification",
+                    receipt=b64_receipt,
+                    note=receipt_message,
+                    recipient=recipient,
+                )
+            )
 
         if confirm_tx_timeout:
             logging.debug("Attempting to confirm tx status for %s", recipient)
