@@ -12,18 +12,6 @@ RUN mv /usr/bin/signal-cli-native /usr/bin/signal-cli
 FROM registry.gitlab.com/packaging/signal-cli/signal-cli-jre:v0-10-5-5 as signal-jre
 RUN signal-cli --version | tee /signal-version
 
-# FROM ghcr.io/graalvm/graalvm-ce:java17-21.3.0 as signal-build
-# ENV GRAALVM_HOME=/opt/graalvm-ce-java17-21.3.0/ 
-# SHELL ["/usr/bin/bash", "-c"]
-# WORKDIR /app
-# RUN microdnf install -y git zlib-devel && rm -rf /var/cache/yum
-# RUN gu install native-image
-# ENV A=1
-# RUN git clone https://github.com/AsamK/signal-cli
-# WORKDIR /app/signal-cli
-# RUN git log -1 --pretty=%B | tee signal-version
-# RUN ./gradlew nativeCompile
-
 FROM python:3.9 as libbuilder
 WORKDIR /app
 RUN pip install poetry
