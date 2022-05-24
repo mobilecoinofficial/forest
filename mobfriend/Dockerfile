@@ -5,7 +5,7 @@ ENV A=B
 RUN curl -L --output auxin-cli.zip https://nightly.link/mobilecoinofficial/auxin/workflows/actions/main/auxin-cli.zip
 RUN unzip auxin-cli.zip && chmod +x ./auxin-cli
 
-FROM registry.gitlab.com/packaging/signal-cli/signal-cli-native:latest as signal
+FROM registry.gitlab.com/packaging/signal-cli/signal-cli-native:v0-10-5-5 as signal
 RUN signal-cli --version | tee /signal-version
 RUN mv /usr/bin/signal-cli-native /usr/bin/signal-cli
 
