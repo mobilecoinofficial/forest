@@ -1,15 +1,11 @@
-app = "mobfriend"
-kill_signal = "SIGINT" 
+app = "charity-mock"
+kill_signal = "SIGINT"
 kill_timeout = 5
 
-[deploy]
-strategy = "immediate"
-
 [env]
-  BOT_NUMBER="+12232222922"
-  RUST_BACKTRACE=1
-  RUST_LOG="DEBUG"
-  DOWNLOAD=1
+  LOGLEVEL="ERROR"
+  RUST_LOG="WARN"
+  RUST_BACKTRACE="full"
   SIGNAL="signal-cli"
 
 [mounts]
@@ -21,8 +17,8 @@ strategy = "immediate"
   auto_rollback = false
 
 [metrics]
-port = 8080
-path = "/metrics"
+  port = 8080
+  path = "/metrics"
 
 [[services]]
   internal_port = 8080
