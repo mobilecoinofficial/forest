@@ -218,9 +218,17 @@ class Imogen(GelatoBot):
             query_strings=QueueExpressions,
             database=utils.get_secret("DATABASE_URL"),
         )
+        all_admins = (
+            "{" + ",".join(utils.get_secret("ADMINS"), utils.get_secret("ADMIN")) + "}"
+        )
+        self.admin_allowlist_groups = [
+            row["group_id"]
+            for row in await self.queue.execute(
+                "select distinct group_id where author=any($1)", all_admins
+            )
+        ]
         await self.admin("\N{deciduous tree}\N{robot face}\N{hiking boot}")
         await super().start_process()
-
         # profile = {
         #     "given-name": "imogen",
         #     "about": "imagine there's an imoge generated",
@@ -240,10 +248,12 @@ class Imogen(GelatoBot):
         if message.source in self.ban or message.uuid in self.ban:
             return None
 
-        if utils.get_secret("SAFE_MODE"):
-            if message.group:
-                logging.info("in safe mode, checking group %s", message.group)
-            if message.group and message.group not in await self.group_whitelist.keys():
+        if utils.get_secret("SAFE_MODE") and message.group:
+            logging.info("in safe mode, checking group %s", message.group)
+            if (
+                message.group
+                not in await self.group_whitelist.keys() + self.admin_allowlist_groups
+            ):
                 if not utils.AUXIN:
                     await self.admin(
                         f"found myself running in a group I don't recognise. Leaving the group but if you'd like to add me use \nwhitelist_group {message.group} \nto both add  the group to my group whitelist, and try again"
