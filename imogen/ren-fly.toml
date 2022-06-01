@@ -23,7 +23,7 @@ FULL_SERVICE_URL="https://imogen-full-service-real.fly.dev/wallet"
 DOWNLOAD=1
 UPLOAD=1
 LEDGER_NAME="imogen_ledger"
-SAFE_MODE=1
+#SAFE_MODE=1
 #ENABLE_MAGIC=1
 
 [experimental]

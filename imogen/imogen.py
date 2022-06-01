@@ -218,13 +218,12 @@ class Imogen(GelatoBot):
             query_strings=QueueExpressions,
             database=utils.get_secret("DATABASE_URL"),
         )
-        all_admins = (
-            "{" + ",".join(utils.get_secret("ADMINS"), utils.get_secret("ADMIN")) + "}"
-        )
+        all_admins = utils.get_secret("ADMINS").split(",") + [utils.get_secret("ADMIN")]
         self.admin_allowlist_groups = [
             row["group_id"]
             for row in await self.queue.execute(
-                "select distinct group_id where author=any($1)", all_admins
+                "select distinct group_id from prompt_queue where author=any($1)",
+                all_admins,
             )
         ]
         await self.admin("\N{deciduous tree}\N{robot face}\N{hiking boot}")
