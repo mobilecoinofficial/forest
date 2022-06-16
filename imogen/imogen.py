@@ -206,6 +206,24 @@ auto_messages = [
 ]
 
 
+def gpt_prompt(prompt: str = "") -> str:
+    prompt = prompt or (
+        "text prompts for a neural network that are aiming to be artistic, "
+        'short descriptive phrases of bizarre, otherworldly scenes: "'
+    )
+    completion = openai.Completion.create(  # type: ignore
+        engine="davinci",
+        prompt=prompt,
+        temperature=0.9,
+        max_tokens=140,
+        top_p=1,
+        frequency_penalty=0.0,
+        presence_penalty=0.6,
+        stop=['"', "\n"],
+    )
+    return completion["choices"][0]["text"].strip()
+
+
 class Imogen(GelatoBot):
     # pylint: disable=too-many-public-methods, no-self-use
     def __init__(self, bot_number: Optional[str] = None) -> None:
@@ -221,9 +239,12 @@ class Imogen(GelatoBot):
         all_admins = utils.get_secret("ADMINS").split(",") + [utils.get_secret("ADMIN")]
         self.admin_allowlist_groups = [
             row["group_id"]
-            for row in await self.queue.execute(
-                "select distinct group_id from prompt_queue where author=any($1)",
-                all_admins,
+            for row in (
+                await self.queue.execute(
+                    "select distinct group_id from prompt_queue where author=any($1)",
+                    all_admins,
+                )
+                or []
             )
         ]
         await self.admin("\N{deciduous tree}\N{robot face}\N{hiking boot}")
@@ -847,10 +868,10 @@ class Imogen(GelatoBot):
             f"Human: {msg.text}\nAI: "
         )
         response = openai.Completion.create(  # type: ignore
-            engine="text-davinci-001",
+            engine="text-davinci-002",
             prompt=prompt,
             temperature=0.99,
-            max_tokens=140,
+            max_tokens=256,
             top_p=1,
             frequency_penalty=0.0,
             presence_penalty=0.6,
@@ -860,13 +881,13 @@ class Imogen(GelatoBot):
     @hide
     async def do_instruct(self, msg: Message) -> str:
         response = openai.Completion.create(  # type: ignore
-            engine="text-davinci-001",
+            engine="text-davinci-002",
             prompt=msg.text,
-            temperature=0.99,
-            max_tokens=140,
+            temperature=0.7,
+            max_tokens=256,
             top_p=1,
             frequency_penalty=0.0,
-            presence_penalty=0.6,
+            presence_penalty=0.1,
         )
         return response["choices"][0]["text"].strip()
 
@@ -900,24 +921,9 @@ class Imogen(GelatoBot):
     @hide
     async def do_spitball(self, msg: Message) -> str:
         "Spitball a prompt"
-        prompt = (
-            "text prompts for a neural network that are aiming to be artistic, "
-            'short descriptive phrases of bizarre, otherworldly scenes: "'
-        )
-        completion = openai.Completion.create(  # type: ignore
-            engine="davinci",
-            prompt=prompt,
-            temperature=0.9,
-            max_tokens=140,
-            top_p=1,
-            frequency_penalty=0.0,
-            presence_penalty=0.6,
-            stop=['"', "\n"],
-        )
-        prompt = completion["choices"][0]["text"].strip()
-        msg.text = prompt
+        msg.text = gpt_prompt()
         resp = await self.do_imagine(msg)
-        return resp.replace("you are", f'"{prompt}" is')
+        return resp.replace("you are", f'"{msg.text}" is')
 
     @hide
     async def do_test(self, msg: Message) -> str:
@@ -1167,10 +1173,15 @@ async def prompt_msg_handler(request: web.Request) -> web.Response:
     return web.Response(text="sent")
 
 
+async def prompt_handler(req: web.Request) -> web.Response:
+    return web.Response(text=gpt_prompt())
+
+
 app.add_routes(
     [
         web.post("/attachment", store_image_handler),
         web.post("/prompt_message", prompt_msg_handler),
+        web.get("/prompt", prompt_handler),
     ]
 )
 

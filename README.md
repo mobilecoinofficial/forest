@@ -286,6 +286,10 @@ Code style: Ensure that `mypy *py` and `pylint *py` do not return errors before 
 
 Use [black](https://github.com/psf/black) to format your python code. Prefer verbose, easier to read names over conciser ones.
 
+Break any of these rules sooner than write anything outright barbarous. 
+
+### It's dangerous to contribute alone! Take this
+
 `pip install black pylint mypy types-protobuf types-termcolor`
 
 Install black pre-commit hook with `ln -s (readlink -f .githooks/pre-commit) .git/hooks/pre-commit` on fish, or `ln -s $(readlink -f .githooks/pre-commit) .git/hooks/pre-commit` on bash. Requires black to be installed.
