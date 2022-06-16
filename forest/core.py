@@ -1072,7 +1072,7 @@ class PayBot(ExtrasBot):
         if not utils.AUXIN:
             return "Can't set payment address without auxin"
         await self.set_profile_auxin(
-            mobilecoin_address=mc_util.b58_wrapper_to_b64_public_address(
+            payment_address=mc_util.b58_wrapper_to_b64_public_address(
                 await self.mobster.ensure_address()
             )
         )
@@ -1749,9 +1749,16 @@ class QuestionBot(PayBot):
             resp = await self.ask_freeform_question(
                 msg.source, f"value for field {field}?"
             )
+            if resp and resp.lower() == "skip":
+                break
             if resp and resp.lower() != "none":
                 fields[field] = resp
-        fields["mobilecoin_address"] = await self.mobster.ensure_address()
+        fields["payment_address"] = (
+            mc_util.b58_wrapper_to_b64_public_address(
+                await self.mobster.ensure_address()
+            )
+            or ""
+        )
         attachments = await get_attachment_paths(msg)
         if attachments:
             fields["profile_path"] = attachments[0]
