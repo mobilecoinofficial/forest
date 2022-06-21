@@ -755,8 +755,8 @@ class Bot(Signal):
         used for signup metrics
         """
         if not pghelp.pool.pool:
-            await pghelp.pool.connect()
-            # mypy can't infer that connect_pg creates pool
+            await pool.connect(self.activity.database, self.activity.table)
+            # mypy can't infer that connect creates pool
             assert pghelp.pool.pool
         while 1:
             await asyncio.sleep(60)

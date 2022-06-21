@@ -874,7 +874,7 @@ class Imogen(GelatoBot):
             max_tokens=256,
             top_p=1,
             frequency_penalty=0.0,
-            presence_penalty=0.6,
+            presence_penalty=0.0,
         )
         return response["choices"][0]["text"].strip()
 
@@ -887,7 +887,7 @@ class Imogen(GelatoBot):
             max_tokens=256,
             top_p=1,
             frequency_penalty=0.0,
-            presence_penalty=0.1,
+            presence_penalty=0.0,
         )
         return response["choices"][0]["text"].strip()
 
@@ -917,6 +917,24 @@ class Imogen(GelatoBot):
             presence_penalty=0,
         )
         return response["choices"][0]["text"].strip()
+
+    @hide
+    async def do_nomorenights(self, msg: Message) -> str:
+        # toks = msg.text.split()
+        # while toks:
+        #     if len(toks) > 2 and toks[0].startswith("-"):
+        #         params[toks.pop(0).removeprefix("-")] = toks[1]
+        #     else:
+        #         break
+        response = openai.Completion.create(  # type: ignore
+            engine=utils.get_secret("FINETUNE_MODEL"),
+            prompt=msg.full_text.split(" ")[1],
+            temperature=0.9,
+            max_tokens=240,
+        )
+        return response["choices"][0]["text"]
+
+    do_n = do_nomorenights
 
     @hide
     async def do_spitball(self, msg: Message) -> str:
