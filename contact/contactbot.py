@@ -245,7 +245,7 @@ class Forest(QuestionBot):
             await self.mobster.ledger_manager.put_pmob_tx(
                 message.source,
                 fake_usd,
-                mc_util.mob2pmob(self.mob_price * 100),
+                mc_util.mob2pmob(self.mob_price),
                 "shibboleth",
             )
             return "...thank you for your payment. You can buy a phone number with /order <area code>"
@@ -262,10 +262,10 @@ class Forest(QuestionBot):
             msg.arg1 = str(code)
         if not (msg.arg1 and len(msg.arg1) == 3 and msg.arg1.isnumeric()):
             return "Usage: /order <area code>"
-        numbers = await self.get_user_numbers(msg)
+        held_numbers = await self.get_user_numbers(msg)
         # one free for everyone, always free in UA
         # need to note that this is a freebie
-        if numbers and not msg.source.startswith("+380"):
+        if held_numbers and not msg.source.startswith("+380"):
             diff = (
                 mc_util.pmob2mob(await self.get_user_pmob_balance(msg.source))
                 - self.mob_price
@@ -298,13 +298,14 @@ class Forest(QuestionBot):
         await self.routing_manager.set_destination(number, msg.source)
         await self.routing_manager.set_expiration_1mo(number)
         if await self.routing_manager.get_destination(number):
-            fake_usd = int(await self.mobster.pmob2usd(self.mob_price * 1e12) * 100)
-            await self.mobster.ledger_manager.put_pmob_tx(
-                msg.source,
-                -fake_usd,
-                -mc_util.mob2pmob(self.mob_price * 100),
-                number,
-            )
+            if not held_numbers or msg.source.startswith("+380"):
+                fake_usd = int(await self.mobster.pmob2usd(self.mob_price * 1e12) * 100)
+                await self.mobster.ledger_manager.put_pmob_tx(
+                    msg.source,
+                    -fake_usd,
+                    -mc_util.mob2pmob(self.mob_price),
+                    number,
+                )
             return f"You are now the proud owner of {number}"
         return "Database error?"
 
