@@ -67,7 +67,7 @@ Response = Union[str, list, dict[str, str], None]
 AsyncFunc = Callable[..., Awaitable]
 Command = Callable[["Bot", Message], Coroutine[Any, Any, Response]]
 
-roundtrip_histogram = Histogram("roundtrip_h", "Roundtrip message response time")  # type: ignore
+roundtrip_histogram = Histogram("roundtrip_h", "Roundtrip message response time")
 roundtrip_summary = Summary("roundtrip_s", "Roundtrip message response time")
 
 MessageParser = AuxinMessage if utils.AUXIN else StdioMessage
@@ -294,7 +294,7 @@ class Signal:
             if self.sigints > 1:
                 return
             if asyncio.iscoroutinefunction(_func):
-                task = asyncio.create_task(_func())
+                task = asyncio.create_task(_func())  # type: ignore
                 task.add_done_callback(self.restart_task_callback(_func))
                 logging.info("%s restarting", name)
 
@@ -830,8 +830,8 @@ class Bot(Signal):
             self.signal_roundtrip_latency.append(
                 (message.timestamp, note, roundtrip_delta)
             )
-            roundtrip_summary.observe(roundtrip_delta)  # type: ignore
-            roundtrip_histogram.observe(roundtrip_delta)  # type: ignore
+            roundtrip_summary.observe(roundtrip_delta)
+            roundtrip_histogram.observe(roundtrip_delta)
             logging.info("noted roundtrip time: %s", roundtrip_delta)
             if utils.get_secret("ADMIN_METRICS"):
                 await self.admin(
@@ -1243,6 +1243,39 @@ class PayBot(ExtrasBot):
             f"redeemable for {str(mc_util.pmob2mob(amount_pmob - FEE_PMOB)).rstrip('0')} MOB",
         ]
 
+    async def confirm_tx_timeout(self, tx_id: str, recipient: str, timeout: int) -> str:
+        logging.debug("Attempting to confirm tx status for %s", recipient)
+        status = "tx_status_pending"
+        for i in range(timeout):
+            tx_status = await self.mob_request(
+                "get_transaction_log", transaction_log_id=tx_id
+            )
+            status = (
+                tx_status.get("result", {}).get("transaction_log", {}).get("status")
+            )
+            if status == "tx_status_succeeded":
+                logging.info(
+                    "Tx to %s suceeded - tx data: %s",
+                    recipient,
+                    tx_status.get("result"),
+                )
+                break
+            if status == "tx_status_failed":
+                logging.warning(
+                    "Tx to %s failed - tx data: %s",
+                    recipient,
+                    tx_status.get("result"),
+                )
+                break
+            await asyncio.sleep(1)
+        if status == "tx_status_pending":
+            logging.warning(
+                "Tx to %s timed out - tx data: %s",
+                recipient,
+                tx_status.get("result"),
+            )
+        return status
+
     # FIXME: clarify signature and return details/docs
     async def send_payment(  # pylint: disable=too-many-locals
         self,
@@ -1334,39 +1367,8 @@ class PayBot(ExtrasBot):
                     recipient=recipient,
                 )
             )
-
         if confirm_tx_timeout:
-            logging.debug("Attempting to confirm tx status for %s", recipient)
-            status = "tx_status_pending"
-            for i in range(confirm_tx_timeout):
-                tx_status = await self.mob_request(
-                    "get_transaction_log", transaction_log_id=tx_id
-                )
-                status = (
-                    tx_status.get("result", {}).get("transaction_log", {}).get("status")
-                )
-                if status == "tx_status_succeeded":
-                    logging.info(
-                        "Tx to %s suceeded - tx data: %s",
-                        recipient,
-                        tx_status.get("result"),
-                    )
-                    break
-                if status == "tx_status_failed":
-                    logging.warning(
-                        "Tx to %s failed - tx data: %s",
-                        recipient,
-                        tx_status.get("result"),
-                    )
-                    break
-                await asyncio.sleep(1)
-
-            if status == "tx_status_pending":
-                logging.warning(
-                    "Tx to %s timed out - tx data: %s",
-                    recipient,
-                    tx_status.get("result"),
-                )
+            status = await self.confirm_tx_timeout(tx_id, recipient, confirm_tx_timeout)
             resp = await resp_future
             # the calling function can use these to check the payment status
             resp.status, resp.transaction_log_id = status, tx_id  # type: ignore
