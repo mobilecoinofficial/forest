@@ -63,7 +63,7 @@ disable= [
     "consider-using-with",
     "consider-using-from-import",
     "fixme",
-    "no-self-use",
+    # "no-self-use",
     "unspecified-encoding",
     # handled by black
     "format",

@@ -156,7 +156,7 @@ class Mobster:
         built = 0
         i = 0
         utxos: list[tuple[str, int]] = list(reversed((await self.get_utxos()).items()))
-        if sum([value for _, value in utxos]) < output_pmob * target_quantity:
+        if sum(value for _, value in utxos) < output_pmob * target_quantity:
             return "insufficient MOB"
         while built < (target_quantity + 3):
             if len(utxos) < 1:
