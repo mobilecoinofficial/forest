@@ -352,6 +352,9 @@ class Signal:
         if "result" in blob:
             if isinstance(blob["result"], dict):
                 message_blob = blob
+            elif isinstance(blob["result"], list):
+                # import pdb; pdb.set_trace()
+                message_blob = blob #["result"][0]
             else:
                 logging.warning(blob["result"])
         if "error" in blob:
