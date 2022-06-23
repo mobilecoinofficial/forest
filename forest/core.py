@@ -293,7 +293,7 @@ class Signal:
             if self.sigints > 1:
                 return
             if asyncio.iscoroutinefunction(_func):
-                task = asyncio.create_task(_func())  # type: ignore
+                task = asyncio.create_task(_func())
                 task.add_done_callback(self.restart_task_callback(_func))
                 logging.info("%s restarting", name)
 
