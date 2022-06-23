@@ -1326,7 +1326,7 @@ class PayBot(ExtrasBot):
         else:
             resp_future = asyncio.create_task(
                 self.signal_rpc_request(
-                    "sentPaymentNotification",
+                    "sendPaymentNotification",
                     receipt=b64_receipt,
                     note=receipt_message,
                     recipient=recipient,
