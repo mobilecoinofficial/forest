@@ -351,10 +351,11 @@ class Signal:
             message_blob = blob["params"]
         if "result" in blob:
             if isinstance(blob["result"], dict):
+                # import pdb; pdb.set_trace()
                 message_blob = blob
             elif isinstance(blob["result"], list):
                 # import pdb; pdb.set_trace()
-                message_blob = blob #["result"][0]
+                message_blob = {"id": blob["id"], "result": blob["result"][0]}
             else:
                 logging.warning(blob["result"])
         if "error" in blob:
@@ -1154,9 +1155,17 @@ class PayBot(ExtrasBot):
 
     async def get_signalpay_address(self, recipient: str) -> Optional[str]:
         "get a receipient's mobilecoin address"
-        result = await self.signal_rpc_request("getPayAddress", peer_name=recipient)
+        if utils.AUXIN:
+            result = await self.signal_rpc_request("getPayAddress", peer_name=recipient)
+            b64_address = (
+                result.blob.get("Address", {}).get("mobileCoinAddress", {}).get("address")
+            )
+            if result.error or not b64_address:
+                logging.info("bad address: %s", result.blob)
+                return None
+        result = await self.signal_rpc_request("listContacts", recipient=recipient)
         b64_address = (
-            result.blob.get("Address", {}).get("mobileCoinAddress", {}).get("address")
+            result.blob.get("result", {}).get("profile", {}).get("mobileCoinAddress")
         )
         if result.error or not b64_address:
             logging.info("bad address: %s", result.blob)
