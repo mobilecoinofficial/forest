@@ -21,13 +21,13 @@ jobs:
         with:
           path: ~/.cache/pypoetry/virtualenvs
           key: '${{ runner.os }}-poetry-v2-${{ hashFiles(''**/poetry.lock'') }}'
+      - name: Setup tmate session # this lets you SSH into the container
+        uses: mxschmitt/action-tmate@v3
       - name: Install dependencies
         if: steps.cache-poetry.outputs.cache-hit != 'true'
         run: cp .github/pyproject.toml .; rm poetry.lock; poetry install 
       - name: List dependency versions (check this if you get confusing results)
         run: poetry show --tree
-      # - name: Setup tmate session # this lets you SSH into the container
-      #   uses: mxschmitt/action-tmate@v3
       - name: Black
         run: poetry run black . --check
         if: always()

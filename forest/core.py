@@ -350,10 +350,10 @@ class Signal:
             message_blob = blob["params"]
         if "result" in blob:
             if isinstance(blob["result"], dict):
-                # import pdb; pdb.set_trace()
                 message_blob = blob
             elif isinstance(blob["result"], list):
-                # import pdb; pdb.set_trace()
+                # Message expects a dict with an id, but signal-cli listContacts returns a list
+                # we're usually only get a single contact, so we massage this
                 message_blob = {"id": blob["id"], "result": blob["result"][0]}
             else:
                 logging.warning(blob["result"])
