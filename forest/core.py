@@ -1056,7 +1056,7 @@ class ExtrasBot(Bot):
 
 def compose_payment_content(receipt: str, note: str) -> dict:
     # serde expects bytes to be u8[], not b64
-    tx = {"mobileCoin": {"receipt": u8(b64_receipt)}}
+    tx = {"mobileCoin": {"receipt": u8(receipt)}}
     note = note or "check out this java-free payment notification"
     payment = {"Item": {"notification": {"note": note, "Transaction": tx}}}
     # SignalServiceMessageContent protobuf represented as JSON (spicy)
@@ -1158,7 +1158,9 @@ class PayBot(ExtrasBot):
         if utils.AUXIN:
             result = await self.signal_rpc_request("getPayAddress", peer_name=recipient)
             b64_address = (
-                result.blob.get("Address", {}).get("mobileCoinAddress", {}).get("address")
+                result.blob.get("Address", {})
+                .get("mobileCoinAddress", {})
+                .get("address")
             )
             if result.error or not b64_address:
                 logging.info("bad address: %s", result.blob)
