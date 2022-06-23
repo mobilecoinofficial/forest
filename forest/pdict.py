@@ -152,7 +152,7 @@ class PersistDict(dict):
             return val
 
         # creates a new event loop on a separate thread, invokes async_get function, returns result
-        result = self.thread_pool.submit(asyncio.run, async_get()).result()
+        result = self.thread_pool.submit(asyncio.run, async_get()).result()  # type: ignore
         dict_ = {}
         if isinstance(result, str) and result:
             dict_ = json.loads(result)
@@ -171,7 +171,7 @@ class PersistDict(dict):
             await client.conn.close()
             return val
 
-        return self.thread_pool.submit(asyncio.run, async_push()).result()
+        return self.thread_pool.submit(asyncio.run, async_push()).result()  # type: ignore
 
     def __setitem__(self, key: str, value: Union[float, str]) -> None:
         super().__setitem__(key, value)

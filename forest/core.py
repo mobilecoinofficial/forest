@@ -32,7 +32,6 @@ from pathlib import Path
 from textwrap import dedent
 from typing import (
     Any,
-    Awaitable,
     Callable,
     Coroutine,
     Mapping,
@@ -64,7 +63,7 @@ except ImportError:
 
 JSON = dict[str, Any]
 Response = Union[str, list, dict[str, str], None]
-AsyncFunc = Callable[..., Awaitable]
+AsyncFunc = Callable[..., Coroutine[Any, Any, Any]]
 Command = Callable[["Bot", Message], Coroutine[Any, Any, Response]]
 
 roundtrip_histogram = Histogram("roundtrip_h", "Roundtrip message response time")
@@ -1066,16 +1065,6 @@ def compose_payment_content(receipt: str, note: str) -> dict:
 
 
 class PayBot(ExtrasBot):
-    PAYMENTS_HELPTEXT = """Enable Signal Pay:
-
-    1. In Signal, tap “⬅️“ & tap on your profile icon in the top left & tap *Settings*
-
-    2. Tap *Payments* & tap *Activate Payments*
-
-    For more information on Signal Payments visit:
-
-    https://support.signal.org/hc/en-us/articles/360057625692-In-app-Payments"""
-
     @requires_admin
     async def do_fsr(self, msg: Message) -> Response:
         """
@@ -1476,9 +1465,10 @@ class QuestionBot(PayBot):
 
         # This checks to see if the answer is a valid candidate for float by replacing
         # the first comma or decimal point with a number to see if the resulting string .isnumeric()
+        # does the same for negative signs
         if answer_text and not (
-            answer_text.replace(".", "1", 1).isnumeric()
-            or answer_text.replace(",", "1", 1).isnumeric()
+            answer_text.replace("-", "1", 1).replace(".", "1", 1).isnumeric()
+            or answer_text.replace("-", "1", 1).replace(",", "1", 1).isnumeric()
         ):
             # cancel if user replies with any of the terminal answers "stop, cancel, quit, etc. defined above"
             if answer.lower() in self.TERMINAL_ANSWERS:

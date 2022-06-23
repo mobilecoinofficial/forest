@@ -5,7 +5,7 @@ RUN mv /usr/bin/signal-cli-native /usr/bin/signal-cli
 FROM ghcr.io/rust-lang/rust:nightly as builder
 WORKDIR /app
 RUN rustup default nightly
-RUN git clone https://github.com/mobilecoinofficial/auxin && cd auxin && git pull origin 0.1.12
+RUN git clone https://github.com/mobilecoinofficial/auxin && cd auxin && git pull origin 0.1.17
 WORKDIR /app/auxin
 RUN cargo +nightly build --release
 

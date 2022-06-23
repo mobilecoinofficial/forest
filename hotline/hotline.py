@@ -1,8 +1,6 @@
 #!/usr/bin/python3.9
 # Copyright (c) 2021 MobileCoin Inc.
 # Copyright (c) 2021 The Forest Team
-
-
 import asyncio
 import json
 import string
@@ -12,126 +10,25 @@ import logging
 from decimal import Decimal
 from typing import Optional
 
-from aiohttp import web
-from prometheus_async import aio
-from prometheus_async.aio import time as time_
-from prometheus_client import Summary
-
 from forest import utils
 from forest.core import (
     Message,
-    QuestionBot,
     Response,
-    app,
     hide,
     requires_admin,
     is_admin,
     get_uid,
+    run_bot,
 )
+
+from forest.extra import DialogBot
 from forest.pdictng import aPersistDict, aPersistDictOfInts, aPersistDictOfLists
 from mc_util import pmob2mob
 
 FEE = int(1e12 * 0.0004)
-REQUEST_TIME = Summary("request_processing_seconds", "Time spent processing request")
 
 
-class TalkBack(QuestionBot):
-    def __init__(self) -> None:
-        self.profile_cache: aPersistDict[dict[str, str]] = aPersistDict("profile_cache")
-        self.displayname_cache: aPersistDict[str] = aPersistDict("displayname_cache")
-        self.displayname_lookup_cache: aPersistDict[str] = aPersistDict(
-            "displayname_lookup_cache"
-        )
-        super().__init__()
-
-    async def handle_message(self, message: Message) -> Response:
-        if message.quoted_text and is_admin(message):
-            maybe_id = await self.displayname_lookup_cache.get(
-                message.quoted_text.split()[0]
-            )
-            if maybe_id:
-                await self.send_message(maybe_id, message.text)
-        return await super().handle_message(message)
-
-    @requires_admin
-    async def do_send(self, msg: Message) -> Response:
-        """Send <recipient> <message>
-        Sends a message as MOBot."""
-        obj = msg.arg1
-        param = msg.arg2
-        if not is_admin(msg):
-            await self.send_message(
-                utils.get_secret("ADMIN"), f"Someone just used send:\n {msg}"
-            )
-        if obj and param:
-            if obj in await self.displayname_lookup_cache.keys():
-                obj = await self.displayname_lookup_cache.get(obj)
-            try:
-                result = await self.send_message(obj, param)
-                return result
-            except Exception as err:  # pylint: disable=broad-except
-                return str(err)
-        if not obj:
-            msg.arg1 = await self.ask_freeform_question(
-                msg.uuid, "Who would you like to message?"
-            )
-        if param and param.strip(string.punctuation).isalnum():
-            param = (
-                (msg.full_text or "")
-                .lstrip("/")
-                .replace(f"send {msg.arg1} ", "", 1)
-                .replace(f"Send {msg.arg1} ", "", 1)
-            )  # thanks mikey :)
-        if not param:
-            msg.arg2 = await self.ask_freeform_question(
-                msg.uuid, "What would you like to say?"
-            )
-        return await self.do_send(msg)
-
-    async def get_displayname(self, uuid: str) -> str:
-        """Retrieves a display name from a UUID, stores in the cache, handles error conditions."""
-        uuid = uuid.strip("\u2068\u2069")
-        # displayname provided, not uuid or phone
-        if uuid.count("-") != 4 and not uuid.startswith("+"):
-            uuid = await self.displayname_lookup_cache.get(uuid, uuid)
-        # phone number, not uuid provided
-        if uuid.startswith("+"):
-            uuid = self.get_uuid_by_phone(uuid) or uuid
-        maybe_displayname = await self.displayname_cache.get(uuid)
-        if maybe_displayname:
-            return maybe_displayname
-        maybe_user_profile = await self.profile_cache.get(uuid)
-        # if no luck, but we have a valid uuid
-        user_given = ""
-        if not maybe_user_profile and uuid.count("-") == 4:
-            try:
-                maybe_user_profile = (
-                    await self.signal_rpc_request("getprofile", peer_name=uuid)
-                ).blob or {}
-                user_given = maybe_user_profile.get("givenName", "")
-                await self.profile_cache.set(uuid, maybe_user_profile)
-            except AttributeError:
-                # this returns a Dict containing an error key
-                user_given = "[error]"
-        elif maybe_user_profile and "givenName" in maybe_user_profile:
-            user_given = maybe_user_profile["givenName"]
-        if not user_given:
-            user_given = "givenName"
-        if uuid and ("+" not in uuid and "-" in uuid):
-            user_short = f"{user_given}_{uuid.split('-')[1]}"
-        else:
-            user_short = user_given + uuid
-        await self.displayname_cache.set(uuid, user_short)
-        await self.displayname_lookup_cache.set(user_short, uuid)
-        return user_short
-
-    async def talkback(self, msg: Message) -> Response:
-        source = msg.uuid or msg.source
-        await self.admin(f"{await self.get_displayname(source)} says: {msg.full_text}")
-        return None
-
-
-class ClanGat(TalkBack):
+class Hotline(DialogBot):  # pylint: disable=too-many-public-methods
     def __init__(self) -> None:
         self.no_repay: list[str] = []
         self.pending_orders: aPersistDict[str] = aPersistDict("pending_orders")
@@ -162,6 +59,8 @@ class ClanGat(TalkBack):
         self.scratch_pad: aPersistDict[str] = aPersistDict("scratch_pad")
         self.pay_lock: asyncio.Lock = asyncio.Lock()
         self.donations: aPersistDict[str] = aPersistDict("donations")
+        self.first_messages: aPersistDict[int] = aPersistDict("first_messages")
+        self.last_prompted: aPersistDict[int] = aPersistDict("last_prompted")
         # okay, this now maps the tag (restore key) of each of the above to the instance of the PersistDict class
         self.state = {
             self.__getattribute__(attr).tag: self.__getattribute__(attr)
@@ -221,16 +120,7 @@ class ClanGat(TalkBack):
             for list_ in await self.event_lists.keys()
             if user in await self.event_lists.get(list_, [])
         ]
-        owns_event = [
-            list_
-            for list_ in await self.event_lists.keys()
-            if user in await self.event_owners.get(list_, [])
-        ]
-        owns_list = [
-            list_
-            for list_ in await self.event_lists.keys()
-            if user in await self.list_owners.get(list_, [])
-        ]
+        owns_event, owns_list = await self._get_user_owns(user)
         return f"You're on the list for {lists_}.\n\nYou own these paid events: {owns_event}\n\nYou own these free lists: {owns_list}\n\nFor more information reply: check <code>."
 
     async def do_stop(self, msg: Message) -> Response:
@@ -272,15 +162,17 @@ class ClanGat(TalkBack):
                 f"Owner of {list_} requests payout of {balance}. Approve?",
             ):
                 return "Sorry, admin rejected your payout."
-            return await self.pay_user_from_balance(user, list_, balance)
+            return await self.pay_user_from_balance(user, list_, balance - 1)
         return "Sorry, no luck"
 
     async def pay_user_from_balance(
         self, user: str, list_: str, amount_mmob: int
-    ) -> Response:
-        """Pays a user a given amount of MOB by manually grabbing UTXOs until a transaction can be made."""
-        # pylint: disable=too-many-return-statements
+    ) -> Optional[str]:
+        """Pays a user a given amount of MOB by manually grabbing UTXOs until a transaction can be made.
+        Assumptions made:"""
+        # pylint: disable=too-many-return-statements,too-many-locals,too-many-branches
         balance = await self.payout_balance_mmob.get(list_, 0)
+        await self.send_typing(recipient=user)
         # pad fees
         logging.debug(f"PAYING {amount_mmob}mmob from {balance} of {list_}")
         if amount_mmob < balance:
@@ -288,29 +180,80 @@ class ClanGat(TalkBack):
                 utxos = list(reversed((await self.mobster.get_utxos()).items()))
                 input_pmob_sum = 0
                 input_txo_ids = []
+                # dust
+                skipped_utxos = []
+                # acquire utxos
                 while input_pmob_sum < ((amount_mmob + 1) * 1_000_000_000):
-                    txoid, pmob = utxos.pop()
+                    if utxos:
+                        # get a txoid and amount to check
+                        txoid, pmob = utxos.pop()
+                    else:
+                        # no utxos left, we've reviewed all of the available ones.
+                        # release so the recursively instantiated children calls can re-acquire
+                        self.pay_lock.release()
+                        # recurse with smaller amounts
+                        first_half = await self.pay_user_from_balance(
+                            user, list_, amount_mmob // 2
+                        )
+                        # if first leg succeeds..
+                        if first_half and "Paid" in first_half:
+                            # let's do it again
+                            second_half = await self.pay_user_from_balance(
+                                user, list_, amount_mmob // 2
+                            )
+                            # and if we're winning
+                            if second_half and "Paid" in second_half:
+                                # acquire to exit-handler more nicely
+                                await self.pay_lock.acquire()
+                                return f"Paid you you {amount_mmob/1000}MOB"
+                        else:
+                            # sadly acquire lock in defeat
+                            await self.pay_lock.acquire()
+                        return None
                     if pmob < (amount_mmob * 1_000_000_000) // 15:
                         logging.debug(f"skipping UTXO worth {pmob}pmob")
+                        skipped_utxos += [(txoid, pmob)]
                         continue
                     input_txo_ids += [txoid]
                     input_pmob_sum += pmob
                     if len(input_txo_ids) > 15:
                         return "Something went wrong! Please contact your administrator for support. (too many utxos needed)"
+                # how many slots do we have for dust?
+                dust_space = 16 - len(input_txo_ids)
+                # grab dust up to 16 utxos total or up to # dust, whichever is smaller
+                logging.info(
+                    f"Space for {dust_space}, we have {len(skipped_utxos)} presumed dust!"
+                )
+                for _ in range(min(dust_space, len(skipped_utxos))):
+                    # smallest dust = higher priority for cleaning
+                    dust_txoid, dust_val_pmob = skipped_utxos.pop(0)
+                    input_txo_ids.append(dust_txoid)
                     logging.debug(
-                        f"found: {input_pmob_sum} / {amount_mmob*1_000_000_000} across {len(input_txo_ids)}utxos"
+                        f"grabbing dust worth {dust_val_pmob}pmob to fill empty space in transaction inputs"
                     )
+                    input_pmob_sum += dust_val_pmob
+                logging.debug(
+                    f"found: {input_pmob_sum} / {amount_mmob*1_000_000_000} across {len(input_txo_ids)}utxos"
+                )
                 if not input_txo_ids:
                     return "Something went wrong! Please contact your administrator for support. (not enough utxos)"
+                # build a memo lookup key for the relevant list
+                MEMO_KEY = "PAY_MEMO_" + list_
+                # attempt to fetch PAY_MEMO_list_ falling back to DEFAULT_PAY_MEMO
+                memo_dialog = await self.dialog.get(
+                    MEMO_KEY, None
+                ) or await self.dialog.get("DEFAULT_PAY_MEMO", "DEFAULT_PAY_MEMO")
                 result = await self.send_payment(
                     recipient=user,
                     amount_pmob=(amount_mmob * 1_000_000_000),
-                    receipt_message=f'Payment for the "{list_}" event!',
+                    receipt_message=memo_dialog,
                     input_txo_ids=input_txo_ids,
+                    confirm_tx_timeout=60,
                 )
-                if result and not result.status == "tx_status_failed":
+                await self.send_typing(recipient=user, stop=True)
+                if result and result.status == "tx_status_succeeded":
                     await self.payout_balance_mmob.decrement(list_, amount_mmob)
-                    return f"Payed you you {amount_mmob/1000}MOB"
+                    return f"Paid you you {amount_mmob/1000}MOB"
                 return None
         if not balance:
             return "Sorry, {list_} has 0mmob balance!"  # thanks y?!
@@ -319,9 +262,7 @@ class ClanGat(TalkBack):
     @hide
     async def do_pay(self, msg: Message) -> Response:
         """Allows an event/list owner to distribute available funds across those on a list."""
-        # pylint: disable=too-many-return-statements,too-many-branches,too-many-locals
         user = msg.uuid
-        to_send: list[str] = []
         if not msg.arg2 or not msg.arg2.isnumeric():
             msg.arg2 = await self.ask_freeform_question(
                 msg.uuid,
@@ -329,11 +270,11 @@ class ClanGat(TalkBack):
             )
             if msg.arg2 == "0":
                 return "OK, cancelling."
-        amount_mmob = 0
+        amount_mmob = 0  # excuse me?
         list_, amount, message = (
             (msg.arg1 or "").lower(),
             (msg.arg2 or "0"),
-            msg.arg3 or msg.arg1,
+            msg.arg3 or msg.arg1 or "",
         )
         if not amount.isnumeric() or not amount:
             msg.arg2 = await self.ask_freeform_question(
@@ -351,17 +292,25 @@ class ClanGat(TalkBack):
         user_owns = await self.check_user_owns(user, list_)
         if not is_admin(msg) and not user_owns:
             return "Sorry, you are not authorized."
-        # when would to_send not be [] here?
-        if len(to_send) == 0 and not (
+        return await self.pay_list(msg, amount_mmob, list_, message)
+
+    async def pay_list(
+        self,
+        msg: Message,
+        amount_mmob: int,
+        list_: str,
+        message: str,
+    ) -> Response:
+        "Actually distribute funds across those on a list." ""
+        if not (
             list_ in await self.event_lists.keys()
             or list_ in await self.event_attendees.keys()
         ):
             return "Sorry, that's not a valid list or number!"
-        if len(to_send) == 0:
-            to_send = await self.event_lists.get(
-                list_, []
-            ) or await self.event_attendees.get(list_, [])
-        save_key = f"{list_}_{amount}_{message}"
+        to_send = await self.event_lists.get(
+            list_, []
+        ) or await self.event_attendees.get(list_, [])
+        save_key = f"{list_}_{amount_mmob}_{message}"
         filtered_send_list = [
             user
             for user in to_send
@@ -396,7 +345,7 @@ class ClanGat(TalkBack):
                     "Please wait! Insufficient number of utxos!\nBuilding more...",
                 )
                 building_msg = await self.mobster.split_txos_slow(
-                    amount_mmob, (len(filtered_send_list) - len(valid_utxos))
+                    amount_mmob + 1, (len(filtered_send_list) - len(valid_utxos))
                 )
                 await self.send_message(msg.uuid, building_msg)
                 valid_utxos = [
@@ -409,21 +358,26 @@ class ClanGat(TalkBack):
             async def pay_logging_success(
                 target: str,
                 amount_mmob: int,
-                message: Optional[str] = "",
+                message: str = "",
                 input_txo_ids: Optional[list[str]] = None,
             ) -> Optional[Message]:
                 if not input_txo_ids:
                     input_txo_ids = []
                 try:
+                    await self.send_typing(recipient=target)
                     result = await self.send_payment(
                         recipient=target,
                         amount_pmob=amount_mmob * 1_000_000_000,
-                        receipt_message=message or "",
+                        receipt_message=message,
                         input_txo_ids=input_txo_ids,
+                        confirm_tx_timeout=60,
                     )
                     await asyncio.sleep(0.5)
+                    await self.send_typing(recipient=target, stop=True)
                     # if we didn't get a result indicating success
-                    if not result or (result and result.status == "tx_status_failed"):
+                    if not result or (
+                        result and result.status != "tx_status_succeeded"
+                    ):
                         # stash as failed
                         return None
                     # persist user as successfully paid
@@ -576,6 +530,7 @@ class ClanGat(TalkBack):
 
     @hide
     async def do_subscribe(self, msg: Message) -> Response:
+        """Subscribe to a list."""
         obj = (msg.arg1 or "").lower()
         if obj not in await self.event_lists.keys():
             return f"Sorry, I couldn't find a list called {obj} - to create your own, try 'add list {obj}'."
@@ -585,16 +540,11 @@ class ClanGat(TalkBack):
         return f"Added you to the {obj} list!"
 
     async def do_help(self, msg: Message) -> Response:
-        if msg.arg1 and msg.arg1.lower() == "add":
-            return self.do_add.__doc__
-        if msg.arg1 and msg.arg1.lower() == "setup":
-            return self.do_setup.__doc__
-        return "\n\n".join(
-            [
-                "Hi, I'm MOBot! Welcome to my Hotline!",
-                "\nEvents and announcement lists can be unlocked by messaging me the secret code at any time.\n\nAccolades, feature requests, and support questions can be directed to my maintainers at https://signal.group/#CjQKILH5dkoz99TKxwG7T3TaVAuskMq4gybSplYDfTq-vxUrEhBhuy19A4DbvBqm7PfnBn3I .",
-            ]
-        )
+        if msg.uuid not in await self.first_messages.keys():
+            await self.first_messages.set(msg.uuid, int(time.time() * 1000))
+            if await self.dialog.get("FIRST_GREETING"):
+                return await self.dialog.get("FIRST_GREETING", "FIRST_GREETING")
+        return await self.dialog.get("WELCOME", "WELCOME")
 
     @hide
     async def do_remove(self, msg: Message) -> Response:
@@ -722,7 +672,7 @@ class ClanGat(TalkBack):
                     "What phrase should be returned when the easter egg is revealed?",
                 )
             if maybe_old_message:
-                self.send_message(msg.uuid, f"replacing: {maybe_old_message}")
+                await self.send_message(msg.uuid, f"replacing: {maybe_old_message}")
                 await self.easter_eggs.set(
                     param,
                     f"{value} - updated by {await self.get_displayname(msg.uuid)}",
@@ -809,8 +759,10 @@ class ClanGat(TalkBack):
             elif obj == "price" and user_owns == "event":
                 # check if string == floatable
                 if (
-                    value.replace(".", "1", 1).isnumeric()  # 1.01
-                    or value.replace(",", "1", 1).isnumeric()  # 1,01
+                    value.replace("-", "1", 1).replace(".", "1", 1).isnumeric()  # 1.01
+                    or value.replace("-", "1", 1)
+                    .replace(",", "1", 1)
+                    .isnumeric()  # 1,01
                 ):
                     await self.event_prices.set(
                         param, float(value.replace(",", ".", 1))
@@ -844,7 +796,7 @@ class ClanGat(TalkBack):
     async def maybe_unlock(self, msg: Message) -> Response:
         """Possibly unlocks an event."""
         # pylint: disable=too-many-return-statements,too-many-branches
-        code = msg.arg0
+        code = msg.arg0.strip(string.punctuation)
         # if the event has an owner and a price and there's attendee space and the user hasn't already bought tickets
         if (
             code
@@ -863,14 +815,22 @@ class ClanGat(TalkBack):
                     f"You may now make one purchase of up to 2 tickets at {await self.event_prices[code]} MOB ea.\nIf you have payments activated, open the conversation on your Signal mobile app, click on the plus (+) sign and choose payment.",
                 ]
             if await self.event_prices.get(code, 0) < 0:
+                if not await self.get_signalpay_address(msg.uuid):
+                    return await self.dialog.get("PLEASE_ACTIVATE", "PLEASE_ACTIVATE")
+                await self.send_message(
+                    msg.uuid,
+                    await self.dialog.get("ABOUT_TO_PAY", "Sending a payment!"),
+                )
+                await self.event_attendees.extend(code, msg.uuid)
                 res = await self.pay_user_from_balance(
                     msg.uuid,
                     code,
                     math.ceil(-1000 * await self.event_prices.get(code, 0)),
                 )
-                if res and "wrong" not in res:
-                    await self.event_attendees.extend(code, msg.uuid)
-                return res
+                if res and "Paid" in res:
+                    return await self.event_prompts.get(code, res)
+                await self.event_attendees.remove_from(code, msg.uuid)
+                return await self.dialog.get("WE_ARE_SO_SORRY", "Try again!")
             await self.send_message(
                 msg.uuid,
                 f"{await self.event_prompts.get(code) or 'You have unlocked an event!'}",
@@ -922,11 +882,16 @@ class ClanGat(TalkBack):
             and code in await self.event_lists.keys()  # if there's a list and...
             and msg.uuid in await self.event_attendees[code]  # user on the list
         ):
-            return f"You're already on the attendee list for the '{code}' event."
+            return await self.dialog.get(
+                "ALREADY_JOINED_" + code,
+                "You're already on the list!",
+            )
         return None
 
-    async def talkback(self, msg: Message) -> None:
-        code = msg.arg0
+    async def _get_user_lists_and_admins(
+        self, msg: Message
+    ) -> tuple[list[str], list[str]]:
+        """Takes a message, returns all lists and all list owners related to the originating user."""
         lists = []
         all_owners = []
         for list_ in await self.event_lists.keys():
@@ -949,16 +914,59 @@ class ClanGat(TalkBack):
             if maybe_pending and maybe_pending in await self.event_owners.keys():
                 all_owners += await self.event_owners.get(maybe_pending, [])
                 lists += [f"pending: {maybe_pending}"]
-        user_given = await self.get_displayname(msg.uuid)
-        # being really lazy about owners / all_owners here
-        for owner in list(set(all_owners)):
-            # don't flood j
-            if "7777" not in owner:
-                await self.send_message(
-                    owner,
-                    f"{user_given} ( {msg.source} ) says: {code} {msg.text}\nThey are on the following lists: {list(set(lists))}",
-                )
-                await asyncio.sleep(0.1)
+        return lists, list(set(all_owners))
+
+    async def _get_user_owns(self, user: str) -> tuple[list[str], list[str]]:
+        """Returns a 2-tuple of all events and lists owned by a user (passed as uuid)."""
+        owns_event = [
+            list_
+            for list_ in await self.event_lists.keys()
+            if user in await self.event_owners.get(list_, [])
+        ]
+        owns_list = [
+            list_
+            for list_ in await self.event_lists.keys()
+            if user in await self.list_owners.get(list_, [])
+        ]
+        return owns_event, owns_list
+
+    async def do_reset(self, msg: Message) -> Response:
+        """reset <displayname>
+        Allows the owner of a list or event to reset the session state of an attendee."""
+        user = msg.uuid
+        owns_event, owns_list = await self._get_user_owns(user)
+        if (
+            (owns_event or owns_list)
+            and msg.arg1
+            and (maybe_uuid := await self.displayname_lookup_cache.get(msg.arg1, ""))
+        ):
+            user_is_admin = is_admin(msg)
+            msg.uuid = maybe_uuid
+            _, admins = await self._get_user_lists_and_admins(msg)
+            if (user in admins) or user_is_admin:
+                await self.send_message(maybe_uuid, "TERMINATE", end_session=True)
+                await self.send_message(maybe_uuid, "TERMINATE", end_session=True)
+                await self.send_message(maybe_uuid, "Reset your session!")
+                return f"Reset the session for {msg.arg1}."
+            return "You're not administrator of any lists this user is on!"
+        if (owns_event or owns_list) and msg.arg1 and msg.arg1.startswith("+"):
+            await self.send_message(msg.arg1, "TERMINATE", end_session=True)
+            sent_okay = await self.send_message(msg.arg1, "Reset your session!")
+            return f"Reset {msg.arg1} and notified: {sent_okay}."
+        return "Couldn't find that username!"
+
+    async def talkback(self, msg: Message) -> None:
+        """Override talkback implementation to show context about events and notify list/event owners."""
+        lists, all_owners = await self._get_user_lists_and_admins(msg)
+        for owner in all_owners:
+            await self.send_message(
+                owner,
+                f"{await self.get_displayname(msg.uuid)} ( {msg.source} ) says: {msg.full_text}\nThey are on the following lists: {list(set(lists))}",
+            )
+            await asyncio.sleep(0.1)
+        if not all_owners:
+            await super().talkback(msg)
+        return None
 
     async def default(self, message: Message) -> Response:
         # pylint: disable=too-many-return-statements,too-many-branches
@@ -969,11 +977,12 @@ class ClanGat(TalkBack):
         if code == "?":
             return await self.do_help(msg)
         if code in "+ buy purchase".split():  # was a function, now helptext
-            return self.PAYMENTS_HELPTEXT
+            return await self.dialog.get("HOW_TO_SEND")
         if not code:
             return None
-        if msg.full_text and msg.full_text in [
-            key.lower() for key in await self.easter_eggs.keys()
+        if msg.full_text and msg.full_text.strip(string.punctuation) in [
+            key.lower().strip(string.punctuation)
+            for key in await self.easter_eggs.keys()
         ]:
             return await self.easter_eggs.get(msg.full_text)
         if code in await self.easter_eggs.keys():
@@ -983,9 +992,12 @@ class ClanGat(TalkBack):
             return maybe_unlocked
         await self.talkback(msg)
         # handle default case
-        return await self.do_help(msg)
+        if (time.time() * 1000 - await self.last_prompted.get(msg.uuid, 0)) > 60 * 1000:
+            await self.last_prompted.set(msg.uuid, int(time.time() * 1000))
+            return await self.do_help(msg)
+        await self.last_prompted.set(msg.uuid, int(time.time() * 1000))
+        return None
 
-    @time_(REQUEST_TIME)
     async def payment_response(self, msg: Message, amount_pmob: int) -> Response:
         # pylint: disable=too-many-return-statements
         amount_mob = float(pmob2mob(amount_pmob).quantize(Decimal("1.0000")))
@@ -1039,7 +1051,9 @@ class ClanGat(TalkBack):
                 f"Approve refund request? {msg.source} sent payment of {amount_mob} when unexpected.",
             ):
                 return None
+            await self.send_typing(msg)
             payment_notif = await self.send_payment(msg.uuid, amount_pmob - FEE)
+            await self.send_typing(msg, stop=True)
             if (
                 not payment_notif
                 or payment_notif
@@ -1054,10 +1068,4 @@ class ClanGat(TalkBack):
 
 
 if __name__ == "__main__":
-    app.add_routes([web.get("/metrics", aio.web.server_stats)])
-
-    @app.on_startup.append
-    async def start_wrapper(out_app: web.Application) -> None:
-        out_app["bot"] = ClanGat()
-
-    web.run_app(app, port=8080, host="0.0.0.0", access_log=None)
+    run_bot(Hotline)
