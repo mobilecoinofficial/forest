@@ -351,6 +351,10 @@ class Signal:
         if "result" in blob:
             if isinstance(blob["result"], dict):
                 message_blob = blob
+            elif isinstance(blob["result"], list):
+                # Message expects a dict with an id, but signal-cli listContacts returns a list
+                # we're usually only get a single contact, so we massage this
+                message_blob = {"id": blob["id"], "result": blob["result"][0]}
             else:
                 logging.warning(blob["result"])
         if "error" in blob:
@@ -1049,6 +1053,17 @@ class ExtrasBot(Bot):
         return t
 
 
+def compose_payment_content(receipt: str, note: str) -> dict:
+    # serde expects bytes to be u8[], not b64
+    tx = {"mobileCoin": {"receipt": u8(receipt)}}
+    note = note or "check out this java-free payment notification"
+    payment = {"Item": {"notification": {"note": note, "Transaction": tx}}}
+    # SignalServiceMessageContent protobuf represented as JSON (spicy)
+    # destination is outside the content so it doesn't matter,
+    # but it does contain the bot's profileKey
+    return {"dataMessage": {"body": None, "payment": payment}}
+
+
 class PayBot(ExtrasBot):
     @requires_admin
     async def do_fsr(self, msg: Message) -> Response:
@@ -1129,9 +1144,19 @@ class PayBot(ExtrasBot):
 
     async def get_signalpay_address(self, recipient: str) -> Optional[str]:
         "get a receipient's mobilecoin address"
-        result = await self.signal_rpc_request("getPayAddress", peer_name=recipient)
+        if utils.AUXIN:
+            result = await self.signal_rpc_request("getPayAddress", peer_name=recipient)
+            b64_address = (
+                result.blob.get("Address", {})
+                .get("mobileCoinAddress", {})
+                .get("address")
+            )
+            if result.error or not b64_address:
+                logging.info("bad address: %s", result.blob)
+                return None
+        result = await self.signal_rpc_request("listContacts", recipient=recipient)
         b64_address = (
-            result.blob.get("Address", {}).get("mobileCoinAddress", {}).get("address")
+            result.blob.get("result", {}).get("profile", {}).get("mobileCoinAddress")
         )
         if result.error or not b64_address:
             logging.info("bad address: %s", result.blob)
@@ -1207,6 +1232,39 @@ class PayBot(ExtrasBot):
             f"redeemable for {str(mc_util.pmob2mob(amount_pmob - FEE_PMOB)).rstrip('0')} MOB",
         ]
 
+    async def confirm_tx_timeout(self, tx_id: str, recipient: str, timeout: int) -> str:
+        logging.debug("Attempting to confirm tx status for %s", recipient)
+        status = "tx_status_pending"
+        for i in range(timeout):
+            tx_status = await self.mob_request(
+                "get_transaction_log", transaction_log_id=tx_id
+            )
+            status = (
+                tx_status.get("result", {}).get("transaction_log", {}).get("status")
+            )
+            if status == "tx_status_succeeded":
+                logging.info(
+                    "Tx to %s suceeded - tx data: %s",
+                    recipient,
+                    tx_status.get("result"),
+                )
+                break
+            if status == "tx_status_failed":
+                logging.warning(
+                    "Tx to %s failed - tx data: %s",
+                    recipient,
+                    tx_status.get("result"),
+                )
+                break
+            await asyncio.sleep(1)
+        if status == "tx_status_pending":
+            logging.warning(
+                "Tx to %s timed out - tx data: %s",
+                recipient,
+                tx_status.get("result"),
+            )
+        return status
+
     # FIXME: clarify signature and return details/docs
     async def send_payment(  # pylint: disable=too-many-locals
         self,
@@ -1272,51 +1330,34 @@ class PayBot(ExtrasBot):
             msg.status, msg.transaction_log_id = "tx_status_failed", tx_id
             return msg
 
-        receipt_resp = await self.mob_request(
-            "create_receiver_receipts",
-            tx_proposal=prop,
-            account_id=await self.mobster.get_account(),
-        )
-        content = await self.fs_receipt_to_payment_message_content(
-            receipt_resp, receipt_message
-        )
-        # pass our beautifully composed JSON content to auxin.
-        # message body is ignored in this case.
-        payment_notif = await self.send_message(recipient, "", content=content)
-        resp_future = asyncio.create_task(self.wait_for_response(rpc_id=payment_notif))
-
+        full_service_receipt = (
+            await self.mob_request(
+                "create_receiver_receipts",
+                tx_proposal=prop,
+                account_id=account_id,
+            )
+        )["result"]["receiver_receipts"][0]
+        # this gets us a Receipt protobuf
+        b64_receipt = mc_util.full_service_receipt_to_b64_receipt(full_service_receipt)
+        if utils.AUXIN:
+            content = compose_payment_content(b64_receipt, receipt_message)
+            # pass our beautifully composed JSON content to auxin.
+            # message body is ignored in this case.
+            payment_notif = await self.send_message(recipient, "", content=content)
+            resp_future = asyncio.create_task(
+                self.wait_for_response(rpc_id=payment_notif)
+            )
+        else:
+            resp_future = asyncio.create_task(
+                self.signal_rpc_request(
+                    "sendPaymentNotification",
+                    receipt=b64_receipt,
+                    note=receipt_message,
+                    recipient=recipient,
+                )
+            )
         if confirm_tx_timeout:
-            logging.debug("Attempting to confirm tx status for %s", recipient)
-            status = "tx_status_pending"
-            for i in range(confirm_tx_timeout):
-                tx_status = await self.mob_request(
-                    "get_transaction_log", transaction_log_id=tx_id
-                )
-                status = (
-                    tx_status.get("result", {}).get("transaction_log", {}).get("status")
-                )
-                if status == "tx_status_succeeded":
-                    logging.info(
-                        "Tx to %s suceeded - tx data: %s",
-                        recipient,
-                        tx_status.get("result"),
-                    )
-                    break
-                if status == "tx_status_failed":
-                    logging.warning(
-                        "Tx to %s failed - tx data: %s",
-                        recipient,
-                        tx_status.get("result"),
-                    )
-                    break
-                await asyncio.sleep(1)
-
-            if status == "tx_status_pending":
-                logging.warning(
-                    "Tx to %s timed out - tx data: %s",
-                    recipient,
-                    tx_status.get("result"),
-                )
+            status = await self.confirm_tx_timeout(tx_id, recipient, confirm_tx_timeout)
             resp = await resp_future
             # the calling function can use these to check the payment status
             resp.status, resp.transaction_log_id = status, tx_id  # type: ignore
