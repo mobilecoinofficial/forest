@@ -1,20 +1,22 @@
 #!/usr/bin/python3.9
-# Copyright (c) 2021 MobileCoin Inc.
-# Copyright (c) 2021 The Forest Team
+# Copyright (c) 2022 MobileCoin Inc.
+# Copyright (c) 2022 The Forest Team
+import json
 import logging
 from functools import wraps
 from typing import Callable, Union, cast
 import phonenumbers as pn
-import teli
 from aiohttp import web
-from forest_tables import GroupRoutingManager, PaymentsManager, RoutingManager
+import mc_util
+import teli as api
 from forest import utils
-from forest.core import Message, PayBot, Response, app, requires_admin
+from forest.core import Message, QuestionBot, Response, app, requires_admin, run_bot
+from forest_tables import GroupRoutingManager, PaymentsManager, RoutingManager
 
 
 def takes_number(command: Callable) -> Callable:
     @wraps(command)  # keeps original name and docstring for /help
-    async def wrapped_command(self: "PayBot", msg: Message) -> str:
+    async def wrapped_command(self: "QuestionBot", msg: Message) -> str:
         try:
             # todo: parse (123) 456-6789 if it's multiple tokens
             assert msg.arg1
@@ -23,6 +25,7 @@ def takes_number(command: Callable) -> Callable:
             target_number = pn.format_number(parsed, pn.PhoneNumberFormat.E164)
             return await command(self, msg, target_number)
         except (pn.phonenumberutil.NumberParseException, AssertionError):
+            # could *maybe* ask_intable_question for the number but it's kinda tricky
             return (
                 f"{msg.arg1} doesn't look a valid number or user. "
                 "did you include the country code?"
@@ -31,13 +34,27 @@ def takes_number(command: Callable) -> Callable:
     return wrapped_command
 
 
-class Forest(PayBot):
+class Forest(QuestionBot):
     def __init__(self, *args: str) -> None:
-        self.teli = teli.Teli()
+        self.api = api.Teli()
         self.payments_manager = PaymentsManager()
         self.routing_manager = RoutingManager()
         self.group_routing_manager = GroupRoutingManager()
         super().__init__(*args)
+
+    async def do_flow(self, message: Message) -> Response:
+        if not message.arg1:
+            # so i'm not sure asking a freeform question like this makes sense
+            # people can just say 'order' or 'status' on its own
+            maybe_resp = message.arg1 = await self.ask_freeform_question(
+                message.source,
+                'Welcome to Forest Contact! I\'m a bot that can help you buy phone numbers, and use them to send and recieve text messages. Would you like to "buy" a phone number? or check the "status" of your account?',
+            )
+            if maybe_resp == "buy":
+                return await self.do_order(message)
+            if maybe_resp == "status":
+                return await self.do_status(message)
+        return await super().default(message)
 
     async def send_sms(
         self, source: str, destination: str, message_text: str
@@ -48,6 +65,7 @@ class Forest(PayBot):
             "destination": destination,
             "message": message_text,
         }
+        logging.debug("send sms payload: %s", json.dumps(payload))
         response = await self.client_session.post(
             "https://api.teleapi.net/sms/send?token=" + utils.get_secret("TELI_KEY"),
             data=payload,
@@ -58,11 +76,12 @@ class Forest(PayBot):
             for k, v in response_json_all.items()
             if k in ("status", "segment_count")
         }
+        logging.debug(response_json_all)
         # hide how the sausage is made
         return response_json
 
     async def get_user_numbers(self, message: Message) -> list[str]:
-        """List the teli numbers a user owns"""
+        """List the numbers a user owns"""
         if message.source:
             maybe_routable = await self.routing_manager.get_id(message.source)
             return [registered.get("id") for registered in maybe_routable]
@@ -70,9 +89,7 @@ class Forest(PayBot):
 
     async def handle_message(self, message: Message) -> Response:
         """Handle an invidiual Message from Signal.
-        If it's a group creation blob, make a new routing rule from it.
         If it's a group message, route it to the relevant conversation.
-        If it's a payment, deal with that separately.
         Otherwise, use the default Bot do_x method dispatch
         """
         numbers = await self.get_user_numbers(message)
@@ -112,13 +129,14 @@ class Forest(PayBot):
             return "Couldn't send that reply"
         return await super().handle_message(message)
 
-    async def do_help(self, _: Message) -> Response:
+    async def do_help(self, msg: Message) -> Response:
         # TODO: https://github.com/forestcontact/forest-draft/issues/14
+        if msg.arg1:
+            return await super().do_help(msg)
         return (
             "Welcome to the Forest.contact Pre-Release!\n"
-            "To get started, try /register, or /status! "
-            "If you've already registered, try to send a message via /send."
-            ""
+            'To get started, try "order <area code>", or "status"! '
+            'If you\'ve already registered, try to send a message via "send".'
         )
 
     @takes_number
@@ -130,7 +148,7 @@ class Forest(PayBot):
         response = await self.send_sms(
             source=numbers[0],
             destination=sms_dest,
-            message_text=message.text,
+            message_text=message.text.strip(),
         )
         await self.send_reaction(message, "\N{Outbox Tray}")
         # sms_uuid = response.get("data")
@@ -158,8 +176,8 @@ class Forest(PayBot):
             name=f"SMS with {target_number} via {numbers[0]}",
         )
         await self.group_routing_manager.set_sms_route_for_group(
-            teli.teli_format(target_number),
-            teli.teli_format(numbers[0]),
+            api.api_format(target_number),
+            api.api_format(numbers[0]),
             group_resp.group,
         )
         logging.info(
@@ -176,19 +194,20 @@ class Forest(PayBot):
 
     async def payment_response(self, msg: Message, amount_pmob: int) -> str:
         del amount_pmob
-        diff = await self.get_user_usd_balance(msg.source) - self.usd_price
+        diff = (
+            mc_util.pmob2mob(await self.get_user_pmob_balance(msg.source))
+            - self.mob_price
+        )
         if diff < 0:
-            return f"Please send another {abs(diff)} USD to buy a phone number"
+            return f"Please send another {abs(diff)} MOB to buy a phone number"
         if diff == 0:
             return "Thank you for paying! You can now buy a phone number with /order <area code>"
-        return f"Thank you for paying! You've overpayed by {diff} USD. Contact an administrator for a refund"
+        return f"Thank you for paying! You've overpayed by {diff} MOB. Contact an administrator for a refund"
 
     async def do_status(self, message: Message) -> Union[list[str], str]:
         """List numbers if you have them. Usage: /status"""
-        numbers: list[str] = [
-            registered.get("id")
-            for registered in await self.routing_manager.get_id(message.source)
-        ]
+        numbers = await self.get_user_numbers(message)
+        # should probably note when the numbers expire
         if numbers and len(numbers) == 1:
             # registered, one number
             return f'Hi {message.name}! We found {numbers[0]} registered for your user. Try "/send {message.source} Hello from Forest Contact via {numbers[0]}!".'
@@ -209,51 +228,50 @@ class Forest(PayBot):
             'try "/register" and following the instructions.'
         )
 
-    usd_price = 0.5
+    mob_price = 1
 
-    async def do_register(self, message: Message) -> Response:
+    async def do_register(self, _: Message) -> Response:
         """register for a phone number"""
-        if int(message.source[1:3]) in (44, 49, 33, 41):
-            # keep in sync with https://github.com/signalapp/Signal-Android/blob/master/app/build.gradle#L174
-            return "Please send {await self.mobster.usd2mob(self.usd_price)} via Signal Pay"
-        mob_price_exact = await self.mobster.create_invoice(
-            self.usd_price, message.source, "/register"
-        )
-        address = await self.mobster.get_my_address()
-        return [
-            f"The current price for a SMS number is {mob_price_exact}MOB/month. If you would like to continue, please send exactly...",
-            f"{mob_price_exact}",
-            "to",
-            address,
-            "Upon payment, you will be able to select the area code for your new phone number!",
-        ]
-
-    async def get_user_usd_balance(self, account: str) -> float:
-        res = await self.mobster.ledger_manager.get_usd_balance(account)
-        return float(round(res[0].get("balance"), 2))
+        return f"Please send {self.mob_price} MOB via Signal Pay"
 
     async def do_balance(self, message: Message) -> str:
         """Check your balance"""
-        balance = await self.get_user_usd_balance(message.source)
-        return f"Your balance is {balance} USD"
+        balance = await self.get_user_pmob_balance(message.source)
+        return f"Your balance is {mc_util.pmob2mob(balance)} MOB"
 
     async def do_pay(self, message: Message) -> str:
         if message.arg1 == "shibboleth":
-            await self.mobster.ledger_manager.put_usd_tx(
-                message.source, int(self.usd_price * 100), "shibboleth"
+            fake_usd = int(await self.mobster.pmob2usd(self.mob_price * 1e12) * 100)
+            await self.mobster.ledger_manager.put_pmob_tx(
+                message.source,
+                fake_usd,
+                mc_util.mob2pmob(self.mob_price),
+                "shibboleth",
             )
             return "...thank you for your payment. You can buy a phone number with /order <area code>"
         if message.arg1 == "sibboleth":
             return "sending attack drones to your location"
         return "no"
 
-    async def do_order(self, msg: Message) -> str:
+    async def do_order(self, msg: Message) -> Response:
         """Usage: /order <area code>"""
+        if not msg.arg1:
+            code = await self.ask_intable_question(
+                msg.source, "Which area code would you like?"
+            )
+            msg.arg1 = str(code)
         if not (msg.arg1 and len(msg.arg1) == 3 and msg.arg1.isnumeric()):
-            return """Usage: /order <area code>"""
-        diff = await self.get_user_usd_balance(msg.source) - self.usd_price
-        if diff < 0:
-            return "Make a payment with Signal Pay or /register first"
+            return "Usage: /order <area code>"
+        held_numbers = await self.get_user_numbers(msg)
+        # one free for everyone, always free in UA
+        # need to note that this is a freebie
+        if held_numbers and not msg.source.startswith("+380"):
+            diff = (
+                mc_util.pmob2mob(await self.get_user_pmob_balance(msg.source))
+                - self.mob_price
+            )
+            if diff < 0:
+                return await self.do_register(msg)
         await self.routing_manager.sweep_expired_destinations()
         available_numbers = [
             num
@@ -264,56 +282,63 @@ class Forest(PayBot):
             number = available_numbers[0]
             await self.send_message(msg.source, f"Found {number} for you...")
         else:
-            numbers = await self.teli.search_numbers(area_code=msg.arg1, limit=1)
+            numbers = await self.api.search_numbers(area_code=msg.arg1, limit=1)
             if not numbers:
                 return "Sorry, no numbers for that area code"
             number = numbers[0]
             await self.send_message(msg.source, f"Found {number}")
             await self.routing_manager.intend_to_buy(number)
-            buy_info = await self.teli.buy_number(number)
+            buy_info = await self.api.buy_number(number)
             await self.send_message(msg.source, f"Bought {number}")
             if "error" in buy_info:
                 await self.routing_manager.delete(number)
                 return f"Something went wrong: {buy_info}"
             await self.routing_manager.mark_bought(number)
-        await self.teli.set_sms_url(number, utils.URL + "/inbound")
+        await self.api.set_sms_url(number, utils.URL + "/inbound")
         await self.routing_manager.set_destination(number, msg.source)
+        await self.routing_manager.set_expiration_1mo(number)
         if await self.routing_manager.get_destination(number):
-            await self.mobster.ledger_manager.put_usd_tx(
-                msg.source, -int(self.usd_price * 100), number
-            )
+            if not held_numbers or msg.source.startswith("+380"):
+                fake_usd = int(await self.mobster.pmob2usd(self.mob_price * 1e12) * 100)
+                await self.mobster.ledger_manager.put_pmob_tx(
+                    msg.source,
+                    -fake_usd,
+                    -mc_util.mob2pmob(self.mob_price),
+                    number,
+                )
             return f"You are now the proud owner of {number}"
         return "Database error?"
+
+    do_buy = do_order
 
     @requires_admin
     async def do_make_rule(self, msg: Message) -> Response:
         """creates or updates a routing rule.
-        usage: /make_rule <teli number> <signal destination number>"""
-        if msg.source != utils.get_secret("ADMIN"):
-            return "Sorry, this command is only for admins"
-        teli_num, signal_num = msg.text.split(" ")
-        _id = teli.teli_format(teli_num)
+        usage: /make_rule <number> <signal destination number>"""
+        api_num, signal_num = msg.text.split(" ")
+        _id = api.teli_format(api_num)
         destination = utils.signal_format(signal_num)
         if not (_id and destination):
             return "that doesn't look like valid numbers"
-        return await self.routing_manager.execute(
+        await self.routing_manager.execute(
             "insert into routing (id, destination, status) "
             f"values ('{_id}', '{destination}', 'assigned') on conflict (id) do update "
             f"set destination='{destination}', status='assigned' "
         )
+        return f"Set { _id } -> {destination}"
 
     if not utils.get_secret("ORDER"):
         del do_order, do_pay
 
-    async def start_process(self) -> None:
-        """Make sure full-service has a wallet before starting signal"""
-        try:
-            await self.mobster.get_my_address()
-        except IndexError:
-            await self.mobster.import_account()
-        if utils.get_secret("MIGRATE"):
-            await self.migrate()
-        await super().start_process()
+    # async def start_process(self) -> None:
+    #     """Make sure full-service has a wallet before starting signal"""
+    #     try:
+    #         await self.mobster.get_my_address()
+    #     except IndexError:
+    #         await self.mobster.import_account()
+    #     if utils.get_secret("MIGRATE"):
+    #         await self.migrate()
+    #     await super().start_process()
 
     async def migrate(self) -> None:
         """Add a status column to routing, make sure all destinations are E164,
@@ -325,7 +350,7 @@ class Forest(PayBot):
         rows = await self.routing_manager.execute("SELECT id, destination FROM routing")
         for row in rows if rows else []:
             if not utils.LOCAL:
-                await self.teli.set_sms_url(row.get("id"), utils.URL + "/inbound")
+                await self.api.set_sms_url(row.get("id"), utils.URL + "/inbound")
             if dest := row.get("destination"):
                 new_dest = utils.signal_format(dest)
                 await self.routing_manager.set_destination(row.get("id"), new_dest)
@@ -355,6 +380,7 @@ async def inbound_sms_handler(request: web.Request) -> web.Response:
     maybe_group = await bot.group_routing_manager.get_group_id_for_sms_route(
         msg_data.get("source"), msg_data.get("destination")
     )
+    logging.debug(msg_data)
     if maybe_group:
         # if we can't notice group membership changes,
         # we could check if the person is still in the group
@@ -374,9 +400,7 @@ async def inbound_sms_handler(request: web.Request) -> web.Response:
         if not msg_data:
             msg_data["text"] = await request.text()
         recipient = utils.get_secret("ADMIN")
-        msg_data[
-            "note"
-        ] = "fallback, signal destination not found for this sms destination"
+        msg_data["note"] = "admin fallback"
         if agent := request.headers.get("User-Agent"):
             msg_data["user-agent"] = agent
         # send the admin the full post body, not just the user-friendly part
@@ -384,14 +408,6 @@ async def inbound_sms_handler(request: web.Request) -> web.Response:
     return web.Response(text="TY!")
 
 
-app.add_routes([web.post("/inbound", inbound_sms_handler)])
-
 if __name__ == "__main__":
-
-    @app.on_startup.append
-    async def start_wrapper(our_app: web.Application) -> None:
-        our_app["bot"] = Forest()
-        our_app["routing"] = RoutingManager()
-        our_app["group_routing"] = GroupRoutingManager()
-
-    web.run_app(app, port=8080, host="0.0.0.0", access_log=None)
+    app.add_routes([web.post("/inbound", inbound_sms_handler)])
+    run_bot(Forest)

@@ -290,7 +290,7 @@ class Signal:
     ) -> Callable:
         def handler(task: asyncio.Task) -> None:
             name = task.get_name() + "-" + getattr(task.get_coro(), "__name__", "")
-            if self.sigints > 1:
+            if self.sigints > 1 or self.exiting:
                 return
             if asyncio.iscoroutinefunction(_func):
                 task = asyncio.create_task(_func())
@@ -727,6 +727,7 @@ class Bot(Signal):
         # set of users we've received messages from in the last minute
         self.seen_users: set[str] = set()
         self.log_activity_task = asyncio.create_task(self.log_activity())
+        self.log_activity_task.add_done_callback(self.log_task_result)
         self.restart_task = asyncio.create_task(
             self.start_process()
         )  # maybe cancel on sigint?
@@ -743,10 +744,10 @@ class Bot(Signal):
         runs in the bg as batches to avoid a seperate db query for every message
         used for signup metrics
         """
-        if not self.activity.pool:
-            await self.activity.connect_pg()
+        if not pghelp.pool.pool:
+            await pghelp.pool.connect(self.activity.database, self.activity.table)
             # mypy can't infer that connect_pg creates pool
-            assert self.activity.pool
+            assert pghelp.pool.pool
         while 1:
             await asyncio.sleep(60)
             if not self.seen_users:
@@ -1108,7 +1109,7 @@ class PayBot(ExtrasBot):
         res = await self.mobster.ledger_manager.get_usd_balance(account)
         return float(round(res[0].get("balance"), 2))
 
-    async def get_user_pmob_balance(self, account: str) -> float:
+    async def get_user_pmob_balance(self, account: str) -> int:
         res = await self.mobster.ledger_manager.get_pmob_balance(account)
         return res[0].get("balance")
 

@@ -52,7 +52,7 @@ LedgerPGExpressions = PGExpressions(
         VALUES($1, $2, $3, $4, CURRENT_TIMESTAMP);",
     get_usd_balance="SELECT COALESCE(SUM(amount_usd_cents)/100, 0.0) AS balance \
         FROM {self.table} WHERE account=$1",
-    get_pmob_balance="SELECT COALESCE(SUM(amount_pmob), 0.0) AS balance \
+    get_pmob_balance="SELECT COALESCE(SUM(amount_pmob), 0) AS balance \
         FROM {self.table} WHERE account=$1",
 )
 

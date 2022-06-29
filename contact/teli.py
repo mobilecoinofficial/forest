@@ -20,6 +20,9 @@ def teli_format(raw_number: str) -> str:
     return str(pn.parse(raw_number, "US").national_number)
 
 
+api_format = teli_format
+
+
 class ReceiveSMS:
     def __init__(self, port: int = 8080) -> None:
         self.msgs: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
