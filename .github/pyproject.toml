@@ -19,11 +19,11 @@ asyncpg = "*"
 base58 = "*"
 black = "*"
 mypy = "*"
-openai = "*"
+openai = "^0.20.0"
 phonenumbers = "*"
 prometheus_async = "*"
 prometheus_client = "*"
-protobuf = "*"
+protobuf = "^3"
 pycryptodome = "*"
 pylint = "*"
 PyQRCode = "^1.2.1"
@@ -67,7 +67,7 @@ disable= [
     "consider-using-with",
     "consider-using-from-import",
     "fixme",
-    "no-self-use",
+    # "no-self-use",
     "unspecified-encoding",
     # handled by black
     "format",

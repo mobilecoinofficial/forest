@@ -150,7 +150,7 @@ class PGInterface:
         for k in self.queries:
             if AUTOCREATE and "create" in k and "index" in k:
                 self.logger.info(f"creating index via {k}")
-                self.__getattribute__(f"sync_{k}")()
+                getattr(self, f"sync_{k}")()
 
     _autocreating_table = False
 

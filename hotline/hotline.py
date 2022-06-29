@@ -549,6 +549,7 @@ class Hotline(DialogBot):  # pylint: disable=too-many-public-methods
     @hide
     async def do_remove(self, msg: Message) -> Response:
         """Removes a given event by code, if the msg.uuid is the owner."""
+        # pylint: disable=unnecessary-dunder-call
         if not await self.check_user_owns(msg.uuid, msg.arg1 or ""):
             return f"Sorry, it doesn't look like you own {msg.arg1}."
         parameters = []
