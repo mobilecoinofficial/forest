@@ -44,6 +44,6 @@ COPY --from=libbuilder /app/venv/lib/python3.9/site-packages /app/
 COPY --from=kubectl /opt/bitnami/kubectl/bin/kubectl /usr/local/bin/
 COPY ./mc_util/ /app/mc_util/
 COPY ./forest/ /app/forest/
-COPY ./gelato.py ./imogen.py ./free-imagegen-job.yaml ./paid-imagegen-job.yaml ./a6000.yaml ./esrgan-job.yaml ./diffuse.yaml /app/
+COPY ./gelato.py ./imogen.py ./free-imagegen-job.yaml ./paid-imagegen-job.yaml ./a6000.yaml ./esrgan-job.yaml ./diffuse.yaml ./dalle.yaml /app/
 COPY ./squid.conf ./passwd /etc/squid/
 ENTRYPOINT ["/usr/bin/python3.9", "/app/imogen.py"]

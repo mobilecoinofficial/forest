@@ -15,7 +15,8 @@ CREATE TYPE enqueue_result AS (
     paid boolean,
     balance_remaining boolean,
     queue_length integer,
-    workers integer
+    workers integer,
+    prompt_id integer
 );
 
 CREATE OR REPLACE FUNCTION enqueue_prompt(prompt TEXT, _author TEXT, signal_ts BIGINT, group_id TEXT, params TEXT, url TEXT, selector TEXT default '')
@@ -45,6 +46,7 @@ RETURNS enqueue_result AS $$
         ELSE
             SELECT false, false, false INTO result.success, result.paid, result.balance_remaining;
         END IF;
+        SELECT coalesce(prompt_id, -1) INTO result.prompt_id;
         RETURN result;
     END;
 $$ LANGUAGE plpgsql;

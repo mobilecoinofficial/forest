@@ -798,6 +798,39 @@ class Imogen(GelatoBot):
         deets = " (started a new worker)" if worker_created else ""
         return f"you are #{result['queue_length']} in the diffusion line{deets}"
 
+    async def do_dalle(
+        self,
+        msg: Message,
+    ) -> str:
+        "generate an image using the DALL-E mega model"
+        if msg.attachments:
+            return "dalle-mega doesn't currently accept initial or target images"
+        if not msg.text.strip():
+            return "a prompt is required"
+        logging.info(msg.full_text)
+        if any(bad in msg.text for bad in ["porn", "orgy", "sex"]):
+            return "no"
+        params = {}
+        if not msg.group:
+            params["nopost"] = True
+        prompt = InsertedPrompt(
+            prompt=msg.text,
+            author=msg.source,
+            signal_ts=msg.timestamp,
+            group=msg.group or "",
+            params=params,
+            selector="dalle",
+        )
+        result = (await self.queue.enqueue_any(*prompt.as_args()))[0].get(
+            "enqueue_prompt"
+        )
+        logging.info(result)
+        if not result.get("success"):
+            return dedent(messages["rate_limit"]).strip()
+        worker_created = await self.ensure_unique_worker("dalle.yaml")
+        deets = " (started a new worker)" if worker_created else ""
+        return f"you are #{result['queue_length']} in the dalle line{deets}"
+
     def make_prefix(prefix: str, *_) -> Callable:  # type: ignore  # pylint: disable=no-self-argument
         async def wrapped(self: "Imogen", msg: Message) -> Response:
             if msg.group and msg.group == utils.get_secret("ADMIN_GROUP"):
@@ -1020,6 +1053,12 @@ class Imogen(GelatoBot):
     # async def async_shutdown(self):
     #    await redis.disconnect()
     #    super().async_shutdown()
+    #
+    async def do_matrix(self, msg: Message) -> Response:
+        await self.do_dalle(msg)
+        await self.do_diffuse(msg)
+        await self.do_imagine(msg)
+        await self.do_imagine_likely(msg)
 
 
 @dataclass
@@ -1039,6 +1078,7 @@ class Prompt:
 #     if not bot:
 #         return web.Response(status=504, text="Sorry, no live workers.")
 #     bot.send_message("/ping foo", +***REMOVED*** )
+matrix = {}
 
 
 async def store_image_handler(  # pylint: disable=too-many-locals
