@@ -21,7 +21,7 @@ FULL_SERVICE_URL="https://imogen-full-service-real.fly.dev/wallet"
 DOWNLOAD=1
 # UPLOAD=1
 LEDGER_NAME="imogen_ledger"
-#SAFE_MODE=1
+SAFE_MODE=1
 
 [experimental]
   auto_rollback = true
@@ -57,11 +57,11 @@ LEDGER_NAME="imogen_ledger"
     timeout = "5s"
 
 # uncomment for captcha
-# [[services]]
-#   internal_port = 3128
+[[services]]
+  internal_port = 3128
 
-#   [[services.ports]]
-#     port = 3128 # squid
+  [[services.ports]]
+    port = 3128 # squid
 
 
 # fly volumes create imogen_ren_data --region iad --size 10

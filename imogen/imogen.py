@@ -84,8 +84,8 @@ QueueExpressions = pghelp.PGExpressions(
         tweet_id TEXT,
         selector TEXT);""",
     enqueue_any="SELECT enqueue_prompt(prompt:=$1, _author:=$2, signal_ts:=$3, group_id:=$4, params:=$5, url:=$6, selector:=$7)",
-    enqueue_free="SELECT enqueue_free_prompt(prompt:=$1, _author:=$2, signal_ts:=$3, group_id:=$4, params:=$5, url:=$6)",
-    enqueue_paid="SELECT enqueue_paid_prompt(prompt:=$1, author:=$2, signal_ts:=$3, group_id:=$4, params:=$5, url:=$6)",
+    # enqueue_free="SELECT enqueue_free_prompt(prompt:=$1, _author:=$2, signal_ts:=$3, group_id:=$4, params:=$5, url:=$6)",
+    # enqueue_paid="SELECT enqueue_paid_prompt(prompt:=$1, author:=$2, signal_ts:=$3, group_id:=$4, params:=$5, url:=$6)",
     length="SELECT count(id) AS len FROM {self.table} WHERE status='pending' OR status='assigned';",
     paid_length="SELECT count(id) AS len FROM {self.table} WHERE status='pending' OR status='assigned' AND paid=true;",
     list_queue="SELECT prompt FROM {self.table} WHERE status='pending' OR status='assigned' ORDER BY signal_ts ASC",
@@ -256,7 +256,7 @@ class Imogen(GelatoBot):
         #     "family-name": "",
         # }
 
-    ban = ["+15795090727", "+13068051597", "+12897688809"]
+    ban = ["+15795090727", "+13068051597", "+12897688809", "+447418606984"]
 
     async def get_score(self, text: str) -> float:
         resp = await self.client_session.get(
@@ -551,6 +551,19 @@ class Imogen(GelatoBot):
             )
             keys.append(key)
         return {"image_prompts": keys}
+
+    async def do_describe(self, msg: Message) -> str:
+        if not msg.attachments:
+            return "no attachment?"
+        await self.send_reaction(msg, "\N{Hourglass}")
+        img = open(Path("./attachments") / msg.attachments[0]["id"], "rb").read()
+        personality = msg.arg1 or "Creative"
+        resp = await self.client_session.post(
+            "http://cliptalk.tenant-mobilecoin-imogen.knative.chi.coreweave.com?={personality}",
+            data={"img": img},
+        )
+        await self.send_reaction(msg, "\N{Heavy Check Mark}\N{Variation Selector-16}")
+        return "\n".join((await resp.json())[:5])
 
     async def do_upsample(self, msg: Message) -> str:
         "quote an image I sent or a prompt you sent to upsample it x4"
