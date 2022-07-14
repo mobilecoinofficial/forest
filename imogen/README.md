@@ -4,11 +4,7 @@ Imogen is a Signal Bot that generates images using VQGan and CLIP. These images 
 
 
 ### Imogen on Signal
-[I, Imogen](https://signal.group/#CjQKIEP344g-nF0eIcaZkORbofLzTSlD5DKOUeGEFbus-w9uEhBzb6Q51MWZw6nSDkGLhwKN), Signal Group Chat where you can request Imoges. Since this is a public group we ask that you observe certain guidelines:
-- Treat all users in the group respectfully, this includes Imogen herself.
-- Be mindful of what prompts you request in public.
-- The administrators reserve the right to remove anyone from the group for any reason.
-<br>
+Message the [Imogen Chat Bot](https://signal.me/#p/+14159495511) on Signal.  Just say the word "imagine" followed by your imagination. The phone number is +1-415-949-5511.
 
 ### Imogen on Twitter ###
 
