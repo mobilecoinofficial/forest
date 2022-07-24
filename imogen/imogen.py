@@ -224,6 +224,12 @@ def gpt_prompt(prompt: str = "") -> str:
     return completion["choices"][0]["text"].strip()
 
 
+def should_not_allow(msg: Message) -> bool:
+    return any(
+        bad in msg.text for bad in ["porn", "rape", "orgy", "sex"]
+    ) and not is_admin(msg)
+
+
 class Imogen(GelatoBot):
     # pylint: disable=too-many-public-methods, no-self-use
     def __init__(self, bot_number: Optional[str] = None) -> None:
@@ -632,7 +638,7 @@ class Imogen(GelatoBot):
         if attachments != "target" and not msg.text.strip():
             return "a prompt is required"
         logging.info(msg.full_text)
-        if not self any(bad in msg.text for bad in ["porn", "rape", "orgy", "sex"]) and not is_admin(msg):
+        if should_not_allow(msg):
             return "no"
         if attachments == "init":
             params.update(await self.upload_attachment(msg))
@@ -788,7 +794,7 @@ class Imogen(GelatoBot):
         if not msg.text.strip():
             return "a prompt is required"
         logging.info(msg.full_text)
-        if any(bad in msg.text for bad in ["porn", "rape", "orgy", "sex"]) and not is_admin(msg):
+        if should_not_allow(msg):
             return "no"
         params = {}
         if not msg.group:
@@ -821,7 +827,7 @@ class Imogen(GelatoBot):
         if not msg.text.strip():
             return "a prompt is required"
         logging.info(msg.full_text)
-        if any(bad in msg.text for bad in ["porn", "orgy", "sex"]) and not is_admin(msg):
+        if should_not_allow(msg):
             return "no"
         params = {}
         if not msg.group:
@@ -1072,6 +1078,7 @@ class Imogen(GelatoBot):
         await self.do_diffuse(msg)
         await self.do_imagine(msg)
         await self.do_imagine_likely(msg)
+        return "ok"
 
 
 @dataclass
