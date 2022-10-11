@@ -49,7 +49,7 @@ poetry install
 
 ## Signal-cli ##
 
-[Signal-cli](https://github.com/AsamK/signal-cli) is a command line interface for Signal. Forest bots run with signal-cli or [auxin-cli](https://github.com/mobilecoinofficial/auxin-cli) as the backend. Auxin-cli is beta software, and does not yet allow to register a new phone number, so for this guide we will use signal-cli.
+[Signal-cli](https://github.com/AsamK/signal-cli) is a command line interface for Signal. Forest bots run with signal-cli or [auxin-cli](https://github.com/mobilecoinofficial/auxin) as the backend. Auxin-cli is beta software, and does not yet allow to register a new phone number, so for this guide we will use signal-cli.
 
 To install or run signal-cli you will need Java 17. Verify that you have it installed by running:
 ```bash

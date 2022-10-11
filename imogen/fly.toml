@@ -7,7 +7,7 @@ kill_timeout = 5
 processes = []
 
 [env]
-BOT_NUMBER="***REMOVED***"
+BOT_NUMBER="+***REMOVED***"
 SIGNAL="signal-cli"
 LOGLEVEL="DEBUG"
 

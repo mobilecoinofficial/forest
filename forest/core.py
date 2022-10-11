@@ -329,7 +329,7 @@ class Signal:
                 # maybe also send this to admin as a signal message
                 for _line in tb:
                     logging.error(_line)
-        # {"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"***REMOVED***","sourceNumber":"***REMOVED***","sourceUuid":"412e180d-c500-4c60-b370-14f6693d8ea7","sourceName":"sylv","sourceDevice":3,"timestamp":1637290344242,"dataMessage":{"timestamp":1637290344242,"message":"/ping","expiresInSeconds":0,"viewOnce":false}},"account":"+447927948360"}}
+        # {"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"+***REMOVED***","sourceNumber":"+***REMOVED***","sourceUuid":"412e180d-c500-4c60-b370-14f6693d8ea7","sourceName":"sylv","sourceDevice":3,"timestamp":1637290344242,"dataMessage":{"timestamp":1637290344242,"message":"/ping","expiresInSeconds":0,"viewOnce":false}},"account":"+447927948360"}}
         try:
             await self.enqueue_blob_messages(blob)
         except KeyError:
