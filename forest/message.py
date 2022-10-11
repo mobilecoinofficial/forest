@@ -197,7 +197,7 @@ class Quote(Dictable):
     def __init__(self, quote: dict) -> None:
         assert quote
         # signal-cli:
-        # {"id":1641591686224,"author":"***REMOVED***","authorNumber":"***REMOVED***","authorUuid":"412e180d-c500-4c60-b370-14f6693d8ea7","text":"hi","attachments":[]}
+        # {"id":1641591686224,"author":"+***REMOVED***","authorNumber":"+***REMOVED***","authorUuid":"412e180d-c500-4c60-b370-14f6693d8ea7","text":"hi","attachments":[]}
         # auxin:
         # {'authorUuid': 'da1fb04c-bf1a-458f-92c7-6f21ad443684', 'id': 1647300333914, 'text': '/pong'}
         self.ts = quote["id"]
@@ -213,7 +213,7 @@ class StdioMessage(Message):
         self.id = blob.get("id")
         result = blob.get("result", {})
         self.envelope = envelope = blob.get("envelope", {})
-        # {"envelope":{"source":"***REMOVED***","sourceNumber":"***REMOVED***","sourceUuid":"412e180d-c500-4c60-b370-14f6693d8ea7","sourceName":"sylv","sourceDevice":3,"timestamp":1637290589910,"dataMessage":{"timestamp":1637290589910,"message":"/ping","expiresInSeconds":0,"viewOnce":false}},"account":"+447927948360"}
+        # {"envelope":{"source":"+***REMOVED***","sourceNumber":"+***REMOVED***","sourceUuid":"412e180d-c500-4c60-b370-14f6693d8ea7","sourceName":"sylv","sourceDevice":3,"timestamp":1637290589910,"dataMessage":{"timestamp":1637290589910,"message":"/ping","expiresInSeconds":0,"viewOnce":false}},"account":"+447927948360"}
         self.uuid = envelope.get("sourceUuid")
         self.source: str = envelope.get("source") or self.uuid
         self.name: str = envelope.get("sourceName") or self.source

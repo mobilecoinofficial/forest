@@ -504,7 +504,7 @@ def payments_test(
     return Test(name, name, recipient, steps=steps)
 
 
-imogen = "+12406171474"  # "***REMOVED***"
+imogen = "+12406171474"  # "+***REMOVED***"
 echopay = get_secret("ECHOPAY")
 
 ping_test = script_test(
