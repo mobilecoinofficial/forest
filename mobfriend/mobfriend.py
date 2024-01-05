@@ -201,7 +201,8 @@ class MobFriend(TalkBack):
     async def do_tip(self, msg: Message) -> Response:
         """
         /tip
-        Records the next payment as a tip, not intended to make a giftcode, or as an accident."""
+        Records the next payment as a tip, not intended to make a giftcode, or as an accident.
+        """
         if msg.uuid not in self.no_repay:
             self.no_repay.append(msg.uuid)
         if msg.uuid in self.exchanging_gift_code:
@@ -412,7 +413,8 @@ class MobFriend(TalkBack):
     async def do_redeem(self, msg: Message) -> Response:
         """
         /redeem [base58 gift code]
-        Claims a gift code! Redeems a provided code to the bot's wallet and sends the redeemed balance."""
+        Claims a gift code! Redeems a provided code to the bot's wallet and sends the redeemed balance.
+        """
         if not msg.arg1:
             return "/redeem [base58 gift code]"
         if not await self.get_signalpay_address(msg.uuid):

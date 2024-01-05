@@ -60,6 +60,7 @@ def b64_public_address_to_b58_wrapper(b64_string: str) -> str:
 # > have a single encoding scheme and extend as necessary simply by adding
 # > new messages without breaking backwards compatibility
 
+
 # this can be used to import a gift card's entropy into full-service
 def b58_wrapper_to_protobuf(
     b58_string: str,

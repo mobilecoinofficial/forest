@@ -430,7 +430,6 @@ class FUSE(object):
     def __init__(
         self, operations, mountpoint, raw_fi=False, encoding="utf-8", **kwargs
     ) -> None:
-
         """
         Setting raw_fi to True will cause FUSE to pass the fuse_file_info
         class as is to Operations, instead of just the fh field.
@@ -719,7 +718,6 @@ class FUSE(object):
         for item in self.operations(
             "readdir", self._decode_optional_path(path), fip.contents.fh
         ):
-
             if isinstance(item, str):
                 name, st, offset = item, None, 0
             else:

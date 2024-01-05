@@ -308,7 +308,8 @@ class aPersistDict(Generic[V]):
 class aPersistDictOfInts(aPersistDict[int]):
     async def increment(self, key: str, value: int) -> str:
         """Since one cannot simply add to a coroutine, this function exists.
-        If the key exists and the value is None, or an empty array, the provided value is added to a(the) list at that value."""
+        If the key exists and the value is None, or an empty array, the provided value is added to a(the) list at that value.
+        """
         value_to_extend: Any = 0
         async with self.rwlock:
             value_to_extend = self.dict_.get(key, 0)
@@ -318,7 +319,8 @@ class aPersistDictOfInts(aPersistDict[int]):
 
     async def decrement(self, key: str, value: int) -> str:
         """Since one cannot simply add to a coroutine, this function exists.
-        If the key exists and the value is None, or an empty array, the provided value is added to a(the) list at that value."""
+        If the key exists and the value is None, or an empty array, the provided value is added to a(the) list at that value.
+        """
         value_to_extend: Any = 0
         async with self.rwlock:
             value_to_extend = self.dict_.get(key, 0)
@@ -335,7 +337,8 @@ class aPersistDictOfLists(aPersistDict[list[I]]):
 
     async def extend(self, key: str, value: I) -> str:
         """Since one cannot simply add to a coroutine, this function exists.
-        If the key exists and the value is None, or an empty array, the provided value is added to a(the) list at that value."""
+        If the key exists and the value is None, or an empty array, the provided value is added to a(the) list at that value.
+        """
         value_to_extend: Optional[list[I]] = []
         async with self.rwlock:
             value_to_extend = self.dict_.get(key, [])

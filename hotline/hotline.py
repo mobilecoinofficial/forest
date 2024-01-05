@@ -615,7 +615,6 @@ class Hotline(DialogBot):  # pylint: disable=too-many-public-methods
             user,
             f"Would you like to set a prompt for {event_or_list} {obj}?\n\nIt is currently: \n'{await self.event_prompts.get(obj)}'",
         ):
-
             msg.arg1 = "prompt"
             msg.arg2 = obj
             msg.arg3 = await self.ask_freeform_question(
@@ -932,7 +931,8 @@ class Hotline(DialogBot):  # pylint: disable=too-many-public-methods
 
     async def do_reset(self, msg: Message) -> Response:
         """reset <displayname>
-        Allows the owner of a list or event to reset the session state of an attendee."""
+        Allows the owner of a list or event to reset the session state of an attendee.
+        """
         user = msg.uuid
         owns_event, owns_list = await self._get_user_owns(user)
         if (

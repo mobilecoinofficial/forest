@@ -406,7 +406,9 @@ class Signal:
             params["familyName"] = family_name
         if payment_address:
             if payment_address[0] != "C":
-                payment_address = mc_util.b58_wrapper_to_b64_public_address(payment_address)
+                payment_address = mc_util.b58_wrapper_to_b64_public_address(
+                    payment_address
+                )
             params["mobileCoinAddress"] = payment_address
         if profile_path:
             params["avatar"] = profile_path
@@ -970,13 +972,21 @@ class Bot(Signal):
     async def get_uuid_by_phone(self, phonenumber: str) -> Optional[str]:
         """Queries signal-cli's recipients-store for a UUID, provided a phone number."""
         if phonenumber.startswith("+"):
-            return (await self.signal_rpc_request("listContacts", recipient=phonenumber)).blob.get("result", {}).get("uuid")
+            return (
+                (await self.signal_rpc_request("listContacts", recipient=phonenumber))
+                .blob.get("result", {})
+                .get("uuid")
+            )
         return None
 
     async def get_number_by_uuid(self, uuid_: str) -> Optional[str]:
         """Queries signal-cli's recipients-store for a phone number, provided a uuid."""
         if uuid_.count("-") == 4:
-            return (await self.signal_rpc_request("listContacts", recipient=uuid_)).blob.get("result", {}).get("number")
+            return (
+                (await self.signal_rpc_request("listContacts", recipient=uuid_))
+                .blob.get("result", {})
+                .get("number")
+            )
         return None
 
 
@@ -1390,7 +1400,6 @@ class QuestionBot(PayBot):
         super().__init__(bot_number)
 
     async def handle_message(self, message: Message) -> Response:
-
         # import pdb;pdb.set_trace()
         pending_answer, probably_future = get_source_or_uuid_from_dict(
             message, self.pending_answers
@@ -1483,7 +1492,6 @@ class QuestionBot(PayBot):
             recipient, question_text, require_first_device
         )
         if answer and not answer.isnumeric():
-
             # cancel if user replies with any of the terminal answers "stop, cancel, quit, etc. defined above"
             if answer.lower() in self.TERMINAL_ANSWERS:
                 return None
@@ -1654,7 +1662,6 @@ class QuestionBot(PayBot):
 
         # when there is a match
         if answer and answer.lower() in lower_dict_options.keys():
-
             # if confirmation is required ask for it as a yes/no question
             if require_confirmation:
                 confirmation_text = (

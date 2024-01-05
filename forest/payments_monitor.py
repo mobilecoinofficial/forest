@@ -119,8 +119,11 @@ class Mobster:
                 ) as resp:
                     result = await resp.json()
                     logging.debug(f"fsr {data}\n{result}")
-                    if "invalid type: null" in json.dumps(result) and data.get('params') == None:
-                        data['params'] = {}
+                    if (
+                        "invalid type: null" in json.dumps(result)
+                        and data.get("params") == None
+                    ):
+                        data["params"] = {}
                         return await self.req(data)
                     return result
 
@@ -282,9 +285,7 @@ class Mobster:
         if account_name is not None:
             ## get the account map for the accounts in the wallet
             account_map = [
-                (await self.req({"method": "get_accounts"}))["result"][
-                    "account_map"
-                ][x]
+                (await self.req({"method": "get_accounts"}))["result"]["account_map"][x]
                 for x in account_ids
             ]
 
