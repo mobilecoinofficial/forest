@@ -129,11 +129,11 @@ class TalkBack(QuestionBot):
             uuid = await self.displayname_lookup_cache.get(uuid, uuid)
         # phone number, not uuid provided
         if uuid.startswith("+"):
-            uuid = self.get_uuid_by_phone(uuid) or uuid
+            uuid = await self.get_uuid_by_phone(uuid) or uuid
         maybe_displayname = await self.displayname_cache.get(uuid)
         if (
             maybe_displayname
-            and "givenName" not in maybe_displayname
+            and "ivenName" not in maybe_displayname
             and " " not in maybe_displayname
         ):
             return maybe_displayname

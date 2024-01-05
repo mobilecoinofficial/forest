@@ -93,14 +93,14 @@ class Mobster:
         if not url:
             url = (
                 utils.get_secret("FULL_SERVICE_URL") or "http://localhost:9090/"
-            ).removesuffix("/wallet") + "/wallet"
+            ).removesuffix("/wallet") + "/wallet/v2"
 
         self.account_id: Optional[str] = None
         logging.info("full-service url: %s", url)
         self.url = url
 
     async def req_(self, method: str, **params: Any) -> dict:
-        logging.info("full-service request: %s", method)
+        logging.info("full-service request: %s / %s", method, params)
         result = await self.req({"method": method, "params": params})
         if "error" in result:
             logging.error(result)
@@ -117,7 +117,12 @@ class Mobster:
                     data=json.dumps(better_data),
                     headers={"Content-Type": "application/json"},
                 ) as resp:
-                    return await resp.json()
+                    result = await resp.json()
+                    logging.debug(f"fsr {data}\n{result}")
+                    if "invalid type: null" in json.dumps(result) and data.get('params') == None:
+                        data['params'] = {}
+                        return await self.req(data)
+                    return result
 
     async def get_all_txos_for_account(self) -> dict[str, dict]:
         txos = (
@@ -257,7 +262,7 @@ class Mobster:
         """Returns either the address set, or the address specified by the secret
         or the first address in the full service instance in that order"""
         acc_id = await self.get_account()
-        res = await self.req({"method": "get_all_accounts"})
+        res = await self.req({"method": "get_accounts"})
         return res["result"]["account_map"][acc_id]["main_address"]
 
     async def get_account(self, account_name: Optional[str] = None) -> str:
@@ -270,14 +275,14 @@ class Mobster:
             account_name = utils.get_secret("FS_ACCOUNT_NAME")
 
         ## get all account IDs for the Wallet / fullservice instance
-        account_ids = (await self.req({"method": "get_all_accounts"}))["result"][
+        account_ids = (await self.req({"method": "get_accounts"}))["result"][
             "account_ids"
         ]
         maybe_account_id = []
         if account_name is not None:
             ## get the account map for the accounts in the wallet
             account_map = [
-                (await self.req({"method": "get_all_accounts"}))["result"][
+                (await self.req({"method": "get_accounts"}))["result"][
                     "account_map"
                 ][x]
                 for x in account_ids

@@ -184,8 +184,8 @@ class Signal:
                 path += " --download-path /tmp"
             else:
                 path += " --trust-new-identities always"
-            command = f"{path} --config {utils.ROOT_DIR} --user {self.bot_number} jsonRpc".split()
-            logging.info(command)
+            command = f"{path} --config {utils.ROOT_DIR}/ --user {self.bot_number} jsonRpc".split()
+            logging.info(" ".join(command))
             proc_launch_time = time.time()
             # this ought to FileNotFoundError but doesn't
             self.proc = await asyncio.create_subprocess_exec(
@@ -391,7 +391,7 @@ class Signal:
         """Sends a jsonRpc command to signal-cli or auxin-cli"""
         return await self.wait_for_response(req=rpc(method, **params))
 
-    async def set_profile_auxin(
+    async def set_profile(
         self,
         given_name: Optional[str] = "",
         family_name: Optional[str] = "",
@@ -401,18 +401,20 @@ class Signal:
     ) -> str:
         """set given and family name, payment address (must be b64 format),
         and profile picture"""
-        params: JSON = {"name": {"givenName": given_name}}
+        params: JSON = {"givenName": given_name}
         if given_name and family_name:
-            params["name"]["familyName"] = family_name
+            params["familyName"] = family_name
         if payment_address:
-            params["mobilecoinAddress"] = payment_address
+            if payment_address[0] != "C":
+                payment_address = mc_util.b58_wrapper_to_b64_public_address(payment_address)
+            params["mobileCoinAddress"] = payment_address
         if profile_path:
-            params["avatarFile"] = profile_path
+            params["avatar"] = profile_path
         for parameter, value in kwargs.items():
             if value:
                 params[parameter] = value
         rpc_id = f"setProfile-{get_uid()}"
-        await self.outbox.put(rpc("setProfile", params, rpc_id))
+        await self.outbox.put(rpc("updateProfile", params, rpc_id))
         return rpc_id
 
     async def save_sent_message(self, rpc_id: str, params: dict[str, str]) -> None:
@@ -965,34 +967,16 @@ class Bot(Signal):
                 return exception_traceback
         return None
 
-    def get_recipients(self) -> list[dict[str, str]]:
-        """Returns a list of all known recipients by parsing underlying datastore."""
-        return json.loads(
-            open(f"data/{self.bot_number}.d/recipients-store").read()
-        ).get("recipients", [])
-
-    def get_uuid_by_phone(self, phonenumber: str) -> Optional[str]:
-        """Queries the recipients-store file for a UUID, provided a phone number."""
+    async def get_uuid_by_phone(self, phonenumber: str) -> Optional[str]:
+        """Queries signal-cli's recipients-store for a UUID, provided a phone number."""
         if phonenumber.startswith("+"):
-            maybe_recipient = [
-                recipient
-                for recipient in self.get_recipients()
-                if phonenumber == recipient.get("number")
-            ]
-            if maybe_recipient:
-                return maybe_recipient[0]["uuid"]
+            return (await self.signal_rpc_request("listContacts", recipient=phonenumber)).blob.get("result", {}).get("uuid")
         return None
 
-    def get_number_by_uuid(self, uuid_: str) -> Optional[str]:
-        """Queries the recipients-store file for a phone number, provided a uuid."""
+    async def get_number_by_uuid(self, uuid_: str) -> Optional[str]:
+        """Queries signal-cli's recipients-store for a phone number, provided a uuid."""
         if uuid_.count("-") == 4:
-            maybe_recipient = [
-                recipient
-                for recipient in self.get_recipients()
-                if uuid_ == recipient.get("uuid")
-            ]
-            if maybe_recipient:
-                return maybe_recipient[0]["number"]
+            return (await self.signal_rpc_request("listContacts", recipient=uuid_)).blob.get("result", {}).get("number")
         return None
 
 
@@ -1084,9 +1068,7 @@ class PayBot(ExtrasBot):
 
     @requires_admin
     async def do_setup(self, _: Message) -> str:
-        if not utils.AUXIN:
-            return "Can't set payment address without auxin"
-        await self.set_profile_auxin(
+        await self.set_profile(
             mobilecoin_address=mc_util.b58_wrapper_to_b64_public_address(
                 await self.mobster.ensure_address()
             )
@@ -1177,7 +1159,7 @@ class PayBot(ExtrasBot):
         attachments = await get_attachment_paths(message)
         user_image = attachments[0] if attachments else None
         if user_image or (message.tokens and len(message.tokens) > 0):
-            await self.set_profile_auxin(
+            await self.set_profile(
                 given_name=message.arg1,
                 family_name=message.arg2,
                 payment_address=message.arg3,
@@ -1291,10 +1273,11 @@ class PayBot(ExtrasBot):
             "build_transaction",
             account_id=account_id,
             recipient_public_address=address,
-            value_pmob=str(int(amount_pmob)),
-            fee=str(int(1e12 * 0.0004)),
+            amount=dict(value=str(int(amount_pmob)), token_id="0"),
             **params,
         )
+        if raw_prop.get("error"):
+            raise ValueError
         prop = raw_prop.get("result", {}).get("tx_proposal")
         tx_id = raw_prop.get("result", {}).get("transaction_log_id")
         # this is to NOT log transactions into the full service DB if the sender
@@ -1338,6 +1321,7 @@ class PayBot(ExtrasBot):
             )
         )["result"]["receiver_receipts"][0]
         # this gets us a Receipt protobuf
+        full_service_receipt["object"] = "receiver_receipt"
         b64_receipt = mc_util.full_service_receipt_to_b64_receipt(full_service_receipt)
         if utils.AUXIN:
             content = compose_payment_content(b64_receipt, receipt_message)
@@ -1796,7 +1780,7 @@ class QuestionBot(PayBot):
         attachments = await get_attachment_paths(msg)
         if attachments:
             fields["profile_path"] = attachments[0]
-        await self.set_profile_auxin(**fields)
+        await self.set_profile(**fields)
         return f"set {', '.join(fields)}"
 
 
