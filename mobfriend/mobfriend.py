@@ -55,13 +55,13 @@ class MobFriend(TalkBack):
                     )
                     if len(attachment_paths) > 0:
                         attachment_path = attachment_paths.pop()
-                        download_path = self.user_images[
-                            message.uuid
-                        ] = f"{attachment_path}"
+                        download_path = self.user_images[message.uuid] = (
+                            f"{attachment_path}"
+                        )
                 else:
-                    download_path = self.user_images[
-                        message.uuid
-                    ] = f"/tmp/{attachment_path}"
+                    download_path = self.user_images[message.uuid] = (
+                        f"/tmp/{attachment_path}"
+                    )
                 if not (
                     os.path.exists(download_path)
                     and os.path.getsize(download_path) == attachment_info.get("size", 1)

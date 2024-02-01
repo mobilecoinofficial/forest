@@ -100,9 +100,9 @@ class PGExpressions(dict):
         self.logger = get_logger(f"{self.table}_expressions")
         super().__init__(**kwargs)
         if "exists" not in self:
-            self[
-                "exists"
-            ] = f"SELECT * FROM pg_tables WHERE tablename = '{self.table}';"
+            self["exists"] = (
+                f"SELECT * FROM pg_tables WHERE tablename = '{self.table}';"
+            )
         if "create_table" not in self:
             self.logger.warning(f"'create_table' not defined for {self.table}")
 

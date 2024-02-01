@@ -48,9 +48,11 @@ class GetStr(ast.NodeTransformer):
                 and getattr(node.func.value, "attr", "") == "dialog"
             ):
                 vals = [
-                    c.value
-                    if isinstance(c, ast.Constant)
-                    else f"(python) `{self.get_source(c)}`"
+                    (
+                        c.value
+                        if isinstance(c, ast.Constant)
+                        else f"(python) `{self.get_source(c)}`"
+                    )
                     for c in node.args
                     if c
                 ]

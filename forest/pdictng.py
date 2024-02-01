@@ -240,12 +240,10 @@ class aPersistDict(Generic[V]):
             self.dict_.update(**kwargs)
 
     @overload
-    async def get(self, key: str, default: V) -> V:
-        ...
+    async def get(self, key: str, default: V) -> V: ...
 
     @overload
-    async def get(self, key: str, default: None = None) -> Optional[V]:
-        ...
+    async def get(self, key: str, default: None = None) -> Optional[V]: ...
 
     async def get(self, key: str, default: Optional[V] = None) -> Optional[V]:
         """Analogous to dict().get() - but async. Waits until writes have completed on the backend before returning results."""
@@ -275,12 +273,10 @@ class aPersistDict(Generic[V]):
         return None
 
     @overload
-    async def pop(self, key: str, default: V) -> V:
-        ...
+    async def pop(self, key: str, default: V) -> V: ...
 
     @overload
-    async def pop(self, key: str, default: None = None) -> Optional[V]:
-        ...
+    async def pop(self, key: str, default: None = None) -> Optional[V]: ...
 
     async def pop(self, key: str, default: Optional[V] = None) -> Optional[V]:
         """Returns and removes a value if it exists"""
