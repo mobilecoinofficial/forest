@@ -118,7 +118,6 @@ class Mobster:
                     headers={"Content-Type": "application/json"},
                 ) as resp:
                     result = await resp.json()
-                    logging.debug(f"fsr {data}\n{result}")
                     if (
                         "invalid type: null" in json.dumps(result)
                         and data.get("params") == None
@@ -265,8 +264,11 @@ class Mobster:
         """Returns either the address set, or the address specified by the secret
         or the first address in the full service instance in that order"""
         acc_id = await self.get_account()
-        res = await self.req({"method": "get_accounts"})
+        res = await self.fsr_get_accounts()
         return res["result"]["account_map"][acc_id]["main_address"]
+
+    async def fsr_get_accounts(self) -> dict:
+        return await self.req({"method": "get_accounts", "params": {}})
 
     async def get_account(self, account_name: Optional[str] = None) -> str:
         """returns the account id matching account_name in Full Service Wallet"""
@@ -278,14 +280,12 @@ class Mobster:
             account_name = utils.get_secret("FS_ACCOUNT_NAME")
 
         ## get all account IDs for the Wallet / fullservice instance
-        account_ids = (await self.req({"method": "get_accounts"}))["result"][
-            "account_ids"
-        ]
+        account_ids = (await self.fsr_get_accounts())["result"]["account_ids"]
         maybe_account_id = []
         if account_name is not None:
             ## get the account map for the accounts in the wallet
             account_map = [
-                (await self.req({"method": "get_accounts"}))["result"]["account_map"][x]
+                (await self.fsr_get_accounts())["result"]["account_map"][x]
                 for x in account_ids
             ]
 
@@ -320,7 +320,7 @@ class Mobster:
             if tx["result"]["receipt_transaction_status"] == "TransactionPending":
                 await asyncio.sleep(1)
                 continue
-            pmob = int(tx["result"]["txo"]["value_pmob"])
+            pmob = int(tx["result"]["txo"]["value"])
             return pmob
 
     account_id: Optional[str] = None
