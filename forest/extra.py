@@ -140,24 +140,8 @@ class TalkBack(QuestionBot):
         ):
             return maybe_displayname
         maybe_user_profile = await self.profile_cache.get(uuid)
-        # if no luck, but we have a valid uuid
-        user_given = ""
-        if (
-            not maybe_user_profile or not maybe_user_profile.get("givenName", "")
-        ) and uuid.count("-") == 4:
-            try:
-                maybe_user_profile = (
-                    await self.signal_rpc_request("getprofile", peer_name=uuid)
-                ).blob or {}
-                user_given = maybe_user_profile.get("givenName", "")
-                await self.profile_cache.set(uuid, maybe_user_profile)
-            except AttributeError:
-                # this returns a Dict containing an error key
-                user_given = "[error]"
-        elif maybe_user_profile and "givenName" in maybe_user_profile:
-            user_given = maybe_user_profile["givenName"]
-        if not user_given:
-            user_given = "givenName"
+        result = await self.signal_rpc_request("listContacts", recipient=uuid)
+        user_given = result.blob.get("result", {}).get("profile", {}).get("givenName")
         user_given = user_given.replace(" ", "_")
         if uuid and ("+" not in uuid and "-" in uuid):
             user_short = f"{user_given}_{uuid.split('-')[1]}"
