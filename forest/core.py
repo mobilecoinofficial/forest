@@ -525,7 +525,7 @@ class Signal:
             logging.error(json.dumps(target_msg.blob))
         if target_msg.group:
             return await self.send_message(
-                None, msg, group=target_msg.group_id, **other_params
+                None, msg, group=target_msg.group, **other_params
             )
         destination = target_msg.source or target_msg.uuid
         return await self.send_message(destination, msg, **other_params)
@@ -569,7 +569,7 @@ class Signal:
         # https://github.com/signalapp/Signal-Android/blob/master/app/src/main/java/org/thoughtcrime/securesms/components/TypingStatusRepository.java#L32
         "Send a typing indicator to the person or group the message is from"
         if msg:
-            group = msg.group_id or ""
+            group = msg.group or ""
             recipient = msg.source
         if utils.AUXIN:
             content: dict = {
@@ -586,7 +586,7 @@ class Signal:
                 await self.send_message(recipient, "", content=content)
             return
         if group:
-            await self.outbox.put(rpc("sendTyping", group_id=[group], stop=stop))
+            await self.outbox.put(rpc("sendTyping", group=[group], stop=stop))
         else:
             await self.outbox.put(rpc("sendTyping", recipient=[recipient], stop=stop))
 
@@ -613,7 +613,7 @@ class Signal:
             }
             content = {"dataMessage": {"body": None, "sticker": stick}}
             if msg.group:
-                await self.send_message(None, "", group=msg.group_id, content=content)
+                await self.send_message(None, "", group=msg.group, content=content)
             else:
                 await self.send_message(msg.source, "", content=content)
             return
