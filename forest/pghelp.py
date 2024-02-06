@@ -63,7 +63,8 @@ class OneTruePool:
 
     def acquire(self) -> asyncpg.pool.PoolAcquireContext:
         """returns an async context manager. sugar around pool.pool.acquire
-        this *isn't* async, because pool.acquire returns an async context manager and not a coroutine"""
+        this *isn't* async, because pool.acquire returns an async context manager and not a coroutine
+        """
         if not self.pool:
             raise Exception("no pool, use pool.connect first")
         return self.pool.acquire()
@@ -99,9 +100,9 @@ class PGExpressions(dict):
         self.logger = get_logger(f"{self.table}_expressions")
         super().__init__(**kwargs)
         if "exists" not in self:
-            self[
-                "exists"
-            ] = f"SELECT * FROM pg_tables WHERE tablename = '{self.table}';"
+            self["exists"] = (
+                f"SELECT * FROM pg_tables WHERE tablename = '{self.table}';"
+            )
         if "create_table" not in self:
             self.logger.warning(f"'create_table' not defined for {self.table}")
 
@@ -263,7 +264,8 @@ class PGInterface:
 
             def executer_with_args(*args: Any) -> Any:
                 """Closure over 'statement' in local state for application to arguments.
-                Allows deferred execution of f-strs, allowing PGExpresssions to operate on `args`."""
+                Allows deferred execution of f-strs, allowing PGExpresssions to operate on `args`.
+                """
                 start_time = time.time()
                 rebuilt_statement = eval(f'f"{statement}"')  # pylint: disable=eval-used
                 if (

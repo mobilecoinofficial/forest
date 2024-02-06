@@ -145,11 +145,6 @@ class Charity(DialogBot):
             await self.send_message(
                 msg.uuid, await self.dialog.get("HOW_TO_DONATE", "HOW_TO_DONATE")
             )
-            await self.send_message(
-                msg.uuid,
-                None,
-                attachments=["./how-to-donate.gif"],
-            )
         await self.last_prompted.set(msg.uuid, int(time.time() * 1000))
         return None
 
@@ -176,5 +171,4 @@ class Charity(DialogBot):
 
 
 if __name__ == "__main__":
-
     run_bot(Charity)

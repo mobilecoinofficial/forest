@@ -821,7 +821,6 @@ class Tiamat(PayBot):
         assert self.test_result
         self.test_result.start_time = time.time()
         if self.test.order == "sequential":
-
             await self.send_sequential_messages()
 
             if self.test.validate_responses and isinstance(self.monitor, Task):
