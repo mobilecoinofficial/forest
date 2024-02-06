@@ -9,6 +9,9 @@ from typing import Any, Generic, Optional, TypeVar, overload
 import aiohttp
 from forest.cryptography import get_ciphertext_value, get_cleartext_value, hash_salt
 
+# def hash_salt(v): return v
+# def get_cleartext_value(v): return v
+# def get_ciphertext_value(v): return v
 NAMESPACE = os.getenv("FLY_APP_NAME") or open("/etc/hostname").read().strip()
 pAUTH = os.getenv("PAUTH", "")
 pURL = os.getenv("PURL", "https://gusc1-charming-parrot-31440.upstash.io")
@@ -26,10 +29,10 @@ class persistentKVStoreClient:
 
 
 class fasterpKVStoreClient(persistentKVStoreClient):
-    """Strongly consistent, persistent storage.
-    Redis with [strong consistency via Upstash](https://docs.upstash.com/redis/features/consistency)
-    On top of Redis and Webdis.
-    Check out <https://github.com/mobilecoinofficial/forest/blob/main/pdictng_docs/upstash_pauth.png> for setup / pAUTH
+    """Strongly persistent storage on top of Cloudflare/Deno workers KV.
+    Upstash no longer supports strong consistency so let's do the simplest thing that might work.
+    Cloudflare Durable Objects have the consistency model we want but they're not free.
+    Deno openKV supports strong consistency though!
     """
 
     def __init__(
@@ -44,7 +47,7 @@ class fasterpKVStoreClient(persistentKVStoreClient):
         self.namespace = hash_salt(namespace)
         self.exists: dict[str, bool] = {}
         self.headers = {
-            "Authorization": f"Bearer {self.auth}",
+            "Authorization": f"{self.auth}",
         }
 
     async def post(self, key: str, data: str) -> str:
@@ -52,19 +55,15 @@ class fasterpKVStoreClient(persistentKVStoreClient):
         data = get_ciphertext_value(data)
         # try to set
         async with self.conn.post(
-            f"{self.url}/SET/{key}", headers=self.headers, data=data
+            f"{self.url}/{key}", headers=self.headers, data=data
         ) as resp:
-            return await resp.json()
+            return await resp.text()
 
     async def get(self, key: str) -> str:
         """Get and return value of an object with the specified key and namespace"""
         key = hash_salt(f"{self.namespace}_{key}")
-        async with self.conn.get(f"{self.url}/GET/{key}", headers=self.headers) as resp:
-            res = await resp.json()
-            if "result" in res:
-                return get_cleartext_value(res["result"])
-
-        return ""
+        async with self.conn.get(f"{self.url}/{key}", headers=self.headers) as resp:
+            return get_cleartext_value(await resp.json())
 
 
 class fastpKVStoreClient(persistentKVStoreClient):
