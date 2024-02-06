@@ -326,14 +326,15 @@ class Mobster:
     account_id: Optional[str] = None
 
     async def get_balance(self) -> int:
+        account_id = await self.get_account()
         value = (
             await self.req(
                 {
-                    "method": "get_balance_for_account",
-                    "params": {"account_id": await self.get_account()},
+                    "method": "get_balance",
+                    "params": {"account_id": account_id},
                 }
             )
-        )["result"]["balance"]["unspent_pmob"]
+        )["result"]["balance_per_token"]["0"]["unspent"]
         return int(value)
 
     async def get_transactions(self, account_id: str) -> dict[str, dict[str, str]]:
